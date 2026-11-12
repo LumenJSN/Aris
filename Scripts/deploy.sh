@@ -142,9 +142,14 @@ place_incoming() {
   rm -rf "$beside/.Aris.outgoing"
 }
 
+# The process answering on the helper's port; empty when none.
+agent_pid_now() { lsof -nP -t -iTCP:"$AGENT_PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true; }
+
 # $1, when given: the build the helper must say it is (the stamp it writes down when it starts).
+# $2, when given: the helper process from before the swap, which never counts (its stamp may be left over from an
+# earlier attempt, so a matching stamp alone does not show the new helper is the one answering).
 open_and_wait() {
-  local want="${1:-}"
+  local want="${1:-}" was="${2:-}"
   open "$APP" || { echo "macOS would not open $APP" >&2; return 1; }
   for _ in $(seq 1 60); do listening "$HOOK_PORT" && break; sleep 1; done
   listening "$HOOK_PORT" || { echo "Aris was opened but its hook server (port $HOOK_PORT) did not come up within 60 s" >&2; return 1; }
@@ -153,7 +158,10 @@ open_and_wait() {
   # starts its own: so the helper counts as up only when it answers (and, with $1, is that build) in the same check,
   # never on a port seen open once before the switch (that let a deploy fail in the gap and roll back). Up to 90 s.
   for _ in $(seq 1 90); do
-    if listening "$AGENT_PORT" && { [ -z "$want" ] || [ "$(agent_stamp)" = "$want" ]; }; then return 0; fi
+    # One look at who answers: a process, not the one from before the swap, and (with $1) of that build.
+    local now; now="$(agent_pid_now)"
+    if [ -n "$now" ] && { [ -z "$was" ] || [ "$now" != "$was" ]; } \
+       && { [ -z "$want" ] || [ "$(agent_stamp)" = "$want" ]; }; then return 0; fi
     sleep 1
   done
   if [ -n "$want" ] && listening "$AGENT_PORT"; then
@@ -421,6 +429,7 @@ keep_old_layout || die "could not keep the helper of the old layout in $PREV"
 stage_beside "$STAGE/Aris.app" || die "the new app could not be copied next to $APP"
 # Last thing before Aris is quit (quitting the app ends what it was waiting for, too): let the agent finish its work.
 if [ "$NOW" = "1" ]; then "$INSTALLER" --wait-idle --now; else "$INSTALLER" --wait-idle; fi
+OLD_AGENT_PID="$(agent_pid_now)"
 SWAPPING=1
 quit_app
 # Aris's folder was ~/.config/boring-notch. Move it once, with the app and agent stopped, and leave a link so
@@ -436,7 +445,7 @@ echo "new app in place at $APP"
 "$INSTALLER" --restart || die "the helper did not come back after the swap (the reason is above)"
 WANT=""
 if [ -n "$EXPECTED" ] && grep -a -q "aris-build-commit:$EXPECTED" "$APP/Contents/MacOS/aris-agent" 2>/dev/null; then WANT="$EXPECTED"; fi
-open_and_wait "$WANT" || die "the new Aris did not come up (the reason is above)"
+open_and_wait "$WANT" "$OLD_AGENT_PID" || die "the new Aris did not come up (the reason is above)"
 # The helper that answers must be the one inside the new app: it writes down its build when it starts.
 RUNNING="$(agent_stamp)"
 if grep -a -q "aris-build-commit:$EXPECTED" "$APP/Contents/MacOS/aris-agent" 2>/dev/null && [ -n "$EXPECTED" ]; then

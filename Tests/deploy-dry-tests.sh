@@ -414,6 +414,12 @@ check "$([ "$RC" = 0 ] && has "$OUT" "DEPLOYED $COMMIT" && [ "$(cat "$ARIS/aris/
   "switch: an app that stops the old helper a moment after it opens is waited for, not rolled back (the gap after the old helper's port was seen open)"
 check "$(lacks "$ERR" "DEPLOY FAILED" && echo 0 || echo 1)" "switch: and no failure is reported for that gap"
 
+# The same Mac, the next try: the earlier attempt's helper had written the new build's stamp before the rollback, so
+# the stamp alone matched while the old helper still answered. The helper from before the swap never counts.
+fresh; old_layout; echo 1 > "$T/state/switch-late"; mkdir -p "$ARIS/aris"; echo "$COMMIT" > "$ARIS/aris/agent-build"; run_in deploy.sh
+check "$([ "$RC" = 0 ] && has "$OUT" "DEPLOYED $COMMIT" && [ "$(job_program)" = "$APP/Contents/MacOS/aris-agent" ] && [ ! -e "$T/state/pending-switch" ] && echo 0 || echo 1)" \
+  "switch: a stamp left over from an earlier attempt does not pass the old helper off as the new one (it waits for the switch)"
+
 fresh; old_layout; run_in deploy.sh; run_in deploy.sh
 check "$([ "$RC" = 0 ] && [ ! -e "$T/root/deploy-previous/old-layout.tgz" ] && [ ! -e "$T/root/deploy-previous/old-layout" ] && echo 0 || echo 1)" \
   "switch: once the one-bundle layout has run, the next deploy removes the old helper's archive (sec4 M4)"
