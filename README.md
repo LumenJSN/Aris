@@ -106,7 +106,7 @@ A build from source has no onboarding sounds (they are not in the repository, se
   skills made for Claude Code or Codex work unchanged on every brain. They are off until you turn them on, each is
   checked by a static scan ([SkillSpector](https://github.com/NVIDIA/skillspector)) and a review by your AI first, and
   a skill's scripts run only after you say yes.
-- **Memory** you can read and edit: plain Markdown notes about how you like things done, kept on your Mac.
+- **Memory** of you and of how tasks went, kept on your Mac: see, confirm or delete each memory in Settings › Memory.
 - **Korean and English** in the UI, the voice and the answers.
 
 ## Permissions
