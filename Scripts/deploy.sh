@@ -142,13 +142,27 @@ place_incoming() {
   rm -rf "$beside/.Aris.outgoing"
 }
 
+# $1, when given: the build the helper must say it is (the stamp it writes down when it starts).
 open_and_wait() {
+  local want="${1:-}"
   open "$APP" || { echo "macOS would not open $APP" >&2; return 1; }
   for _ in $(seq 1 60); do listening "$HOOK_PORT" && break; sleep 1; done
   listening "$HOOK_PORT" || { echo "Aris was opened but its hook server (port $HOOK_PORT) did not come up within 60 s" >&2; return 1; }
-  # The app makes its own helper the one that runs (it writes and loads the job when that is needed): up to a minute.
-  for _ in $(seq 1 60); do listening "$AGENT_PORT" && break; sleep 1; done
-  listening "$AGENT_PORT" || { echo "the agent is not answering on port $AGENT_PORT" >&2; return 1; }
+  # The app makes its own helper the one that runs (it writes and loads the job when that is needed). On the first
+  # open after an install made the old way, the old helper still answers for a moment, then the app stops it and
+  # starts its own: so the helper counts as up only when it answers (and, with $1, is that build) in the same check,
+  # never on a port seen open once before the switch (that let a deploy fail in the gap and roll back). Up to 90 s.
+  for _ in $(seq 1 90); do
+    if listening "$AGENT_PORT" && { [ -z "$want" ] || [ "$(agent_stamp)" = "$want" ]; }; then return 0; fi
+    sleep 1
+  done
+  if [ -n "$want" ] && listening "$AGENT_PORT"; then
+    local running; running="$(agent_stamp)"
+    echo "the helper that answers is build ${running:-unknown}, not $want: the app did not start its own helper" >&2
+  else
+    echo "the agent is not answering on port $AGENT_PORT within 90 s" >&2
+  fi
+  return 1
 }
 
 # The build the running helper wrote down when it started; empty when there is none.
@@ -420,7 +434,9 @@ place_incoming || die "the new app could not be put at $APP"
 echo "new app in place at $APP"
 # One restart, promptly: the helper that kept running is the old build, while the tools it starts are already the new one.
 "$INSTALLER" --restart || die "the helper did not come back after the swap (the reason is above)"
-open_and_wait || die "the new Aris did not come up (the reason is above)"
+WANT=""
+if [ -n "$EXPECTED" ] && grep -a -q "aris-build-commit:$EXPECTED" "$APP/Contents/MacOS/aris-agent" 2>/dev/null; then WANT="$EXPECTED"; fi
+open_and_wait "$WANT" || die "the new Aris did not come up (the reason is above)"
 # The helper that answers must be the one inside the new app: it writes down its build when it starts.
 RUNNING="$(agent_stamp)"
 if grep -a -q "aris-build-commit:$EXPECTED" "$APP/Contents/MacOS/aris-agent" 2>/dev/null && [ -n "$EXPECTED" ]; then

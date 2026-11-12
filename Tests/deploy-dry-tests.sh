@@ -135,6 +135,13 @@ EOF
 #!/bin/bash
 echo "lsof $*" >> "$CALLS"
 port=""; for word in "$@"; do case "$word" in -iTCP:*) port="${word#-iTCP:}" ;; esac; done
+# A late switch (switch-late, see open): the first look still finds the old helper, the second finds its port closed
+# (the app has stopped it), the third finds the app's own helper started.
+if [ "$port" = 23351 ] && [ -f "$STATE/pending-switch" ]; then
+  looks="$(cat "$STATE/switch-looks" 2>/dev/null || echo 0)"; echo $((looks + 1)) > "$STATE/switch-looks"
+  if [ "$looks" = 1 ]; then rm -f "$STATE/listen-23351"
+  elif [ "$looks" -ge 2 ]; then app="$(cat "$STATE/pending-switch")"; rm -f "$STATE/pending-switch"; FAKE_SWITCH_NOW=1 "$(dirname "$0")/open" "$app" >/dev/null 2>&1; fi
+fi
 case " $* " in
   *" -sTCP:LISTEN "*)
     [ -e "$STATE/listen-$port" ] || exit 1
@@ -164,12 +171,15 @@ exit 0
 EOF
   cat > "$bin/open" <<'EOF'
 #!/bin/bash
-echo "open $*" >> "$CALLS"
+[ -n "$FAKE_SWITCH_NOW" ] || echo "open $*" >> "$CALLS"
 [ -e "$STATE/fail-open" ] && { echo "The application cannot be opened" >&2; exit 1; }
 # app-never-up holds how many launches are swallowed (the app opens but its hook server never comes up).
 left="$(cat "$STATE/app-never-up" 2>/dev/null || echo 0)"
 if [ "$left" -gt 0 ]; then echo $((left - 1)) > "$STATE/app-never-up"; exit 0; fi
 echo 3000 > "$STATE/listen-23350"
+# switch-late: the app switches the helper over a moment after it opens (on a real Mac its XPC helper does it while
+# the old helper still answers): the switch is left to the next looks at the helper's port (see lsof).
+if [ -e "$STATE/switch-late" ] && [ -z "$FAKE_SWITCH_NOW" ]; then echo "${!#}" > "$STATE/pending-switch"; exit 0; fi
 # The app makes the helper inside it the one that runs (the XPC helper's installAgent): when the LaunchAgent does not
 # point into this app, or nothing answers, it writes the job, links aris-tools, removes the old copies and loads it.
 app="${!#}"; agent="$app/Contents/MacOS/aris-agent"; aris="$HOME/.config/aris"
@@ -396,6 +406,13 @@ run_in deploy.sh --rollback
 check "$([ "$RC" = 0 ] && [ "$(marker)" = "installed-before" ] && has "$ARIS/aris-agent" "old agent" && [ -f "$ARIS/aris-tools" ] && [ ! -L "$ARIS/aris-tools" ] && [ "$(job_program)" = "$ARIS/aris-agent" ] && echo 0 || echo 1)" \
   "switch: a rollback across it puts the old app, the old helper, its tools and its job back"
 check "$([ "$(cat "$ARIS/aris/agent-build")" = "before00" ] && [ -e "$T/state/listen-23351" ] && echo 0 || echo 1)" "switch: and that helper answers again"
+
+# 2026-11-12, the owner's Mac: the old helper still answered when the new app opened; the app stopped it a moment
+# later to start its own, and deploy.sh, which had seen the port open once, looked again in that gap and rolled back.
+fresh; old_layout; echo 1 > "$T/state/switch-late"; run_in deploy.sh
+check "$([ "$RC" = 0 ] && has "$OUT" "DEPLOYED $COMMIT" && [ "$(cat "$ARIS/aris/agent-build")" = "$COMMIT" ] && [ "$(job_program)" = "$APP/Contents/MacOS/aris-agent" ] && echo 0 || echo 1)" \
+  "switch: an app that stops the old helper a moment after it opens is waited for, not rolled back (the gap after the old helper's port was seen open)"
+check "$(lacks "$ERR" "DEPLOY FAILED" && echo 0 || echo 1)" "switch: and no failure is reported for that gap"
 
 fresh; old_layout; run_in deploy.sh; run_in deploy.sh
 check "$([ "$RC" = 0 ] && [ ! -e "$T/root/deploy-previous/old-layout.tgz" ] && [ ! -e "$T/root/deploy-previous/old-layout" ] && echo 0 || echo 1)" \
