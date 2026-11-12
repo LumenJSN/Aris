@@ -1,0 +1,25 @@
+{
+ "data": null,
+ "effect": "refused",
+ "error": {
+  "code": "SNAPSHOT_NOT_FOUND",
+  "hint": "Run 'peekaboo see' again and use the fresh snapshot without changing Bridge hosts.",
+  "message": "Snapshot 'ps1_00000000000000000000000000000000' has no unique live host affinity. No authenticated live Peekaboo host owns it; it may be expired, cleaned, or unknown. No action was dispatched.",
+  "mutation_dispatched": false,
+  "retry_safe": true
+ },
+ "outcome": {
+  "dispatch_state": "none",
+  "effect": "refused",
+  "escalation": "refresh_target",
+  "evidence": "request_refused",
+  "mutation_dispatched": false,
+  "refusal_reason": "target_unavailable",
+  "requires_fresh_observation": false,
+  "retry_safe": true,
+  "retry_safety": "safe",
+  "route": "local",
+  "state": "refused"
+ },
+ "success": false
+}

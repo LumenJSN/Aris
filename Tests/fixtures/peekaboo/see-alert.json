@@ -1,0 +1,263 @@
+{
+ "data": {
+  "application_name": "Aris Testbench",
+  "capture_mode": "window",
+  "element_count": 13,
+  "execution_time": 0.07700800895690918,
+  "focused_element": {
+   "frame": [
+    [
+     470,
+     619
+    ],
+    [
+     260,
+     139
+    ]
+   ],
+   "identifier": "_NS:87",
+   "processIdentifier": 4242,
+   "role": "AXSheet",
+   "windowID": 9302
+  },
+  "interactable_count": 3,
+  "is_dialog": true,
+  "mutation_targeting_available": true,
+  "screenshot_annotated": "",
+  "screenshot_raw": "",
+  "semantic_scope": "exact_or_requested",
+  "snapshot_id": "ps1_b3852986e2d802ac6736c0c7356029ff",
+  "snapshot_reusable": true,
+  "ui_elements": [
+   {
+    "ax_role": "AXButton",
+    "bounds": {
+     "height": 30,
+     "width": 112,
+     "x": 485,
+     "y": 713
+    },
+    "description": "Cancel",
+    "id": "elem_3",
+    "identifier": "action-button-2",
+    "is_actionable": true,
+    "is_enabled": true,
+    "label": "Cancel",
+    "role": "button",
+    "role_description": "button"
+   },
+   {
+    "ax_role": "AXButton",
+    "bounds": {
+     "height": 30,
+     "width": 112,
+     "x": 603,
+     "y": 713
+    },
+    "description": "Delete",
+    "id": "elem_4",
+    "identifier": "action-button-1",
+    "is_actionable": true,
+    "is_enabled": true,
+    "label": "Delete",
+    "role": "button",
+    "role_description": "button"
+   },
+   {
+    "ax_role": "AXMenuBar",
+    "bounds": {
+     "height": 39,
+     "width": 1800,
+     "x": 0,
+     "y": 0
+    },
+    "id": "menuitem_5",
+    "is_actionable": true,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "menu bar",
+    "role": "menu",
+    "role_description": "menu bar"
+   },
+   {
+    "ax_role": "AXSheet",
+    "bounds": {
+     "height": 139,
+     "width": 260,
+     "x": 470,
+     "y": 619
+    },
+    "description": "alert",
+    "id": "elem_0",
+    "identifier": "_NS:87",
+    "is_actionable": false,
+    "label": "alert",
+    "role": "other",
+    "role_description": "sheet"
+   },
+   {
+    "ax_role": "AXStaticText",
+    "bounds": {
+     "height": 18,
+     "width": 218,
+     "x": 491,
+     "y": 638.5
+    },
+    "id": "elem_1",
+    "identifier": "_NS:74",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "Delete all drafts?",
+    "role": "other",
+    "role_description": "text",
+    "value": "Delete all drafts?"
+   },
+   {
+    "ax_role": "AXStaticText",
+    "bounds": {
+     "height": 34.5,
+     "width": 218,
+     "x": 491,
+     "y": 664.5
+    },
+    "id": "elem_2",
+    "identifier": "_NS:58",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "This removes 3 drafts and cannot be undone.",
+    "role": "other",
+    "role_description": "text",
+    "value": "This removes 3 drafts and cannot be undone."
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 34,
+     "x": 10,
+     "y": 0
+    },
+    "id": "menuitem_6",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "Apple",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "Apple"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 118,
+     "x": 43,
+     "y": 0
+    },
+    "id": "menuitem_7",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "Aris Testbench",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "Aris Testbench"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 42,
+     "x": 160,
+     "y": 0
+    },
+    "id": "menuitem_8",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "File",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "File"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 44,
+     "x": 201,
+     "y": 0
+    },
+    "id": "menuitem_9",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "Edit",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "Edit"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 50,
+     "x": 244,
+     "y": 0
+    },
+    "id": "menuitem_10",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "View",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "View"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 70,
+     "x": 293,
+     "y": 0
+    },
+    "id": "menuitem_11",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "Window",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "Window"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 49,
+     "x": 362,
+     "y": 0
+    },
+    "id": "menuitem_12",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "Help",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "Help"
+   }
+  ],
+  "ui_map": "/Users/testuser/.peekaboo/snapshots/ps1_b3852986e2d802ac6736c0c7356029ff/snapshot.json",
+  "used_cache": false,
+  "window_title": ""
+ },
+ "success": true,
+ "target_receipt": {
+  "pid": 4242,
+  "process_start_identity": 1794000000000000,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9302
+ }
+}

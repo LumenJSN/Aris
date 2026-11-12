@@ -1,0 +1,860 @@
+{
+ "data": {
+  "application_name": "Aris Testbench",
+  "capture_mode": "window",
+  "element_count": 51,
+  "execution_time": 0.07820093631744385,
+  "focused_element": {
+   "frame": [
+    [
+     80,
+     381
+    ],
+    [
+     150,
+     668
+    ]
+   ],
+   "processIdentifier": 4242,
+   "role": "AXOutline",
+   "windowID": 9189
+  },
+  "interactable_count": 11,
+  "is_dialog": false,
+  "mutation_targeting_available": true,
+  "screenshot_annotated": "",
+  "screenshot_raw": "",
+  "semantic_scope": "exact_or_requested",
+  "snapshot_id": "ps1_4159bed3a14137374c1efe5228ed5ed9",
+  "snapshot_reusable": true,
+  "ui_elements": [
+   {
+    "ax_role": "AXButton",
+    "bounds": {
+     "height": 52,
+     "width": 40,
+     "x": 186,
+     "y": 329
+    },
+    "description": "Hide Sidebar",
+    "help": "Hide Sidebar",
+    "id": "elem_32",
+    "identifier": "",
+    "is_actionable": true,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "Hide Sidebar",
+    "role": "button",
+    "role_description": "button"
+   },
+   {
+    "ax_role": "AXButton",
+    "bounds": {
+     "height": 16,
+     "width": 16,
+     "x": 98,
+     "y": 347
+    },
+    "id": "elem_38",
+    "is_actionable": true,
+    "is_enabled": true,
+    "label": "close button",
+    "role": "button",
+    "role_description": "close button"
+   },
+   {
+    "ax_role": "AXButton",
+    "bounds": {
+     "height": 16,
+     "width": 16,
+     "x": 144,
+     "y": 347
+    },
+    "help": "this button also has an action to zoom the window",
+    "id": "elem_39",
+    "is_actionable": true,
+    "is_enabled": true,
+    "label": "full screen button",
+    "role": "button",
+    "role_description": "full screen button"
+   },
+   {
+    "ax_role": "AXButton",
+    "bounds": {
+     "height": 16,
+     "width": 16,
+     "x": 121,
+     "y": 347
+    },
+    "id": "elem_42",
+    "is_actionable": true,
+    "is_enabled": true,
+    "label": "minimize button",
+    "role": "button",
+    "role_description": "minimize button"
+   },
+   {
+    "ax_role": "AXGroup",
+    "bounds": {
+     "height": 720,
+     "width": 1040,
+     "x": 80,
+     "y": 329
+    },
+    "id": "elem_1",
+    "is_actionable": false,
+    "label": "group",
+    "role": "group",
+    "role_description": "group"
+   },
+   {
+    "ax_role": "AXGroup",
+    "bounds": {
+     "height": 720,
+     "width": 150,
+     "x": 80,
+     "y": 329
+    },
+    "id": "elem_4",
+    "is_actionable": false,
+    "label": "group",
+    "role": "group",
+    "role_description": "group"
+   },
+   {
+    "ax_role": "AXGroup",
+    "bounds": {
+     "height": 720,
+     "width": 1040,
+     "x": 80,
+     "y": 329
+    },
+    "id": "elem_26",
+    "is_actionable": false,
+    "label": "group",
+    "role": "group",
+    "role_description": "group"
+   },
+   {
+    "ax_role": "AXGroup",
+    "bounds": {
+     "height": 61.1302490234375,
+     "width": 193,
+     "x": 578.5,
+     "y": 684.3697509765625
+    },
+    "id": "elem_27",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "group",
+    "role": "group",
+    "role_description": "group"
+   },
+   {
+    "ax_role": "AXGroup",
+    "bounds": {
+     "height": 52,
+     "width": 290,
+     "x": 530.5,
+     "y": 329
+    },
+    "id": "elem_33",
+    "is_actionable": false,
+    "label": "group",
+    "role": "group",
+    "role_description": "group"
+   },
+   {
+    "ax_role": "AXGroup",
+    "bounds": {
+     "height": 14,
+     "width": 14,
+     "x": 145,
+     "y": 348
+    },
+    "id": "elem_40",
+    "is_actionable": false,
+    "label": "group",
+    "role": "group",
+    "role_description": "group"
+   },
+   {
+    "ax_role": "AXGroup",
+    "bounds": {
+     "height": 14,
+     "width": 14,
+     "x": 145,
+     "y": 348
+    },
+    "id": "elem_41",
+    "is_actionable": false,
+    "label": "group",
+    "role": "group",
+    "role_description": "group"
+   },
+   {
+    "ax_role": "AXCheckBox",
+    "bounds": {
+     "height": 16.6302490234375,
+     "width": 137.5,
+     "x": 578.5,
+     "y": 684.3697509765625
+    },
+    "description": "Show read receipts",
+    "id": "elem_28",
+    "is_actionable": true,
+    "is_enabled": true,
+    "is_selected": true,
+    "is_value_settable": false,
+    "label": "Show read receipts",
+    "role": "checkbox",
+    "role_description": "checkbox",
+    "value": "1"
+   },
+   {
+    "ax_role": "AXCheckBox",
+    "bounds": {
+     "height": 16.2100830078125,
+     "width": 193,
+     "x": 578.5,
+     "y": 706.7899169921875
+    },
+    "description": "Auto-download attachments",
+    "id": "elem_29",
+    "is_actionable": true,
+    "is_enabled": true,
+    "is_selected": true,
+    "is_value_settable": false,
+    "label": "Auto-download attachments",
+    "role": "checkbox",
+    "role_description": "checkbox",
+    "value": "1"
+   },
+   {
+    "ax_role": "AXCheckBox",
+    "bounds": {
+     "height": 16.2899169921875,
+     "width": 106,
+     "x": 578.5,
+     "y": 729.2100830078125
+    },
+    "description": "Sound effects",
+    "id": "elem_30",
+    "is_actionable": true,
+    "is_enabled": true,
+    "is_selected": true,
+    "is_value_settable": false,
+    "label": "Sound effects",
+    "role": "checkbox",
+    "role_description": "checkbox",
+    "value": "1"
+   },
+   {
+    "ax_role": "AXRadioButton",
+    "bounds": {
+     "height": 36,
+     "width": 94,
+     "x": 534.5,
+     "y": 337
+    },
+    "description": "General",
+    "id": "elem_35",
+    "is_actionable": true,
+    "is_enabled": true,
+    "is_selected": true,
+    "is_value_settable": false,
+    "label": "General",
+    "role": "checkbox",
+    "role_description": "tab",
+    "value": "1"
+   },
+   {
+    "ax_role": "AXRadioButton",
+    "bounds": {
+     "height": 36,
+     "width": 94,
+     "x": 628.5,
+     "y": 337
+    },
+    "description": "Appearance",
+    "id": "elem_36",
+    "is_actionable": true,
+    "is_enabled": true,
+    "is_selected": false,
+    "is_value_settable": false,
+    "label": "Appearance",
+    "role": "checkbox",
+    "role_description": "tab",
+    "value": "0"
+   },
+   {
+    "ax_role": "AXRadioButton",
+    "bounds": {
+     "height": 36,
+     "width": 94,
+     "x": 722.5,
+     "y": 337
+    },
+    "description": "Advanced",
+    "id": "elem_37",
+    "is_actionable": true,
+    "is_enabled": true,
+    "is_selected": false,
+    "is_value_settable": false,
+    "label": "Advanced",
+    "role": "checkbox",
+    "role_description": "tab",
+    "value": "0"
+   },
+   {
+    "ax_role": "AXMenuBar",
+    "bounds": {
+     "height": 39,
+     "width": 1800,
+     "x": 0,
+     "y": 0
+    },
+    "id": "menuitem_43",
+    "is_actionable": true,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "menu bar",
+    "role": "menu",
+    "role_description": "menu bar"
+   },
+   {
+    "ax_role": "AXWindow",
+    "bounds": {
+     "height": 720,
+     "width": 1040,
+     "x": 80,
+     "y": 329
+    },
+    "id": "elem_0",
+    "identifier": "main",
+    "is_actionable": false,
+    "label": "Aris Testbench",
+    "role": "other",
+    "role_description": "standard window",
+    "title": "Aris Testbench"
+   },
+   {
+    "ax_role": "AXStaticText",
+    "bounds": {
+     "height": 13,
+     "width": 84.5,
+     "x": 84,
+     "y": 1032
+    },
+    "id": "elem_2",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "Last export: none",
+    "role": "other",
+    "role_description": "text",
+    "value": "Last export: none"
+   },
+   {
+    "ax_role": "AXSplitGroup",
+    "bounds": {
+     "height": 720,
+     "width": 1040,
+     "x": 80,
+     "y": 329
+    },
+    "id": "elem_3",
+    "identifier": "main, SidebarNavigationSplitView",
+    "is_actionable": false,
+    "label": "split group",
+    "role": "other",
+    "role_description": "split group"
+   },
+   {
+    "ax_role": "AXScrollArea",
+    "bounds": {
+     "height": 668,
+     "width": 150,
+     "x": 80,
+     "y": 381
+    },
+    "id": "elem_5",
+    "is_actionable": false,
+    "label": "scroll area",
+    "role": "other",
+    "role_description": "scroll area"
+   },
+   {
+    "ax_role": "AXOutline",
+    "bounds": {
+     "height": 668,
+     "width": 150,
+     "x": 80,
+     "y": 381
+    },
+    "description": "Sidebar",
+    "id": "elem_6",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "Sidebar",
+    "role": "other",
+    "role_description": "list"
+   },
+   {
+    "ax_role": "AXRow",
+    "bounds": {
+     "height": 32,
+     "width": 150,
+     "x": 80,
+     "y": 381
+    },
+    "id": "elem_7",
+    "is_actionable": false,
+    "is_selected": false,
+    "label": "outline row",
+    "role": "other",
+    "role_description": "outline row"
+   },
+   {
+    "ax_role": "AXCell",
+    "bounds": {
+     "height": 32,
+     "width": 130,
+     "x": 90,
+     "y": 381
+    },
+    "id": "elem_8",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "cell",
+    "role": "other",
+    "role_description": "cell"
+   },
+   {
+    "ax_role": "AXStaticText",
+    "bounds": {
+     "height": 16,
+     "width": 67,
+     "x": 96,
+     "y": 389
+    },
+    "id": "elem_9",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "Messenger",
+    "role": "other",
+    "role_description": "text",
+    "value": "Messenger"
+   },
+   {
+    "ax_role": "AXRow",
+    "bounds": {
+     "height": 32,
+     "width": 150,
+     "x": 80,
+     "y": 413
+    },
+    "id": "elem_10",
+    "is_actionable": false,
+    "is_selected": true,
+    "label": "outline row",
+    "role": "other",
+    "role_description": "outline row"
+   },
+   {
+    "ax_role": "AXCell",
+    "bounds": {
+     "height": 32,
+     "width": 130,
+     "x": 90,
+     "y": 413
+    },
+    "id": "elem_11",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": true,
+    "label": "cell",
+    "role": "other",
+    "role_description": "cell"
+   },
+   {
+    "ax_role": "AXStaticText",
+    "bounds": {
+     "height": 16,
+     "width": 50.5,
+     "x": 96,
+     "y": 421
+    },
+    "id": "elem_12",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "Settings",
+    "role": "other",
+    "role_description": "text",
+    "value": "Settings"
+   },
+   {
+    "ax_role": "AXRow",
+    "bounds": {
+     "height": 32,
+     "width": 150,
+     "x": 80,
+     "y": 445
+    },
+    "id": "elem_13",
+    "is_actionable": false,
+    "is_selected": false,
+    "label": "outline row",
+    "role": "other",
+    "role_description": "outline row"
+   },
+   {
+    "ax_role": "AXCell",
+    "bounds": {
+     "height": 32,
+     "width": 130,
+     "x": 90,
+     "y": 445
+    },
+    "id": "elem_14",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "cell",
+    "role": "other",
+    "role_description": "cell"
+   },
+   {
+    "ax_role": "AXStaticText",
+    "bounds": {
+     "height": 16,
+     "width": 31.5,
+     "x": 96,
+     "y": 453
+    },
+    "id": "elem_15",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "Form",
+    "role": "other",
+    "role_description": "text",
+    "value": "Form"
+   },
+   {
+    "ax_role": "AXRow",
+    "bounds": {
+     "height": 32,
+     "width": 150,
+     "x": 80,
+     "y": 477
+    },
+    "id": "elem_16",
+    "is_actionable": false,
+    "is_selected": false,
+    "label": "outline row",
+    "role": "other",
+    "role_description": "outline row"
+   },
+   {
+    "ax_role": "AXCell",
+    "bounds": {
+     "height": 32,
+     "width": 130,
+     "x": 90,
+     "y": 477
+    },
+    "id": "elem_17",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "cell",
+    "role": "other",
+    "role_description": "cell"
+   },
+   {
+    "ax_role": "AXStaticText",
+    "bounds": {
+     "height": 16,
+     "width": 44.5,
+     "x": 96,
+     "y": 485
+    },
+    "id": "elem_18",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "Canvas",
+    "role": "other",
+    "role_description": "text",
+    "value": "Canvas"
+   },
+   {
+    "ax_role": "AXRow",
+    "bounds": {
+     "height": 32,
+     "width": 150,
+     "x": 80,
+     "y": 509
+    },
+    "id": "elem_19",
+    "is_actionable": false,
+    "is_selected": false,
+    "label": "outline row",
+    "role": "other",
+    "role_description": "outline row"
+   },
+   {
+    "ax_role": "AXCell",
+    "bounds": {
+     "height": 32,
+     "width": 130,
+     "x": 90,
+     "y": 509
+    },
+    "id": "elem_20",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "cell",
+    "role": "other",
+    "role_description": "cell"
+   },
+   {
+    "ax_role": "AXStaticText",
+    "bounds": {
+     "height": 16,
+     "width": 42.5,
+     "x": 96,
+     "y": 517
+    },
+    "id": "elem_21",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "Library",
+    "role": "other",
+    "role_description": "text",
+    "value": "Library"
+   },
+   {
+    "ax_role": "AXRow",
+    "bounds": {
+     "height": 32,
+     "width": 150,
+     "x": 80,
+     "y": 541
+    },
+    "id": "elem_22",
+    "is_actionable": false,
+    "is_selected": false,
+    "label": "outline row",
+    "role": "other",
+    "role_description": "outline row"
+   },
+   {
+    "ax_role": "AXCell",
+    "bounds": {
+     "height": 32,
+     "width": 130,
+     "x": 90,
+     "y": 541
+    },
+    "id": "elem_23",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "cell",
+    "role": "other",
+    "role_description": "cell"
+   },
+   {
+    "ax_role": "AXStaticText",
+    "bounds": {
+     "height": 16,
+     "width": 36,
+     "x": 96,
+     "y": 549
+    },
+    "id": "elem_24",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "Board",
+    "role": "other",
+    "role_description": "text",
+    "value": "Board"
+   },
+   {
+    "ax_role": "AXColumn",
+    "bounds": {
+     "height": 668,
+     "width": 130,
+     "x": 90,
+     "y": 381
+    },
+    "id": "elem_25",
+    "identifier": "ListColumn",
+    "is_actionable": false,
+    "is_selected": false,
+    "label": "column",
+    "role": "other",
+    "role_description": "column"
+   },
+   {
+    "ax_role": "AXToolbar",
+    "bounds": {
+     "height": 52,
+     "width": 1040,
+     "x": 80,
+     "y": 329
+    },
+    "id": "elem_31",
+    "is_actionable": false,
+    "label": "toolbar",
+    "role": "other",
+    "role_description": "toolbar"
+   },
+   {
+    "ax_role": "AXTabGroup",
+    "bounds": {
+     "height": 36,
+     "width": 282,
+     "x": 534.5,
+     "y": 337
+    },
+    "id": "elem_34",
+    "is_actionable": false,
+    "is_enabled": true,
+    "label": "tab group",
+    "role": "other",
+    "role_description": "tab group"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 34,
+     "x": 10,
+     "y": 0
+    },
+    "id": "menuitem_44",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "Apple",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "Apple"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 118,
+     "x": 43,
+     "y": 0
+    },
+    "id": "menuitem_45",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "Aris Testbench",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "Aris Testbench"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 42,
+     "x": 160,
+     "y": 0
+    },
+    "id": "menuitem_46",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "File",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "File"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 44,
+     "x": 201,
+     "y": 0
+    },
+    "id": "menuitem_47",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "Edit",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "Edit"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 50,
+     "x": 244,
+     "y": 0
+    },
+    "id": "menuitem_48",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "View",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "View"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 70,
+     "x": 293,
+     "y": 0
+    },
+    "id": "menuitem_49",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "Window",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "Window"
+   },
+   {
+    "ax_role": "AXMenuBarItem",
+    "bounds": {
+     "height": 39,
+     "width": 49,
+     "x": 362,
+     "y": 0
+    },
+    "id": "menuitem_50",
+    "is_actionable": false,
+    "is_enabled": true,
+    "is_selected": false,
+    "label": "Help",
+    "role": "other",
+    "role_description": "menu bar item",
+    "title": "Help"
+   }
+  ],
+  "ui_map": "/Users/testuser/.peekaboo/snapshots/ps1_4159bed3a14137374c1efe5228ed5ed9/snapshot.json",
+  "used_cache": false,
+  "window_title": "Aris Testbench"
+ },
+ "success": true,
+ "target_receipt": {
+  "pid": 4242,
+  "process_start_identity": 1794000000000000,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ }
+}

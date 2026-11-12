@@ -1,0 +1,114 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSAppleEventsUsageDescription" : {
+      "comment" : "macOS's Automation prompt (controlling another app): the app's reason.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Aris works with other apps only for what you ask: it reads the page in front in your browser, controls your music, uses apps such as Notes, Calendar, Finder and Messages, and opens the terminal Claude Code runs in."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aris는 요청하신 일을 할 때만 다른 앱을 씁니다: 브라우저에서 보고 있는 페이지를 읽고, 음악을 제어하고, 메모·캘린더·Finder·메시지 같은 앱을 쓰고, Claude Code가 돌아가는 터미널을 엽니다."
+          }
+        }
+      }
+    },
+    "NSAudioCaptureUsageDescription" : {
+      "comment" : "macOS's system audio prompt: the app's reason. The English is Info.plist's own value.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Aris checks whether another app is playing sound, so a conversation does not listen over it. It only measures loudness on your Mac; nothing is recorded or sent."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aris는 다른 앱이 소리를 내는지 확인해서, 대화 중에 그 소리를 듣지 않도록 합니다. 이 Mac에서 소리 크기만 재고, 녹음하거나 보내지 않습니다."
+          }
+        }
+      }
+    },
+    "NSCalendarsUsageDescription" : {
+      "comment" : "macOS's Calendar prompt: the app's reason.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Aris shows your events in the notch and its calendar tab, and reads them to answer questions about your schedule."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aris는 일정을 노치와 캘린더 탭에 보여 주고, 일정에 관한 질문에 답하기 위해 캘린더를 읽습니다."
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription" : {
+      "comment" : "macOS's microphone prompt: the app's reason. The guide's picture of the prompt (onboarding.mac.mic.body) says the same words.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Aris listens while you hold its shortcut, and for its name if you turn that on."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aris는 단축키를 누르고 있는 동안, 그리고 이름으로 부르기를 켰다면 그 이름을 듣기 위해 마이크를 사용합니다."
+          }
+        }
+      }
+    },
+    "NSRemindersUsageDescription" : {
+      "comment" : "macOS's Reminders prompt: the app's reason.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Aris shows your reminders in its to-do tab, and adds, changes or completes them when you ask."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aris는 미리 알림을 할 일 탭에 보여 주고, 요청하면 추가하거나 고치거나 완료합니다."
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription" : {
+      "comment" : "macOS's Speech Recognition prompt: the app's reason.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Aris turns what you say into text, on this Mac."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aris는 말한 내용을 이 Mac에서 글자로 바꿉니다."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.1"
+}

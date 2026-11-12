@@ -1,0 +1,79 @@
+{
+ "data": {
+  "button": "left",
+  "duration": 500,
+  "executionTime": 0.792631983757019,
+  "from": {
+   "x": 531,
+   "y": 607
+  },
+  "fromTargetPoint": {
+   "elementId": "elem_30",
+   "original": {
+    "x": 531,
+    "y": 607
+   },
+   "resolved": {
+    "x": 531,
+    "y": 607
+   },
+   "snapshotId": "ps1_5a5c21ed6cb84395c2de54af5b27f326",
+   "source": "element",
+   "windowAdjustment": {
+    "status": "unchanged"
+   }
+  },
+  "modifiers": "none",
+  "profile": "linear",
+  "steps": 20,
+  "to": {
+   "x": 819,
+   "y": 715
+  },
+  "toTargetPoint": {
+   "elementId": "elem_28",
+   "original": {
+    "x": 819,
+    "y": 715
+   },
+   "resolved": {
+    "x": 819,
+    "y": 715
+   },
+   "snapshotId": "ps1_5a5c21ed6cb84395c2de54af5b27f326",
+   "source": "element",
+   "windowAdjustment": {
+    "status": "unchanged"
+   }
+  }
+ },
+ "effect": "unverifiable",
+ "outcome": {
+  "delivery_mechanism": "window_targeted_events",
+  "delivery_mode": "background",
+  "dispatch_state": "dispatched",
+  "dispatched_unit_count": 23,
+  "effect": "unverifiable",
+  "escalation": "observe_before_retry",
+  "evidence": "delivery_accepted",
+  "mutation_dispatched": true,
+  "requires_fresh_observation": true,
+  "retry_safe": false,
+  "retry_safety": "unsafe",
+  "route": "local",
+  "state": "dispatched_unverified"
+ },
+ "success": true,
+ "target_identity": {
+  "kind": "window",
+  "pid": 4242,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ },
+ "target_receipt": {
+  "pid": 4242,
+  "process_start_identity": 1794000000000000,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ }
+}

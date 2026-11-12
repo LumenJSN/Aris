@@ -1,0 +1,22 @@
+(version 1)
+; Launch smoke check: the built Release app runs with no ~/.config, no network, no audio HAL or microphone.
+; launch-smoke.sh passes the folders in (sandbox-exec -D): BUILD is the build folder the app may read (any worktree,
+; any Mac), WORK the check's own throwaway folder, HOME the user's home (its .config stays closed).
+(deny default)
+(allow process-fork process-exec signal sysctl-read iokit-open ipc-posix-shm* ipc-posix-sem mach-register user-preference-read)
+(allow mach-lookup)
+(allow file-read-metadata)
+(allow file-read*
+  (literal "/")
+  (subpath "/System") (subpath "/usr") (subpath "/Library") (subpath "/private/etc") (subpath "/private/var/db")
+  (subpath "/dev") (subpath "/private/var/folders") (subpath "/var/folders")
+  (subpath (param "BUILD")))
+(allow file-read* file-write*
+  (subpath (param "WORK"))
+  (subpath "/private/var/folders") (literal "/dev/null"))
+(deny file-read* file-write* (subpath (string-append (param "HOME") "/.config")))
+(deny network*)
+(deny mach-lookup (global-name "com.apple.audio.audiohald") (global-name "com.apple.audio.coreaudiod")
+  (global-name "com.apple.speech.speechsynthesisd"))
+(deny device-microphone)
+(deny user-preference-write)

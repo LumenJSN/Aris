@@ -1,0 +1,33 @@
+{
+ "data": {
+  "inventory_completeness": "partial",
+  "inventory_warnings": [
+   "Window list omitted 12 non-renderable or duplicate inventory rows."
+  ],
+  "target_application_info": {
+   "app_name": "Aris Testbench",
+   "bundle_id": "dev.testuser.aris-bench.testbench",
+   "pid": 4242
+  },
+  "windows": [
+   {
+    "bounds": {
+     "height": 720,
+     "width": 1040,
+     "x": 80,
+     "y": 329
+    },
+    "is_frontmost": true,
+    "is_key": true,
+    "is_on_screen": true,
+    "layer": 0,
+    "observation_capability": "combined_eligible",
+    "subrole": "AXStandardWindow",
+    "window_id": 9189,
+    "window_index": 0,
+    "window_title": "Aris Testbench"
+   }
+  ]
+ },
+ "success": true
+}

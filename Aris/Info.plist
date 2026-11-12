@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ArisCommit</key>
+	<string>$(ARIS_COMMIT)</string>
+	<key>ArisBuiltAt</key>
+	<string>$(ARIS_BUILT_AT)</string>
+	<key>CFBundleAllowMixedLocalizations</key>
+	<true/>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Aris checks whether another app is playing sound, so a conversation does not listen over it. It only measures loudness on your Mac; nothing is recorded or sent.</string>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict/>
+	</array>
+</dict>
+</plist>

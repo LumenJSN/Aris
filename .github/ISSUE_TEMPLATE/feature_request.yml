@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest something Aris should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The task you're trying to get done, such as "reply to the last message from my team".
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How should it work in Aris?
+      description: What you would say, what the notch should show, and what Aris should ask before acting.
+  - type: textarea
+    id: today
+    attributes:
+      label: What do you use today?
+      description: Other apps or steps you use for this now.

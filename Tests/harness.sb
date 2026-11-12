@@ -1,0 +1,11 @@
+(version 1)
+; Test harness: compile and run the tests with no ~/.config, no network beyond this Mac, no screen capture.
+(allow default)
+(deny file-read* file-write* (subpath (string-append (param "HOME") "/.config")))
+(deny network*)
+(allow network* (remote ip "localhost:*"))
+(allow network* (local ip "localhost:*"))
+(allow network* (remote unix-socket))
+(allow network-bind (local ip "*:*"))
+(deny mach-lookup (global-name "com.apple.screencapture.interactive") (global-name "com.apple.CoreGraphics.screencapture")
+  (global-name "com.apple.replayd"))

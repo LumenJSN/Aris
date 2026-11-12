@@ -1,0 +1,8 @@
+{
+ "data": null,
+ "error": {
+  "code": "WINDOW_NOT_FOUND",
+  "message": "Window not found: live owner for exact window id 9302"
+ },
+ "success": false
+}

@@ -1,0 +1,9 @@
+{
+ "data": null,
+ "effect": "unverifiable",
+ "error": {
+  "code": "UNKNOWN_ERROR",
+  "message": "Service unavailable: No pressable accessibility element was found at (850, 775) in PID 4242. Background clicks press the accessibility element at the target point, and nothing pressable was found there — the point may be empty, a custom-drawn view, or an element that exposes no press action. Re-run with --foreground --input-strategy synthOnly to focus the app and send a real mouse click at these coordinates."
+ },
+ "success": false
+}

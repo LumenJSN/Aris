@@ -1,0 +1,73 @@
+{
+ "data": {
+  "amount": 10,
+  "direction": "down",
+  "executionTime": 0.15041005611419678,
+  "location": {
+   "x": 675,
+   "y": 715
+  },
+  "targetPoint": {
+   "elementId": "elem_27",
+   "original": {
+    "x": 675,
+    "y": 715
+   },
+   "resolved": {
+    "x": 675,
+    "y": 715
+   },
+   "snapshotId": "ps1_faf981c1bd46307364bcc5787c40b786",
+   "source": "element",
+   "windowAdjustment": {
+    "status": "unchanged"
+   }
+  },
+  "targetReceipt": {
+   "processIdentifier": 4242,
+   "processStartIdentityDecimal": "1794017562933748",
+   "snapshotId": "ps1_faf981c1bd46307364bcc5787c40b786",
+   "windowBounds": [
+    [
+     80,
+     329
+    ],
+    [
+     1040,
+     720
+    ]
+   ],
+   "windowId": 9364
+  },
+  "totalTicks": 10
+ },
+ "effect": "confirmed",
+ "outcome": {
+  "delivery_mechanism": "accessibility_value",
+  "delivery_mode": "background",
+  "dispatch_state": "dispatched",
+  "dispatched_unit_count": 1,
+  "effect": "confirmed",
+  "escalation": "none",
+  "evidence": "verified_change",
+  "mutation_dispatched": true,
+  "requires_fresh_observation": false,
+  "retry_safe": false,
+  "retry_safety": "not_applicable",
+  "route": "local",
+  "state": "confirmed_change"
+ },
+ "success": true,
+ "target_identity": {
+  "kind": "window",
+  "pid": 4242,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ },
+ "target_receipt": {
+  "pid": 4242,
+  "process_start_identity": 1794000000000000,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ }
+}

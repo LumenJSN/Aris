@@ -1,0 +1,8 @@
+{
+ "data": null,
+ "error": {
+  "code": "ACCESSIBILITY_INCOMPLETE",
+  "message": "Dialog hierarchy classification or children could not be read completely."
+ },
+ "success": false
+}

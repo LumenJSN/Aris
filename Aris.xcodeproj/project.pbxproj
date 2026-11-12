@@ -1,0 +1,853 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 70;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AFFB9F5BBE20FF9E3B9C306C /* BotAvatarsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3FAEED2944EFEE62E6827C64 /* BotAvatarsKit */; };
+		1AC2CC9899918C6457B7E85F /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A0E3195B9C6514699681687 /* WhisperKit */; };
+		994134675F15CF70C8AED352 /* AsyncXPCConnection in Frameworks */ = {isa = PBXBuildFile; productRef = 281119BBCA098483290AF5F5 /* AsyncXPCConnection */; };
+		84FC09C7F0816B4FF4C56AF2 /* MacroVisionKit in Frameworks */ = {isa = PBXBuildFile; productRef = 06735419EB0C505A144F53EE /* MacroVisionKit */; };
+		02B67B04F7C0F812FC25F2E3 /* MacroVisionKit in Frameworks */ = {isa = PBXBuildFile; productRef = F9A10C373A281F58219596EF /* MacroVisionKit */; };
+		7F45A6450B13FBB5A9EE86B8 /* MacroVisionKit in Frameworks */ = {isa = PBXBuildFile; productRef = 749142169D8EF79569A70E13 /* MacroVisionKit */; };
+		57D5C3E177BF61672A39F466 /* MediaRemoteAdapterTestClient in Resources */ = {isa = PBXBuildFile; fileRef = 37682B7945C8B900341743D8 /* MediaRemoteAdapterTestClient */; };
+		C761C2FC05DB3BC280615BF8 /* mediaremote-adapter.pl in Resources */ = {isa = PBXBuildFile; fileRef = EC7CB66A85E7C440C6511931 /* mediaremote-adapter.pl */; };
+		D9CECA2749BF94F8444E7227 /* MediaRemoteAdapter.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ECDEB9EDD614D951D1C29FDA /* MediaRemoteAdapter.framework */; };
+		59C52788571BA9AB5B72DC1D /* MediaRemoteAdapter.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = ECDEB9EDD614D951D1C29FDA /* MediaRemoteAdapter.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		2188E1A2A236A109C0A21E88 /* SkyLightWindow in Frameworks */ = {isa = PBXBuildFile; productRef = 7BCD3280DCDF30CC0286EF4B /* SkyLightWindow */; };
+		F7B8EF817AD0290CC6AEE034 /* ArisXPCHelper.xpc in Embed XPC Services */ = {isa = PBXBuildFile; fileRef = 2B94897BA636510D9348D5FA /* ArisXPCHelper.xpc */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		95CFD630B5EC7D451B992664 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4C0B33271D07EAD9A9945FFB /* Assets.xcassets */; };
+		BA7EC0F51AD70998D157BDB0 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 109490A0E67D3F1927062E00 /* Preview Assets.xcassets */; };
+		D19FE59A5F62EFE2A6526BE3 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 505F27A89C93C53205C96BB9 /* Localizable.xcstrings */; };
+		4715EA528000D26D83AEB2D6 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AD2BEC461848B35F8D01C59F /* InfoPlist.xcstrings */; };
+		505079CB4BECE872ABE55087 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 10A4470DB3875302CB45FF56 /* KeyboardShortcuts */; };
+		AD46D1456EBB10D70300A32B /* Defaults in Frameworks */ = {isa = PBXBuildFile; productRef = 88C68BC3C6E997F0B447262C /* Defaults */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		3A295DDED3ECA10CE6B39E9D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 54A22900931760DBA8DAFB3F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B44F3CC69DBA9B3B29FEC2C3;
+			remoteInfo = ArisXPCHelper;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		58F7E291895AD72B49911C55 /* Embed XPC Services */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/XPCServices";
+			dstSubfolderSpec = 16;
+			files = (
+				F7B8EF817AD0290CC6AEE034 /* ArisXPCHelper.xpc in Embed XPC Services */,
+			);
+			name = "Embed XPC Services";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EEC09BE4C044E0A966810976 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 12;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				59C52788571BA9AB5B72DC1D /* MediaRemoteAdapter.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		EC7CB66A85E7C440C6511931 /* mediaremote-adapter.pl */ = {isa = PBXFileReference; lastKnownFileType = text.script.perl; path = "mediaremote-adapter.pl"; sourceTree = "<group>"; };
+		37682B7945C8B900341743D8 /* MediaRemoteAdapterTestClient */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = MediaRemoteAdapterTestClient; sourceTree = "<group>"; };
+		ECDEB9EDD614D951D1C29FDA /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemoteAdapter.framework; path = "mediaremote-adapter/MediaRemoteAdapter.framework"; sourceTree = "<group>"; };
+		2B94897BA636510D9348D5FA /* ArisXPCHelper.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = ArisXPCHelper.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
+		0F2622AFC3EAA0E300D610F1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		EF4C8FDCD8A18157457ACA24 /* Aris.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aris.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4C0B33271D07EAD9A9945FFB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		109490A0E67D3F1927062E00 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
+		31BD13E7ABFBE01A460573AD /* Aris.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Aris.entitlements; sourceTree = "<group>"; };
+		DB26D56F02D5F669F9CD177A /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
+		551D1DF843015A0C3F5A5099 /* ApplicationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ApplicationServices.framework; path = System/Library/Frameworks/ApplicationServices.framework; sourceTree = SDKROOT; };
+		505F27A89C93C53205C96BB9 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		AD2BEC461848B35F8D01C59F /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		6A281359873A1228FE48BED9 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = B44F3CC69DBA9B3B29FEC2C3 /* ArisXPCHelper */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		1AB2793C22246078BA33BB78 /* private */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (Aris/Onboarding/OnboardingAudio, ); path = private; sourceTree = "<group>"; };
+		494D45D68F7429A55F0205F3 /* Settings */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Settings; sourceTree = "<group>"; };
+		D3977DAADC681663CAD13B34 /* LiveActivities */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = LiveActivities; sourceTree = "<group>"; };
+		58D09D784C4AF8E97A52BC28 /* extensions */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = extensions; sourceTree = "<group>"; };
+		202F9350F1C4934E124CEE7A /* ArisXPCHelper */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (6A281359873A1228FE48BED9 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ArisXPCHelper; sourceTree = "<group>"; };
+		06F000E1D00035C24E66BBAF /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Shared; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F6EA6E7B1F2A1F117DE5DB6E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AE94EE1A749D1E1E955F1C0A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				02B67B04F7C0F812FC25F2E3 /* MacroVisionKit in Frameworks */,
+				2188E1A2A236A109C0A21E88 /* SkyLightWindow in Frameworks */,
+				D9CECA2749BF94F8444E7227 /* MediaRemoteAdapter.framework in Frameworks */,
+				7F45A6450B13FBB5A9EE86B8 /* MacroVisionKit in Frameworks */,
+				84FC09C7F0816B4FF4C56AF2 /* MacroVisionKit in Frameworks */,
+				505079CB4BECE872ABE55087 /* KeyboardShortcuts in Frameworks */,
+				AFFB9F5BBE20FF9E3B9C306C /* BotAvatarsKit in Frameworks */,
+				1AC2CC9899918C6457B7E85F /* WhisperKit in Frameworks */,
+				AD46D1456EBB10D70300A32B /* Defaults in Frameworks */,
+				994134675F15CF70C8AED352 /* AsyncXPCConnection in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D72D959CEE100D096AA58C3A /* mediaremote-adapter */ = {
+			isa = PBXGroup;
+			children = (
+				EC7CB66A85E7C440C6511931 /* mediaremote-adapter.pl */,
+				37682B7945C8B900341743D8 /* MediaRemoteAdapterTestClient */,
+			);
+			path = "mediaremote-adapter";
+			sourceTree = "<group>";
+		};
+		F39A9457D24E346023B5C723 /* helpers */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = helpers;
+			sourceTree = "<group>";
+		};
+		B685946FE0C03A5769BC2A07 /* components */ = {
+			isa = PBXGroup;
+			children = (
+				A0205DEB96B64D53918E476D /* Calendar */,
+				B4B0908075196E75B5B03075 /* Webcam */,
+				D3977DAADC681663CAD13B34 /* LiveActivities */,
+				494D45D68F7429A55F0205F3 /* Settings */,
+				BCA8882C3B6DD085085E6F62 /* Tabs */,
+			);
+			path = components;
+			sourceTree = "<group>";
+		};
+		B4B0908075196E75B5B03075 /* Webcam */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Webcam;
+			sourceTree = "<group>";
+		};
+		A0205DEB96B64D53918E476D /* Calendar */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Calendar;
+			sourceTree = "<group>";
+		};
+		A0055EBD1FB148C99B6901B4 = {
+			isa = PBXGroup;
+			children = (
+				D72D959CEE100D096AA58C3A /* mediaremote-adapter */,
+				8092712423A3AFC05382C598 /* Aris */,
+				202F9350F1C4934E124CEE7A /* ArisXPCHelper */,
+				01ADC3944AD64955E68FE72A /* Products */,
+				7C6E22A53780F5342D370022 /* Frameworks */,
+				E20B309175783F6D7E104D16 /* Recovered References */,
+			);
+			sourceTree = "<group>";
+		};
+		01ADC3944AD64955E68FE72A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				EF4C8FDCD8A18157457ACA24 /* Aris.app */,
+				2B94897BA636510D9348D5FA /* ArisXPCHelper.xpc */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8092712423A3AFC05382C598 /* Aris */ = {
+			isa = PBXGroup;
+			children = (
+				F39A9457D24E346023B5C723 /* helpers */,
+				58D09D784C4AF8E97A52BC28 /* extensions */,
+				B685946FE0C03A5769BC2A07 /* components */,
+				505F27A89C93C53205C96BB9 /* Localizable.xcstrings */,
+				AD2BEC461848B35F8D01C59F /* InfoPlist.xcstrings */,
+				4C0B33271D07EAD9A9945FFB /* Assets.xcassets */,
+				0F2622AFC3EAA0E300D610F1 /* Info.plist */,
+				31BD13E7ABFBE01A460573AD /* Aris.entitlements */,
+				AECC5CB9718259BD36E624E2 /* Preview Content */,
+				1AB2793C22246078BA33BB78 /* private */,
+			);
+			path = Aris;
+			sourceTree = "<group>";
+		};
+		AECC5CB9718259BD36E624E2 /* Preview Content */ = {
+			isa = PBXGroup;
+			children = (
+				109490A0E67D3F1927062E00 /* Preview Assets.xcassets */,
+			);
+			path = "Preview Content";
+			sourceTree = "<group>";
+		};
+		7C6E22A53780F5342D370022 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				551D1DF843015A0C3F5A5099 /* ApplicationServices.framework */,
+				DB26D56F02D5F669F9CD177A /* IOKit.framework */,
+				ECDEB9EDD614D951D1C29FDA /* MediaRemoteAdapter.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		E20B309175783F6D7E104D16 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				06F000E1D00035C24E66BBAF /* Shared */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		BCA8882C3B6DD085085E6F62 /* Tabs */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Tabs;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B44F3CC69DBA9B3B29FEC2C3 /* ArisXPCHelper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9D0945D87A99908EF73BC974 /* Build configuration list for PBXNativeTarget "ArisXPCHelper" */;
+			buildPhases = (
+				A7754023FC7F944210BF2E64 /* Sources */,
+				F6EA6E7B1F2A1F117DE5DB6E /* Frameworks */,
+				2C558876A1789A3D7E03F628 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				202F9350F1C4934E124CEE7A /* ArisXPCHelper */,
+				06F000E1D00035C24E66BBAF /* Shared */,
+			);
+			name = ArisXPCHelper;
+			productName = ArisXPCHelper;
+			productReference = 2B94897BA636510D9348D5FA /* ArisXPCHelper.xpc */;
+			productType = "com.apple.product-type.xpc-service";
+		};
+		34CBCA2BCAF665BC0BE67FCB /* Aris */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 62D8C29A494C2A204D23A44F /* Build configuration list for PBXNativeTarget "Aris" */;
+			buildPhases = (
+				9B06A3769699D530634C290A /* Sources */,
+				AE94EE1A749D1E1E955F1C0A /* Frameworks */,
+				BC76A57BBFDF3DF774204251 /* Resources */,
+				EEC09BE4C044E0A966810976 /* Embed Frameworks */,
+				58F7E291895AD72B49911C55 /* Embed XPC Services */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				9EDC89A153B0E513D9166BD7 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				1AB2793C22246078BA33BB78 /* private */,
+				494D45D68F7429A55F0205F3 /* Settings */,
+				D3977DAADC681663CAD13B34 /* LiveActivities */,
+				58D09D784C4AF8E97A52BC28 /* extensions */,
+				06F000E1D00035C24E66BBAF /* Shared */,
+			);
+			name = Aris;
+			packageProductDependencies = (
+				10A4470DB3875302CB45FF56 /* KeyboardShortcuts */,
+				3FAEED2944EFEE62E6827C64 /* BotAvatarsKit */,
+				7A0E3195B9C6514699681687 /* WhisperKit */,
+				88C68BC3C6E997F0B447262C /* Defaults */,
+				7BCD3280DCDF30CC0286EF4B /* SkyLightWindow */,
+				281119BBCA098483290AF5F5 /* AsyncXPCConnection */,
+				06735419EB0C505A144F53EE /* MacroVisionKit */,
+				F9A10C373A281F58219596EF /* MacroVisionKit */,
+				749142169D8EF79569A70E13 /* MacroVisionKit */,
+			);
+			productName = Aris;
+			productReference = EF4C8FDCD8A18157457ACA24 /* Aris.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		54A22900931760DBA8DAFB3F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					B44F3CC69DBA9B3B29FEC2C3 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					34CBCA2BCAF665BC0BE67FCB = {
+						CreatedOnToolsVersion = 15.4;
+						LastSwiftMigration = 1640;
+					};
+				};
+			};
+			buildConfigurationList = 305E7284678BEEC986DBFC35 /* Build configuration list for PBXProject "Aris" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A0055EBD1FB148C99B6901B4;
+			packageReferences = (
+				63AEDCD228681718CF8DF7CC /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
+				112903F15D5593A65A799CC2 /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				697F3B288A87AD90423D11FF /* XCRemoteSwiftPackageReference "Defaults" */,
+				384D02AC6C3161BDE64AEFFE /* XCRemoteSwiftPackageReference "SkyLightWindow" */,
+				C621348E7DA2DC6182ECAF36 /* XCRemoteSwiftPackageReference "AsyncXPCConnection" */,
+				7D66E656D9364CF08812CBBC /* XCRemoteSwiftPackageReference "MacroVisionKit" */,
+				30593FF575368479D5259228 /* XCLocalSwiftPackageReference "Packages/BotAvatarsKit" */,
+			);
+			productRefGroup = 01ADC3944AD64955E68FE72A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				34CBCA2BCAF665BC0BE67FCB /* Aris */,
+				B44F3CC69DBA9B3B29FEC2C3 /* ArisXPCHelper */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		2C558876A1789A3D7E03F628 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BC76A57BBFDF3DF774204251 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BA7EC0F51AD70998D157BDB0 /* Preview Assets.xcassets in Resources */,
+				95CFD630B5EC7D451B992664 /* Assets.xcassets in Resources */,
+				57D5C3E177BF61672A39F466 /* MediaRemoteAdapterTestClient in Resources */,
+				C761C2FC05DB3BC280615BF8 /* mediaremote-adapter.pl in Resources */,
+				D19FE59A5F62EFE2A6526BE3 /* Localizable.xcstrings in Resources */,
+				4715EA528000D26D83AEB2D6 /* InfoPlist.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A7754023FC7F944210BF2E64 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9B06A3769699D530634C290A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		9EDC89A153B0E513D9166BD7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B44F3CC69DBA9B3B29FEC2C3 /* ArisXPCHelper */;
+			targetProxy = 3A295DDED3ECA10CE6B39E9D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		4AC63308AE0A55E34895B41A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ArisXPCHelper/ArisXPCHelper.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ArisXPCHelper/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ArisXPCHelper;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Lumen. Licensed under the Apache License, Version 2.0.";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lumenjsn.aris.XPCHelper;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		F48FEC54C64E1DB2B72A9330 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ArisXPCHelper/ArisXPCHelper.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ArisXPCHelper/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ArisXPCHelper;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Lumen. Licensed under the Apache License, Version 2.0.";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lumenjsn.aris.XPCHelper;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		21EA00A407AB814953BC2D23 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		63B0FD779F02BA45A49F0959 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		ADA6216FACC9BE29FD5A0422 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_ENTITLEMENTS = Aris/Aris.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"Aris/Preview Content\"";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/mediaremote-adapter",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Aris/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Aris;
+				INFOPLIST_KEY_CFBundleName = Aris;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSBackgroundOnly = NO;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Aris works with other apps only for what you ask: it reads the page in front in your browser, controls your music, uses apps such as Notes, Calendar, Finder and Messages, and opens the terminal Claude Code runs in.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Aris shows your events in the notch and its calendar tab, and reads them to answer questions about your schedule.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Aris listens while you hold its shortcut, and for its name if you turn that on.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Aris turns what you say into text, on this Mac.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Lumen. Licensed under the Apache License, Version 2.0.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Aris shows your reminders in its to-do tab, and adds, changes or completes them when you ask.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lumenjsn.aris;
+				PRODUCT_MODULE_NAME = Aris;
+				PRODUCT_NAME = Aris;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SDKROOT)/System/Library/PrivateFrameworks",
+				);
+			};
+			name = Debug;
+		};
+		88C1DE382E54357E0E9F3ED8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_ENTITLEMENTS = Aris/Aris.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"Aris/Preview Content\"";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/mediaremote-adapter",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Aris/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Aris;
+				INFOPLIST_KEY_CFBundleName = Aris;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSBackgroundOnly = NO;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Aris works with other apps only for what you ask: it reads the page in front in your browser, controls your music, uses apps such as Notes, Calendar, Finder and Messages, and opens the terminal Claude Code runs in.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Aris shows your events in the notch and its calendar tab, and reads them to answer questions about your schedule.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Aris listens while you hold its shortcut, and for its name if you turn that on.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Aris turns what you say into text, on this Mac.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Lumen. Licensed under the Apache License, Version 2.0.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Aris shows your reminders in its to-do tab, and adds, changes or completes them when you ask.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lumenjsn.aris;
+				PRODUCT_MODULE_NAME = Aris;
+				PRODUCT_NAME = Aris;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SDKROOT)/System/Library/PrivateFrameworks",
+				);
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9D0945D87A99908EF73BC974 /* Build configuration list for PBXNativeTarget "ArisXPCHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4AC63308AE0A55E34895B41A /* Debug */,
+				F48FEC54C64E1DB2B72A9330 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		305E7284678BEEC986DBFC35 /* Build configuration list for PBXProject "Aris" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				21EA00A407AB814953BC2D23 /* Debug */,
+				63B0FD779F02BA45A49F0959 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		62D8C29A494C2A204D23A44F /* Build configuration list for PBXNativeTarget "Aris" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ADA6216FACC9BE29FD5A0422 /* Debug */,
+				88C1DE382E54357E0E9F3ED8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		30593FF575368479D5259228 /* XCLocalSwiftPackageReference "Packages/BotAvatarsKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/BotAvatarsKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		112903F15D5593A65A799CC2 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/WhisperKit";
+			requirement = {
+				kind = exactVersion;
+				version = 1.1.1;
+			};
+		};
+		C621348E7DA2DC6182ECAF36 /* XCRemoteSwiftPackageReference "AsyncXPCConnection" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ChimeHQ/AsyncXPCConnection";
+			requirement = {
+				kind = exactVersion;
+				version = 1.3.0;
+			};
+		};
+		7D66E656D9364CF08812CBBC /* XCRemoteSwiftPackageReference "MacroVisionKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/TheBoredTeam/MacroVisionKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.2.0;
+			};
+		};
+		384D02AC6C3161BDE64AEFFE /* XCRemoteSwiftPackageReference "SkyLightWindow" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Lakr233/SkyLightWindow";
+			requirement = {
+				kind = exactVersion;
+				version = 1.0.0;
+			};
+		};
+		63AEDCD228681718CF8DF7CC /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sindresorhus/KeyboardShortcuts";
+			requirement = {
+				kind = exactVersion;
+				version = 3.1.0;
+			};
+		};
+		697F3B288A87AD90423D11FF /* XCRemoteSwiftPackageReference "Defaults" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sindresorhus/Defaults";
+			requirement = {
+				kind = exactVersion;
+				version = 9.0.9;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3FAEED2944EFEE62E6827C64 /* BotAvatarsKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 30593FF575368479D5259228 /* XCLocalSwiftPackageReference "Packages/BotAvatarsKit" */;
+			productName = BotAvatarsKit;
+		};
+		7A0E3195B9C6514699681687 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 112903F15D5593A65A799CC2 /* XCRemoteSwiftPackageReference "WhisperKit" */;
+			productName = WhisperKit;
+		};
+		281119BBCA098483290AF5F5 /* AsyncXPCConnection */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C621348E7DA2DC6182ECAF36 /* XCRemoteSwiftPackageReference "AsyncXPCConnection" */;
+			productName = AsyncXPCConnection;
+		};
+		06735419EB0C505A144F53EE /* MacroVisionKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MacroVisionKit;
+		};
+		F9A10C373A281F58219596EF /* MacroVisionKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MacroVisionKit;
+		};
+		749142169D8EF79569A70E13 /* MacroVisionKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7D66E656D9364CF08812CBBC /* XCRemoteSwiftPackageReference "MacroVisionKit" */;
+			productName = MacroVisionKit;
+		};
+		7BCD3280DCDF30CC0286EF4B /* SkyLightWindow */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 384D02AC6C3161BDE64AEFFE /* XCRemoteSwiftPackageReference "SkyLightWindow" */;
+			productName = SkyLightWindow;
+		};
+		10A4470DB3875302CB45FF56 /* KeyboardShortcuts */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 63AEDCD228681718CF8DF7CC /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
+			productName = KeyboardShortcuts;
+		};
+		88C68BC3C6E997F0B447262C /* Defaults */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 697F3B288A87AD90423D11FF /* XCRemoteSwiftPackageReference "Defaults" */;
+			productName = Defaults;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 54A22900931760DBA8DAFB3F /* Project object */;
+}

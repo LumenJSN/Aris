@@ -1,0 +1,74 @@
+{
+ "data": {
+  "clickLocation": {
+   "x": 850,
+   "y": 775
+  },
+  "clickType": "single",
+  "coordinateSpace": "window_relative",
+  "deliveryMode": "foreground",
+  "executionTime": 0.8809820413589478,
+  "inputCoordinates": {
+   "x": 770,
+   "y": 446
+  },
+  "screenCoordinates": {
+   "x": 850,
+   "y": 775
+  },
+  "targetApp": "Aris Testbench",
+  "targetPoint": {
+   "coordinate": {
+    "coordinateSpace": "window_relative",
+    "input": {
+     "x": 770,
+     "y": 446
+    },
+    "resolved": {
+     "x": 850,
+     "y": 775
+    },
+    "targetApp": "Aris Testbench",
+    "targetPID": 91943,
+    "targetWindow": {
+     "bounds": {
+      "height": 720,
+      "width": 1040,
+      "x": 80,
+      "y": 329
+     },
+     "title": "Aris Testbench",
+     "windowID": 9189
+    }
+   },
+   "original": {
+    "x": 770,
+    "y": 446
+   },
+   "resolved": {
+    "x": 850,
+    "y": 775
+   },
+   "source": "coordinates"
+  },
+  "targetWindowId": 9189,
+  "targetWindowTitle": "Aris Testbench",
+  "waitTime": 0
+ },
+ "effect": "unverifiable",
+ "outcome": {
+  "delivery_mechanism": "global_events",
+  "delivery_mode": "foreground",
+  "dispatch_state": "dispatched",
+  "effect": "unverifiable",
+  "escalation": "observe_before_retry",
+  "evidence": "delivery_accepted",
+  "mutation_dispatched": true,
+  "requires_fresh_observation": true,
+  "retry_safe": false,
+  "retry_safety": "unsafe",
+  "route": "local",
+  "state": "dispatched_unverified"
+ },
+ "success": true
+}

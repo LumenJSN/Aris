@@ -1,0 +1,42 @@
+{
+ "data": {
+  "action": "focus",
+  "app_name": "window 9385 (Aris Testbench)",
+  "new_bounds": {
+   "height": 720,
+   "width": 1040,
+   "x": 80,
+   "y": 329
+  },
+  "window_title": "Aris Testbench"
+ },
+ "effect": "confirmed",
+ "outcome": {
+  "delivery_mechanism": "accessibility_value",
+  "delivery_mode": "foreground",
+  "dispatch_state": "dispatched",
+  "dispatched_unit_count": 1,
+  "effect": "confirmed",
+  "escalation": "none",
+  "evidence": "verified_change",
+  "mutation_dispatched": true,
+  "requires_fresh_observation": false,
+  "retry_safe": false,
+  "retry_safety": "not_applicable",
+  "route": "local",
+  "state": "confirmed_change"
+ },
+ "success": true,
+ "target_identity": {
+  "kind": "window",
+  "pid": 4242,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ },
+ "target_receipt": {
+  "pid": 4242,
+  "process_start_identity": 1794000000000000,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ }
+}

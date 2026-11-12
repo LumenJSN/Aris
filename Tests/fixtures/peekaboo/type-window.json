@@ -1,0 +1,33 @@
+{
+ "data": null,
+ "effect": "unverifiable",
+ "error": {
+  "code": "INTERACTION_FAILED",
+  "hint": "Follow the canonical escalation metadata before deciding whether to retry.",
+  "message": "Typing did not return an accepted outcome.",
+  "mutation_dispatched": true,
+  "retry_safe": false
+ },
+ "outcome": {
+  "delivery_mechanism": "accessibility_value",
+  "delivery_mode": "background",
+  "dispatch_state": "dispatched",
+  "dispatched_unit_count": 4,
+  "effect": "unverifiable",
+  "escalation": "observe_before_retry",
+  "evidence": "delivery_accepted",
+  "mutation_dispatched": true,
+  "requires_fresh_observation": true,
+  "retry_safe": false,
+  "retry_safety": "unsafe",
+  "route": "local",
+  "state": "dispatched_unverified"
+ },
+ "success": false,
+ "target_receipt": {
+  "pid": 4242,
+  "process_start_identity": 1794000000000000,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ }
+}

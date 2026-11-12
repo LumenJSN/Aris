@@ -1,0 +1,12 @@
+{
+  "name": "botavatars-web-compare",
+  "private": true,
+  "type": "module",
+  "description": "Renders Bot Avatars stills from the web source and from the Swift port, side by side, with a difference metric.",
+  "scripts": {
+    "compare": "node compare.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.56.1"
+  }
+}

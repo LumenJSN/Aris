@@ -1,0 +1,37 @@
+{
+ "data": {
+  "actionName": "AXSetValue",
+  "executionTime": 0.09159409999847412,
+  "newValue": "set by value",
+  "oldValue": "--app Finder 안녕 test",
+  "target": "elem_59"
+ },
+ "effect": "confirmed",
+ "outcome": {
+  "delivery_mechanism": "accessibility_value",
+  "delivery_mode": "background",
+  "dispatch_state": "dispatched",
+  "effect": "confirmed",
+  "escalation": "none",
+  "evidence": "verified_change",
+  "mutation_dispatched": true,
+  "requires_fresh_observation": false,
+  "retry_safe": false,
+  "retry_safety": "not_applicable",
+  "route": "local",
+  "state": "confirmed_change"
+ },
+ "success": true,
+ "target_identity": {
+  "kind": "window",
+  "pid": 4242,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ },
+ "target_receipt": {
+  "pid": 4242,
+  "process_start_identity": 1794000000000000,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ }
+}

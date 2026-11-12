@@ -1,0 +1,57 @@
+{
+ "data": {
+  "clickLocation": {
+   "x": 754,
+   "y": 1027
+  },
+  "clickType": "single",
+  "clickedElement": "Textfield: Message",
+  "deliveryMode": "background",
+  "executionTime": 0.1279749870300293,
+  "targetApp": "Aris Testbench",
+  "targetPoint": {
+   "elementId": "elem_59",
+   "original": {
+    "x": 754,
+    "y": 1027
+   },
+   "resolved": {
+    "x": 754,
+    "y": 1027
+   },
+   "snapshotId": "ps1_398109d690048e8eb784190628979a2b",
+   "source": "element",
+   "windowAdjustment": {
+    "status": "unchanged"
+   }
+  },
+  "targetWindowId": 9189,
+  "waitTime": 0
+ },
+ "effect": "confirmed",
+ "outcome": {
+  "dispatch_state": "none",
+  "effect": "confirmed",
+  "escalation": "none",
+  "evidence": "verified_no_change",
+  "mutation_dispatched": false,
+  "requires_fresh_observation": false,
+  "retry_safe": false,
+  "retry_safety": "not_applicable",
+  "route": "local",
+  "state": "confirmed_no_change"
+ },
+ "success": true,
+ "target_identity": {
+  "kind": "window",
+  "pid": 4242,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ },
+ "target_receipt": {
+  "pid": 4242,
+  "process_start_identity": 1794000000000000,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ }
+}

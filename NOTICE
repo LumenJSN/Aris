@@ -1,0 +1,20 @@
+Aris
+Copyright 2026 Lumen
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes software developed by third parties, each under its own licence; the full texts are in
+THIRD_PARTY_LICENSES. In particular:
+
+- skill-creator, Copyright 2026 Anthropic, PBC, licensed under the Apache License, Version 2.0, modified for Aris
+  (ArisSkills/skill-creator).
+- WhisperKit, Copyright (c) 2024 argmax, inc. (MIT), which contains portions derived from swift-transformers,
+  Copyright 2022 Hugging Face SAS, licensed under the Apache License, Version 2.0.
+- swift-argument-parser, Copyright (c) Apple Inc. and the Swift project authors, licensed under the Apache License,
+  Version 2.0 with the Runtime Library Exception.
+- Bot Avatars, Copyright (c) 2026 Jakub Antalik (MIT), ported to Swift in Packages/BotAvatarsKit.
+- mediaremote-adapter, Copyright (c) 2025, Jonas van den Berg and contributors (BSD-3-Clause).
+- Smart Turn v3, Copyright (c) 2024-2025, Daily (BSD-2-Clause), bundled as a Core ML model.
+- AsyncXPCConnection, Copyright (c) 2023, Chime (BSD-3-Clause).
+- Defaults and KeyboardShortcuts, Copyright (c) Sindre Sorhus (MIT); SkyLightWindow, Copyright (c) 2025 Lakr Aream
+  (MIT); MacroVisionKit, Copyright (c) 2024 github.com/theboringhumane (MIT).

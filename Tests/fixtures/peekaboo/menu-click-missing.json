@@ -1,0 +1,33 @@
+{
+ "data": null,
+ "effect": "partial",
+ "error": {
+  "code": "INTERACTION_FAILED",
+  "details": "The operation couldn’t be completed. (PeekabooAutomationKit.NotFoundError error 1.)",
+  "hint": "Observe or dismiss the open application menu before retrying.",
+  "message": "Menu traversal stopped after part of 'File > Export > Nope' was dispatched.",
+  "mutation_dispatched": true,
+  "retry_safe": false
+ },
+ "outcome": {
+  "delivery_mechanism": "accessibility_action",
+  "delivery_mode": "background",
+  "dispatch_state": "dispatched",
+  "dispatched_unit_count": 2,
+  "effect": "partial",
+  "escalation": "recover_side_effect",
+  "evidence": "primary_change_verified_cleanup_failed",
+  "mutation_dispatched": true,
+  "requires_fresh_observation": false,
+  "retry_safe": false,
+  "retry_safety": "unsafe",
+  "route": "local",
+  "state": "partial"
+ },
+ "success": false,
+ "target_receipt": {
+  "pid": 4242,
+  "process_start_identity": 1794000000000000,
+  "process_start_identity_decimal": "1794000000000000"
+ }
+}

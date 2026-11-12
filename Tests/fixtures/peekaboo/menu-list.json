@@ -1,0 +1,323 @@
+{
+ "data": {
+  "app": "Aris Testbench",
+  "bundle_id": "dev.testuser.aris-bench.testbench",
+  "menu_structure": [
+   {
+    "enabled": true,
+    "items": [
+     {
+      "enabled": true,
+      "title": "이 Mac에 관하여"
+     },
+     {
+      "enabled": true,
+      "title": "시스템 설정…"
+     },
+     {
+      "enabled": true,
+      "items": [
+       {
+        "enabled": true,
+        "title": "Secret Project.key"
+       },
+       {
+        "enabled": true,
+        "title": "Finder에서 ‘Secret Project.key’ 보기"
+       }
+      ],
+      "title": "최근 사용 항목"
+     },
+     {
+      "enabled": true,
+      "title": "잠자기"
+     }
+    ],
+    "title": "Apple"
+   },
+   {
+    "enabled": true,
+    "items": [
+     {
+      "enabled": true,
+      "title": "About Aris Testbench"
+     },
+     {
+      "enabled": true,
+      "items": [
+       {
+        "enabled": true,
+        "title": "Private Tool: Send to Diary"
+       }
+      ],
+      "title": "Services"
+     },
+     {
+      "enabled": true,
+      "shortcut": "⌘H",
+      "title": "Hide Aris Testbench"
+     },
+     {
+      "enabled": true,
+      "shortcut": "⌘⌥H",
+      "title": "Hide Others"
+     },
+     {
+      "enabled": true,
+      "shortcut": "⌘Q",
+      "title": "Quit Aris Testbench"
+     },
+     {
+      "enabled": true,
+      "shortcut": "⌘⌥Q",
+      "title": "Quit and Keep Windows"
+     }
+    ],
+    "title": "Aris Testbench"
+   },
+   {
+    "enabled": true,
+    "items": [
+     {
+      "enabled": true,
+      "shortcut": "⌘W",
+      "title": "Close"
+     },
+     {
+      "enabled": true,
+      "shortcut": "⌘⌥W",
+      "title": "Close All"
+     },
+     {
+      "enabled": true,
+      "items": [
+       {
+        "enabled": true,
+        "title": "PDF…"
+       },
+       {
+        "enabled": true,
+        "title": "CSV"
+       },
+       {
+        "enabled": true,
+        "items": [
+         {
+          "enabled": true,
+          "title": "PNG"
+         },
+         {
+          "enabled": true,
+          "title": "JPEG"
+         }
+        ],
+        "title": "Image"
+       }
+      ],
+      "title": "Export"
+     },
+     {
+      "enabled": true,
+      "items": [
+       {
+        "enabled": true,
+        "title": "tax-return-2026.pdf"
+       }
+      ],
+      "title": "Open Recent"
+     }
+    ],
+    "title": "File"
+   },
+   {
+    "enabled": true,
+    "items": [
+     {
+      "enabled": true,
+      "title": "AutoFill"
+     },
+     {
+      "enabled": true,
+      "shortcut": "E",
+      "title": "Emoji & Symbols"
+     }
+    ],
+    "title": "Edit"
+   },
+   {
+    "enabled": true,
+    "items": [
+     {
+      "enabled": true,
+      "shortcut": "F",
+      "title": "Enter Full Screen"
+     }
+    ],
+    "title": "View"
+   },
+   {
+    "enabled": true,
+    "items": [
+     {
+      "enabled": true,
+      "shortcut": "⌘M",
+      "title": "Minimize"
+     },
+     {
+      "enabled": true,
+      "shortcut": "⌘⌥M",
+      "title": "Minimize All"
+     },
+     {
+      "enabled": true,
+      "title": "Zoom"
+     },
+     {
+      "enabled": true,
+      "title": "Zoom All"
+     },
+     {
+      "enabled": true,
+      "shortcut": "⌃F",
+      "title": "Fill"
+     },
+     {
+      "enabled": true,
+      "shortcut": "⌃C",
+      "title": "Center"
+     },
+     {
+      "enabled": true,
+      "items": [
+       {
+        "enabled": true,
+        "title": "Left"
+       },
+       {
+        "enabled": true,
+        "title": "Right"
+       },
+       {
+        "enabled": true,
+        "title": "Top"
+       },
+       {
+        "enabled": true,
+        "title": "Bottom"
+       },
+       {
+        "enabled": true,
+        "title": "Top Left"
+       },
+       {
+        "enabled": true,
+        "title": "Top Right"
+       },
+       {
+        "enabled": true,
+        "title": "Bottom Left"
+       },
+       {
+        "enabled": true,
+        "title": "Bottom Right"
+       },
+       {
+        "enabled": true,
+        "title": "Left & Right"
+       },
+       {
+        "enabled": true,
+        "title": "Left & Quarters"
+       },
+       {
+        "enabled": true,
+        "title": "Right & Left"
+       },
+       {
+        "enabled": true,
+        "title": "Right & Quarters"
+       },
+       {
+        "enabled": true,
+        "title": "Top & Bottom"
+       },
+       {
+        "enabled": true,
+        "title": "Top & Quarters"
+       },
+       {
+        "enabled": true,
+        "title": "Bottom & Top"
+       },
+       {
+        "enabled": true,
+        "title": "Bottom & Quarters"
+       },
+       {
+        "enabled": true,
+        "title": "Quarters"
+       }
+      ],
+      "title": "Move & Resize"
+     },
+     {
+      "enabled": true,
+      "items": [
+       {
+        "enabled": true,
+        "title": "Left of Screen"
+       },
+       {
+        "enabled": true,
+        "title": "Right of Screen"
+       }
+      ],
+      "title": "Full Screen Tile"
+     },
+     {
+      "enabled": true,
+      "title": "Move to DELL S2722QC"
+     },
+     {
+      "enabled": true,
+      "title": "Move All to DELL S2722QC"
+     },
+     {
+      "enabled": true,
+      "title": "Move to DELL P2421D"
+     },
+     {
+      "enabled": true,
+      "title": "Move All to DELL P2421D"
+     },
+     {
+      "enabled": true,
+      "title": "Move to iPad 69 Pro"
+     },
+     {
+      "enabled": true,
+      "title": "Bring All to Front"
+     },
+     {
+      "enabled": true,
+      "title": "Arrange in Front"
+     }
+    ],
+    "title": "Window"
+   },
+   {
+    "enabled": true,
+    "items": [
+     {
+      "enabled": true,
+      "shortcut": "⌘?",
+      "title": "Aris Testbench Help"
+     }
+    ],
+    "title": "Help"
+   }
+  ],
+  "owner_name": "Aris Testbench"
+ },
+ "success": true
+}

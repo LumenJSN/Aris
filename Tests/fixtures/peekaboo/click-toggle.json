@@ -1,0 +1,60 @@
+{
+ "data": {
+  "clickLocation": {
+   "x": 675,
+   "y": 714.8949584960938
+  },
+  "clickType": "single",
+  "clickedElement": "Checkbox: Auto-download attachments",
+  "deliveryMode": "background",
+  "executionTime": 0.11105895042419434,
+  "targetApp": "Aris Testbench",
+  "targetPoint": {
+   "elementId": "elem_29",
+   "original": {
+    "x": 675,
+    "y": 714.8949584960938
+   },
+   "resolved": {
+    "x": 675,
+    "y": 714.8949584960938
+   },
+   "snapshotId": "ps1_49d86abe9c58d95e80f05a5e11d869da",
+   "source": "element",
+   "windowAdjustment": {
+    "status": "unchanged"
+   }
+  },
+  "targetWindowId": 9189,
+  "waitTime": 0
+ },
+ "effect": "unverifiable",
+ "outcome": {
+  "delivery_mechanism": "accessibility_action",
+  "delivery_mode": "background",
+  "dispatch_state": "dispatched",
+  "dispatched_unit_count": 1,
+  "effect": "unverifiable",
+  "escalation": "observe_before_retry",
+  "evidence": "delivery_accepted",
+  "mutation_dispatched": true,
+  "requires_fresh_observation": true,
+  "retry_safe": false,
+  "retry_safety": "unsafe",
+  "route": "local",
+  "state": "dispatched_unverified"
+ },
+ "success": true,
+ "target_identity": {
+  "kind": "window",
+  "pid": 4242,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ },
+ "target_receipt": {
+  "pid": 4242,
+  "process_start_identity": 1794000000000000,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ }
+}

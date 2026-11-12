@@ -1,0 +1,393 @@
+{
+  "model": "opus",
+  "statusLine": {
+    "type": "command",
+    "command": "my-own-line"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool guard",
+            "timeout": 7
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23333/state",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool subagent-done",
+            "timeout": 9
+          },
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool notify"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 5,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:23350/hook",
+            "timeout": 600,
+            "headers": {
+              "X-Term-Program": "${TERM_PROGRAM}",
+              "X-Warp-Focus": "${WARP_FOCUS_URL}",
+              "X-Iterm-Session": "${ITERM_SESSION_ID}",
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Bundle-Id": "${__CFBundleIdentifier}",
+              "X-Aris-Token": "@TOKEN@"
+            },
+            "allowedEnvVars": [
+              "ITERM_SESSION_ID",
+              "TERM_PROGRAM",
+              "TMUX_PANE",
+              "WARP_FOCUS_URL",
+              "__CFBundleIdentifier"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

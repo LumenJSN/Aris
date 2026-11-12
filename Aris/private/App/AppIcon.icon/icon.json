@@ -1,0 +1,94 @@
+{
+  "features": [
+    "refractivity",
+    "specular-location"
+  ],
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "display-p3:0.16,0.17,0.21,1",
+          "display-p3:0.02,0.02,0.04,1"
+        ]
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "display-p3:0.1,0.11,0.14,1",
+          "display-p3:0,0,0.02,1"
+        ]
+      }
+    }
+  ],
+  "groups": [
+    {
+      "blur-material": 0.4,
+      "layers": [
+        {
+          "fill": {
+            "linear-gradient": [
+              "display-p3:1,0.93,0.62,1",
+              "display-p3:0.96,0.78,0.36,1"
+            ]
+          },
+          "glass": true,
+          "image-name": "star.svg",
+          "name": "star"
+        }
+      ],
+      "lighting": "individual",
+      "name": "star",
+      "refractivity": {
+        "depth": 0.8,
+        "enabled": true,
+        "strength": 0.9
+      },
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.45
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.2
+      }
+    },
+    {
+      "blur-material": 0.4,
+      "layers": [
+        {
+          "fill": {
+            "linear-gradient": [
+              "display-p3:1,1,1,1",
+              "display-p3:0.84,0.88,0.97,1"
+            ]
+          },
+          "glass": true,
+          "image-name": "A.svg",
+          "name": "A"
+        }
+      ],
+      "lighting": "individual",
+      "name": "A",
+      "refractivity": {
+        "depth": 0.8,
+        "enabled": true,
+        "strength": 0.9
+      },
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.45
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

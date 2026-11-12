@@ -1,0 +1,41 @@
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+DerivedData/
+*.xcarchive
+*.dSYM
+*.dSYM.zip
+*.ipa
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/*/.build/
+Packages/*/.swiftpm/
+
+# Build output of Scripts/ (build.sh, deploy.sh, install-aris-agent.sh)
+/build/
+/build-release/
+/deploy-stage/
+/deploy-previous/
+/tools-bin/
+
+# Signing material never belongs here
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+
+# Editors and temporary files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+*.log
+node_modules/

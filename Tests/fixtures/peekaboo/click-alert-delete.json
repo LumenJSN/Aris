@@ -1,0 +1,28 @@
+{
+ "data": null,
+ "effect": "unverifiable",
+ "error": {
+  "code": "INTERACTION_FAILED",
+  "details": "Click outcome is indeterminate: input may have been delivered; do not retry blindly. Delivery detail: The exact window changed before completion validation Observe the target before taking another action.",
+  "hint": "Observe the target before retrying this click.",
+  "message": "Click was dispatched, but final target identity validation failed",
+  "mutation_dispatched": true,
+  "retry_safe": false
+ },
+ "outcome": {
+  "delivery_mechanism": "accessibility_action",
+  "delivery_mode": "background",
+  "dispatch_state": "dispatched",
+  "dispatched_unit_count": 1,
+  "effect": "unverifiable",
+  "escalation": "observe_before_retry",
+  "evidence": "delivery_accepted",
+  "mutation_dispatched": true,
+  "requires_fresh_observation": true,
+  "retry_safe": false,
+  "retry_safety": "unsafe",
+  "route": "local",
+  "state": "dispatched_unverified"
+ },
+ "success": false
+}

@@ -1,0 +1,47 @@
+name: Bug report
+description: Something in Aris doesn't work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report. Please don't paste messages, mail, keys or other personal data; cut them from logs too.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you said or typed, what you expected, and what Aris showed or did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Hold ⌥ Space and say "what's on my calendar tomorrow"
+        2. The notch shows …
+    validations:
+      required: true
+  - type: input
+    id: aris
+    attributes:
+      label: Aris version or commit
+      description: Settings › About, or `~/.config/aris/aris-tools --version`.
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: "macOS 26.1, MacBook Air M3 (with a notch)"
+    validations:
+      required: true
+  - type: dropdown
+    id: brain
+    attributes:
+      label: Brain
+      options: [Claude Code, Codex, Antigravity, API key, Local model, Not sure]
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots or a screen recording help a lot (check them for private data first).

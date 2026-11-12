@@ -1,0 +1,42 @@
+{
+ "data": {
+  "count": 1,
+  "deliveryMode": "background",
+  "executionTime": 0.15561294555664062,
+  "keys": [
+   "return"
+  ],
+  "targetPID": 91148,
+  "targetWindowID": 9189,
+  "totalPresses": 1
+ },
+ "effect": "unverifiable",
+ "outcome": {
+  "delivery_mechanism": "window_targeted_events",
+  "delivery_mode": "background",
+  "dispatch_state": "dispatched",
+  "dispatched_unit_count": 2,
+  "effect": "unverifiable",
+  "escalation": "observe_before_retry",
+  "evidence": "delivery_accepted",
+  "mutation_dispatched": true,
+  "requires_fresh_observation": true,
+  "retry_safe": false,
+  "retry_safety": "unsafe",
+  "route": "local",
+  "state": "dispatched_unverified"
+ },
+ "success": true,
+ "target_identity": {
+  "kind": "window",
+  "pid": 4242,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ },
+ "target_receipt": {
+  "pid": 4242,
+  "process_start_identity": 1794000000000000,
+  "process_start_identity_decimal": "1794000000000000",
+  "window_id": 9189
+ }
+}
