@@ -57,7 +57,9 @@ systems get a plain dark notch. Macs without a notch work too.
 Or with [Homebrew](https://brew.sh), which also clears the download quarantine flag for you:
 
 ```sh
-brew install --cask lumenjsn/tap/aris
+brew tap lumenjsn/tap
+brew trust lumenjsn/tap     # Homebrew asks you to trust a third-party tap once
+brew install --cask aris
 ```
 
 Aris is ad-hoc signed and **not notarized** (the project has no Developer ID), so the first launch is refused
