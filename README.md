@@ -21,7 +21,15 @@ and anything that would act on your Mac asks you first. [arismac.app](https://ar
 </div>
 
 <p align="center">
-  <a href="https://arismac.app"><img src=".github/demo.webp" width="720" alt="Saying “text Mom I'll be home by 7” opens the notch with a confirm card that sends after a short countdown; then a 25-minute timer is set the same way." /></a>
+  <a href="https://github.com/LumenJSN/Aris/releases/download/v1.0.0/Aris-launch-film.mp4"><img src=".github/launch-film.webp" width="720" alt="Asking the notch to plan a Kyoto trip and have Claude fix a flaky test: Aris searches flights and stays, reads up on Kyoto, fixes the test in a terminal, then sends the plan after asking first." /></a>
+  <br />
+  <sub><a href="https://github.com/LumenJSN/Aris/releases/download/v1.0.0/Aris-launch-film.mp4">Watch with sound (50 s)</a></sub>
+</p>
+
+<p align="center">
+  <a href="https://github.com/LumenJSN/Aris/releases/download/v1.0.0/Aris-film-2.mp4"><img src=".github/film-2.webp" width="720" alt="One request runs several jobs at once; Aris circles what you point at, asks before it sends, and keeps everything it did one edge away, on your Mac with the AI you already use." /></a>
+  <br />
+  <sub><a href="https://github.com/LumenJSN/Aris/releases/download/v1.0.0/Aris-film-2.mp4">Watch with sound (40 s)</a></sub>
 </p>
 
 > [!WARNING]
