@@ -38,7 +38,8 @@ and anything that would act on your Mac asks you first. [arismac.app](https://ar
    through the permissions.
 2. Give it a brain: log in to Claude Code, Codex or Antigravity, or add an API key or a local model in
    Settings › AI services (see [Brains](#brains)).
-3. Hold <kbd>⌥ Space</kbd> and speak, or click the notch and type.
+3. Hold <kbd>⌥ Space</kbd> and speak, or click the notch and type. If you use the ChatGPT app, its Chat Bar uses
+   <kbd>⌥ Space</kbd> too: change one of the two shortcuts (Aris: Settings › Shortcuts).
 4. When Aris wants to send, write or delete something, a **confirm card** shows exactly what will happen. Edit it,
    say yes, or cancel.
 5. Hold the right <kbd>⌥</kbd> to dictate into any app. History, usage, to-dos and the calendar live in the side
@@ -49,7 +50,8 @@ and anything that would act on your Mac asks you first. [arismac.app](https://ar
 Requires a Mac with **Apple silicon** and **macOS 14 Sonoma or later**. The notch's glass look needs macOS 26; older
 systems get a plain dark notch. Macs without a notch work too.
 
-1. Download `Aris-<version>.dmg` from [Releases](https://github.com/LumenJSN/Aris/releases/latest) and open it.
+1. [Download Aris](https://arismac.app/download?ref=github) (the latest `Aris-<version>.dmg`, also on
+   [Releases](https://github.com/LumenJSN/Aris/releases/latest)) and open it.
 2. Drag **Aris** onto **Applications**, then open it from there.
 
 Aris is ad-hoc signed and **not notarized** (the project has no Developer ID), so the first launch is refused
@@ -149,6 +151,9 @@ sessions in the notch and let you answer Claude Code's permission prompts there.
 `--apply`, and both back up the file they change.
 
 ## Privacy
+
+Your history, memory and keys stay on your Mac; your request goes only to the AI you pick (or nowhere, with a local
+model).
 
 - **Stays on your Mac**: history, memory notes, schedules, settings, skills and logs (in `~/.config/aris` and the
   app's container), the wake word, the end-of-turn model, the dictation dictionary and the Mac's speech recognition.
