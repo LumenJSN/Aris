@@ -26,12 +26,6 @@ and anything that would act on your Mac asks you first. [arismac.app](https://ar
   <sub><a href="https://github.com/LumenJSN/Aris/releases/download/v1.0.0/Aris-launch-film.mp4">Watch with sound (50 s)</a></sub>
 </p>
 
-<p align="center">
-  <a href="https://github.com/LumenJSN/Aris/releases/download/v1.0.0/Aris-film-2.mp4"><img src=".github/film-2.webp" width="720" alt="One request runs several jobs at once; Aris circles what you point at, asks before it sends, and keeps everything it did one edge away, on your Mac with the AI you already use." /></a>
-  <br />
-  <sub><a href="https://github.com/LumenJSN/Aris/releases/download/v1.0.0/Aris-film-2.mp4">Watch with sound (40 s)</a></sub>
-</p>
-
 > [!WARNING]
 > **Use at your own risk.** Aris lets an AI read and act on your Mac: messages, mail, files, calendar and other apps'
 > windows. It asks before anything that writes, sends or deletes, but it is a personal project with no warranty.
