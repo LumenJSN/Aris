@@ -32,10 +32,6 @@ extension ArisController {
         await speak { await self.speaker.speak(ask.spoken ?? (english ? "Sending it." : "보낼게요")) }
         if let typedAnswer { return ended(typedAnswer) }
         guard !Task.isCancelled else { return false }
-        // No microphone before macOS 26: "취소" can't be heard, so the buttons ask (never a silent "not sent", QA BUG-54).
-        guard #available(macOS 26.0, *) else {
-            return await cardAnswer(ArisConfirmation(id: ask.id, title: "메시지 보내기", detail: "\(ask.title) \(ask.detail)"), handsFree: false, waiter: false)
-        }
         let listener = ArisListener()
         var heard = ""
         listener.onText = { heard = $0 }

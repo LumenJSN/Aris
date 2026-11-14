@@ -145,7 +145,7 @@ enum ArisSettingsBuilder {
                                desc: "말할 때 이 언어들 중에서 알아서 찾아요.",
                                control: .buttons([ArisSettingButton(title: languagesSummary(s.languages.map(\.title)), action: .addLanguage, kind: .select)])),
                 scribeRow,
-            ]),
+            ] + engineRow(s)),
             ArisSettingSection(id: "voice.voices", heading: "목소리", note: s.hasVoiceKey ? "들어 보기만 해서는 요금이 들지 않아요." : nil, rows: [
                 voiceRow,
                 ArisSettingItem(id: "voice.speed", icon: .symbol("gauge.with.needle"), title: "말하기 속도", desc: "답을 읽는 속도예요.",
@@ -153,6 +153,12 @@ enum ArisSettingsBuilder {
                                                 lead: ArisSettingButton(title: "들어 보기", action: .listen))),
             ]),
         ]
+    }
+
+    /// 듣기 엔진: which of Apple's speech engines hears on this Mac (shown, nothing to change). None in a still picture.
+    private static func engineRow(_ s: ArisSettingsSnapshot) -> [ArisSettingItem] {
+        guard !s.listenEngine.isEmpty else { return [] }
+        return [ArisSettingItem(id: "voice.engine", icon: .symbol("waveform"), title: ArisListenEngineWords.rowTitle, desc: s.listenEngine, control: .none)]
     }
 
     private static func dictation(_ s: ArisSettingsSnapshot) -> [ArisSettingSection] {

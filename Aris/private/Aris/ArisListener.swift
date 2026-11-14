@@ -2,7 +2,9 @@
 //  ArisListener.swift
 //  Aris
 //
-//  The microphone, transcribed on the Mac by SpeechAnalyzer (macOS 26+).
+//  The microphone, transcribed on the Mac by Apple's speech engine (ArisRecognizer: SpeechAnalyzer on macOS 26,
+//  SFSpeechRecognizer on macOS 14 and 15; ArisListenEngine picks). The listener owns the audio (the microphone, the
+//  wake detector's, or a test file: ArisListenFeed) and hands it to the recognizer in the format it asks for.
 //  Reports the text heard so far and how loud the voice is (for the orb), and
 //  keeps a 16 kHz recording of the turn for Whisper's second listen.
 //  While waiting for the wake word it keeps only the current phrase and the last
@@ -12,9 +14,7 @@
 //
 
 import AVFoundation
-import Speech
 
-@available(macOS 26.0, *)
 @MainActor
 final class ArisListener {
     /// Everything heard so far: finished phrases plus the recognizer's current guess.
@@ -39,17 +39,21 @@ final class ArisListener {
     private let speechChunks = SampleRelay()
     /// The microphone changed or stopped (a device was plugged in, the Mac slept).
     var onInterrupted: (() -> Void)?
+    /// The speech engine stopped hearing for good this listen, with the line that says why (ArisRecognizer.onProblem).
+    var onProblem: ((String) -> Void)?
     /// Who this listener's own microphone is opened for (the log names it): a turn's talk key, or dictation.
     var use = ArisMicUse.talk
     /// Listening for the wake word, not yet in a turn.
-    private(set) var waiting = false
+    var waiting: Bool { heard.waiting }
 
     private let engine = AVAudioEngine()
-    private var analyzer: SpeechAnalyzer?
-    private var input: AsyncStream<AnalyzerInput>.Continuation?
-    private var results: Task<Void, Never>?
-    private var finished = ""
-    private var guess = ""
+    /// The speech engine hearing this listen (ArisListenEngine), and where its audio goes.
+    private var recognizer: ArisRecognizer?
+    private var input: ArisRecognizerInput?
+    /// A test file heard instead of the microphone (ArisListenFeed).
+    private var feed: ArisListenFeed?
+    /// Finished phrases and the recognizer's current guess (ArisHeardText).
+    private var heard = ArisHeardText()
     private let recording = Recording()
     private var configuration: NSObjectProtocol?
     private var source: ArisWakeDetector?
@@ -77,86 +81,70 @@ final class ArisListener {
     /// microphone a second time, so the hand-over loses nothing. `from`: the detector's sample to start at (a
     /// conversation's turn: from just before the voice watch was sure).
     func start(locale: Locale, waitingForWakeWord: Bool = false, source: ArisWakeDetector? = nil, from: Int? = nil) async throws {
-        finished = ""
-        guess = ""
         // A listener already woken into its turn stays a turn's: its phrases are kept and its recording whole
         // (audit voice-2).
-        waiting = handOver.startsWaiting(asked: waitingForWakeWord)
+        heard = ArisHeardText(waiting: handOver.startsWaiting(asked: waitingForWakeWord))
         recording.reset(rolling: waiting)
-        // Without .fastResults the guesses only arrive once listening stops; with it, about once a second.
-        let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [],
-                                            reportingOptions: [.volatileResults, .fastResults], attributeOptions: [])
+        let recognizer = Self.makeRecognizer(ArisListenEngine.current())
+        recognizer.onHeard = { [weak self] kept, guess in self?.take(kept: kept, guess: guess) }
+        recognizer.onProblem = { [weak self] line in self?.onProblem?(line) }
+        self.recognizer = recognizer
+        // A test file in place of the microphone, when the hidden setting names one (a VM has no microphone).
+        let feed = source == nil ? Self.testFeed() : nil
         // The language's model isn't installed yet (a first run): it downloads in the background, and this turn says so
-        // instead of timing out while it waits (prepareSpeechAssets at launch makes this rare). With no microphone on
-        // this Mac at all, that is what is said, first: "say it again in a moment" would change nothing (ArisListenStart).
-        let modelMissing = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) != nil
-        if modelMissing { Task { await Self.prepareSpeechAssets(locale: locale) } }
-        switch ArisListenStart.problem(usesMicrophone: source == nil, hasMicrophone: ArisMicChoice.hasMicrophone(), modelMissing: modelMissing) {
+        // instead of timing out while it waits. With no microphone on this Mac at all, that is what is said, first:
+        // "say it again in a moment" would change nothing (ArisListenStart).
+        let modelMissing = try await recognizer.modelMissing(locale: locale)
+        switch ArisListenStart.problem(usesMicrophone: source == nil && feed == nil, hasMicrophone: ArisMicChoice.hasMicrophone(), modelMissing: modelMissing) {
         case .noMicrophone: throw ArisFailure(message: ArisListenerWords.noMicrophone())
         case .modelPreparing: throw ArisFailure(message: ArisListenerWords.modelPreparing())
         case nil: break
         }
-        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
-            throw ArisFailure(message: "Speech recognition isn't available for \(locale.identifier).")
-        }
-        let analyzer = SpeechAnalyzer(modules: [transcriber])
         let vocabulary = ArisHearingLocale.hints(vocabulary: ArisVocabulary.load(), locale: locale.identifier,
                                                  waitingForWakeWord: waitingForWakeWord)
-        if !vocabulary.isEmpty {
-            let context = AnalysisContext()
-            context.contextualStrings[.general] = vocabulary
-            // Only hints: without them Aris still listens.
-            do { try await analyzer.setContext(context) } catch { NSLog("Aris: vocabulary not used: \(error.localizedDescription)") }
-        }
-        let (stream, input) = AsyncStream<AnalyzerInput>.makeStream()
-        self.analyzer = analyzer
+        let input = try await recognizer.start(locale: locale, hints: vocabulary)
         self.input = input
-
-        results = Task { [weak self] in
-            do {
-                for try await result in transcriber.results {
-                    self?.take(String(result.text.characters), final: result.isFinal)
-                }
-            } catch {
-                NSLog("Aris: transcription ended: \(error.localizedDescription)")
-            }
-        }
-        try await analyzer.start(inputSequence: stream)
+        // The older engine without the language's on-device model: Apple's servers hear it, said once.
+        if let older = recognizer as? ArisRotatingRecognizer, older.place == .server { ArisLegacyServerNotice.sayOnce(locale: locale) }
         if let source {
             self.source = source
-            try listen(to: source, feeding: input, as: format, from: from)
+            try listen(to: source, feeding: input, from: from)
+        } else if let feed {
+            try listen(to: feed, feeding: input)
         } else {
-            try await startMicrophone(feeding: input, as: format)
+            try await startMicrophone(feeding: input)
+        }
+    }
+
+    /// The engine's recognizer: SpeechAnalyzer's where ArisListenEngine says so and the macOS has it, else the older one.
+    static func makeRecognizer(_ engine: ArisListenEngine) -> ArisRecognizer {
+        if engine == .analyzer, #available(macOS 26.0, *) { return ArisAnalyzerRecognizer() }
+        return ArisRotatingRecognizer(maker: ArisSFSpeechTasks())
+    }
+
+    /// The test file the hidden setting names, read; nil (the microphone) when there is none or it can't be read.
+    private static func testFeed() -> ArisListenFeed? {
+        guard let url = ArisListenFeed.configured() else { return nil }
+        do { return try ArisListenFeed(url: url) } catch {
+            NSLog("Aris: the test audio file \(url.lastPathComponent) can't be read (\(error.localizedDescription)); the microphone listens")
+            return nil
         }
     }
 
     /// Whether macOS's speech model for `locale` is on this Mac. Opens nothing: the wake word asks before its microphone.
+    /// The older engine has no model to install: it can hear `locale` when it has a recogniser for it that is ready.
     static func speechModelInstalled(locale: Locale) async -> Bool {
-        let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [])
-        do { return try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) == nil } catch { return false }
+        if ArisListenEngine.current() == .analyzer, #available(macOS 26.0, *) {
+            return await ArisAnalyzerRecognizer.speechModelInstalled(locale: locale)
+        }
+        return ArisSFSpeechTasks.recognizer(locale)?.isAvailable ?? false
     }
 
     /// At launch: the language's speech model is installed ahead of the first turn, so that turn doesn't wait for it.
-    /// A turn that finds it missing joins the same install.
+    /// A turn that finds it missing joins the same install. Nothing to install for the older engine.
     static func prepareSpeechAssets(locale: Locale) async {
-        // Another language's install under way (the languages were just changed) is waited for, then this one starts.
-        while let running = assetInstall {
-            await running.task.value
-            if assetInstall?.task == running.task { assetInstall = nil }
-            if running.locale == locale.identifier { return }
-        }
-        let task = Task {
-            let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [])
-            guard let install = try? await AssetInventory.assetInstallationRequest(supporting: [transcriber]) else { return }
-            NSLog("Aris: installing the speech model for \(locale.identifier)")
-            // The first listen says 음성 인식 준비 중 while this runs (③ B).
-            await MainActor.run { ArisModelDownloader.shared.setAppleInstalling(true) }
-            do { try await install.downloadAndInstall() } catch { NSLog("Aris: speech model not installed: \(error.localizedDescription)") }
-            await MainActor.run { ArisModelDownloader.shared.setAppleInstalling(false) }
-        }
-        assetInstall = (locale.identifier, task)
-        await task.value
-        if assetInstall?.task == task { assetInstall = nil }
+        guard ArisListenEngine.current() == .analyzer, #available(macOS 26.0, *) else { return }
+        await ArisAnalyzerRecognizer.prepareSpeechAssets(locale: locale)
     }
 
     /// stop() was called while start() was still opening the microphone: the engine is closed as soon as it opened.
@@ -170,13 +158,10 @@ final class ArisListener {
     /// What the microphone was opened with, kept for a restart.
     private var parts: MicrophoneParts?
 
-    /// One install at a time, shared by the launch-time prepare and any turn that finds the model missing.
-    nonisolated(unsafe) private static var assetInstall: (locale: String, task: Task<Void, Never>)?
-
     /// The wake word was heard: from here on this is a turn (the phrase with the name in it is kept).
     func beginTurn() {
         handOver.beginTurn()
-        waiting = false
+        heard.waiting = false
         recording.stopRolling()
     }
 
@@ -185,6 +170,8 @@ final class ArisListener {
         stopped = true
         source?.forward(to: nil)
         source = nil
+        feed?.stop()
+        feed = nil
         if let configuration { NotificationCenter.default.removeObserver(configuration) }
         configuration = nil
         // An engine that was never opened has no tap and no device to give back. Stopping waits on the device the
@@ -193,31 +180,21 @@ final class ArisListener {
             microphoneOpened = false
             await Self.close(engine, use: use)
         }
-        input?.finish()
         input = nil
-        try? await analyzer?.finalizeAndFinishThroughEndOfInput()
-        analyzer = nil
-        await results?.value
-        results = nil
-        return (finished + guess).trimmingCharacters(in: .whitespacesAndNewlines)
+        await recognizer?.finish()
+        recognizer = nil
+        return heard.whole
     }
 
-    private func take(_ text: String, final: Bool) {
-        if final {
-            finished += text
-            guess = ""
-        } else {
-            guess = text
-        }
-        onText?(finished + guess)
-        // While waiting, a finished phrase without the name is forgotten.
-        if waiting && final { finished = "" }
+    /// What the recognizer heard: `kept` is finished, `guess` replaces the last guess.
+    private func take(kept: String, guess: String) {
+        onText?(heard.take(kept: kept, guess: guess))
     }
 
     /// Off the main thread: moving off a Bluetooth headset can wait seconds for the device (2026-11-01: 3 s), and
     /// on the main thread that froze the notch while it opened.
-    private func startMicrophone(feeding input: AsyncStream<AnalyzerInput>.Continuation, as format: AVAudioFormat) async throws {
-        let parts = MicrophoneParts(engine: engine, use: use, input: input, format: format, levels: levels, recording: recording, samples: samples,
+    private func startMicrophone(feeding input: ArisRecognizerInput) async throws {
+        let parts = MicrophoneParts(engine: engine, use: use, input: input, levels: levels, recording: recording, samples: samples,
                                     speech: speechChunks)
         self.parts = parts
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -300,54 +277,79 @@ final class ArisListener {
     /// The tap on the input in its current format, with both converters (the recognizer's format and Whisper's 16 kHz)
     /// built for it. Called at open and again after a format change.
     nonisolated private static func installTap(_ parts: MicrophoneParts) throws {
-        let engine = parts.engine, input = parts.input, format = parts.format
-        let mic = engine.inputNode
-        let whisperFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: ArisWhisper.sampleRate,
-                                          channels: 1, interleaved: false)!
-        guard let micFormat = ArisAudio.settledTapFormat(of: mic),
-              let converter = AVAudioConverter(from: micFormat, to: format),
-              let whisperConverter = AVAudioConverter(from: micFormat, to: whisperFormat) else {
+        let mic = parts.engine.inputNode
+        guard let micFormat = ArisAudio.settledTapFormat(of: mic), let sink = TapSink(parts, from: micFormat) else {
             throw ArisFailure(message: "Couldn't read the microphone.")
         }
-        let levels = parts.levels, recording = parts.recording, samples = parts.samples, speech = parts.speech
-        mic.installTap(onBus: 0, bufferSize: 2048, format: micFormat) { buffer, _ in
-            let level = ArisAudio.level(of: buffer)
-            DispatchQueue.main.async { levels.handler?(level) }
-            if let converted = ArisAudio.convert(buffer, with: converter, to: format) {
-                input.yield(AnalyzerInput(buffer: converted))
-            }
-            if let forWhisper = ArisAudio.convert(buffer, with: whisperConverter, to: whisperFormat),
-               let channel = forWhisper.floatChannelData?[0] {
-                let chunk = UnsafeBufferPointer(start: channel, count: Int(forWhisper.frameLength))
-                recording.append(chunk)
-                let floats = Array(chunk)
-                samples.handler?(floats)
-                speech.handler?(floats)
-            }
-        }
+        mic.installTap(onBus: 0, bufferSize: 2048, format: micFormat) { buffer, _ in sink.take(buffer) }
     }
 }
 
 /// What opening the microphone needs, handed to the microphone's queue.
-@available(macOS 26.0, *)
 private struct MicrophoneParts: @unchecked Sendable {
     let engine: AVAudioEngine
     let use: ArisMicUse
-    let input: AsyncStream<AnalyzerInput>.Continuation
-    let format: AVAudioFormat
+    let input: ArisRecognizerInput
     let levels: LevelRelay
     let recording: Recording
     let samples: SampleRelay
     let speech: SampleRelay
 }
 
-@available(macOS 26.0, *)
+/// One buffer of the microphone (or the test file) in its own format: its level to the orb, converted for the
+/// recognizer, and at 16 kHz into the recording and to Scribe and the gesture's voice count. Both converters are
+/// built for that format, once per tap.
+private struct TapSink: @unchecked Sendable {
+    let parts: MicrophoneParts
+    let converter: AVAudioConverter
+    let whisperConverter: AVAudioConverter
+    let whisperFormat: AVAudioFormat
+
+    init?(_ parts: MicrophoneParts, from format: AVAudioFormat) {
+        let whisperFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: ArisWhisper.sampleRate,
+                                          channels: 1, interleaved: false)!
+        guard let converter = AVAudioConverter(from: format, to: parts.input.format),
+              let whisperConverter = AVAudioConverter(from: format, to: whisperFormat) else { return nil }
+        self.parts = parts
+        self.converter = converter
+        self.whisperConverter = whisperConverter
+        self.whisperFormat = whisperFormat
+    }
+
+    func take(_ buffer: AVAudioPCMBuffer) {
+        let level = ArisAudio.level(of: buffer), levels = parts.levels
+        DispatchQueue.main.async { levels.handler?(level) }
+        if let converted = ArisAudio.convert(buffer, with: converter, to: parts.input.format) {
+            parts.input.append(converted)
+        }
+        if let forWhisper = ArisAudio.convert(buffer, with: whisperConverter, to: whisperFormat),
+           let channel = forWhisper.floatChannelData?[0] {
+            let chunk = UnsafeBufferPointer(start: channel, count: Int(forWhisper.frameLength))
+            parts.recording.append(chunk)
+            let floats = Array(chunk)
+            parts.samples.handler?(floats)
+            parts.speech.handler?(floats)
+        }
+    }
+}
+
 extension ArisListener {
+    /// The test file (ArisListenFeed) in place of the microphone: its chunks at the pace they were spoken, through
+    /// the microphone's own path (level, recognizer, recording), then silence until the turn ends.
+    fileprivate func listen(to feed: ArisListenFeed, feeding input: ArisRecognizerInput) throws {
+        let parts = MicrophoneParts(engine: engine, use: use, input: input, levels: levels, recording: recording, samples: samples,
+                                    speech: speechChunks)
+        guard let sink = TapSink(parts, from: feed.format) else { throw ArisFailure(message: "Couldn't read the test audio file.") }
+        self.feed = feed
+        NSLog("Aris: listening to the test file \(feed.url.lastPathComponent) (\(String(format: "%.1f", feed.duration)) s), not the microphone")
+        feed.start(on: ArisAudio.microphoneQueue) { sink.take($0) }
+    }
+
     /// The wake detector's 16 kHz audio, to the recognizer, the recording and the level, as the microphone would.
-    fileprivate func listen(to source: ArisWakeDetector, feeding input: AsyncStream<AnalyzerInput>.Continuation,
-                            as format: AVAudioFormat, from: Int? = nil) throws {
+    fileprivate func listen(to source: ArisWakeDetector, feeding input: ArisRecognizerInput, from: Int? = nil) throws {
         let detectorFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: ArisVoicePrint.sampleRate,
                                            channels: 1, interleaved: false)!
+        let format = input.format
         guard let converter = AVAudioConverter(from: detectorFormat, to: format) else {
             throw ArisFailure(message: "Couldn't read the microphone.")
         }
@@ -362,7 +364,7 @@ extension ArisListener {
             relay.handler?(samples)
             speech.handler?(samples)
             if let converted = ArisAudio.convert(buffer, with: converter, to: format) {
-                input.yield(AnalyzerInput(buffer: converted))
+                input.append(converted)
             }
             DispatchQueue.main.async { levels.handler?(level) }
         }, from: from)

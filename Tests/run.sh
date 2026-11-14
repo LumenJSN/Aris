@@ -192,7 +192,8 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/settings-1to1-tests.swift" "$DIR/../Aris/components/Settings/ArisFeatureCatalog.swift" \
   "$DIR/../Aris/components/Settings/ArisLineIconData.swift" "$DIR/../Aris/components/Settings/ArisLineIconPath.swift" \
   "$DIR/dictation-pill-tests.swift" "$SRC/../Aris/Dictation/ArisDictationPillRules.swift" "$SRC/../Aris/Dictation/ArisDictationPillMotion.swift" \
-  "$DIR/pill-idle-tests.swift"
+  "$DIR/pill-idle-tests.swift" \
+  "$DIR/legacy-speech-tests.swift" "$SRC/../Aris/ArisListenEngine.swift" "$SRC/../Aris/ArisRecognizer.swift" "$SRC/../Aris/ArisListenFeed.swift"
 # The tests keep every UserDefaults suite they make (aris-*-tests) in a throwaway folder (testSuiteName, by its path:
 # CFFIXED_USER_HOME alone doesn't stop cfprefsd writing to ~/Library/Preferences, and a path whose folder is named
 # Library/Preferences is taken as the user's own domain), never in the user's real Preferences.

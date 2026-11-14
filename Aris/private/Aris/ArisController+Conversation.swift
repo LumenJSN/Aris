@@ -181,7 +181,7 @@ extension ArisController {
     }
 
     private func voiceWatchMode() -> ArisBargeIn.Mode? {
-        guard #available(macOS 26.0, *), conversation.isOpen, training == nil, dictation == nil else { return nil }
+        guard conversation.isOpen, training == nil, dictation == nil else { return nil }
         switch session.phase {
         case .idle where listener == nil && wakeListener == nil:
             // Checked now, before arming: another app's sound pauses listening between turns.
@@ -205,7 +205,7 @@ extension ArisController {
     /// The voice watch is sure the user is talking; the turn's audio starts at the detector's sample `from`, `lookback`
     /// seconds ago.
     func voiceStarted(from sample: Int, lookback: Double) {
-        guard #available(macOS 26.0, *), conversation.isOpen, training == nil, dictation == nil else { return }
+        guard conversation.isOpen, training == nil, dictation == nil else { return }
         switch session.phase {
         case .idle where listener == nil && wakeListener == nil:
             log.notice("you're talking: listening")
@@ -221,7 +221,6 @@ extension ArisController {
 
     /// A turn of the conversation, heard through the wake detector from just before the voice was sure (nothing said
     /// is lost to the hand-over). Hands-free, as a follow-up: no words within a few seconds was noise.
-    @available(macOS 26.0, *)
     func startConversationTurn(from sample: Int, lookback: Double) {
         guard let detector else { return }
         wakeRestart?.cancel()
@@ -285,7 +284,7 @@ extension ArisController {
         scribeOnWords = false
         stopScribe()
         seeEnded()
-        if #available(macOS 26.0, *), let listener = listener as? ArisListener { Task { _ = await listener.stop() } }
+        if let listener = listener as? ArisListener { Task { _ = await listener.stop() } }
         listener = nil
         level = 0
         if let answer = answerBeforeFollowUp {

@@ -292,7 +292,7 @@ final class ArisController: ObservableObject {
     init() {
         speaker.onLevel = { [weak self] in self?.level = $0 }
         Task { await ArisWhisper.shared.prepare() }
-        if #available(macOS 26.0, *) { Task { await ArisListener.prepareHearing() } }
+        Task { await ArisListener.prepareHearing() }
         // The turn-end model loads now: a lazy load after an in-place update of the bundle would find no file.
         ArisTurnDetector.shared.warm()
         Task { [weak self] in
@@ -367,7 +367,6 @@ final class ArisController: ObservableObject {
         speaker.stop()
         handsFree = false
         pauseWatch?.cancel()
-        guard #available(macOS 26.0, *) else { return fail(ArisPrerequisites.full(.voice)) }
         if let problem = Self.permissionProblem() {
             log.notice("permissions not ready: \(problem.rawValue, privacy: .public)")
             return askForPermissions(problem)
@@ -381,7 +380,6 @@ final class ArisController: ObservableObject {
     }
 
     /// A fresh listening session: the counters reset, the recognizer and recording started.
-    @available(macOS 26.0, *)
     func openMicrophone() {
         session = session.listening()
         listeningSince = .now
@@ -421,7 +419,6 @@ final class ArisController: ObservableObject {
     }
 
     /// A turn's listener: the words and voice level drive the notch and the pause watch.
-    @available(macOS 26.0, *)
     func follow(_ listener: ArisListener) {
         listener.onText = { [weak self, weak listener] text in
             guard let self else { return }
@@ -458,6 +455,16 @@ final class ArisController: ObservableObject {
             if self.dictation == .listening { return self.dictationInterrupted() }
             // Words already heard go on as the turn; nothing heard yet is a clean failure with a reason.
             if self.lastWordsAt != nil { self.stopListening() } else { self.fail(ArisUIWords.text("마이크가 바뀌어서 듣기를 멈췄어요. 다시 말해 주세요.", "The microphone changed, so I stopped listening. Please say it again.")) }
+        }
+        // The speech engine can't hear at all (the older engine with macOS Dictation off): said now, with what to do,
+        // instead of an empty turn. Words already written go on as the turn or the dictation.
+        listener.onProblem = { [weak self, weak listener] line in
+            guard let self, let listener, self.listener === listener, self.session.phase == .listening else { return }
+            log.notice("the speech engine can't hear: the turn ends with its reason")
+            if self.dictation == .listening {
+                return self.lastWordsAt != nil ? self.finishDictation() : self.failDictation(line, endsDictation: true)
+            }
+            if self.lastWordsAt != nil { self.stopListening() } else { self.fail(line) }
         }
     }
 
@@ -501,7 +508,7 @@ final class ArisController: ObservableObject {
         handsFree = false
         pauseWatch?.cancel()
         guard session.phase == .listening else { return }
-        guard #available(macOS 26.0, *), let listener = listener as? ArisListener else { return cancel() }
+        guard let listener = listener as? ArisListener else { return cancel() }
         // A follow-up where the recognizer never caught a word was noise or the tail of Aris's own voice
         // (2026-10-26 00:09: three letters of it went to Codex and got an answer). It ends the conversation.
         if followingUp && lastWordsAt == nil {
@@ -714,7 +721,7 @@ final class ArisController: ObservableObject {
         starting?.cancel()
         speaker.stop()
         stopScribe()
-        if #available(macOS 26.0, *), let listener = listener as? ArisListener {
+        if let listener = listener as? ArisListener {
             Task { _ = await listener.stop() }
         }
         listener = nil
@@ -1441,7 +1448,7 @@ final class ArisController: ObservableObject {
         pauseWatch?.cancel()
         starting?.cancel()
         stopScribe()
-        if #available(macOS 26.0, *), let listener = listener as? ArisListener {
+        if let listener = listener as? ArisListener {
             Task { _ = await listener.stop() }
         }
         listener = nil

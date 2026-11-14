@@ -153,7 +153,7 @@ final class ArisGestureHooks {
     }
 
     private func tee(_ listener: AnyObject?) {
-        guard #available(macOS 26.0, *), let listener = listener as? ArisListener else { return }
+        guard let listener = listener as? ArisListener else { return }
         listener.onSpeechChunk = { samples in
             Task { @MainActor in
                 ArisGestureHooks.shared.capture?.feedSpeech(samples, at: CACurrentMediaTime() * 1000)
@@ -163,7 +163,7 @@ final class ArisGestureHooks {
     }
 
     private func untee() {
-        if #available(macOS 26.0, *), let listener = teed as? ArisListener { listener.onSpeechChunk = nil }
+        if let listener = teed as? ArisListener { listener.onSpeechChunk = nil }
         teed = nil
     }
 }

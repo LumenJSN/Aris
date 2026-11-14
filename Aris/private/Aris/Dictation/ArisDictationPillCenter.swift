@@ -27,12 +27,9 @@ extension Defaults.Keys {
     static let arisDictationPillIdle = Key<Bool>("arisDictationPillIdle", default: true)
 }
 
-/// Whether the pill takes dictation on this Mac now.
+/// Whether the pill takes dictation on this Mac now (every macOS the app runs on can dictate: ArisListenEngine).
 enum ArisDictationPillGate {
-    static var on: Bool {
-        guard #available(macOS 26.0, *) else { return false }
-        return Defaults[.arisDictationPill]
-    }
+    static var on: Bool { Defaults[.arisDictationPill] }
 }
 
 @MainActor

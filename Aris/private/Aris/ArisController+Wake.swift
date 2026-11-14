@@ -99,7 +99,6 @@ extension ArisController {
     /// While idle (and the setting is on), the detector listens. Never asks for permissions: the first
     /// hotkey press does that. In a conversation it listens whatever the setting, for any voice (no name needed).
     func waitForWakeWord() {
-        guard #available(macOS 26.0, *) else { return }
         // A lock or a display's sleep whose "back" notice never came (a display unplugged mid-sleep) must not hold the
         // microphone off for good (QA BUG-38): the screen is asked directly.
         if screenAway, !Self.screenIsAwayNow() {
@@ -162,7 +161,7 @@ extension ArisController {
     /// minute, two minutes and ten; then it stops looking until waitForWakeWord() is next called (a turn, the setting,
     /// the screen coming back).
     func waitForSpeechModel() {
-        guard #available(macOS 26.0, *), Self.wakeSpeechWait == nil else { return }
+        guard Self.wakeSpeechWait == nil else { return }
         Self.wakeSpeechWait = Task { [weak self] in
             defer { Self.wakeSpeechWait = nil }
             var tries = 0
@@ -186,7 +185,6 @@ extension ArisController {
     /// A wake check's recognizer couldn't start (the speech model went missing, or the recognizer failed): the check
     /// ends here and the microphone closes, instead of being handed back to the detector to fail again on the next
     /// sound. It opens again after a pause that grows with each failure in a row, and after the third stays closed.
-    @available(macOS 26.0, *)
     func wakeListenFailed(_ listener: ArisListener) {
         guard wakeListener === listener else { return }
         Self.wakeListenFailures += 1
@@ -210,7 +208,6 @@ extension ArisController {
     /// The idle microphone: candidates wake Aris when it's idle, and interrupt it while it talks. `paused`: no
     /// candidates (a conversation listens for any voice through its voice watch).
     func startDetector(paused: Bool = false) {
-        guard #available(macOS 26.0, *) else { return }
         let detector = ArisWakeDetector()
         detector.onCandidate = { [weak self, weak detector] score, sure in
             guard let self, let detector, self.detector === detector else { return }
@@ -271,7 +268,7 @@ extension ArisController {
     /// phrase, Aris's own voice included, would be a candidate).
     /// In a conversation the voice watch stops Aris too (updateVoiceWatch); "아리스" in your trained voice still does.
     func armBargeIn() {
-        guard #available(macOS 26.0, *), !screenAway, training == nil else { return }
+        guard !screenAway, training == nil else { return }
         if conversation.isOpen { updateVoiceWatch() }
         // Not while the wake word rests (a call is on, the battery is being saved): the talk key still stops Aris.
         guard Defaults[.arisWakeWord], hasWakeModel, !ArisWakeRestLive.shared.keepsMicrophoneClosed else { return }
@@ -281,7 +278,6 @@ extension ArisController {
 
     /// A likely "아리스" while Aris is talking. Its own voice through the speakers reaches the microphone too,
     /// so only a sure match with your voice, or Whisper hearing the name, stops it.
-    @available(macOS 26.0, *)
     func checkBargeIn(with detector: ArisWakeDetector, score: Float?, sure: Bool) {
         // Its score against the voice print's threshold, so a check with the user's own voice is easy to read.
         let threshold = Self.loadWakeModel()?.threshold
@@ -319,7 +315,6 @@ extension ArisController {
     }
 
     /// "아리스" while Aris talks: it stops and listens to the new request, as Siri does. Music stays paused.
-    @available(macOS 26.0, *)
     func interrupt(with detector: ArisWakeDetector, score: Float?, path: String) {
         guard session.phase == .speaking else { return }
         log.notice("interrupted (\(path, privacy: .public))")
@@ -338,7 +333,6 @@ extension ArisController {
     /// now, like Siri. Otherwise the recognizer hears the phrase from its start, and Whisper hears its first
     /// second or so; either finding the name wakes Aris. (Voice prints alone can't tell a real call from
     /// other talk, and the recognizer rarely writes a lone short "아리스" down.)
-    @available(macOS 26.0, *)
     func checkWakeWord(with detector: ArisWakeDetector, score: Float?, sure: Bool) {
         guard wakeListener == nil, session.phase == .idle else { return }
         detector.pause(true)
@@ -355,6 +349,13 @@ extension ArisController {
             guard self.wakeListener === listener else { return }
             note("recognizer")
             self.wake(listener, heard: text)
+        }
+        // The speech engine can't hear (the older engine with macOS Dictation off): the check ends as one that
+        // couldn't listen, and the microphone closes for a while (wakeListenFailed).
+        listener.onProblem = { [weak self, weak listener] line in
+            guard let self, let listener, self.wakeListener === listener else { return }
+            log.error("wake word: the speech engine can't hear: \(line, privacy: .public)")
+            self.wakeListenFailed(listener)
         }
         wakeListener = listener
         let started = Task {
@@ -418,7 +419,7 @@ extension ArisController {
         detector = nil
         // Its gate can't say the user stopped talking any more.
         userTalking = false
-        guard #available(macOS 26.0, *), let listener = wakeListener as? ArisListener else { return }
+        guard let listener = wakeListener as? ArisListener else { return }
         wakeListener = nil
         listener.onText = nil
         Task { _ = await listener.stop() }
@@ -428,7 +429,7 @@ extension ArisController {
 
     /// Settings → Aris → Train: the notch opens and you say "아리스" a few times.
     func startTraining() {
-        guard #available(macOS 26.0, *), session.phase == .idle, training == nil else { return }
+        guard session.phase == .idle, training == nil else { return }
         guard Self.permissionProblem() == nil else {
             return fail(ArisPermissionWords.pressKeyFirst())
         }
@@ -500,7 +501,6 @@ extension ArisController {
     }
 
     /// "아리스" heard: the waiting listener carries on as this turn's, hands-free.
-    @available(macOS 26.0, *)
     func wake(_ listener: ArisListener, heard text: String, starting started: Task<Void, Never>? = nil) {
         guard session.phase == .idle, wakeListener === listener else { return }
         // Read before Aris pauses anything: another app's sound means the name may have come from it.

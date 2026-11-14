@@ -268,6 +268,7 @@ struct ArisLiveSettings: View {
         s.hasVoiceKey = hasVoiceKey
         s.voiceName = voiceName
         s.speed = speed
+        s.listenEngine = ArisHearingShown.line()
         s.words = words
         s.learned = learned
         s.brainPolish = brainPolish

@@ -186,8 +186,6 @@ extension ArisController {
         guard cardUp(ask) else { return covered() }
         if let typedAnswer { return CardWait(allow: typedAnswer, typed: cardAnswerSource) }
         guard !Task.isCancelled else { return CardWait() }
-        // No ear for a spoken answer before macOS 26: the card waits for a click, Y or N, never a no on its own (QA BUG-54).
-        guard #available(macOS 26.0, *) else { return await clickAnswer(ask, waiter: waiter) }
         let listener = ArisListener()
         // What was said since the last spoken change of the card ("내일로 바꿔"), which is never an answer.
         var heard = ArisCardListening()

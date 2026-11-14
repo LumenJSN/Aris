@@ -89,7 +89,6 @@ extension ArisController {
         case .start: break
         }
         ArisDictationState.shared.clearRefusal()
-        guard #available(macOS 26.0, *) else { return }
         if let problem = Self.permissionProblem() { return askForPermissions(problem) }
         // Dictation takes the microphone: a conversation ends first.
         closeConversation(.dictation)
@@ -136,7 +135,7 @@ extension ArisController {
     func finishDictation() {
         // Once: the key and the 20-minute cap can both end it.
         guard dictation == .listening, session.phase == .listening, !ArisDictationState.shared.finishing else { return }
-        guard #available(macOS 26.0, *), let listener = listener as? ArisListener else { return cancel() }
+        guard let listener = listener as? ArisListener else { return cancel() }
         // Voice the level meter counted, or words a recogniser wrote: a quiet microphone can stay under the voice
         // level while every word is written (audit voice-10).
         guard ArisDictationEnd.saidSomething(heardVoice: lastVoiceAt != nil, wroteWords: lastWordsAt != nil) else {

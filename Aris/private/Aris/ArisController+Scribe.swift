@@ -19,7 +19,6 @@ extension ArisController {
     static let scribeTimeout: Duration = .milliseconds(2500)
 
     /// Starts streaming `listener`'s audio to Scribe; `replaying` is audio already recorded (the wake word's phrase).
-    @available(macOS 26.0, *)
     func startScribe(for listener: ArisListener, replaying recorded: [Float] = []) {
         stopScribe()
         // ElevenLabs failed twice in a row: for a few minutes the Mac's own recognisers listen, without the wait for

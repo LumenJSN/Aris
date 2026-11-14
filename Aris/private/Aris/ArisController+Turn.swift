@@ -24,7 +24,7 @@ extension ArisController {
     }
 
     func scorePauseIfNeeded(sinceVoice: Duration?) {
-        guard #available(macOS 26.0, *), let sinceVoice, sinceVoice >= Self.scoreAfterQuiet, !scoringPause,
+        guard let sinceVoice, sinceVoice >= Self.scoreAfterQuiet, !scoringPause,
               let voiceAt = lastVoiceAt, pauseScore?.voiceAt != voiceAt,
               let listener = listener as? ArisListener else { return }
         scoringPause = true
@@ -53,7 +53,7 @@ extension ArisController {
     func heldUpByGrace(confident: Bool) async -> Bool {
         preparedWhisper?.task.cancel()
         preparedWhisper = nil
-        guard #available(macOS 26.0, *), let listener = listener as? ArisListener else { return false }
+        guard let listener = listener as? ArisListener else { return false }
         // A turn longer than one of Whisper's windows is read once, when it ends (ArisLongTurn).
         if scribe == nil, ArisLongTurn.readsDuringGrace(seconds: listener.recordedSeconds) {
             let recording = listener.recordedSamples

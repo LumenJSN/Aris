@@ -502,7 +502,7 @@ private func voiceWiringTests() {
 
     let listener = source("ArisListener.swift")
     let listenerStart = part(listener, from: "func start(locale: Locale", to: "static func prepareSpeechAssets")
-    check(listenerStart.contains("waiting = handOver.startsWaiting(asked: waitingForWakeWord)") && listenerStart.contains("recording.reset(rolling: waiting)"),
+    check(listenerStart.contains("heard = ArisHeardText(waiting: handOver.startsWaiting(asked: waitingForWakeWord))") && listenerStart.contains("recording.reset(rolling: waiting)"),
           "voice-2: start() keeps a listener that already began its turn out of the waiting state")
     check(part(listener, from: "func beginTurn()", to: "func stop() async").contains("handOver.beginTurn()"), "voice-2: beginTurn() is remembered")
 

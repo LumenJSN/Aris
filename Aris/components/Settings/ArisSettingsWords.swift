@@ -50,7 +50,7 @@ enum ArisSettingsCaption {
     /// The line under Aris's name in the sidebar: what needs the user, or that all is well. `noAI`: the agent answered and
     /// no AI is set up on this Mac (fresh install F2: it said 모두 잘 되고 있어요 while nothing could answer).
     /// `missing`: what the install itself lacks (ArisPrerequisites). A helper that isn't installed comes first, since
-    /// no restart brings it back; an older macOS comes after everything the user can fix here.
+    /// no restart brings it back.
     /// The order (final check on a new Mac): a helper that is not answering comes first, since nothing else can be
     /// known or fixed without it (with no AI the line never reported a stopped helper); then permissions; then the AI.
     /// `aiUnchecked`: no AI can answer, but a key is saved that has never answered: said as that, with a press that
@@ -66,7 +66,6 @@ enum ArisSettingsCaption {
         if noAI { return Self.noAI }
         if quickKey == .refused { return Self.quickKeyRefused }
         if quickKey == .unchecked { return Self.quickKeyUnchecked }
-        if missing.contains(.voice) { return ArisPrerequisites.line(.voice, english: english) }
         return "모두 잘 되고 있어요"
     }
 

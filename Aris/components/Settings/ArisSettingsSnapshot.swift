@@ -107,6 +107,8 @@ struct ArisSettingsSnapshot: Equatable {
     var hasVoiceKey = false
     var voiceName = ""
     var speed = 1.0
+    /// 듣기 엔진: which speech engine hears on this Mac (ArisListenEngineWords.settingsLine); empty in a still picture.
+    var listenEngine = ""
 
     // 받아쓰기
     var words = 0

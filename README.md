@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/LumenJSN/Aris/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/release-v1.1.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=dark" /><img alt="latest release" src="https://shieldcn.dev/badge/release-v1.1.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=light" /></picture></a>
+  <a href="https://github.com/LumenJSN/Aris/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/release-v1.2.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=dark" /><img alt="latest release" src="https://shieldcn.dev/badge/release-v1.2.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=light" /></picture></a>
   <a href="https://arismac.app"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/website-arismac.app.svg?logo=lu:Globe&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="Website: arismac.app" src="https://shieldcn.dev/badge/website-arismac.app.svg?logo=lu:Globe&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture></a>
   <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/macOS-14%2B_Apple_silicon.svg?logo=apple&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="macOS 14+ on Apple silicon" src="https://shieldcn.dev/badge/macOS-14%2B_Apple_silicon.svg?logo=apple&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Swift-5.svg?logo=swift&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="Swift" src="https://shieldcn.dev/badge/Swift-5.svg?logo=swift&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture>
@@ -49,6 +49,11 @@ and anything that would act on your Mac asks you first. [arismac.app](https://ar
 
 Requires a Mac with **Apple silicon** and **macOS 14 Sonoma or later**. The notch's glass look needs macOS 26; older
 systems get a plain dark notch. Macs without a notch work too.
+
+Talking and dictation work on macOS 14 and later. On macOS 14 and 15 Aris listens with Apple's older speech engine,
+which needs **macOS Dictation turned on** (System Settings › Keyboard › Dictation); it hears on the Mac when your
+language has an on-device model, otherwise through Apple's servers. Polishing dictation in your own writing style
+needs macOS 26.
 
 1. [Download Aris](https://arismac.app/download?ref=github) (the latest `Aris-<version>.dmg`, also on
    [Releases](https://github.com/LumenJSN/Aris/releases/latest)) and open it.
@@ -112,7 +117,8 @@ A build from source has no onboarding sounds (they are not in the repository, se
   operated through [Peekaboo](https://github.com/openclaw/Peekaboo), downloaded on first use.
 - **Sees what you point at**: ask about the screen, circle something with the gesture, or pick windows to ask about.
 - **Dictation** into any app, with a learned dictionary and your own writing style, shown in a small pill at the
-  bottom of the screen while the notch stays quiet.
+  bottom of the screen while the notch stays quiet. Talking and dictation work on macOS 14 and later (on 14 and 15
+  with Apple's older speech engine; see [Install](#install)).
 - **Hands-free conversation**, with on-device end-of-turn detection and barge-in.
 - **Teammates**: background workers (a clone of Aris, Claude Code in a terminal) that take a job and report back.
 - **Skills** in the open Agent Skills format (`SKILL.md` plus optional `scripts/`, `references/`, `assets/`), so
@@ -130,7 +136,7 @@ Security (the helper and tools inside the app count as the app).
 | Permission | What Aris does with it |
 | --- | --- |
 | Microphone | hears you while you hold the talk key, in a hands-free conversation, and for its name if the wake word is on |
-| Speech Recognition | turns speech into text on the Mac (an on-device Whisper model is an option) |
+| Speech Recognition | turns speech into text on the Mac (on macOS 14 and 15, through Apple's servers for a language without an on-device model; an on-device Whisper model is an option) |
 | Accessibility | finds and presses buttons and fields in other apps, types for you, reads the selection and the focused window |
 | Screen Recording | sees the screen only when you point, circle or pick a window; password apps and Aris's own windows are always left out |
 | Full Disk Access (optional) | reads Messages, Mail and Notes; never writes there |
@@ -164,14 +170,16 @@ Your history, memory and keys stay on your Mac; your request goes only to the AI
 model).
 
 - **Stays on your Mac**: history, memory notes, schedules, settings, skills and logs (in `~/.config/aris` and the
-  app's container), the wake word, the end-of-turn model, the dictation dictionary and the Mac's speech recognition.
+  app's container), the wake word, the end-of-turn model, the dictation dictionary and the Mac's on-device speech
+  recognition.
   No server, no account, no analytics. The helper listens on `127.0.0.1` only, behind a token.
 - **Goes to the AI you chose**: your request, the context it needs (the time, the app in front, what you selected or
   pointed at, the memory notes that apply) and the results of its steps, such as a message you asked it to read.
   That goes to the company behind your CLI or API under their terms, or stays on the Mac with a local model.
 - **Other services, only when used**: weather, stocks, maps and currency lookups, a web page you ask about,
-  ElevenLabs or OpenAI speech if you set a key, and GitHub for the first-use downloads (Peekaboo, SkillSpector and
-  its Python runtime, the Whisper model).
+  ElevenLabs or OpenAI speech if you set a key, Apple's speech recognition servers on macOS 14 and 15 when your
+  language has no on-device model (Aris says so once), and GitHub for the first-use downloads (Peekaboo, SkillSpector
+  and its Python runtime, the Whisper model).
 
 ## Safety model
 

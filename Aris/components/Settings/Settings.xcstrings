@@ -2041,6 +2041,66 @@
         }
       }
     },
+    "듣기 엔진": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening engine"
+          }
+        }
+      }
+    },
+    "기기 안 Apple 음성 인식 (macOS %d)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple speech recognition on this Mac (macOS %d)"
+          }
+        }
+      }
+    },
+    "Apple 서버 음성 인식 (macOS %d)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple speech recognition on Apple's servers (macOS %d)"
+          }
+        }
+      }
+    },
+    "기기 안 Apple 음성 인식 (macOS %d, 새 엔진)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple speech recognition on this Mac (macOS %d, new engine)"
+          }
+        }
+      }
+    },
+    "기기 안 Apple 음성 인식 (macOS %d, 예전 엔진으로 고정)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple speech recognition on this Mac (macOS %d, held to the older engine)"
+          }
+        }
+      }
+    },
+    "Apple 서버 음성 인식 (macOS %d, 예전 엔진으로 고정)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple speech recognition on Apple's servers (macOS %d, held to the older engine)"
+          }
+        }
+      }
+    },
     "ElevenLabs Scribe로 듣기": {
       "localizations": {
         "en": {

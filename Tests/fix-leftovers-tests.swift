@@ -255,14 +255,16 @@ private func prerequisiteTests() {
     typealias P = ArisPrerequisites
     check(P.missing(osMajor: 27, helperInstalled: true).isEmpty && P.missing(osMajor: 26, helperInstalled: true).isEmpty,
           "prerequisites: macOS 26 or later with the helper installed lacks nothing")
-    check(P.missing(osMajor: 15, helperInstalled: true) == [.voice] && P.missing(osMajor: 14, helperInstalled: true) == [.voice],
-          "prerequisites: on macOS 14 and 15 talking is what's missing (the listener is macOS 26's)")
-    check(P.missing(osMajor: 27, helperInstalled: false) == [.helper] && P.missing(osMajor: 15, helperInstalled: false) == [.helper, .voice],
+    // legacy-speech: macOS 14 and 15 talk with the older speech engine (ArisListenEngine); talking is never missing.
+    check(P.missing(osMajor: 15, helperInstalled: true).isEmpty && P.missing(osMajor: 14, helperInstalled: true).isEmpty,
+          "prerequisites: on macOS 14 and 15 nothing is missing (the older speech engine listens there)")
+    check(P.missing(osMajor: 27, helperInstalled: false) == [.helper] && P.missing(osMajor: 15, helperInstalled: false) == [.helper],
           "prerequisites: an Aris.app without its helper says so, and first: nothing answers without it")
-    // The rule's version is the one the voice code is gated on, not a guess.
+    // The listener is no longer gated on a macOS: it picks its engine (ArisListenEngine).
     let listener = leftoversSource("Aris/private/Aris/ArisListener.swift"), key = leftoversSource("Aris/private/Aris/ArisController.swift")
-    check(listener.contains("@available(macOS \(P.voiceFromMajor).0, *)\n@MainActor\nfinal class ArisListener") && key.contains("guard #available(macOS \(P.voiceFromMajor).0, *) else"),
-          "prerequisites: the macOS the rule names is the one the listener and the talk key are gated on")
+    check(listener.contains("@MainActor\nfinal class ArisListener") && !listener.contains("@available(macOS 26.0, *)\n@MainActor\nfinal class ArisListener")
+          && !key.contains("guard #available(macOS 26.0, *) else"),
+          "prerequisites: the listener and the talk key have no macOS gate")
     check(!leftoversSource("Aris/private/Aris/ArisController+Typed.swift").contains("#available"),
           "prerequisites: a typed request has no macOS gate, so 'typing works' is true")
     check(P.helperPath(app: "/Applications/Aris.app") == "/Applications/Aris.app/Contents/MacOS/aris-agent"
@@ -271,8 +273,6 @@ private func prerequisiteTests() {
 
     check(P.line(.helper, english: true) == "This copy of Aris has no helper inside it" && P.line(.helper, english: false) == "이 Aris에는 도우미가 들어 있지 않아요",
           "prerequisites: the short line says the app has no helper inside it")
-    check(P.line(.voice, english: true) == "Talking to Aris needs macOS 26; typing works" && P.line(.voice, english: false).contains("macOS 26") && P.line(.voice, english: false).contains("글로"),
-          "prerequisites: on an older macOS the line says talking needs macOS 26 and typing works")
     check(P.Missing.allCases.allSatisfy { missing in [true, false].allSatisfy { english in
         let full = P.full(missing, english: english)
         return full.hasPrefix(P.line(missing, english: english)) && full.count > P.line(missing, english: english).count + 10 && full.hasSuffix(".")
@@ -280,23 +280,19 @@ private func prerequisiteTests() {
     check(P.full(.helper, english: true).contains("install") && !P.full(.helper, english: true).contains(".sh") && !P.full(.helper, english: false).contains(".sh"),
           "prerequisites: what to do is said without a script's name")
 
-    check(P.atLaunch([.helper, .voice], voiceSaidBefore: false) == .helper && P.atLaunch([.helper], voiceSaidBefore: true) == .helper,
-          "prerequisites at launch: a missing helper is said at every launch")
-    check(P.atLaunch([.voice], voiceSaidBefore: false) == .voice && P.atLaunch([.voice], voiceSaidBefore: true) == nil && P.atLaunch([], voiceSaidBefore: false) == nil,
-          "prerequisites at launch: the older macOS is said once, and a complete install hears nothing")
+    check(P.atLaunch([.helper]) == .helper && P.atLaunch([]) == nil,
+          "prerequisites at launch: a missing helper is said at every launch, and a complete install hears nothing")
 
     typealias G = ArisSettingsCaption
-    check(G.greeting(agentDown: true, missingPermissions: 2, noAI: true, missing: [.helper, .voice], english: false) == P.line(.helper, english: false)
+    check(G.greeting(agentDown: true, missingPermissions: 2, noAI: true, missing: [.helper], english: false) == P.line(.helper, english: false)
           && G.greeting(agentDown: false, missingPermissions: 0, missing: [.helper], english: true) == "This copy of Aris has no helper inside it",
           "settings status: a helper that isn't installed is said before a lost connection (다시 시작 can't bring back what isn't there)")
-    check(G.greeting(agentDown: true, missingPermissions: 0, missing: [.voice]) == "에이전트와 연결이 끊겼어요" && G.greeting(agentDown: false, missingPermissions: 0, noAI: true, missing: [.voice]) == G.noAI
-          && G.greeting(agentDown: false, missingPermissions: 2, missing: [.voice]) == "권한 2개가 더 필요해요",
-          "settings status: what the user can fix now comes before the macOS line")
-    check(G.greeting(agentDown: false, missingPermissions: 0, missing: [.voice], english: false) == P.line(.voice, english: false)
-          && G.greeting(agentDown: false, missingPermissions: 0, missing: []) == "모두 잘 되고 있어요",
-          "settings status: on an older macOS it never says all is well, it says talking needs macOS 26")
-    check(G.prerequisite(P.line(.helper, english: false), english: false) == .helper && G.prerequisite(P.line(.voice, english: true), english: true) == .voice
-          && G.prerequisite("모두 잘 되고 있어요", english: false) == nil,
+    check(G.greeting(agentDown: true, missingPermissions: 0, missing: []) == "에이전트와 연결이 끊겼어요" && G.greeting(agentDown: false, missingPermissions: 0, noAI: true, missing: []) == G.noAI
+          && G.greeting(agentDown: false, missingPermissions: 2, missing: []) == "권한 2개가 더 필요해요",
+          "settings status: what the user can fix now is said")
+    check(G.greeting(agentDown: false, missingPermissions: 0, missing: [], english: false) == "모두 잘 되고 있어요",
+          "settings status: on macOS 14 and 15 all is well too (no macOS line any more)")
+    check(G.prerequisite(P.line(.helper, english: false), english: false) == .helper && G.prerequisite("모두 잘 되고 있어요", english: false) == nil,
           "settings status: the row knows when its line is one of these (it shows what to do)")
     check(ArisAgentCopy.notSetUp == P.full(.helper, english: false), "prerequisites: a turn with no helper says the same line, with what to do")
 }

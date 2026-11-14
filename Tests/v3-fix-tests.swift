@@ -391,7 +391,7 @@ private func v3ListenStartTests() {
           && L.shownOnPage(failed: false, reply: en, listening: false) == nil && L.shownOnPage(failed: true, reply: "", listening: false) == nil,
           "vm3n bug 4: the setup's Dictation page shows the same sentence under its note while the notch says it")
     let listener = v3Code("Aris/private/Aris/ArisListener.swift")
-    check(listener.contains("ArisListenStart.problem(usesMicrophone: source == nil, hasMicrophone: ArisMicChoice.hasMicrophone(), modelMissing: modelMissing)")
+    check(listener.contains("ArisListenStart.problem(usesMicrophone: source == nil && feed == nil, hasMicrophone: ArisMicChoice.hasMicrophone(), modelMissing: modelMissing)")
           && v3Code("Aris/private/Aris/Onboarding/ArisOnboardingTryPages.swift").contains("ArisListenStart.shownOnPage(failed: aris.session.phase == .failed, reply: aris.session.reply, listening: listening)"),
           "vm3n bug 4: wiring: the listener asks the rule before it starts, and the page shows what came of it")
 }

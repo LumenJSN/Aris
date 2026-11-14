@@ -88,9 +88,11 @@ private func qaFinal3OneCardTests() {
 
 private func qaFinal3CardAnswerTests() {
     let tasks = final3Source("Aris/private/Aris/ArisController+Tasks.swift"), countdown = final3Source("Aris/private/Aris/ArisController+Countdown.swift")
-    check(!tasks.contains("return typedAnswer ?? false") && tasks.contains("guard #available(macOS 26.0, *) else { return await clickAnswer(ask, waiter: waiter) }")
+    // legacy-speech: every macOS hears the answer now (the older engine on 14 and 15), so no macOS falls back to
+    // the buttons; a listener that fails still does.
+    check(!tasks.contains("return typedAnswer ?? false") && !tasks.contains("guard #available(macOS 26.0, *)")
           && tasks.contains("return await clickAnswer(ask, waiter: waiter)\n        }"),
-          "BUG-54: a listener that fails, or no listener before macOS 26, never answers no: the card waits for a click, Y or N")
+          "BUG-54: a listener that fails never answers no: the card waits for a click, Y or N (every macOS listens for it)")
     check(tasks.contains("return CardWait(allow: answer ?? false, typed: answer == nil ? nil : cardAnswerSource, unanswered: ArisCardWait.unanswered(answer))\n    }\n\n    /// The card's request ended")
           && ArisCardWait.unanswered(nil) && ArisCardWait.replyAfterCards("x", unanswered: true, declined: false, korean: true) == "답이 없어서 하지 않았어요.",
           "BUG-54: past the limit with no click it is unanswered, never “You said no”")
