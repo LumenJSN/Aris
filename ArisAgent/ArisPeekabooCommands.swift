@@ -23,9 +23,13 @@ enum ArisPeekabooCommands {
         return argv + ["--json"]
     }
 
-    static func click(_ element: String, snapshot: String, double: Bool = false, right: Bool = false, foreground: Bool = false) -> [String] {
+    /// `actionOnly`: the element's own Accessibility action and nothing else (Peekaboo 4.9.8's `--input-strategy`
+    /// takes actionFirst, synthFirst, actionOnly or synthOnly; its default for a click is actionFirst, which falls back
+    /// to synthetic pointer input when the element has no action). A click that holds the lock for its app alone.
+    static func click(_ element: String, snapshot: String, double: Bool = false, right: Bool = false, foreground: Bool = false,
+                      actionOnly: Bool = false) -> [String] {
         ["click", "--on", element, "--snapshot", snapshot] + (double ? ["--double"] : []) + (right ? ["--right"] : [])
-            + (foreground ? ["--foreground"] : []) + ["--json"]
+            + (foreground ? ["--foreground"] : []) + (actionOnly ? ["--input-strategy", "actionOnly"] : []) + ["--json"]
     }
 
     /// A point click, window-relative: in the background against the snapshot's window, or (the user consented) a real

@@ -228,14 +228,6 @@ func keyboardApp() -> NSRunningApplication? {
     ArisFrontLive.focusedPid().flatMap { NSRunningApplication(processIdentifier: $0) }
 }
 
-/// The app's focused window; nil when it has none.
-func focusedWindow(of pid: pid_t) -> AXUIElement? {
-    var value: AnyObject?
-    guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute as CFString, &value) == .success,
-          let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-    return (value as! AXUIElement)
-}
-
 /// An element's frame as Accessibility gives it (the primary display's top left, y down); nil when it can't be read.
 func axFrame(_ element: AXUIElement) -> CGRect? {
     var position: AnyObject?, size: AnyObject?
@@ -245,20 +237,6 @@ func axFrame(_ element: AXUIElement) -> CGRect? {
     var origin = CGPoint.zero, dimensions = CGSize.zero
     guard AXValueGetValue(position as! AXValue, .cgPoint, &origin), AXValueGetValue(size as! AXValue, .cgSize, &dimensions) else { return nil }
     return CGRect(origin: origin, size: dimensions)
-}
-
-/// The app's focused UI element (where typed keys go), and its text; nil when there is none or it can't be read.
-func focusedElement(of pid: pid_t) -> AXUIElement? {
-    var value: AnyObject?
-    guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXFocusedUIElementAttribute as CFString, &value) == .success,
-          let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-    return (value as! AXUIElement)
-}
-
-func elementText(_ element: AXUIElement) -> String? {
-    var value: AnyObject?
-    guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success else { return nil }
-    return value as? String
 }
 
 /// `keys <chord> [--app X] [--times N]`.
@@ -281,46 +259,12 @@ func keys(_ args: [String]) {
     print(ArisTypeReadback.keysLine(written, times: times, app: shown, stayedInFront: true).line)
 }
 
-/// `type <text> [--app X]`: types the text as if from the keyboard (any language).
+/// `type '<text>' [--app X] [--title <window>] [--at end|start]`: the text typed into the field with the keyboard focus in that app's window, by the agent's
+/// desktop engine (ArisTypeRequest): aris-tools itself never types.
 func typeText(_ args: [String]) {
-    requireAccessibility()
-    var words = args
-    let app = option("--app", in: &words)
-    let text = words.joined(separator: " ")
-    guard !text.isEmpty else { fail("usage: type <text> [--app X]") }
-    guard let target = app.map({ typingTarget($0) }) ?? keyboardApp() else { fail("no app has the keyboard to type into") }
-    let shown = target.localizedName ?? app ?? "the app in front"
-    // Its window, on whichever display it is (QA BUG-33: one left of and above the main display), raised and made the
-    // app's main window so the keys go there; one on no display is never typed into.
-    if let window = focusedWindow(of: target.processIdentifier) {
-        if let frame = axFrame(window), let primary = NSScreen.screens.first?.frame.height,
-           ArisDisplayGeometry.display(for: frame, screens: NSScreen.screens.map(\.frame), primaryHeight: primary) == nil {
-            fail(ArisTypeReadback.offScreenLine(app: shown))
-        }
-        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-        AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
-        usleep(150_000)
+    let front = keyboardApp().flatMap { $0.bundleIdentifier ?? $0.localizedName }
+    switch ArisTypeRequest.call(args, keyboardApp: front) {
+    case .failure(let why): fail(why.line)
+    case .success(let call): desktopCall(call.words, text: call.text)
     }
-    // Where the keys will go, read before anything is typed (QA BUG-10): no focused field, nothing typed.
-    guard let field = focusedElement(of: target.processIdentifier) else { fail(ArisTypeReadback.noFieldLine(app: shown)) }
-    let before = elementText(field)
-    let source = CGEventSource(stateID: .hidSystemState)
-    let characters = Array(text.utf16)
-    for start in stride(from: 0, to: characters.count, by: 16) {
-        let chunk = Array(characters[start..<min(start + 16, characters.count)])
-        for down in [true, false] {
-            let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down)
-            event?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
-            event?.post(tap: .cghidEventTap)
-        }
-        usleep(15_000)
-    }
-    // Read back: the text must be in the focused field now, or it is a failure the brain can't call done.
-    usleep(250_000)
-    // The field the keys were aimed at first (another display's window may hand the focus elsewhere after), then whatever
-    // has the focus now.
-    let after = elementText(field) ?? focusedElement(of: target.processIdentifier).flatMap(elementText)
-    let outcome = ArisTypeReadback.result(text, app: shown, before: before, after: after)
-    guard outcome.ok else { fail(outcome.line) }
-    print(outcome.line)
 }

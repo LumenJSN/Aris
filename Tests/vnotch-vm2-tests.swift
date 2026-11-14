@@ -264,7 +264,7 @@ func runVNotchVM2Tests() {
     vm2FilesWithEditTests()
     vm2BandEarTests()
     MainActor.assumeIsolated {
-        vm2HandOverTests()
+        keyPanelHarness("vm2 B12") { vm2HandOverTests() }
         vm2LocatorTests()
     }
 }

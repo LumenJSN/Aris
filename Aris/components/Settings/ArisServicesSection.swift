@@ -142,10 +142,11 @@ struct ArisComposioRow: View {
         let row = model.composio
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "square.stack.3d.up").font(.system(size: 16.5, weight: .medium)).foregroundStyle(palette.icon).frame(width: 20, height: 20)
+                // A connected service is a list row: the measured app-icon tile.
+                ArisIconTile("square.stack.3d.up", size: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text("Composio").font(.system(size: 14, weight: .medium)).tracking(-0.07).foregroundStyle(palette.title)
+                        Text("Composio").font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
                         if let row { ArisChip(text: row.enabled ? "켜짐" : "꺼짐", tone: row.enabled ? .ok : .plain) } else { ArisChip(text: "없음") }
                     }
                     Text(w("Gmail, Slack, Notion, Google 캘린더 등 여러 앱을 한 키로 연결해요. 읽기는 바로 하고, 보내거나 바꾸는 일은 매번 물어봐요."))
@@ -154,7 +155,7 @@ struct ArisComposioRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if let row, !model.composioEditing {
                     HStack(spacing: 8) {
-                        ArisSwitch(isOn: row.enabled, label: "Composio") { Task { await model.toggle(row) } }
+                        ArisSwitch(isOn: row.enabled, style: .store, label: "Composio") { Task { await model.toggle(row) } }
                         ArisSettingsButton(title: model.busy.contains(row.id) ? "확인 중…" : "연결 테스트", small: true, enabled: !model.busy.contains(row.id)) {
                             Task { await model.test(row.id) }
                         }
@@ -204,11 +205,10 @@ struct ArisMCPServerRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: row.transport == "stdio" ? "terminal" : "network").font(.system(size: 16.5, weight: .medium))
-                    .foregroundStyle(palette.icon).frame(width: 20, height: 20)
+                ArisIconTile(row.transport == "stdio" ? "terminal" : "network", size: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(row.name).font(.system(size: 14, weight: .medium)).tracking(-0.07).foregroundStyle(palette.title)
+                        Text(row.name).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
                         ArisChip(text: row.enabled ? "켜짐" : "꺼짐", tone: row.enabled ? .ok : .plain)
                         if row.hasSecret { ArisChip(text: "토큰 있음") }
                     }
@@ -216,7 +216,7 @@ struct ArisMCPServerRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 8) {
-                    ArisSwitch(isOn: row.enabled, label: row.name) { Task { await model.toggle(row) } }
+                    ArisSwitch(isOn: row.enabled, style: .store, label: row.name) { Task { await model.toggle(row) } }
                     ArisSettingsButton(title: model.busy.contains(row.id) ? "확인 중…" : "연결 테스트", small: true, enabled: !model.busy.contains(row.id)) {
                         Task { await model.test(row.id) }
                     }
@@ -283,10 +283,10 @@ struct ArisMCPAddRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: model.editing == nil ? "plus" : "pencil").font(.system(size: 16.5, weight: .medium)).foregroundStyle(palette.icon)
+                ArisLineIcon(model.editing == nil ? "plus" : "pencil", size: 20).foregroundStyle(palette.icon)
                     .frame(width: 20, height: 20)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(w(model.editing == nil ? "MCP 서버 추가" : "MCP 서버 바꾸기")).font(.system(size: 14, weight: .medium)).tracking(-0.07).foregroundStyle(palette.title)
+                    Text(w(model.editing == nil ? "MCP 서버 추가" : "MCP 서버 바꾸기")).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
                     Text(w("명령(예: npx -y @modelcontextprotocol/server-everything)이나 https URL을 넣어요. 토큰은 키체인에만 저장되고, AI에게는 보이지 않아요."))
                         .font(.system(size: 12)).foregroundStyle(palette.desc).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
                 }

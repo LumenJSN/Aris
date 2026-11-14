@@ -38,11 +38,20 @@ struct ArisDesktopSession {
     var openPause = ArisDesktopSession.openWait
     /// The call's cards for the user are English (their request was), else Korean (ArisDesktopCopy).
     var english: Bool { ArisDesktopCopy.isEnglish(turn.request) }
+    /// The type's own `--at` (the brain's), for where its caret goes when the user's words say neither.
+    var askedPlace: ArisDesktopCaret.Place?
+    /// Where a type puts the caret first (ArisDesktopCaret.place(said:asked:)).
+    var caretPlace: ArisDesktopCaret.Place? { ArisDesktopCaret.place(said: turn.request, asked: askedPlace) }
 
     /// One Peekaboo run; nil when it printed nothing readable (a timeout).
     func run(_ arguments: [String]) -> ArisDesktopEnvelope? {
         guard !arguments.isEmpty else { return nil }
+        // Every action Peekaboo runs is this turn's own input (a look isn't one): never counted as the owner at the Mac
+        // by this turn's own checks (another turn's are its own: ArisOwnInput).
+        let acting = arguments.first != "see"
+        let started = Date()
         let (_, output) = engine.runner.run(binary, arguments, stateFolder: engine.installer.stateFolder, timeout: ArisDesktopEngine.runTimeout)
+        if acting { ArisOwnInput.shared.note(from: started, to: Date(), owner: turn.desktopOwner) }
         return ArisDesktopEnvelope.parse(output)
     }
 
@@ -141,7 +150,7 @@ extension ArisDesktopEngine {
     }
 
     func perform(_ request: ArisDesktopRequest, target: ArisDesktopTarget, turn: ArisDesktopTurn, basis: ArisDesktopBasis, openPause: TimeInterval) -> ArisMCPOutcome {
-        switch performed(request, target: target, turn: turn, basis: basis, openPause: openPause) {
+        switch performedPausing(request, target: target, turn: turn, basis: basis, openPause: openPause) {
         case .refused(let outcome): return outcome
         case .result(let result):
             return ArisMCPOutcome(status: result.ok ? 0 : 1,
@@ -175,6 +184,10 @@ extension ArisDesktopEngine {
         if request.verb.takesText || [.press, .clickAt].contains(request.verb) || request.ocr || request.annotate, apps.secureInput {
             return .refused(.failed(ArisDesktopGate.secureRefusal))
         }
+        // Any action, an element's click too, never runs while a sign-in, password or permission prompt is up (eighth VM
+        // pass: a click ran with Gatekeeper's prompt on screen): refused before anything is done, so the step pauses for
+        // it (ArisDesktopEngine+Lock) and runs again from its start once it is gone.
+        if request.verb.kind == .action, windows.promptOnScreen() != nil { return .refused(.failed(ArisDesktopSession.promptLine)) }
         if installer.state != .ready, !installer.isInstalled() { turn.quiet(ArisDesktopCopy.installing(english: english)) }
         let binary: URL
         switch installer.ready() {
@@ -189,6 +202,7 @@ extension ArisDesktopEngine {
         var session = ArisDesktopSession(engine: self, binary: binary, target: target, turn: turn)
         session.basis = basis
         session.openPause = openPause
+        session.askedPlace = request.at
         // Across calls too: a select-all in this window earlier in the turn, then text or a delete here, replaces what was
         // there; only when the user's words ask for it (security review).
         let window = request.ref.flatMap { turn.ledger.window(ofSnapshot: $0.snapshot) } ?? request.window ?? windows.windows(of: target.pid).first?.id
@@ -300,11 +314,12 @@ extension ArisDesktopSession {
                 let next = ArisDesktopFallback.next(brain: turn.brain, engine: engine.computerEngine())
                 // With no brain that can look at a picture, the poor-tree line doesn't send the brain to click-at.
                 let poor = next.line(app: target.name) ?? (engine.vision.available(for: turn.brain) ? nil : ArisDesktopObservation.poorLineTextOnly.replacingOccurrences(of: "<App>", with: target.name))
-                return ArisDesktopResult(ok: true, text: (pinnedNote.map { $0 + "\n" } ?? "") + found.render(poor: poor))
+                return ArisDesktopResult(ok: true, text: (pinnedNote.map { $0 + "\n" } ?? "") + found.render(poor: poor, find: request.find,
+                                                                                                           max: request.max ?? ArisDesktopObservation.findMax))
             }
         }
         guard let marked = lookWithText(window)?.0 else { return .failed("Couldn't look at \(target.name)'s window.") }
-        return ArisDesktopResult(ok: true, text: (pinnedNote.map { $0 + "\n" } ?? "") + marked.render())
+        return ArisDesktopResult(ok: true, text: (pinnedNote.map { $0 + "\n" } ?? "") + marked.render(find: request.find, max: request.max ?? ArisDesktopObservation.findMax))
     }
 
     /// A look with a screenshot, its text read (Apple Vision) as marks; recorded as the window's latest.

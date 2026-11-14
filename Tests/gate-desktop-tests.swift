@@ -133,6 +133,7 @@ private final class GateTurn: ArisDesktopTurn {
     func audit(_ fields: [String: String]) { audits.append(fields) }
     func operating(_ target: ArisOperatingTarget) { statuses.append(target.line) }
     func desktopStep() -> Int { steps += 1; return steps }
+    func noteDesktopAction(_ note: Result<ArisSavedStep, ArisSavedStepsRefusal>) {}
 }
 
 private func gateTarget(_ name: String, bundle: String, pid: Int32 = 4242, sending: Bool = false) -> ArisDesktopTarget {

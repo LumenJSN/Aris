@@ -23,7 +23,7 @@ final class ArisMoreSettingsModel: ObservableObject {
             .enableHorizontalMediaGestures, .gestureSensitivity, .normalizeGestureDirection, .nonNotchHeightMode,
             .nonNotchHeight, .cornerRadiusScaling, .hideTitleBar, .showOnLockScreen, .hideFromScreenRecording,
             .hideNonNotchedFromMissionControl, .hideNotchOption, .enableSneakPeek, .sneakPeekStyles, .waitInterval,
-            .coloredSpectrogram, .playerColorTinting, .shelfEnabled, .expandedDragDetection, .copyOnDrag, .autoRemoveShelfItems,
+            .coloredSpectrogram, .playerColorTinting, .shelfEnabled, .shelfOnHome, .expandedDragDetection, .copyOnDrag, .autoRemoveShelfItems,
             .reverseShelfOrdering, .quickShareProvider,
         ]
         Defaults.publisher(keys: keys, options: [])
@@ -70,6 +70,7 @@ final class ArisMoreSettingsModel: ObservableObject {
         m.tinting = Defaults[.playerColorTinting]
 
         m.shelf = Defaults[.shelfEnabled]
+        m.shelfOnHome = Defaults[.shelfOnHome]
         m.wideDrop = Defaults[.expandedDragDetection]
         m.copyOnDrag = Defaults[.copyOnDrag]
         m.removeAfterDrag = Defaults[.autoRemoveShelfItems]
@@ -127,6 +128,7 @@ final class ArisMoreSettingsModel: ObservableObject {
         case .coloredBars: Defaults[.coloredSpectrogram] = on ?? true
         case .tinting: Defaults[.playerColorTinting] = on ?? true
         case .shelf: Defaults[.shelfEnabled] = on ?? true
+        case .shelfOnHome: Defaults[.shelfOnHome] = on ?? true
         case .wideDrop:
             Defaults[.expandedDragDetection] = on ?? true
             NotificationCenter.default.post(name: .expandedDragDetectionChanged, object: nil)

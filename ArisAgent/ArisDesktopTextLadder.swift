@@ -28,7 +28,8 @@ extension ArisDesktopSession {
     /// A type's result as the brain gets it: a failure always leads with notTypedLead, or notConfirmedLead when the keys
     /// went out into a field that can't be read back.
     static func typeOutcome(_ result: ArisDesktopResult) -> ArisDesktopResult {
-        guard !result.ok, !result.text.hasPrefix(notTypedLead), !result.text.hasPrefix(notConfirmedLead) else { return result }
+        guard !result.ok, !result.text.hasPrefix(notTypedLead), !result.text.hasPrefix(notConfirmedLead),
+              !result.text.hasPrefix(ArisDesktopCaret.misplacedLead) else { return result }
         return ArisDesktopResult(ok: false, text: (result.text.hasPrefix("Not confirmed") ? notConfirmedLead : notTypedLead) + " " + result.text)
     }
     static let focusLine = "Couldn't put the cursor in that field (another control has the focus), so nothing was typed."
@@ -52,21 +53,35 @@ extension ArisDesktopSession {
             guard let again = lookAfter(fresh.window) else { return report(.notSeen("the window is gone"), envelope: click, after: nil) }
             look = again
         }
-        guard let field = ArisDesktopVerify.find(found, in: look), look.isFocused(field), !look.focusIsSecure, !field.isSecure else {
+        guard var field = ArisDesktopVerify.find(found, in: look), look.isFocused(field), !look.focusIsSecure, !field.isSecure else {
             if look.focusIsSecure { return .failed(ArisDesktopGate.secureFieldRefusal) }
             // Nothing was typed: the window brought forward (the user's card) is the only other way to the field.
             return foreground(text, field: found, in: look, background: .notSeen(Self.focusLine))
         }
         if let refused = held(look, field: field) { return refused }
         if engine.apps.secureInput { return .failed(ArisDesktopGate.secureRefusal) }
+        // "끝에 …" / "at the end": the caret to the end of the field first (or its start), never typed where it happened to be.
+        let place = caretPlace
+        if let place {
+            switch placeCaret(place, field: field, in: look) {
+            case .failure(let refused): return refused
+            case .success(let (placed, moved)): (look, field) = (placed, moved)
+            }
+        }
         let before = field.rawValue
+        // What the field held in full, for where the text landed (nil when it gives only part of it).
+        let wholeBefore = field.rawCapped ? nil : before
         // Rung 2: type, in the background, into the pinned window.
         let typed = run(ArisPeekabooCommands.type(text, window: look.window))
         guard let after = lookAfter(look.window) else { return report(.notSeen("the window is gone"), envelope: typed, after: nil) }
         let landed = ArisDesktopVerify.typed(text, field: field, after: after, before: before)
-        if case .done = landed { return report(landed, envelope: typed, after: after, how: "typed in the background") }
+        if case .done = landed {
+            return placed(place, report(landed, envelope: typed, after: after, how: "typed in the background"), text: text, field: field, before: wholeBefore, after: after)
+        }
         // A field that gives no value (KakaoTalk's): confirmed from the window read back, never typed again.
-        if basis.blindField || field.rawValue == nil { return blindCheck(text, field: field, envelope: typed, after: after) }
+        if basis.blindField || field.rawValue == nil {
+            return placed(place, blindCheck(text, field: field, envelope: typed, after: after), text: text, field: field, before: nil, after: after)
+        }
         // Peekaboo must say nothing reached the app, and the field must be exactly as it was: anything else could mean
         // the text is on its way (or partly in), and another rung would type it twice.
         // The keyboard focus in another of the app's windows refuses background typing before anything is sent: the
@@ -81,10 +96,13 @@ extension ArisDesktopSession {
         // Rung 3: the field's value, set to what it held plus the text: only with nothing dispatched at all, its raw value
         // known in full, and never in an app that sends.
         if !dispatched, !target.sending, let before, !field.rawCapped {
-            let set = run(ArisPeekabooCommands.setValue(before + text, element: now.id, snapshot: after.peekaboo))
+            let set = run(ArisPeekabooCommands.setValue(place == .start ? text + before : before + text, element: now.id, snapshot: after.peekaboo))
             guard let again = lookAfter(fresh.window) else { return report(.notSeen("the window is gone"), envelope: set, after: nil) }
             let check = ArisDesktopVerify.typed(text, field: field, after: again, before: before)
-            if case .done = check { return report(check, envelope: set, after: again, how: "set as the field's value; background typing didn't land") }
+            if case .done = check {
+                return placed(place, report(check, envelope: set, after: again, how: "set as the field's value; background typing didn't land"), text: text, field: field,
+                              before: wholeBefore, after: again)
+            }
             guard let set, set.safeToRepeat, let still = ArisDesktopVerify.find(field, in: again), still.rawValue == before else {
                 return ArisDesktopResult(ok: false, text: "Setting “\(ArisDesktopVerify.short(field.label))” isn't confirmed (\(check.detail)). " + Self.stopLine + "\n\n" + again.render())
             }
@@ -154,11 +172,53 @@ extension ArisDesktopSession {
         }
         if let refused = held(focused, field: now) { return refused }
         guard let window = windows.first(where: { $0.id == look.window }), keysReachTarget(window) else { return .failed(ArisDesktopFocus.refusalLine) }
+        // The real click put the caret where it landed: "끝에" / "at the start" moves it first, as in the background.
+        if let place = caretPlace, ArisDesktopCaret.isAt(place, now) != true {
+            _ = run(ArisPeekabooCommands.pressForward([ArisDesktopCaret.keys(place)], window: look.window))
+        }
         let typed = run(ArisPeekabooCommands.type(text, window: look.window, foreground: true))
         guard let after = lookAfter(look.window) else { return report(.notSeen("the window is gone"), envelope: typed, after: nil) }
         let check = ArisDesktopVerify.typed(text, field: field, after: after, before: now.rawValue)
-        if case .notSeen = check, basis.blindField || field.rawValue == nil { return blindCheck(text, field: field, envelope: typed, after: after) }
-        return report(check, envelope: typed, after: after, how: "typed with the window brought forward, after the user's yes")
+        let place = caretPlace
+        if case .notSeen = check, basis.blindField || field.rawValue == nil {
+            return placed(place, blindCheck(text, field: field, envelope: typed, after: after), text: text, field: field, before: nil, after: after)
+        }
+        return placed(place, report(check, envelope: typed, after: after, how: "typed with the window brought forward, after the user's yes"), text: text, field: field,
+                      before: now.rawCapped ? nil : now.rawValue, after: after)
+    }
+
+    /// A typed result where the user's words asked for the end or the start of the field: the field read back must show the
+    /// text there (what it held, with the text after it or before it) before the brain may say so. Typed somewhere else,
+    /// it is no success (nothing typed again); a field that can't be read in full says the place wasn't checked.
+    private func placed(_ place: ArisDesktopCaret.Place?, _ result: ArisDesktopResult, text: String, field: ArisDesktopElement, before: String?,
+                        after: ArisDesktopObservation) -> ArisDesktopResult {
+        guard let place, result.ok else { return result }
+        let now = ArisDesktopVerify.find(field, in: after)
+        let read = now?.rawCapped == true ? nil : now?.rawValue
+        let landing = ArisDesktopCaret.landing(place, text: text, before: before, after: read)
+        turn.audit(["answer": "typed (\(place == .end ? "end" : "start"): \(landing.rawValue))", "action": "desktop type · \(target.name)", "brain": turn.brainName])
+        switch landing {
+        case .there, .unchecked:
+            var changed = ArisDesktopResult(ok: true, text: ArisDesktopCaret.withLine(landing.line(place), in: result.text))
+            changed.keysSent = result.keysSent
+            return changed
+        case .elsewhere:
+            return ArisDesktopResult(ok: false, text: ArisDesktopCaret.misplacedLine(place, shown: now?.value ?? "") + "\n\n" + after.render())
+        }
+    }
+
+    /// The caret put at the field's end (or start) in the background, and the field looked at again: it must still have
+    /// the focus and, where the field tells its caret, have it there. What to tell the brain otherwise (nothing typed).
+    private func placeCaret(_ place: ArisDesktopCaret.Place, field: ArisDesktopElement, in look: ArisDesktopObservation)
+        -> Result<(ArisDesktopObservation, ArisDesktopElement), ArisDesktopResult> {
+        if ArisDesktopCaret.isAt(place, field) == true { return .success((look, field)) }
+        let sent = run(ArisPeekabooCommands.press([ArisDesktopCaret.keys(place)], snapshot: look.peekaboo))
+        guard sent?.dispatched == true, sent?.focusElsewhere != true, let again = lookAfter(look.window),
+              let now = ArisDesktopVerify.find(field, in: again), again.isFocused(now), !again.focusIsSecure,
+              ArisDesktopCaret.isAt(place, now) != false else {
+            return .failure(.failed(ArisDesktopCaret.notPlacedLine(place)))
+        }
+        return .success((again, now))
     }
 
     /// The cursor didn't get into the field: the exact check that stopped it, for the brain, the audit and QA's log.
@@ -197,5 +257,90 @@ extension ArisDesktopCheck {
         switch self {
         case .done(let text), .notSeen(let text): return text
         }
+    }
+}
+
+/// Where the user's words put the text in a field: at its end ("끝에", "맨 뒤", "at the end") or its start ("맨 앞",
+/// "처음에", "at the start"); nil when they say neither (or both): the caret stays where it is (eighth VM pass: "창
+/// 끝에 셋 입력해 줘" typed "셋note B"). Pure.
+enum ArisDesktopCaret {
+    enum Place: String, Equatable { case end, start }
+
+    private static let endWords = ["끝에", "맨 뒤", "맨뒤", "맨 끝", "맨끝", "뒤에 이어", "at the end", "to the end", "end of the"]
+    private static let startWords = ["맨 앞", "맨앞", "처음에", "맨 처음", "맨처음", "시작 부분", "at the start", "at the beginning", "to the beginning",
+                                     "start of the", "beginning of the"]
+
+    static func place(in request: String) -> Place? {
+        let words = request.lowercased()
+        let end = endWords.contains(where: words.contains), start = startWords.contains(where: words.contains)
+        if end == start { return nil }
+        return end ? .end : .start
+    }
+
+    /// Where a type puts the caret first: where the user's words say, else where the brain's `--at` says (the user's words win
+    /// when they say one), else nowhere (it types where the caret is).
+    static func place(said request: String, asked: Place?) -> Place? { place(in: request) ?? asked }
+
+    /// The keys that move a text field's caret there: ⌘↓ to the end, ⌘↑ to the start.
+    static func keys(_ place: Place) -> String { place == .end ? "cmd+down" : "cmd+up" }
+
+    /// The field's caret is there (an empty selection at its end or start); nil when the field doesn't tell its caret
+    /// or its whole value.
+    static func isAt(_ place: Place, _ field: ArisDesktopElement) -> Bool? {
+        guard let range = field.selectedRange, let raw = field.rawValue, !field.rawCapped else { return nil }
+        guard range.length == 0 else { return false }
+        return range.location == (place == .end ? raw.utf16.count : 0)
+    }
+
+    /// Where the text ended up, against where the user's words put it: there; somewhere else; or not checked (the field
+    /// doesn't give its whole text, or what it held before isn't known).
+    enum Landing: String, Equatable {
+        case there, elsewhere, unchecked
+
+        /// The line the brain reads after the done line.
+        func line(_ place: Place) -> String {
+            let side = place == .end ? "end" : "start"
+            switch self {
+            case .there: return "Checked: the text is at the \(side) of the field, as asked."
+            case .unchecked, .elsewhere:
+                return "Where in the field it went couldn't be checked (the field doesn't give its whole text), so don't say it is at the \(side): say only that it was typed."
+            }
+        }
+    }
+
+    /// `after` against `before` (raw values, nil when unknown): at the end, the field holds what it held and then the
+    /// text; at the start, the text and then what it held. Composed (NFC) and the text's own outer spaces left out. Pure.
+    static func landing(_ place: Place, text: String, before: String?, after: String?) -> Landing {
+        guard let before, let after else { return .unchecked }
+        let wanted = text.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping
+        let held = before.precomposedStringWithCanonicalMapping, now = after.precomposedStringWithCanonicalMapping
+        guard !wanted.isEmpty else { return .unchecked }
+        switch place {
+        case .end:
+            let tail = now.hasPrefix(held) ? String(now.dropFirst(held.count)).trimmingCharacters(in: .whitespacesAndNewlines) : nil
+            return tail.map { $0.hasSuffix(wanted) } == true ? .there : .elsewhere
+        case .start:
+            let head = now.hasSuffix(held) ? String(now.dropLast(held.count)).trimmingCharacters(in: .whitespacesAndNewlines) : nil
+            return head.map { $0.hasPrefix(wanted) } == true ? .there : .elsewhere
+        }
+    }
+
+    /// How a type that landed somewhere else than asked begins (the brain can't call it done at the end or the start).
+    static let misplacedLead = "TYPED IN THE WRONG PLACE:"
+
+    static func misplacedLine(_ place: Place, shown: String) -> String {
+        let side = place == .end ? "end" : "start"
+        return "\(misplacedLead) the text went into the field, but not at its \(side) (it reads “\(ArisDesktopVerify.short(shown))” now). Don't type it again, " +
+            "and never say it is at the \(side): tell the user plainly where it went, and that they can move it."
+    }
+
+    /// `line` after the result's first line (its done line), before the window's text.
+    static func withLine(_ line: String, in text: String) -> String {
+        guard let cut = text.firstIndex(of: "\n") else { return text + "\n" + line }
+        return String(text[..<cut]) + "\n" + line + String(text[cut...])
+    }
+
+    static func notPlacedLine(_ place: Place) -> String {
+        "Couldn't put the caret at the \(place == .end ? "end" : "start") of the field, so nothing was typed (it would have gone in wherever the caret was). Look at the field below, or ask the user."
     }
 }

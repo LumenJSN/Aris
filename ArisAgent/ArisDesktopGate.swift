@@ -85,7 +85,8 @@ enum ArisDesktopGate {
     static let secureFieldRefusal = "Refused: that is a password field, and Aris never types into one. Ask the user to type it themselves."
     static let hiddenRefusal = "Refused: the text carries hidden or direction-changing characters."
     static let unknownRefusal = "Refused: that app isn't running (or more than one app has that name). Open it first with `desktop app launch \"<name>\"`."
-    static let jobRefusal = "Refused: this would bring a window forward, and a background job never does (nobody may be watching). Say so in the report."
+    static let jobRefusal = "Refused: this would bring a window forward, and a background job never does (nobody may be watching). If the app is already open, " +
+        "work on its window in the background (`desktop see --app \"<App>\"`, then its refs); if it isn't, say plainly in the report that it needs the app open."
     static let lineRefusal = "Refused: in a messaging app the text is typed one line at a time (a line break there sends). Type one line, then `press return` (or shift+return) as its own step."
     static let pasteRefusal = "Refused: the user's card couldn't show what this paste would put into a messaging app (the clipboard holds no plain text, or this is a step " +
         "of a batch). Paste with its own `desktop press cmd+v` call, or type the text with `desktop type`."

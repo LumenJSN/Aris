@@ -3,8 +3,9 @@
 //  Aris
 //
 //  The arithmetic of the shelf's file tiles: how big a tile is in the 104-point strip of the open notch, how many
-//  sit whole side by side, and how many name chips the home page's shelf row has room for. Sizes come from the
-//  viewport, not from boring.notch's fixed 105 × 108 tile, which stood taller than the strip and was clipped.
+//  sit whole side by side, how many name chips the home page's shelf row has room for, and whether that row shows.
+//  Sizes come from the viewport, not from boring.notch's fixed 105 × 108 tile, which stood taller than the strip and
+//  was clipped.
 //
 
 import CoreGraphics
@@ -51,5 +52,11 @@ enum ArisShelfTileLayout {
     /// How many chips fit a row `rowWidth` wide without squeezing a name to a couple of letters (at least one).
     static func chipsShown(rowWidth: CGFloat) -> Int {
         max(1, Int(((rowWidth - chipRowReserved - chipSpacing) / (minChipWidth + chipSpacing)).rounded(.down)))
+    }
+
+    /// Whether the home page has its shelf row: files that still lead somewhere, no turn on screen, and 첫 화면에도
+    /// 보이기 on (off, the shelf's files show only in the Shelf tab; dragging over the notch still offers the shelf).
+    static func homeRowShown(files: Int, turnShowing: Bool, onHome: Bool) -> Bool {
+        onHome && !turnShowing && files > 0
     }
 }

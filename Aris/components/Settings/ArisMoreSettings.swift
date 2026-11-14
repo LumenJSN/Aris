@@ -20,7 +20,7 @@ enum ArisMoreKey: Hashable {
     case musicSource, musicActivity, fullScreen, peek, peekStyle, idleWait
     case coloredBars, tinting
     // 노치 기능 › 선반
-    case shelf, wideDrop, copyOnDrag, removeAfterDrag, reverseOrder, quickShare
+    case shelf, shelfOnHome, wideDrop, copyOnDrag, removeAfterDrag, reverseOrder, quickShare
 }
 
 /// What those rows show. The defaults are a fresh install's.
@@ -62,6 +62,8 @@ struct ArisMoreSettings: Equatable {
 
     // 선반
     var shelf = true
+    /// The shelf's files as chips on the open notch's home too, not only in the Shelf tab.
+    var shelfOnHome = true
     var wideDrop = true
     var copyOnDrag = false
     var removeAfterDrag = false
@@ -185,6 +187,7 @@ enum ArisMoreRows {
     static func shelf(_ m: ArisMoreSettings) -> ArisSettingSection {
         ArisSettingSection(id: "features.shelf", heading: "선반", rows: [
             toggle("features.shelfOn", "tray", "선반 쓰기", "파일을 노치에 끌어다 잠깐 올려 두는 탭이에요.", .shelf, m.shelf),
+            toggle("features.shelfOnHome", "house", "첫 화면에도 보이기", "끄면 선반 파일은 선반 탭에서만 보여요.", .shelfOnHome, m.shelfOnHome),
             toggle("features.wideDrop", "arrow.down.to.line", "노치 근처에서도 받기", "파일을 노치 가까이 끌어오기만 해도 노치가 열려요.", .wideDrop, m.wideDrop),
             toggle("features.copyOnDrag", "doc.on.doc", "끌어낼 때 복사", "선반에서 파일을 끌어내면 옮기지 않고 복사해요.", .copyOnDrag, m.copyOnDrag),
             toggle("features.removeAfterDrag", "tray.and.arrow.up", "끌어낸 뒤 선반에서 빼기", "파일을 다른 곳에 놓으면 선반에서 사라져요.", .removeAfterDrag, m.removeAfterDrag),

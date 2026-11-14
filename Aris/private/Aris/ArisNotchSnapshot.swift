@@ -36,13 +36,15 @@ struct ArisNotchSnapshot: Equatable {
         phase != .idle || questionPending
     }
 
+    /// `dictationQuiet`: the dictation pill has this dictation (ArisDictationPillRules.notchQuiet), so the notch sees no
+    /// turn at all: no listening band, no panel, no parked words (talking to Aris is never quiet).
     init(session: ArisSession, isTraining: Bool, isDictating: Bool, hasUnfinishedTask: Bool, taskJustFinished: Bool, inConversation: Bool = false,
-         pausedForOtherAudio: Bool = false, dictationCopied: Bool = false, cardWaiting: Bool = false) {
-        phase = session.phase
-        hasReply = !session.reply.isEmpty
+         pausedForOtherAudio: Bool = false, dictationCopied: Bool = false, cardWaiting: Bool = false, dictationQuiet: Bool = false) {
+        phase = dictationQuiet ? .idle : session.phase
+        hasReply = !dictationQuiet && !session.reply.isEmpty
         self.isTraining = isTraining
-        self.isDictating = isDictating
-        self.dictationCopied = dictationCopied
+        self.isDictating = isDictating && !dictationQuiet
+        self.dictationCopied = dictationCopied && !dictationQuiet
         self.hasUnfinishedTask = hasUnfinishedTask
         self.taskJustFinished = taskJustFinished
         // A card of the app's own waiting for the user (the new-teammate card) holds the notch like a confirm card (QA retest:

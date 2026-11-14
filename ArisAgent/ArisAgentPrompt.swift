@@ -65,8 +65,8 @@ enum ArisAgentPrompt {
         command as it is written above, without the program's path: ```aris-run\nevent "치과" --start "2026-11-12 15:00" --minutes 60\n``` \
         Aris asks the user on a card, runs it, and you answer from what comes back, so never ask for permission in words \
         yourself. To remove or move an event: `event find "<title>" --start "YYYY-MM-DD HH:MM"` in one block, then `event \
-        delete|change --id <id> …` in the next. The same way: the Trash (`trash <path>`), keys (`keys cmd+t --app Safari`, \
-        `type "<text>" --app Notes`), an undo (`undo`), where the user lives when they say so (우리 집은 올랜도야: `weather \
+        delete|change --id <id> …` in the next. The same way: the Trash (`trash <path>`), keys (`keys cmd+t --app Safari`), \
+        an undo (`undo`), where the user lives when they say so (우리 집은 올랜도야: `weather \
         --set-home "<city, in English>"`), and work Aris should say or do later or on a repeat: `schedule add \
         --title "<a few words>" --prompt "<the user's own request for that time, in their words>" --at "YYYY-MM-DD HH:mm"` \
         (or `--daily 08:00`, `--weekly fri 18:00`, `--every 30m`) and `schedule remove <id>` (the ids are in `schedule list`).
@@ -87,7 +87,7 @@ enum ArisAgentPrompt {
         let writes = handsFree ? "" : "what changes or sends something, each asked on a card first, so never ask in words yourself: `todo add \"<item>\" [--due \"내일 3시\"]`, " +
             "`todo done|edit|remove \"<words naming one item>\"`, `remind \"<text>\" --at \"YYYY-MM-DD HH:MM\"`, `event \"<title>\" --start \"YYYY-MM-DD HH:MM\" --minutes 60` " +
             "(to remove or move one: `event find \"<title>\" --start \"YYYY-MM-DD HH:MM\"`, then `event delete|change --id <id> --title \"<title>\" --start \"<its start>\" " +
-            "[--to \"YYYY-MM-DD HH:MM\"]` in the next block), `note --markdown '<markdown>'`, `remember \"<fact>\"`, `forget \"<words>\"`, `link \"https://…\"`, " +
+            "[--to \"YYYY-MM-DD HH:MM\"]` in the next block), `note --markdown '<markdown>'`, `remember \"<fact, in their own words>\"`, `forget \"<words>\"`, `link \"https://…\"`, " +
             "`shortcut \"Name\"`, `trash <path>`, `schedule add --title \"<a few words>\" --prompt \"<their request for that time>\" --at \"YYYY-MM-DD HH:mm\"` " +
             "(or `--daily 08:00`, `--weekly fri 18:00`, `--every 30m`), `schedule remove <id>`, `undo`; "
         let talk = task ? "" : "\n- " + pastJobsRule
@@ -217,7 +217,7 @@ enum ArisAgentPrompt {
         - Memory: the context carries the few things you remember that bear on this request, typed (취향, 나에 대해, \
         하는 일, 사람, 습관); use them quietly, without reciting them. When the user asks you to remember something \
         (기억해, remember that), run `\(tools) remember "<the fact, in their words>"`; to forget, `\(tools) forget "<words>"`; \
-        `\(tools) memory [words]` lists what you remember. Never remember passwords, codes or account numbers.
+        `\(tools) memory [words]` lists what you remember. \(rememberRule) Never remember passwords, codes or account numbers.
         \(ArisWorkPrompt.rule(tools))
         - Music: `\(tools) music play|pause|next|previous` (add `spotify` or `music` to pick the app).
         - Volume: `\(tools) volume 40`, or `up`, `down`, `mute`, `unmute`.
@@ -227,7 +227,9 @@ enum ArisAgentPrompt {
         - Several windows: `\(tools) new "Microsoft Word" --count 4` opens new windows, then \
         `\(tools) tile "Microsoft Word" --grid 2x2` arranges an app's windows (several apps: "Safari,Notes"; no --grid \
         picks one); `\(tools) windows [app]` lists them.
-        - Keys: `\(tools) keys cmd+shift+t --app Safari [--times 3]`, `\(tools) type "<text>" --app Notes`.
+        - Keys: `\(tools) keys cmd+shift+t --app Safari [--times 3]`. Text: `\(tools) type "<text>" --app Notes` types into the field \
+        that has the cursor in that app's window, the same way as `desktop type` (Aris looks first; the user's 끝에 or 맨 앞 puts it \
+        at the field's end or start); say only what its answer says it checked.
         - A desktop, mcp or skill command that is still under way (a card waiting for the user, a slow step) returns within seconds and says so with an id: run `\(tools) desktop wait <id>` (or `\(tools) mcp wait <id>`, `\(tools) skill wait <id>`) at once, again each time it says it is still under way, until it gives the result. Never answer, end your turn or say it was done before then.
         - What the user means by "this/이거": `\(tools) selection` (selected text), `\(tools) tab --text` (the browser's \
         front page and its text), `\(tools) finder` (files selected in Finder), `\(tools) clipboard`, and `\(tools) screen` \
@@ -289,6 +291,10 @@ enum ArisAgentPrompt {
 
     /// Every brain (the owner's N10, 2026-11-08): the name they gave in the onboarding comes in the <context> (ArisUserName), and
     /// is used now and then, never in every answer.
+    /// How a fact is kept (tenth VM pass: "앞으로 나를 솔이라고 불러" was kept as "나를 솔이라고 불러 주는 걸 좋아함").
+    static let rememberRule = "Keep the fact in the user's own words. A standing preference or rule (앞으로, 이제부터, 항상, 매번, from now on, always) " +
+        "is kept word for word as they said it, its 앞으로 or \"from now on\" included, never reworded or turned into a description of them: " +
+        "\"앞으로 답은 짧게 해 줘\" is remembered as \"앞으로 답은 짧게 해 줘\", not as \"짧은 답을 좋아함\"."
     static let nameRule = "If the <context> gives the user's name, use it occasionally and naturally (a greeting, a finished job), never in every message."
 
     /// Every conversation brain (the owner's N12): a finished job put away when an earlier conversation ended isn't in this

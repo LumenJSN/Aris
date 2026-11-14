@@ -18,6 +18,9 @@ enum ArisSettingIcon: Equatable {
     /// A service's logo (UsageLogo's id).
     case logo(String)
     case none
+
+    /// Drawn as an app-icon tile (36) rather than a bare 20-pt glyph.
+    var isTile: Bool { if case .logo = self { true } else { false } }
 }
 
 struct ArisSettingOption: Equatable {
@@ -26,7 +29,8 @@ struct ArisSettingOption: Equatable {
     var detail: String?
 }
 
-enum ArisSettingButtonKind: Equatable { case ghost, primary, danger, solidRed }
+/// `select`: the measured settings select (a choice that opens a picker: 쓰는 언어), drawn as ArisSettingSelect.
+enum ArisSettingButtonKind: Equatable { case ghost, primary, danger, solidRed, select }
 
 struct ArisSettingButton: Equatable {
     let title: String
@@ -47,10 +51,14 @@ enum ArisSettingKey: Hashable {
     case teammateTerminal
     /// Dictation: polish through a brain when the Mac can't; the writing style for an app kind (ArisAppKind raw value).
     case dictationBrainPolish, dictationStyle(String)
+    /// Dictation in the pill at the bottom of the screen (the notch stays quiet for it); its idle sliver between dictations.
+    case dictationPill, dictationPillIdle
     case todoList(String), todoDefault, newListName
     case calendar(String), allDay, joinMeeting, openIn
     case seesScreen, circle
     case autoMemory, memoryQuery
+    /// 매주 정리하기 (the weekly tidy-up: ArisMemoryReviewRows).
+    case consolidateMemory
     /// 한 일에서 배우기 (the agent's work memory: ArisWorkSettingsRows).
     case workMemory
     case hover, haptics, gestures, heightMode, notchHeight
@@ -74,14 +82,21 @@ enum ArisSettingValue: Equatable {
 
 /// Something a row does that isn't setting a value.
 enum ArisSettingsAction: Equatable {
-    case trainVoice, listen, editWords, voicePicker, addLanguage, removeLanguage(String)
+    case trainVoice, listen, editWords, voicePicker, addLanguage
     case remindersAccess, createList, calendarRefresh, calendarAccess, internetAccounts
     case permission(String), revokeStanding(String)
     case forgetMemory(String), confirmMemory(String), forgetAllMemories, keepMemories, clearMemoryQuery
+    /// 확인할 것: a held item kept or dropped, a conflict settled (`keep`: a memory's id, or "both"); a person's or
+    /// project's page removed; a tidy-up change undone (ArisMemoryReviewRows).
+    case keepHeldMemory(String), dropHeldMemory(String), settleMemoryConflict(String, keep: String), forgetMemoryEntity(String), undoMemoryChange(Int)
     /// 일하면서 배운 것: one lesson forgotten, all of it (asked twice), or kept after all.
     case forgetWorkLesson(Int), forgetAllWork, keepWork
+    /// 저장된 단계: one saved request forgotten (ArisSavedStepsSettingsRows).
+    case forgetSavedSteps(String)
     /// 다른 AI에서 가져오기: the import sheet opens (ArisMemoryImportSheet).
     case importMemory
+    /// A feature's detail sheet opens (ArisFeatureSheet).
+    case feature(ArisFeature)
     /// Forgets every learned suggestion for dropped files (ArisDropLearned).
     case forgetDropHabits
     case unhideSides, go(ArisSettingsPage, anchor: String?)
@@ -135,8 +150,6 @@ enum ArisSettingControl: Equatable {
 /// What sits under a row's text.
 enum ArisSettingExtra: Equatable {
     case none
-    /// Removable chips (the languages: code and title).
-    case chips([ArisSettingOption], removable: Bool)
     /// The accent colours, and the one picked.
     case swatches([String], selected: String?)
 }
@@ -166,11 +179,13 @@ struct ArisSettingSection: Identifiable, Equatable {
     let id: String
     var heading: String?
     var note: String?
-    /// Every section is one card now; kept so a section written the old way (`grouped: true`) still builds.
+    /// A list: its rows share one card (ArisSettingsLayout.blocks); otherwise each row is a card of its own.
     var grouped = false
     var rows: [ArisSettingItem]
     /// Set: the card shows this one line, and its rows only while it is open.
     var fold: ArisSettingFold?
+    /// A feature whose detail sheet a small 알아보기 link at the end of the section's title opens.
+    var feature: ArisFeature?
 }
 
 /// Where a range slider lands: dragged to a point along its track, or moved one step by VoiceOver.
@@ -210,11 +225,13 @@ enum ArisSettingsLayout {
         case group([ArisSettingItem])
     }
 
-    /// Every section is one card with its rows split by hairlines (the owner's pick 2-B, the shape of the AI 서비스 page),
-    /// whatever its rows are and however it was written: a switch, a menu or a button added to a section's rows
-    /// takes its place in the card with no case of its own.
+    /// Each row is its own card, as measured (SETTINGS-REA.md §4.2: no grouped cards and no separators in the settings
+    /// tabs), whatever its control. A list (`grouped`: permissions, memories, styles, connected services) and a folded
+    /// section stay one card, their rows split by hairlines inset to the words.
     static func blocks(_ section: ArisSettingSection) -> [Block] {
-        section.rows.isEmpty ? [] : [.group(section.rows)]
+        guard !section.rows.isEmpty else { return [] }
+        if section.grouped || section.fold != nil { return [.group(section.rows)] }
+        return section.rows.map { .group([$0]) }
     }
 
     /// The folded section that holds `id` (the section itself, or one of its rows): a search that lands there opens it first.

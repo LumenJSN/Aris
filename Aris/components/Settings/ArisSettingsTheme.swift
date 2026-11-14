@@ -2,7 +2,9 @@
 //  ArisSettingsTheme.swift
 //  Aris
 //
-//  The settings window's colours, light and dark, and its motion: the values in mockup settings-redesign.html.
+//  The settings window's colours, light and dark, and its motion: the measured values (qa/design-1111/settings-rea-0141
+//  SETTINGS-REA.md: §2 window, §3 sidebar and its glass, §4 page bodies and controls; the design notes
+//  for the CSS variables, the grey ramp and the components). Numbers only; nothing of another app's is copied.
 //
 
 import AppKit
@@ -36,16 +38,24 @@ struct ArisPalette {
     var ink3: Color { pick(Color(arisHex: 0x99a1af), Color(arisHex: 0x6a7282)) }
     var icon: Color { pick(Color(arisHex: 0x4a5565), Color(arisHex: 0xd1d5dc)) }
 
-    // Sidebar (--navOn, --navIdle, --navHover, --navFill, --groupLbl, --sidebar).
+    // Sidebar (--navOn, --navIdle, --navHover, --navFill, --groupLbl). The nav item: active black .9 / white .98, idle .5
+    // in both (§3.2).
     var navOn: Color { pick(black(0.9), white(0.98)) }
-    var navIdle: Color { pick(black(0.5), white(0.6)) }
+    var navIdle: Color { pick(black(0.5), white(0.5)) }
     var navHover: Color { pick(black(0.7), white(0.8)) }
     var navFill: Color { pick(black(0.04), white(0.04)) }
     var groupLabel: Color { pick(black(0.45), white(0.4)) }
-    var sidebarTint: Color { pick(Color(arisHex: 0xeceff4, 0.8), Color(arisHex: 0x1e2128, 0.82)) }
+    /// The sidebar column's tint over the window's material (`.sidebar-vibrancy-*`): #f5f7fa at .149 / #1a1d24 at .161,
+    /// so about 85% of what shows is the live material (§3.1).
+    var sidebarTint: Color { pick(Color(arisHex: 0xf5f7fa, 0x26 / 255.0), Color(arisHex: 0x1a1d24, 0x29 / 255.0)) }
 
-    // Content pane (--wash, --pane, --fade).
+    // Content column (--wash over the material, seen in the 7-pt gutter), the content card (--pane) and its fade.
     var wash: Color { pick(Color(arisHex: 0xf3f7fe, 0.15), Color(arisHex: 0x242424, 0.15)) }
+    /// The content card's edge: a 1-pt white .8 border inside (light), a 1-pt #dfe2e8 @ 0x12 ring outside (dark).
+    var paneEdge: Color { pick(white(0.8), Color(arisHex: 0xdfe2e8, 0x12 / 255.0)) }
+    /// What the window's material shows in the offscreen renders, which can't sample a desktop: about the sidebar
+    /// material over a plain grey desktop.
+    var materialStandIn: Color { pick(Color(arisHex: 0xe3e5e9), Color(arisHex: 0x26272b)) }
     var pane: LinearGradient {
         dark ? LinearGradient(colors: [Color(arisHex: 0x18191d), Color(arisHex: 0x16171a)], startPoint: .top, endPoint: .bottom)
             : LinearGradient(stops: [.init(color: Color(arisHex: 0xf4f5f7), location: 0), .init(color: Color(arisHex: 0xf5f6f7), location: 0.48),
@@ -120,8 +130,13 @@ struct ArisPalette {
     var okFill: Color { pick(Color(arisHex: 0xf0fdf4), Color(arisHex: 0x14271c)) }
     var warn: Color { pick(Color(arisHex: 0xd97706), Color(arisHex: 0xfbbf24)) }
     var bad: Color { pick(Color(arisHex: 0xdc2626), Color(arisHex: 0xf87171)) }
-    /// AppleSwitch's on colour, both appearances.
+    /// AppleSwitch's on colour, both appearances (the green switch: list rows and detail sheets).
     var switchOn: Color { Color(arisHex: 0x30d158) }
+    /// The settings rows' switch (ToggleSwitch, monochrome): on #2D2D2D / white, off #D1D1D1 / #4B4B4B, the thumb white,
+    /// or #2D2D2D when on in dark (§4.2).
+    var settingsSwitchOn: Color { pick(Color(arisHex: 0x2d2d2d), .white) }
+    var settingsSwitchOff: Color { pick(Color(arisHex: 0xd1d1d1), Color(arisHex: 0x4b4b4b)) }
+    func settingsSwitchThumb(on: Bool) -> Color { dark && on ? Color(arisHex: 0x2d2d2d) : .white }
 
     // Fields (--field, --fieldB, --fieldFocus, --fieldRing).
     var field: Color { pick(.white, Color(arisHex: 0x1f2024)) }
@@ -134,7 +149,6 @@ struct ArisPalette {
     var menu: Color { pick(white(0.95), Color(arisHex: 0x1f2024)) }
     var menuBorder: Color { pick(Color(arisHex: 0xe5e7eb, 0.8), Color(arisHex: 0xdfe2e8, 0.07)) }
     var menuHover: Color { pick(Color(arisHex: 0xf3f4f6), white(0.1)) }
-    var menuShadow: Color { pick(black(0.1), black(0.5)) }
     var modal: Color { pick(Color(arisHex: 0xfafafa), Color(arisHex: 0x1a1b1e)) }
     var modalBorder: Color { pick(white(0.9), Color(arisHex: 0xdfe2e8, 0.07)) }
     var backdrop: Color { black(dark ? 0.78 : 0.38) }
@@ -161,26 +175,6 @@ struct ArisPalette {
     var focusRing: Color { accent.opacity(0.25) }
 }
 
-/// The window's measurements: one set for every page, the AI 서비스 page's (mockup D): sections 32 apart, cards 16,
-/// a card's rows 20 inside with a 20-pt icon, card radius 18.
-enum ArisSettingsMetrics {
-    /// A section's title to what is above it; the title to its card; a card to the next.
-    static let sectionGap: CGFloat = 32
-    static let headingGap: CGFloat = 12
-    static let cardGap: CGFloat = 16
-    /// The page's title to its first section.
-    static let titleGap: CGFloat = 24
-    /// A row inside its card: 20 all round, a 20-pt icon column, 12 to the text, the control after it.
-    static let rowInset: CGFloat = 20
-    static let iconBox: CGFloat = 20
-    static let iconGap: CGFloat = 12
-    static let rowMinHeight: CGFloat = 60
-    static let cardRadius: CGFloat = 18
-    /// The small line under a card (mockup `.fine`: 12 pt, 8 above, 4 in).
-    static let fineGap: CGFloat = 8
-    static let fineInset: CGFloat = 4
-}
-
 private struct StillKey: EnvironmentKey { static let defaultValue = false }
 private struct EnteringKey: EnvironmentKey { static let defaultValue = true }
 
@@ -205,9 +199,11 @@ extension EnvironmentValues {
 enum ArisSettingsMotion {
     /// --house (0.22, 1, 0.36, 1): sliding indicators (0.4 s), entrances (0.34 s).
     static func house(_ seconds: Double) -> Animation { .timingCurve(0.22, 1, 0.36, 1, duration: seconds) }
-    /// --switch (0.32, 0.72, 0, 1), 220 ms: the switch.
+    /// --switch (0.32, 0.72, 0, 1), 220 ms: the green switch.
     static let toggle = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.22)
-    /// --open (0.2, 0.8, 0.2, 1), 280 ms: the preview notch growing.
+    /// The settings rows' switch: 150 ms (0.4, 0, 0.2, 1).
+    static let settingsToggle = Animation.timingCurve(0.4, 0, 0.2, 1, duration: 0.15)
+    /// --open (0.2, 0.8, 0.2, 1), 280 ms: the 팀원 strip's band widening.
     static let open = Animation.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.28)
     /// --close (0.45, 0, 0.55, 1), 200 ms: shrinking.
     static let close = Animation.timingCurve(0.45, 0, 0.55, 1, duration: 0.2)

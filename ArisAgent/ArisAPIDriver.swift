@@ -138,6 +138,9 @@ final class ArisAPIDriver: ArisBrainDriver {
     /// Aside started: the helper's turn waits for it, once (ArisAPIHelper.asideDeadline).
     func asideStarted() -> [Data] { [Self.line(["type": "aside"])] }
 
+    /// A card waits for the owner: the helper's turn waits as long (ArisAPIHelper.cardDeadline).
+    func cardWaits(_ seconds: TimeInterval) -> [Data] { [Self.line(["type": "card", "seconds": seconds])] }
+
     func read(_ line: String) -> [ArisBrainEvent] {
         guard let data = line.data(using: .utf8), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             if inTurn, !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { gate.markUntrusted() }

@@ -457,9 +457,15 @@ enum ArisMemoryImport {
         lines.map { line in
             var one = line
             one.look = needsLook(line.text)
-            if ArisMemoryText.isSecret(line.text) {
+            // The write gate reads every line too (ArisMemoryGate): a request for a credential is dropped like a secret,
+            // anything else it holds is an order, never ticked for him.
+            // A line under Instructions is a standing instruction by its heading: that group already waits for his tick
+            // and says what ticking means, so only the other families flag it.
+            var gate = ArisMemoryGate.verdict(line.text)
+            if line.category == .instructions, case .review(let hit) = gate, hit.family == .standing { gate = .allow }
+            if ArisMemoryText.isSecret(line.text) || { if case .refuse = gate { return true }; return false }() {
                 one.state = .secret
-            } else if acts(line.text) {
+            } else if acts(line.text) || gate != .allow {
                 one.state = .acts
             } else {
                 let judged = state(of: line, existing: existing, now: now)

@@ -927,8 +927,11 @@ private func fix5Review6CardTests() {
           "review-6 H1: the gate's card for the command says so too (“\(described.1.replacingOccurrences(of: "\n", with: " / "))”)")
     // The risk rule looks at the same app the card names.
     func typeRisk(_ rest: String) -> ArisRisk { ArisRiskPolicy.risk(of: .shell("\(fix5GateTools) type hello \(rest)"), tools: fix5GateTools, home: "/Users/kim", critical: false) }
-    check(typeRisk("--app Terminal --app TextEdit") == .confirm && W.typed(["hello", "--app", "Terminal", "--app", "TextEdit"]).app == "Terminal",
-          "review-6 H1: the rule that decides whether to ask reads the same app as the card (Terminal first: it asks, and the card says Terminal)")
+    // fix-13: `type` is the desktop engine's now, and aris-tools hands it no call at all with two --app.
+    let twice: Bool
+    if case .failure = ArisTypeRequest.call(["hello", "--app", "Terminal", "--app", "TextEdit"], keyboardApp: nil) { twice = true } else { twice = false }
+    check(typeRisk("--app Terminal --app TextEdit") == .auto && twice && W.typed(["hello", "--app", "Terminal", "--app", "TextEdit"]).app == "Terminal",
+          "review-6 H1: two --app are refused before anything goes to the desktop engine (which never works in Terminal anyway)")
     check(typeRisk("--app TextEdit --app Terminal") == typeRisk("--app TextEdit") && W.typed(["hello", "--app", "TextEdit", "--app", "Terminal"]).app == "TextEdit",
           "review-6 H1: and the other way round both read TextEdit")
     // A quoted line break never starts a line of its own on the card.
@@ -1079,7 +1082,9 @@ private func fix5Review6StepTests() {
                             .turn(ArisFixMoment(phase: .failed, heard: question, reply: ArisAgentCopy.notRunning(english: true)), at: 2), .look(answering: true, at: 3)])
         check(!session.steps.isEmpty && lost.steps == [.back], "review-6 L3: after the step “\(status)” a question lost to the helper is not asked again: the act never runs twice")
     }
-    check(fix5Code("ArisAgent/main.swift").contains("stream(.status(ArisAgentStatus.forReplay(learned.commands, tools: ArisAgentRunner.toolsPath)), on: connection)\n        DispatchQueue.global(qos: .userInitiated).async {\n            if ArisShortcutStore.shared.replay("),
+    // The replay now takes its turn at the keys and pointer first (ArisDesktopLock): still after the step is sent.
+    check(fix5Code("ArisAgent/main.swift").contains("stream(.status(ArisAgentStatus.forReplay(learned.commands, tools: ArisAgentRunner.toolsPath)), on: connection)\n        let english = ArisDesktopCopy.isEnglish(request)\n        DispatchQueue.global(qos: .userInitiated).async {\n            let owner = ArisDesktopLock.oneOff(\"shortcut\")\n            let held = ArisDesktopLock.shared.holding(owner")
+          && fix5Code("ArisAgent/main.swift").contains("ArisShortcutStore.shared.replay(learned, tools: ArisAgentRunner.toolsPath,\n                                                environment: ArisAgentRunner.environment().merging([ArisDesktopLock.heldKey: owner]) { $1 })"),
           "review-6 L3: wiring: the step is sent before the replay starts")
 }
 

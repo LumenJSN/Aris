@@ -13,6 +13,12 @@
 //  (ArisMemoryImportStore).
 //  How sure a memory is: the user's 기억해 starts at 0.75, below the core ones every turn gets (0.8), until they says it again
 //  or confirms it in 설정 › 기억; picked-out, tool-written and imported ones start at 0.7.
+//  A memory said in new words keeps its id and takes the new wording; the old wording stays as a history row
+//  (superseded_by the memory, valid_until when it was replaced), never shown or recalled by default. Forgetting a
+//  memory removes its history, its entity timeline entries and any open conflict with it, overwritten on disk.
+//  What isn't the user's own 기억해 passes the write gate first (ArisMemoryGate): what reads like an order to an AI is
+//  held for 설정 › 기억 › 확인할 것 (ArisMemoryStore+Review), a request for a credential is refused. Two memories that
+//  say yes and no to the same thing become a conflict the user settles there. People and projects: ArisMemoryEntities.
 //
 
 import Foundation
@@ -59,16 +65,30 @@ final class ArisMemoryStore: @unchecked Sendable {
 
     private init(folder: URL) { self.folder = folder }
 
+    /// Said to whoever shows the memories (설정 › 기억, in the app) after each write, as a distributed notification (ninth
+    /// VM pass: the page said "9가지" until it was opened again). Set by aris-agent and aris-tools at start; nil (nothing
+    /// said) anywhere else, the tests too.
+    static let changedNotification = "com.lumenjsn.aris.memory"
+    nonisolated(unsafe) static var announce: (() -> Void)?
+    static func announceChange() { announce?() }
+    /// The live announcement: a distributed notification the app's settings page listens for.
+    static func postChange() {
+        DistributedNotificationCenter.default().postNotificationName(.init(changedNotification), object: nil, userInfo: nil, deliverImmediately: true)
+    }
+
     deinit { if let db { sqlite3_close_v2(db) } }
 
     // MARK: - Memories
 
-    func all() -> [ArisMemoryRecord] {
-        query("SELECT id, kind, subject, text, source, turn_at, confidence, created_at, updated_at, last_used_at, use_count FROM memories ORDER BY updated_at DESC")
-            .compactMap(Self.record)
-    }
+    /// The memories as they are now (an older wording kept as history is not among them).
+    func all() -> [ArisMemoryRecord] { lock.withLock { allLocked() } }
 
-    func count() -> Int { query("SELECT COUNT(*) FROM memories").first?.first?.int ?? 0 }
+    func count() -> Int { query("SELECT COUNT(*) FROM memories WHERE superseded_by IS NULL").first?.first?.int ?? 0 }
+
+    /// The older wordings of a memory, newest first.
+    func history(of id: String) -> [ArisMemoryRecord] {
+        query("SELECT \(Self.columns) FROM memories WHERE superseded_by = ? ORDER BY valid_until DESC", [.text(id)]).compactMap(Self.record)
+    }
 
     enum Outcome: Equatable {
         case added(ArisMemoryRecord)
@@ -79,6 +99,10 @@ final class ArisMemoryStore: @unchecked Sendable {
         case empty
         /// The file couldn't be written.
         case failed
+        /// Read like an order to an AI (ArisMemoryGate): not stored, held for the user's look in 설정 › 기억 (that id).
+        case held(String)
+        /// Asked for a password, key or token to be handed over: never stored.
+        case refused
     }
 
     /// The most a memory from `source` starts with.
@@ -101,22 +125,61 @@ final class ArisMemoryStore: @unchecked Sendable {
         }
     }
 
+    /// The write gate's families a memory from `source` is let off: a learned one only the override and standing ones,
+    /// and so a brain's memory tool `approved` by the user (their yes to its 기억하기 card, or the fact word for word their own
+    /// words this turn: the gate's pass, ArisMessagePass.memoryName). The leak and credential families always apply.
+    static func waived(_ family: ArisMemoryGateFamily, source: ArisMemorySource, approved: Bool = false) -> Bool {
+        (source == .learned || source == .tool && approved) && [.override, .standing].contains(family)
+    }
+
+    /// When a memory stops holding: an event at the end of the day it names (or the end it states), read from when it
+    /// was said; anything else never on its own (seventh VM pass: "이번 주 금요일에 부산 가" had no end). An end already
+    /// past when it is said ("지난 주 금요일에 …") is no end: a new memory is never kept as over (twelfth VM pass).
+    static func ends(_ candidate: ArisMemoryCandidate, turnAt: Date, calendar: Calendar = .current) -> Date? {
+        guard candidate.kind == .event, let end = ArisMemoryWhen.end(of: candidate.text, from: turnAt, calendar: calendar) else { return nil }
+        return end < turnAt ? nil : end
+    }
+
     /// What the user is told when their 기억해 was a credential: that it wasn't kept, and why (memory is a plain file).
     static func secretLine(korean: Bool) -> String {
         korean ? "비밀번호나 API 키, 카드 번호처럼 보여서 기억에 넣지 않았어요. 기억은 암호화하지 않은 파일이라, 그런 건 암호 앱이나 키체인에 두는 게 안전해요."
                : "That looks like a password, a key or a card number, so I didn't put it in memory: memory is a plain file. A password manager or the Keychain is the safe place for it."
     }
 
-    /// Writes `candidate` (merged with what is there: ArisMemoryMerge) from a turn at `turnAt`.
+    /// Writes `candidate` (merged with what is there: ArisMemoryMerge) from a turn at `turnAt`. `reviewed`: the user has
+    /// already seen this very text and said yes (his tick in the import sheet, 넣기 in 확인할 것), so the write gate
+    /// only refuses a credential request.
+    /// `approved`: a brain's memory tool ran on the user's yes (or on their own words): see `waived`.
     @discardableResult
-    func remember(_ candidate: ArisMemoryCandidate, source: ArisMemorySource, turnAt: Date, now: Date = Date()) -> Outcome {
-        lock.withLock { rememberLocked(candidate, source: source, turnAt: turnAt, now: now) }
+    func remember(_ candidate: ArisMemoryCandidate, source: ArisMemorySource, turnAt: Date, now: Date = Date(), reviewed: Bool = false,
+                  approved: Bool = false) -> Outcome {
+        defer { Self.announceChange() }
+        return lock.withLock { rememberLocked(candidate, source: source, turnAt: turnAt, now: now, reviewed: reviewed, approved: approved) }
     }
 
-    private func rememberLocked(_ candidate: ArisMemoryCandidate, source: ArisMemorySource, turnAt: Date, now: Date) -> Outcome {
+    private func rememberLocked(_ candidate: ArisMemoryCandidate, source: ArisMemorySource, turnAt: Date, now: Date, reviewed: Bool = false,
+                                approved: Bool = false) -> Outcome {
         let text = ArisMemoryText.cleaned(candidate.text)
         guard !ArisMemoryText.normalized(text).isEmpty else { return .empty }
         guard !Self.holdsBack(text, source: source), !Self.holdsBack(candidate.subject, source: source) else { return .secret }
+        // The write gate: never on the user's own 기억해; what anyone else wrote that reads like an order waits for them. A
+        // learned memory is picked from their words on a clean turn (ArisMemoryLearning.mayLearn), so it is let off only
+        // the override and standing families ("앞으로 …라고 불러" is what he wants remembered); a paste is part of those
+        // words, so the leak family (a standing rule to send or copy things to an address) and the credential refusal
+        // apply to it as to everything else (security review 10, M2).
+        if source != .said {
+            // A learned one is judged with the whole sentence it was picked from, before any split (seventh VM pass).
+            switch ArisMemoryGate.verdict(candidate.subject + "\n" + text + (candidate.sentence.map { "\n" + $0 } ?? "")) {
+            case .allow: break
+            case .refuse: return .refused
+            case .review(let hit):
+                if !reviewed, !Self.waived(hit.family, source: source, approved: approved) {
+                    guard openLocked() != nil, let id = Self.hold(kind: "memory", source: source, text: text, subject: candidate.subject, memoryKind: candidate.kind,
+                                                                  turnAt: turnAt, hit: hit, Statements(store: self), now: now) else { return .failed }
+                    return .held(id)
+                }
+            }
+        }
         let subject = String(ArisMemoryText.cleaned(candidate.subject).prefix(40))
         let confidence = min(Self.ceiling(source), max(0, candidate.confidence))
         let clean = ArisMemoryCandidate(kind: candidate.kind, subject: subject, text: text, confidence: confidence)
@@ -137,6 +200,11 @@ final class ArisMemoryStore: @unchecked Sendable {
             return .duplicate(old)
         case .update(let id):
             guard var old = existing.first(where: { $0.id == id }) else { return .failed }
+            // The old wording stays, as history: a row of its own replaced by this memory from now.
+            let past = ArisMemoryRecord(id: UUID().uuidString, kind: old.kind, subject: old.subject, text: old.text, source: old.source, turnAt: old.turnAt,
+                                        confidence: old.confidence, createdAt: old.createdAt, updatedAt: now, lastUsedAt: old.lastUsedAt, useCount: old.useCount,
+                                        validFrom: old.validFrom ?? old.turnAt, validUntil: now, supersededBy: id)
+            guard insertLocked(past) else { return .failed }
             let was = old.text
             old.text = clean.text
             if !clean.subject.isEmpty { old.subject = clean.subject }
@@ -146,14 +214,25 @@ final class ArisMemoryStore: @unchecked Sendable {
             old.confidence = clean.confidence
             old.turnAt = turnAt
             old.updatedAt = now
-            guard runLocked("UPDATE memories SET kind = ?, subject = ?, text = ?, source = ?, turn_at = ?, confidence = ?, updated_at = ? WHERE id = ?",
+            old.validFrom = turnAt
+            old.validUntil = Self.ends(clean, turnAt: turnAt)
+            guard runLocked("UPDATE memories SET kind = ?, subject = ?, text = ?, source = ?, turn_at = ?, confidence = ?, updated_at = ?, valid_from = ?, valid_until = ? WHERE id = ?",
                             [.text(old.kind.rawValue), .text(old.subject), .text(old.text), .text(old.source.rawValue), .real(turnAt.timeIntervalSince1970),
-                             .real(old.confidence), .real(now.timeIntervalSince1970), .text(id)]) else { return .failed }
+                             .real(old.confidence), .real(now.timeIntervalSince1970), .real(turnAt.timeIntervalSince1970),
+                             old.validUntil.map { .real($0.timeIntervalSince1970) } ?? .null, .text(id)]) else { return .failed }
+            trimHistoryLocked()
+            Self.link(old, Statements(store: self), now: now)
             return .updated(old, was: was)
         case .insert:
             let record = ArisMemoryRecord(id: UUID().uuidString, kind: clean.kind, subject: clean.subject, text: clean.text, source: source, turnAt: turnAt,
-                                          confidence: clean.confidence, createdAt: now, updatedAt: now, lastUsedAt: nil, useCount: 0)
+                                          confidence: clean.confidence, createdAt: now, updatedAt: now, lastUsedAt: nil, useCount: 0, validFrom: turnAt,
+                                          validUntil: Self.ends(clean, turnAt: turnAt))
             guard insertLocked(record, origin: source == .imported ? candidate.text : nil) else { return .failed }
+            // A yes and a no about the same thing: a conflict for the user to settle (ArisMemoryConflicts).
+            for other in ArisMemoryConflicts.contradicted(by: record, among: existing) {
+                Self.openConflict(record.id, other.id, Statements(store: self), now: now)
+            }
+            Self.link(record, Statements(store: self), now: now)
             trimLocked(now: now)
             return .added(record)
         }
@@ -162,7 +241,8 @@ final class ArisMemoryStore: @unchecked Sendable {
     /// The user's one-tap 확인 in 설정 › 기억: as sure as can be. False when it isn't there.
     @discardableResult
     func confirm(id: String, now: Date = Date()) -> Bool {
-        lock.withLock {
+        defer { Self.announceChange() }
+        return lock.withLock {
             guard queryLocked("SELECT COUNT(*) FROM memories WHERE id = ?", [.text(id)]).first?.first?.int == 1 else { return false }
             return runLocked("UPDATE memories SET confidence = ?, updated_at = ? WHERE id = ?", [.real(Self.confirmedConfidence), .real(now.timeIntervalSince1970), .text(id)])
         }
@@ -172,23 +252,42 @@ final class ArisMemoryStore: @unchecked Sendable {
     @discardableResult
     func delete(id: String) -> Bool { !delete(ids: [id]).isEmpty }
 
-    /// Removes these memories (their memory.md lines too); the ids removed.
+    /// Removes these memories (their memory.md lines too); the ids removed. Each one's older wordings, its entity
+    /// timeline entries and its open conflicts go with it ("잊어" forgets every copy).
     @discardableResult
     func delete(ids: [String]) -> [String] {
-        lock.withLock {
+        defer { Self.announceChange() }
+        return lock.withLock {
             var gone: [String] = []
             for id in ids {
                 let row = queryLocked("SELECT text, origin FROM memories WHERE id = ?", [.text(id)]).first
-                guard let text = row?.first?.text, runLocked("DELETE FROM memories WHERE id = ?", [.text(id)]) else { continue }
-                // What an import's undo kept of it goes too (ArisMemoryImportStore; nothing happens when no import ever ran).
-                _ = runLocked("DELETE FROM import_journal WHERE memory = ?", [.text(id)])
+                guard let text = row?.first?.text else { continue }
+                for past in historyIdsLocked(id) + [id] {
+                    let pastRow = queryLocked("SELECT text, origin FROM memories WHERE id = ?", [.text(past)]).first
+                    guard runLocked("DELETE FROM memories WHERE id = ?", [.text(past)]) else { continue }
+                    // What an import's undo kept of it goes too (ArisMemoryImportStore; nothing happens when no import ever ran).
+                    _ = runLocked("DELETE FROM import_journal WHERE memory = ?", [.text(past)])
+                    Self.forgetEverywhere(past, text: pastRow?.first?.text, Statements(store: self))
+                    if past != id, let pastText = pastRow?.first?.text { dropBackupLines(like: pastText) }
+                    if let origin = pastRow?[1].text { dropBackupLines(like: origin) }
+                }
                 dropBackupLines(like: text)
-                if let origin = row?[1].text { dropBackupLines(like: origin) }
                 gone.append(id)
             }
             if !gone.isEmpty { checkpointLocked() }
             return gone
         }
+    }
+
+    /// Every older wording of `id`, and theirs (a memory a conflict replaced keeps its own history).
+    private func historyIdsLocked(_ id: String) -> [String] {
+        var found: [String] = [], queue = [id]
+        while let next = queue.popLast(), found.count < 1_000 {
+            let older = queryLocked("SELECT id FROM memories WHERE superseded_by = ?", [.text(next)]).compactMap { $0.first?.text }.filter { !found.contains($0) }
+            found += older
+            queue += older
+        }
+        return found
     }
 
     /// The memories whose subject or text contains `words` (ArisMemoryRecall.containing): what forget would remove.
@@ -200,10 +299,13 @@ final class ArisMemoryStore: @unchecked Sendable {
     /// Every memory, day note and summary, and the memory.md backup. The settings (learning on or off) stay.
     @discardableResult
     func deleteAll() -> Bool {
-        lock.withLock {
+        defer { Self.announceChange() }
+        return lock.withLock {
             let done = runLocked("DELETE FROM memories") && runLocked("DELETE FROM day_notes") && runLocked("DELETE FROM day_summaries")
             // And what an import's undo kept of the memories it changed (ArisMemoryImportStore).
             _ = runLocked("DELETE FROM import_journal")
+            // People and projects, what waits for the user's look, and the conflicts.
+            for table in Self.everythingElse { _ = runLocked("DELETE FROM \(table)") }
             if done { _ = runLocked("VACUUM") }
             checkpointLocked()
             ArisNoFollow.removeFile(backup)
@@ -227,6 +329,24 @@ final class ArisMemoryStore: @unchecked Sendable {
     var learnsOnItsOwn: Bool {
         get { meta("auto") != "off" }
         set { setMeta("auto", newValue ? "on" : "off") }
+    }
+
+    /// Whether the weekly tidy-up runs (설정 › 기억 › 매주 정리하기). On by default.
+    var consolidates: Bool {
+        get { meta("consolidate") != "off" }
+        set { setMeta("consolidate", newValue ? "on" : "off") }
+    }
+
+    /// The brain the user last chose for one of their own clean turns from the app: the only one the weekly tidy-up asks.
+    var ownersBrain: String? {
+        get { meta("brain") }
+        set { if let newValue { setMeta("brain", newValue) } }
+    }
+
+    /// When the weekly tidy-up last ran.
+    var consolidatedAt: Date? {
+        get { meta("consolidated").flatMap(Double.init).map(Date.init(timeIntervalSince1970:)) }
+        set { if let newValue { setMeta("consolidated", String(newValue.timeIntervalSince1970)) } }
     }
 
     // MARK: - Day notes and summaries
@@ -374,8 +494,16 @@ final class ArisMemoryStore: @unchecked Sendable {
         CREATE INDEX IF NOT EXISTS day_notes_day ON day_notes(day);
         CREATE TABLE IF NOT EXISTS day_summaries (day TEXT PRIMARY KEY, summary TEXT NOT NULL, updated_at REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-        PRAGMA user_version = 2;
         """
+
+    /// The schema's version now: 3 added validity and history to memories, people and projects, conflicts and held items.
+    static let schemaVersion = 3
+
+    /// The columns a memory is read with (ArisMemoryStore.record).
+    static let columns = "id, kind, subject, text, source, turn_at, confidence, created_at, updated_at, last_used_at, use_count, valid_from, valid_until, superseded_by"
+
+    /// The tables deleteAll empties besides the memories, notes and summaries.
+    static let everythingElse = ["entities", "entity_aliases", "entity_timeline", "entity_changes", "memory_conflicts", "memory_held"]
 
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -422,6 +550,17 @@ final class ArisMemoryStore: @unchecked Sendable {
         }
         // Made before origin existed: add it (an error here only means it is there).
         sqlite3_exec(handle, "ALTER TABLE memories ADD COLUMN origin TEXT", nil, nil, nil)
+        // Version 3: validity and history (a memory made before keeps every field; it holds from when it was said).
+        for column in ["valid_from REAL", "valid_until REAL", "superseded_by TEXT"] {
+            sqlite3_exec(handle, "ALTER TABLE memories ADD COLUMN \(column)", nil, nil, nil)
+        }
+        let more = Self.entitySchema + Self.reviewSchema + "CREATE INDEX IF NOT EXISTS memories_superseded ON memories(superseded_by);"
+        guard sqlite3_exec(handle, more, nil, nil, nil) == SQLITE_OK,
+              sqlite3_exec(handle, "PRAGMA user_version = \(Self.schemaVersion)", nil, nil, nil) == SQLITE_OK else {
+            FileHandle.standardError.write(Data("aris: memory.sqlite schema failed: \(String(cString: sqlite3_errmsg(handle)))\n".utf8))
+            sqlite3_close_v2(handle)
+            return nil
+        }
         db = handle
         return handle
     }
@@ -472,16 +611,25 @@ final class ArisMemoryStore: @unchecked Sendable {
     }
 
     private func allLocked() -> [ArisMemoryRecord] {
-        queryLocked("SELECT id, kind, subject, text, source, turn_at, confidence, created_at, updated_at, last_used_at, use_count FROM memories ORDER BY updated_at DESC")
-            .compactMap(Self.record)
+        queryLocked("SELECT \(Self.columns) FROM memories WHERE superseded_by IS NULL ORDER BY updated_at DESC").compactMap(Self.record)
     }
 
     /// `origin`: an imported memory's line as memory.md had it (its backup line goes when it is deleted, reworded or not).
     private func insertLocked(_ r: ArisMemoryRecord, origin: String? = nil) -> Bool {
-        runLocked("INSERT INTO memories (id, kind, subject, text, source, turn_at, confidence, created_at, updated_at, last_used_at, use_count, origin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                  [.text(r.id), .text(r.kind.rawValue), .text(r.subject), .text(r.text), .text(r.source.rawValue), .real(r.turnAt.timeIntervalSince1970),
-                   .real(r.confidence), .real(r.createdAt.timeIntervalSince1970), .real(r.updatedAt.timeIntervalSince1970),
-                   r.lastUsedAt.map { .real($0.timeIntervalSince1970) } ?? .null, .int(r.useCount), origin.map { .text($0) } ?? .null])
+        let date = { (d: Date?) -> Value in d.map { .real($0.timeIntervalSince1970) } ?? .null }
+        return runLocked("INSERT INTO memories (id, kind, subject, text, source, turn_at, confidence, created_at, updated_at, last_used_at, use_count, origin, valid_from, valid_until, superseded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         [.text(r.id), .text(r.kind.rawValue), .text(r.subject), .text(r.text), .text(r.source.rawValue), .real(r.turnAt.timeIntervalSince1970),
+                          .real(r.confidence), .real(r.createdAt.timeIntervalSince1970), .real(r.updatedAt.timeIntervalSince1970),
+                          date(r.lastUsedAt), .int(r.useCount), origin.map { .text($0) } ?? .null, date(r.validFrom), date(r.validUntil),
+                          r.supersededBy.map { .text($0) } ?? .null])
+    }
+
+    /// Older wordings past `historyCapacity` go, the oldest first.
+    static let historyCapacity = 300
+
+    private func trimHistoryLocked() {
+        _ = runLocked("DELETE FROM memories WHERE superseded_by IS NOT NULL AND id NOT IN (SELECT id FROM memories WHERE superseded_by IS NOT NULL ORDER BY valid_until DESC LIMIT ?)",
+                      [.int(Self.historyCapacity)])
     }
 
     /// Past `capacity`: learned memories go first, the least weighty (ArisMemoryRecall.weight) of them; then the rest.
@@ -493,7 +641,16 @@ final class ArisMemoryStore: @unchecked Sendable {
             if aLearned != bLearned { return aLearned }
             return ArisMemoryRecall.weight(a, now: now) < ArisMemoryRecall.weight(b, now: now)
         }
-        for record in order.prefix(all.count - Self.capacity) { _ = runLocked("DELETE FROM memories WHERE id = ?", [.text(record.id)]) }
+        for record in order.prefix(all.count - Self.capacity) {
+            for id in historyIdsLocked(record.id) + [record.id] {
+                let text = queryLocked("SELECT text FROM memories WHERE id = ?", [.text(id)]).first?.first?.text
+                _ = runLocked("DELETE FROM memories WHERE id = ?", [.text(id)])
+                Self.forgetEverywhere(id, text: text, Statements(store: self))
+            }
+        }
+        // What went is overwritten on disk, the log emptied, as after every delete (not inside memory.md's one-time
+        // import transaction, where a checkpoint can't run).
+        if let db, sqlite3_get_autocommit(db) != 0 { checkpointLocked() }
     }
 
     private func meta(_ key: String) -> String? { lock.withLock { metaLocked(key) } }
@@ -535,12 +692,14 @@ final class ArisMemoryStore: @unchecked Sendable {
         return fchmod(fd, mode) == 0
     }
 
-    private static func record(_ row: [Value]) -> ArisMemoryRecord? {
-        guard row.count == 11, let id = row[0].text, let kind = row[1].text.flatMap(ArisMemoryKind.init(rawValue:)),
+    static func record(_ row: [Value]) -> ArisMemoryRecord? {
+        guard row.count == 14, let id = row[0].text, let kind = row[1].text.flatMap(ArisMemoryKind.init(rawValue:)),
               let text = row[3].text, let source = row[4].text.flatMap(ArisMemorySource.init(rawValue:)),
               let turnAt = row[5].real, let confidence = row[6].real, let created = row[7].real, let updated = row[8].real else { return nil }
         return ArisMemoryRecord(id: id, kind: kind, subject: row[2].text ?? "", text: text, source: source, turnAt: Date(timeIntervalSince1970: turnAt),
                                 confidence: confidence, createdAt: Date(timeIntervalSince1970: created), updatedAt: Date(timeIntervalSince1970: updated),
-                                lastUsedAt: row[9].real.map(Date.init(timeIntervalSince1970:)), useCount: row[10].int ?? 0)
+                                lastUsedAt: row[9].real.map(Date.init(timeIntervalSince1970:)), useCount: row[10].int ?? 0,
+                                validFrom: row[11].real.map(Date.init(timeIntervalSince1970:)), validUntil: row[12].real.map(Date.init(timeIntervalSince1970:)),
+                                supersededBy: row[13].text)
     }
 }

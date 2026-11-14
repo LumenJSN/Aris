@@ -13,7 +13,8 @@ import Foundation
 enum ArisSettingsCopyMore {
     /// Korean → English, for every string of the rows built on feat-2.
     static let english: [String: String] = [ArisQuietHoursCopy.english, ArisTerminalSetting.english, ArisDropLearnedSetting.english, ArisWakeHonesty.english,
-                                           ArisWorkSettingsRows.english, ArisMemoryImportCopy.english, ArisNotchLookSetting.english]
+                                           ArisWorkSettingsRows.english, ArisSavedStepsSettingsRows.english, ArisMemoryImportCopy.english, ArisNotchLookSetting.english,
+                                            ArisMemoryReviewRows.english]
         .reduce(into: [:]) { all, pairs in all.merge(pairs) { first, _ in first } }
 
     /// A menu choice's English by its setting and id, before any lookup by its Korean: for a choice whose Korean means

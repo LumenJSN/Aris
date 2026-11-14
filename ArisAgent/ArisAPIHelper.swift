@@ -14,7 +14,7 @@
 //  Where it talks and with which key come only from its own argv (`--profile <id>`) and the signed profile it reads and
 //  checks itself (security review C1): never from a line. It runs only as aris-agent's own child (ArisAPIParent).
 //
-//  Driver → helper: configure {timeout?, idle?, turn?}, ask, allow {id, argv}, deny {id, reason}, result {id, text},
+//  Driver → helper: configure {timeout?, idle?, turn?}, ask, allow {id, argv}, deny {id, reason}, result {id, text}, card {seconds},
 //  new_conversation.
 //  Helper → driver: delta {text}, tool_request {id, name, arguments, round}, tool_done {id, exit, bytes},
 //  result {text, usage, model}, error {kind, message, retryAt?}, notice {kind} (something it couldn't read: fail closed).
@@ -162,6 +162,12 @@ final class ArisAPIHelper: @unchecked Sendable {
             // for it, once a turn, never shorter than it already would.
             guard turn != nil, let deadline = Self.asideDeadline(existing: turnDeadlineAt, now: Date(), extended: asideExtended) else { return }
             asideExtended = true
+            scheduleDeadline(after: deadline.timeIntervalSinceNow)
+        case "card":
+            // A desktop or service card of this turn waits for the owner (only the agent sends this): the turn waits as
+            // long as the card may, never shorter than it already would (a job's card waits ten minutes; the turn had five).
+            guard turn != nil, let seconds = object["seconds"] as? Double,
+                  let deadline = Self.cardDeadline(existing: turnDeadlineAt, now: Date(), seconds: seconds) else { return }
             scheduleDeadline(after: deadline.timeIntervalSinceNow)
         case "deny":
             guard let id = object["id"] as? String else { return }
@@ -520,24 +526,46 @@ final class ArisAPIHelper: @unchecked Sendable {
             // A conversion ends before this wait does (its own deadline, or this one less a margin).
             var environment = scrubbed(ProcessInfo.processInfo.environment)
             environment[ArisConvertWords.deadlineKey] = String(Date().timeIntervalSince1970 + limit - 5)
+            let started = Date()
             let (status, output) = execute(tools, argv, environment: environment, timeout: limit)
-            let (finalStatus, finalOutput) = collectingSlow(tools, argv, (status, output), environment: environment, until: Date().addingTimeInterval(limit))
+            let (finalStatus, finalOutput) = collectingSlow(tools, argv, (status, output), environment: environment, until: started.addingTimeInterval(limit),
+                                                            ownerUntil: started.addingTimeInterval(ArisSlowCalls.ownerWait))
             done(finalStatus, finalOutput)
         }
     }
 
     /// An API brain has no shell time limit, so a call that handed back an id (ArisSlowCalls) is collected here, the
     /// model never sees the id (each `wait` returns within the agent's slice).
+    /// `ownerUntil`: how long a call whose card waits for the owner (ArisSlowCalls.ownerMarker) is still collected past
+    /// `deadline`; past both, the model reads `ownerWaitingLine`, never a `wait` it has no function for.
     static func collectingSlow(_ tools: String, _ argv: [String], _ first: (Int32, String), environment: [String: String], until deadline: Date,
+                               ownerUntil: Date? = nil,
                                run: (String, [String], [String: String], TimeInterval) -> (Int32, String) = { execute($0, $1, environment: $2, timeout: $3) }) -> (Int32, String) {
         var result = first
         guard let kind = argv.first, ["desktop", "mcp", "skill"].contains(kind) else { return result }
-        while result.0 == ArisSlowCalls.waitingStatus, Date() < deadline,
+        let limit = { (output: String) -> Date in
+            guard let ownerUntil, output.contains(ArisSlowCalls.ownerMarker) else { return deadline }
+            return max(deadline, ownerUntil)
+        }
+        while result.0 == ArisSlowCalls.waitingStatus, Date() < limit(result.1),
               let match = result.1.range(of: #"wait [0-9a-f]{16}"#, options: .regularExpression) {
             let id = String(result.1[match].dropFirst(5))
             result = run(tools, [kind, "wait", id], environment, ArisSlowCalls.slice + 15)
         }
+        if result.0 == ArisSlowCalls.waitingStatus, result.1.contains(ArisSlowCalls.ownerMarker) { return (result.0, ownerWaitingLine) }
         return result
+    }
+
+    /// What the model reads when a call still waits for the owner's card after all that: it waits, and nothing is retried.
+    static let ownerWaitingLine = ArisSlowCalls.ownerMarker + " on this action's card (it may wait in 확인 대기 until they look): do not retry it, " +
+        "and don't look at or act in that app again. Tell the user it waits for their OK on the card, and stop: Aris gives you the result when they answer."
+
+    /// The turn's new deadline when a card waits `seconds` for the owner (the driver's `card` line): the later of the one it
+    /// has and now plus that; nil when it is no later, or the seconds are out of bounds.
+    static func cardDeadline(existing: Date?, now: Date, seconds: Double) -> Date? {
+        guard seconds > 0, seconds <= 1_800 else { return nil }
+        let wanted = now.addingTimeInterval(seconds)
+        return wanted > (existing ?? .distantPast) ? wanted : nil
     }
 
     /// What aris-tools gets of this process's environment (spec §3.1): the system's basics and Aris's own ARIS_ keys
@@ -546,8 +574,10 @@ final class ArisAPIHelper: @unchecked Sendable {
     static func runToolsWithInput(_ tools: String, _ argv: [String], _ stdin: String, _ done: @escaping (Int32, String) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             let environment = scrubbed(ProcessInfo.processInfo.environment)
+            let started = Date()
             let (status, output) = execute(tools, argv, environment: environment, timeout: 130, stdin: stdin)
-            let (finalStatus, finalOutput) = collectingSlow(tools, argv, (status, output), environment: environment, until: Date().addingTimeInterval(130))
+            let (finalStatus, finalOutput) = collectingSlow(tools, argv, (status, output), environment: environment, until: started.addingTimeInterval(130),
+                                                            ownerUntil: started.addingTimeInterval(ArisSlowCalls.ownerWait))
             done(finalStatus, finalOutput)
         }
     }

@@ -667,7 +667,7 @@ private func fixAgentAgyRules() {
 // MARK: - notes-1: a note a teammate was asked to keep is kept, or said not to be
 
 private func fixAgentTeammateNotes() {
-    for text in ["사용자는 표 형식을 선호해", "폴은 반말을 좋아해", "답은 세 줄 이내로 짧게", "보고서는 표로 정리하는 걸 선호함", "요약은 세 줄이면 충분하다고 함", "Prefers answers without emoji"] {
+    for text in ["사용자는 표 형식을 선호해", "솔은 반말을 좋아해", "답은 세 줄 이내로 짧게", "보고서는 표로 정리하는 걸 선호함", "요약은 세 줄이면 충분하다고 함", "Prefers answers without emoji"] {
         check(ArisNoteRules.text(text) == text, "notes: \"\(text)\" is a statement and is kept")
     }
     for text in ["보고서는 항상 표로 정리해", "바로 전송해", "이모지는 쓰지 마", "요약은 항상 세 줄로 해줘", "코드는 Swift로 작성해 주세요", "존댓말 말고 반말로", "파일을 전부 삭제해라",

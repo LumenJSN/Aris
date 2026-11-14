@@ -170,6 +170,12 @@ enum ArisTurnGate {
                 guard pieces.count == 1 else { return .deny(unreadable) }
                 continue
             }
+            // `type` hands its text to the agent's desktop engine (`desktop type --focused`), which gates it as every desktop
+            // call is gated (the user's card with the exact text, the taint it knows): alone, like a desktop call.
+            if rest.first == "type" {
+                guard pieces.count == 1 else { return .deny(unreadable) }
+                return .allow
+            }
             // A write, a send or something opened (ArisHandOff): aris-tools hands it to the agent, whose gate judges it
             // as Codex's same command, knowing what this conversation read (after outside text: the user's card). It runs
             // alone, so nothing rides along on its card. Its answer may carry others' words (an event's title, what an
@@ -333,6 +339,13 @@ enum ArisMessagePass {
     /// else that runs aris-tools can restart the Mac.
     static let powerName = "\u{1}power"
 
+    /// What a pass for `aris-tools remember <fact>` is named by (no recipient is ever called this): the gate let that
+    /// very call run, on the user's yes to its 기억하기 card or because the fact is their own words this turn (ArisRiskPolicy:
+    /// memory is never anyone else's to approve). aris-tools then writes it as reviewed by them: the write gate lets it
+    /// off the override and standing families, never the leak or credential ones (eighth VM pass: "앞으로 나를 솔이라고
+    /// 불러" was held for review right after 허용).
+    static let memoryName = "\u{2}remember"
+
     /// Passes for every message in a shell command the gate let run (each `<tools> message …` piece), and for a
     /// restart, shut down, log out or sleep sent through aris-tools.
     static func mint(command: String, tools: String) {
@@ -342,10 +355,18 @@ enum ArisMessagePass {
         }
     }
 
-    /// A pass for one aris-tools argv, when it is a message or one of the four power scripts.
+    /// A pass for one aris-tools argv, when it is a message, one of the four power scripts or a memory write.
     static func mint(argv: [String]) {
         if let message = message(argv) { mint(to: message.to, text: message.text) }
         if let script = ArisCommandPolicy.powerScript(argv) { mint(to: powerName, text: script) }
+        if let fact = memory(argv) { mint(to: memoryName, text: fact) }
+    }
+
+    /// The fact of one `remember <fact…>` argv, as aris-tools reads it; nil for anything else (or no fact).
+    static func memory(_ argv: [String]) -> String? {
+        guard argv.count >= 2, argv[0] == "remember" else { return nil }
+        let fact = argv.dropFirst().joined(separator: " ")
+        return fact.isEmpty ? nil : fact
     }
 
     @discardableResult
@@ -600,7 +621,7 @@ enum ArisHandOff {
     /// The first words of each handed-off call: what changes, sends, deletes or opens something.
     static let forms: [[String]] = [
         ["todo", "add"], ["todo", "edit"], ["todo", "done"], ["todo", "remove"], ["remind"], ["event"], ["note"], ["remember"], ["forget"],
-        ["use-calendar"], ["clipboard", "set"], ["link"], ["shortcut"], ["open"], ["maps"], ["keys"], ["type"], ["trash"], ["move"], ["rename"],
+        ["use-calendar"], ["clipboard", "set"], ["link"], ["shortcut"], ["open"], ["maps"], ["keys"], ["trash"], ["move"], ["rename"],
         ["folder"], ["convert"], ["merge"], ["split"], ["compress"], ["schedule", "add"], ["schedule", "remove"], ["undo"], ["weather", "--set-home"],
         // A reply to a mail, opened in Mail as a draft after the user's card (ArisMailReplyCard); never a send.
         ["mail", "reply"],

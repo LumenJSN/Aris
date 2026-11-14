@@ -41,25 +41,15 @@ extension ArisController {
         }
     }
 
-    /// Something Aris tells you unasked (a timer ran out): shown in the notch for a few seconds, not said aloud.
-    /// It is in the 기록 list at once, whatever Aris is doing; the notch line waits its turn for a pause, as a job's
-    /// result does, so a timer that ends mid-turn is still told (audit imp-5: only the chimes played then).
-    func announce(title: String, text: String, hold: Duration = .seconds(4)) {
+    /// Something Aris tells you unasked (a timer ran out): a card under the notch, not said aloud (the timer chimes on
+    /// its own). It is in the 기록 list at once, whatever Aris is doing; the card waits its turn for a pause, as a job's
+    /// result does, so a timer that ends mid-turn is still told (audit imp-5: only the chimes played then), and one
+    /// that waited too long stays in the 기록 list only (ArisTimerNews). `kind`: its tile.
+    func announce(title: String, text: String, kind: ArisNoticeKind = .system) {
         remember(ArisHistoryEntry(date: Date(), heard: title, reply: text))
-        let asked = ContinuousClock.now
-        Task {
-            _ = await announce {
-                // Idle again here (the pause rule); news that waited too long stays in the 기록 list only.
-                guard session.phase == .idle, training == nil, ArisTimerNews.shows(waited: ContinuousClock.now - asked) else { return }
-                announcing = title
-                session = ArisSession.announcing(title, text)
-                turn = Task {
-                    try? await Task.sleep(for: hold)
-                    guard !Task.isCancelled, session.phase == .speaking, session.question == nil else { return }
-                    session = session.done()
-                }
-            }
-        }
+        let card = kind == .reminder ? ArisNoticeRoute.timer(title: title, text: text)
+            : ArisNoticeRoute.announcement(title: title, text: text, kind: kind)
+        Task { await notify(card, parking: text) }
     }
 
     /// Puts the brief up and holds it; the summary line, or nil when cancelled meanwhile.

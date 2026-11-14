@@ -53,9 +53,9 @@ extension ArisAgentPrompt {
             "`\(tools) remember \"<fact, in their words>\"`, `\(tools) forget \"<words>\"`, `\(tools) link \"https://…\"`, `\(tools) open \"<path>\"`, " +
             "`\(tools) shortcut \"Name\"`, `\(tools) trash <path>`, `\(tools) move <path> <folder>`, `\(tools) rename <path> <new name>`, " +
             "`\(tools) folder new <path>`, `\(tools) convert|merge|split|compress <file>… [--to <format>]`, `\(tools) keys cmd+t --app Safari`, " +
-            "`\(tools) type \"<text>\" --app Notes`, `\(tools) schedule add --title \"<a few words>\" --prompt \"<their request for that time>\" " +
+            "`\(tools) schedule add --title \"<a few words>\" --prompt \"<their request for that time>\" " +
             "--at \"YYYY-MM-DD HH:mm\"` (or `--daily 08:00`, `--weekly fri 18:00`, `--every 30m`), `\(tools) schedule remove <id>`, `\(tools) undo`. " +
-            "A no on the card is the user's own choice: say \"알겠어요, 안 할게요.\" or \"OK, I won't.\" and don't try another way."
+            ArisAgentPrompt.rememberRule + " A no on the card is the user's own choice: say \"알겠어요, 안 할게요.\" or \"OK, I won't.\" and don't try another way."
     }
 
     /// Every brain (audit tools-2, tools-3, tools-12): how the searches match, what they leave out, and that the file

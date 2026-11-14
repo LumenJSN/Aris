@@ -98,6 +98,81 @@ final class ArisComputerUseLedger {
     /// The user's yes for this app was wiped by outside text in this conversation.
     func wasWiped(_ app: String) -> Bool { lock.withLock { wiped.contains(app) } }
 
+    // MARK: - Cards that wait for the user (one action, one card)
+
+    /// The apps (ArisDesktopTarget.readKey) an action's card waits for the user in, how many each.
+    private var waitingCards: [String: Int] = [:]
+
+    /// An action's card for `app` went up (it may wait in 확인 대기 for long).
+    func cardUp(_ app: String) { lock.withLock { waitingCards[app, default: 0] += 1 } }
+
+    /// That card was answered (a yes, a no, or none in time).
+    func cardDown(_ app: String) {
+        lock.withLock {
+            let left = (waitingCards[app] ?? 1) - 1
+            waitingCards[app] = left > 0 ? left : nil
+        }
+    }
+
+    /// An action's card for `app` waits for the user: no other look or action there until it is answered (eighth VM pass:
+    /// the API brain looked again and clicked again while a job's card was parked, so one action showed two cards).
+    func cardWaits(_ app: String) -> Bool { lock.withLock { waitingCards[app] != nil } }
+
+    /// Any action's card of this conversation waits for the user.
+    var anyCardWaits: Bool { lock.withLock { !waitingCards.isEmpty } }
+
+    // MARK: - A saved-steps replay's cards (no more than the live run asked)
+
+    /// The apps the user said yes to on a card during this ledger's turn (any taint): a replay's step the live run did on the
+    /// app's yes then runs on this one, as it did (eighth VM pass: the replay asked two cards where the live run asked one).
+    private var cardYeses: Set<String> = []
+    /// The replay's step under way was done on the app's yes in the live run (ArisSavedStep.afterYes).
+    private var replayStepAfterYes = false
+
+    /// The user said yes on an action's card for `app` (its memory key).
+    func noteCardYes(_ app: String) { lock.withLock { _ = cardYeses.insert(app) } }
+
+    /// The replay's step under way (its look and its action) was done with no outside text for its app in the live run
+    /// (ArisSavedStep.appClean): the replay's turn reads its taint for it from the conversation alone
+    /// (ArisSavedStepsReplay.stepTaint).
+    private var replayClean = false
+
+    /// A saved-steps replay starts (`afterYes`, `clean`) or ends (false) one step.
+    func replayStep(afterYes: Bool, clean: Bool = false) {
+        lock.withLock {
+            replayStepAfterYes = afterYes
+            replayClean = clean
+        }
+    }
+
+    /// The replay's step under way was done with no outside text for its app in the live run.
+    var replayStepClean: Bool { lock.withLock { replayClean } }
+
+    /// The replay's step under way runs on the user's yes to an earlier card of the same replay for `app`, as in the live run.
+    func replayCovers(_ app: String) -> Bool { lock.withLock { replayStepAfterYes && cardYeses.contains(app) } }
+
+    // MARK: - How a look was decided (a replay's look decided as the live run's was)
+
+    /// The looks (snapshot ids) the read judge had to allow: a step done on such a look is saved as needing the judge.
+    private var judgedLooks: Set<String> = []
+    /// The replay's look under way ran without the read judge in the live run (ArisSavedStep.lookJudged false).
+    private var replayLookUnjudged = false
+
+    func noteJudged(_ snapshot: String) { lock.withLock { _ = judgedLooks.insert(snapshot) } }
+    func wasJudged(_ snapshot: String) -> Bool { lock.withLock { judgedLooks.contains(snapshot) } }
+
+    /// A saved-steps replay starts (`unjudged`, `clean` as its step) or ends (false) the look before a step.
+    func replayLook(unjudged: Bool, clean: Bool = false) {
+        lock.withLock {
+            replayLookUnjudged = unjudged
+            replayClean = clean
+        }
+    }
+
+    /// The look under way is a replay's, of a step whose live look ran without the judge: it runs without it again
+    /// (a replay has no AI: what it reads goes to no model, only to find the step's control).
+    var replayLookSkipsJudge: Bool { lock.withLock { replayLookUnjudged } }
+
     // MARK: - What the desktop engine saw
 
     /// A look Aris took: the window's latest from now on; the oldest go once there are too many.
@@ -106,6 +181,7 @@ final class ArisComputerUseLedger {
             if snapshots[observation.snapshot] == nil { snapshotOrder.append(observation.snapshot) }
             snapshots[observation.snapshot] = observation
             latest[observation.window] = observation.snapshot
+            lastRecorded = observation.snapshot
             if observation.target.settings { settingsPane = observation.settingsPane }
             var gone: [String] = []
             while snapshotOrder.count > Self.maxSnapshots {
@@ -120,6 +196,10 @@ final class ArisComputerUseLedger {
 
     /// A look (by Aris's id) taken in this conversation; nil for one Aris didn't take.
     func observation(_ id: String) -> ArisDesktopObservation? { lock.withLock { snapshots[id] } }
+
+    /// The look recorded last, of any window (saved steps find their control in the look they just took).
+    private var lastRecorded: String?
+    var lastLook: ArisDesktopObservation? { lock.withLock { lastRecorded.flatMap { snapshots[$0] } } }
 
     /// The app a snapshot was taken of.
     func target(ofSnapshot id: String) -> ArisDesktopTarget? { observation(id)?.target }
@@ -193,6 +273,20 @@ final class ArisComputerUseLedger {
     func notePinned(_ title: String) { lock.withLock { pinnedTitle = title } }
     var pinnedThisTurn: String? { lock.withLock { pinnedTitle } }
     func noteActed() { lock.withLock { acted += 1 } }
+
+    /// A brain's desktop action began (POST /desktop-tool): until its answer comes it counts as not done, so a reply
+    /// can't claim it while its card is still up.
+    func noteActionStarted() { noteNotDone() }
+
+    /// That action's answer came: done, it no longer counts as not done (seventh VM pass: every action of a turn stayed
+    /// "not done" for good, so no turn's steps were ever saved); not done, it stays so.
+    func noteActionEnded(ok: Bool) {
+        guard ok else { return }
+        lock.withLock {
+            notDone = max(0, notDone - 1)
+            acted += 1
+        }
+    }
 
     /// What this turn's actions came to: whether any was done, and how many weren't.
     var actionsThisTurn: (done: Bool, notDone: Int) { lock.withLock { (doneWindow != nil || acted > 0, notDone) } }

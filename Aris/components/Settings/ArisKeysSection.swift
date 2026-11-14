@@ -105,10 +105,10 @@ struct ArisKeyRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "key").font(.system(size: 16.5, weight: .medium)).foregroundStyle(palette.icon).frame(width: 20, height: 20)
+                ArisLineIcon("key", size: 20).foregroundStyle(palette.icon).frame(width: 20, height: 20)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(key.title).font(.system(size: 14, weight: .medium)).tracking(-0.07).foregroundStyle(palette.title)
+                        Text(key.title).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
                         if case .saved = state { ArisChip(text: "켜짐", tone: .ok) } else { ArisChip(text: "없음") }
                     }
                     Text(w(key.use)).font(.system(size: 12)).foregroundStyle(palette.desc).lineSpacing(3).fixedSize(horizontal: false, vertical: true)

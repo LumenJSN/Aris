@@ -137,10 +137,10 @@ struct ArisAPIBrainRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "key").font(.system(size: 16.5, weight: .medium)).foregroundStyle(palette.icon).frame(width: 20, height: 20)
+                ArisLineIcon("key", size: 20).foregroundStyle(palette.icon).frame(width: 20, height: 20)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(w("API 브레인")).font(.system(size: 14, weight: .medium)).tracking(-0.07).foregroundStyle(palette.title)
+                        Text(w("API 브레인")).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
                         ArisChip(text: model.status.text, tone: model.status.tone)
                     }
                     Text(w("기본으로 답하는 AI를 ‘API 키’로 고르면 여기서 저장한 서비스가 답해요. 화면 보기, 할 일, 메시지 같은 기능은 그대로 쓰고, 보내거나 바꾸는 일은 똑같이 카드로 물어봐요."))

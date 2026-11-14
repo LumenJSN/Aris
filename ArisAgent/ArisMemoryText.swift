@@ -21,6 +21,10 @@ enum ArisMemoryKind: String, CaseIterable, Codable, Sendable {
     case person
     /// Something the user does regularly.
     case routine
+    /// Something the user said they will do, or was promised ("금요일까지 민수한테 포트폴리오 보내기로 했어").
+    case commitment
+    /// Something that happens on a day ("목요일에 치과 예약").
+    case event
 
     var korean: String {
         switch self {
@@ -29,6 +33,18 @@ enum ArisMemoryKind: String, CaseIterable, Codable, Sendable {
         case .project: "하는 일"
         case .person: "사람"
         case .routine: "습관"
+        case .commitment: "약속"
+        case .event: "일정"
+        }
+    }
+
+    /// How fast a memory of this kind stops mattering: after this many days it weighs half as much (an event is
+    /// stale within the week, a promise or a taste within a season, a fact about the user or their people for a year).
+    var halfLifeDays: Double {
+        switch self {
+        case .event: 7
+        case .preference, .commitment, .routine, .project: 90
+        case .fact, .person: 365
         }
     }
 
@@ -39,6 +55,8 @@ enum ArisMemoryKind: String, CaseIterable, Codable, Sendable {
         case .project: "hammer"
         case .person: "person.2"
         case .routine: "repeat"
+        case .commitment: "checkmark.circle"
+        case .event: "calendar"
         }
     }
 
@@ -46,17 +64,51 @@ enum ArisMemoryKind: String, CaseIterable, Codable, Sendable {
     static func guess(_ text: String) -> ArisMemoryKind {
         let words = text.lowercased()
         func has(_ cues: [String]) -> Bool { cues.contains { words.contains($0) } }
+        // How the user wants to be called is about them, a preference, never a person (ninth VM pass: "앞으로 나를 솔이라고
+        // 불러" was kept under People).
+        if addressesOwner(text) { return .preference }
         if ArisMemoryText.hasWord(text, "늘") || has(["좋아", "싫어", "선호", "즐겨", "항상", "prefer", "like", "love", "hate", "favorite", "favourite"]) { return .preference }
         if has(["매일", "평일", "주말마다", "아침마다", "저녁마다", "매주", "마다 ", "every ", "usually", "each morning", "weekdays"]) { return .routine }
+        // Someone by name with their place in the user's life ("민수는 디자인팀 팀장이야", "Jisoo is my coworker"): a person, with
+        // a page of their own (seventh VM pass: kept as "About you").
+        if ArisMemoryWhen.person(in: text) != nil { return .person }
         if has(["만들고 있", "준비하고 있", "작업하고 있", "하는 중", "프로젝트", "project", "working on", "building"]) { return .project }
+        if has(["하기로 했", "하기로 함", "주기로 했", "보내기로", "약속했", "약속함", "promised", "i'll send", "i will send", "agreed to", "owe "]) { return .commitment }
+        // Something on a day ("이번 주 금요일에 부산 가", "dinner tomorrow"): an event, kept until that day ends.
+        if has(["예약", "면접", "appointment", "interview on"]) || ArisMemoryWhen.namesDay(text) { return .event }
+        // The user about themselves ("나는 …", "I'm …"): about them, even with a word for someone in it.
+        if ownerSpeaks(words) { return .fact }
         if has(["엄마", "아빠", "형", "누나", "언니", "오빠", "동생", "친구", "여자친구", "남자친구", "교수님", "선생님", "라고 불러", "라고 부르",
                 "mom", "dad", "brother", "sister", "friend", "girlfriend", "boyfriend", "professor"]) { return .person }
         return .fact
+    }
+
+    /// The sentence says how to call or address the user ("나를 솔이라고 불러", "날 솔로 불러 줘", "call me the user").
+    static func addressesOwner(_ text: String) -> Bool {
+        let korean = #"(?:^|\s)(?:나를|날|저를|절|나한테|저한테)\s?(?:그냥\s)?\S{1,20}?(?:이?라고|으?로)\s?(?:불러|부르|불러줘|불러 줘|불러주|불러 주|불러요|호칭)"#
+        let english = #"(?i)\b(?:call me|address me as|refer to me as)\b"#
+        return text.range(of: korean, options: .regularExpression) != nil || text.range(of: english, options: .regularExpression) != nil
+    }
+
+    /// A sentence that opens with the user as its subject.
+    private static func ownerSpeaks(_ lowered: String) -> Bool {
+        let first = lowered.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+        return ["나는", "난", "저는", "전", "내가", "제가", "i", "i'm", "im", "i've", "i'd"].contains(first)
     }
 }
 
 /// Where a memory came from.
 enum ArisMemorySource: String, Codable, Sendable {
+    /// Where it came from as the user reads it, in three words: their own words (직접 말함), what Aris or an AI made of
+    /// them (추정), or another place (가져옴).
+    func label(korean: Bool) -> String {
+        switch self {
+        case .said: korean ? "직접 말함" : "said"
+        case .learned, .tool: korean ? "추정" : "inferred"
+        case .imported: korean ? "가져옴" : "imported"
+        }
+    }
+
     /// The user said "기억해" (the agent wrote their words as said).
     case said
     /// Picked out of a clean turn of the user's own words, after it was answered.
@@ -83,6 +135,14 @@ struct ArisMemoryRecord: Equatable, Sendable {
     /// When it last went into a turn's context because it was relevant.
     var lastUsedAt: Date?
     var useCount: Int
+    /// From when it holds (nil: from when it was said) and until when (nil: still).
+    var validFrom: Date? = nil
+    var validUntil: Date? = nil
+    /// Set on an older wording kept as history: the memory that replaced it (never shown or recalled by default).
+    var supersededBy: String? = nil
+
+    /// Still true at `now`: not replaced, and not past its end.
+    func isCurrent(at now: Date) -> Bool { supersededBy == nil && (validUntil.map { $0 > now } ?? true) }
 
     /// "엄마 — 꽃을 좋아해" for a subject the text doesn't name, else the text.
     var line: String {
@@ -98,6 +158,8 @@ struct ArisMemoryCandidate: Equatable, Sendable {
     var subject: String
     var text: String
     var confidence: Double
+    /// A learned one: the whole sentence of the user's words it was picked from, which the write gate reads too.
+    var sentence: String? = nil
 }
 
 enum ArisMemoryText {

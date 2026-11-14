@@ -28,13 +28,27 @@ enum ArisMemoryLearning {
         fromApp && !task && !untrusted && !outsideConversation && !screenSeen && !handsFree && !images && !screenText && !tainted
     }
 
-    /// Whether a turn gets memories in its context at all: the same as learning, minus the taint (not known yet). A
-    /// hands-free, untrusted, outside-text or screen turn, a caller other than the app, and every job get none (outside
-    /// text there could have them sent out).
+    /// Whether a turn gets its full memory (and the work memory): the same as learning, minus the taint (not known
+    /// yet). A hands-free, untrusted, outside-text or screen turn gets only the restricted few (recallMode); a caller
+    /// other than the app and every job get none.
     static func mayRecall(fromApp: Bool, task: Bool, untrusted: Bool, outsideConversation: Bool, screenSeen: Bool, handsFree: Bool,
                           images: Bool, screenText: Bool) -> Bool {
         mayLearn(fromApp: fromApp, task: task, untrusted: untrusted, outsideConversation: outsideConversation, screenSeen: screenSeen,
                  handsFree: handsFree, images: images, screenText: screenText, tainted: false)
+    }
+
+    /// How much memory a turn gets. `full`: the user's clean turn from the app (the relevant ones and the core, as ever).
+    /// `restricted`: his turn from the app that saw the screen, carries outside text or was heard hands-free: only the
+    /// memories his own words are about, each with its source, inside the turn's own fence (ArisMemoryRecall.fencedBlock);
+    /// the send gate and the turn's taint are what they are either way (anything outbound after outside text still asks).
+    /// `none`: another caller, and every job.
+    enum RecallMode: Equatable { case full, restricted, none }
+
+    static func recallMode(fromApp: Bool, task: Bool, untrusted: Bool, outsideConversation: Bool, screenSeen: Bool, handsFree: Bool,
+                           images: Bool, screenText: Bool) -> RecallMode {
+        guard fromApp, !task else { return .none }
+        return mayRecall(fromApp: fromApp, task: task, untrusted: untrusted, outsideConversation: outsideConversation, screenSeen: screenSeen,
+                         handsFree: handsFree, images: images, screenText: screenText) ? .full : .restricted
     }
 
     /// Whether the agent answers a memory intent itself: the user's turn from the app, not hands-free (anyone's words: no
@@ -169,8 +183,9 @@ enum ArisMemoryLearning {
             let subject = ArisMemoryText.cleaned(raw.subject)
             let groundedSubject = !subject.isEmpty && subject.count <= 20 && ArisMemoryText.normalized(words).contains(ArisMemoryText.normalized(subject))
                 && !ArisMemoryText.isSecret(subject)
-            let candidate = ArisMemoryCandidate(kind: raw.kind, subject: groundedSubject ? subject : "", text: text,
+            var candidate = ArisMemoryCandidate(kind: raw.kind, subject: groundedSubject ? subject : "", text: text,
                                                 confidence: min(raw.confidence, ArisMemoryStore.learnedConfidence))
+            candidate.sentence = sentence(of: text, in: words)
             // The same thing twice, or a shorter piece of one already kept.
             guard !kept.contains(where: { ArisMemoryText.similarity($0.text, text) >= ArisMemoryMerge.rewordAt
                 || ArisMemoryText.groundedness(text, in: $0.text) >= 0.7 }) else { continue }
@@ -182,12 +197,30 @@ enum ArisMemoryLearning {
 
     // MARK: - Rules (no on-device model)
 
-    /// Clauses of `words`: split at sentence ends, commas and "그리고".
+    /// Clauses of `words`: split at sentence ends, commas and "그리고". A sentence ends at . ! ? followed by a space or
+    /// the end, never inside a word, and a comma splits only outside a number: an address, a link, a domain or a decimal
+    /// ("audit@example.com", "v2.5", "1,500") stays whole (seventh VM pass: "audit@example.com" was cut to
+    /// "audit@example", and the write gate's address pattern never saw an address).
     static func clauses(_ words: String) -> [String] {
         words.replacingOccurrences(of: "그리고", with: ",").replacingOccurrences(of: " and ", with: ",")
-            .components(separatedBy: CharacterSet(charactersIn: ".!?,;\n。"))
+            .replacingOccurrences(of: #"[.!?](?=\s|$)|[。;\n]|(?<![0-9]),|,(?![0-9])"#, with: "\n", options: .regularExpression)
+            .components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+    }
+
+    /// The sentences of `words` as the write gate reads them: a line break, or . ! ? followed by a space or the end.
+    static func sentences(_ words: String) -> [String] {
+        words.replacingOccurrences(of: #"([.!?。！？])(?=\s|$)"#, with: "$1\n", options: .regularExpression)
+            .components(separatedBy: CharacterSet.newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// The whole sentence of `words` that `text` was most picked from: the write gate reads it before any split, so a
+    /// memory cut out of a sentence that copies mail to an address is judged by that sentence.
+    static func sentence(of text: String, in words: String) -> String? {
+        sentences(words).max { ArisMemoryText.groundedness(text, in: $0) < ArisMemoryText.groundedness(text, in: $1) }
     }
 
     private static let questionEnds = ["까", "니", "냐", "나요", "어때", "뭐야", "뭐지", "할래", "있어?", "어디야", "언제야"]
@@ -216,8 +249,15 @@ enum ArisMemoryLearning {
 
     private static let topicParticles = ["은", "는", "이", "가", "을", "를"]
 
-    /// The clause's topic, when it opens with one ("커피는 …" → 커피; "우리 엄마 이름은 …" → 엄마; "my mom …" → mom).
+    /// The clause's topic, when it opens with one ("커피는 …" → 커피; "우리 엄마 이름은 …" → 엄마; "my mom …" → mom), else the
+    /// person or project it names ("Jisoo is my coworker" → Jisoo; "아리스 프로젝트 …" → 아리스).
     static func subject(of clause: String) -> String {
+        let topic = topic(of: clause)
+        guard topic.isEmpty else { return topic }
+        return ArisMemoryWhen.person(in: clause) ?? ArisMemoryWhen.project(in: clause) ?? ""
+    }
+
+    private static func topic(of clause: String) -> String {
         var words = clause.split(separator: " ").map(String.init)
         while let first = words.first, ["나는", "난", "저는", "전", "내", "제", "우리", "my", "our", "i"].contains(first.lowercased()) { words.removeFirst() }
         guard let first = words.first else { return "" }

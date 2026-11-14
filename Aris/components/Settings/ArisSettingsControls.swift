@@ -2,10 +2,11 @@
 //  ArisSettingsControls.swift
 //  Aris
 //
-//  The settings window's controls, drawn to mockup C's numbers: the switch (40 × 24,
-//  #30d158, 220 ms (0.32, 0.72, 0, 1)), the glass sliding segmented control (thumb left 0.4 s (0.22, 1, 0.36, 1)),
-//  the buttons (30 tall r12, small 26 r10), chips, key caps, the field (36 r12, 2 pt focus ring), the range slider
-//  and the accent swatches. Presses scale to 0.98 (emil-design-eng); hovers are colour changes on a plain ease.
+//  The settings window's controls, drawn to the measured numbers (SETTINGS-REA.md §4.2): the settings rows' monochrome switch (32 × 18.4, a 16-pt thumb, 150 ms (0.4, 0, 0.2, 1)) and the
+//  green one for lists and detail sheets (40 × 24, #30d158, 220 ms (0.32, 0.72, 0, 1)), the glass sliding segmented
+//  control (thumb left 0.4 s (0.22, 1, 0.36, 1)), the buttons (30 tall r12, small 26 r10), chips, key caps (35 × 35),
+//  the field (36 r12, 2 pt focus ring), the range slider and the accent swatches. Presses scale to 0.98; hovers are
+//  colour changes on a plain ease.
 //
 
 import AppKit
@@ -13,16 +14,30 @@ import SwiftUI
 
 // MARK: - Switch
 
+/// Which switch: `.settings` in a settings row (monochrome), `.store` in a list row or a detail sheet (green).
+enum ArisSwitchStyle {
+    case settings, store
+}
+
 struct ArisSwitch: View {
     @Environment(\.arisPalette) private var palette
     @Environment(\.arisWords) private var w
     let isOn: Bool
     var enabled = true
+    var style = ArisSwitchStyle.settings
     let label: String
     let toggle: () -> Void
 
+    init(isOn: Bool, enabled: Bool = true, style: ArisSwitchStyle = .settings, label: String, toggle: @escaping () -> Void) {
+        self.isOn = isOn
+        self.enabled = enabled
+        self.style = style
+        self.label = label
+        self.toggle = toggle
+    }
+
     var body: some View {
-        Button(action: toggle) { ArisSwitchFace(isOn: isOn) }
+        Button(action: toggle) { ArisSwitchFace(isOn: isOn, style: style) }
             .buttonStyle(.plain)
             .disabled(!enabled)
             .opacity(enabled ? 1 : 0.5)
@@ -36,16 +51,35 @@ struct ArisSwitch: View {
 struct ArisSwitchFace: View {
     @Environment(\.arisPalette) private var palette
     let isOn: Bool
+    var style = ArisSwitchStyle.settings
+
+    /// The settings switch: a 32 × 18.4 track (a 1-pt clear border, `shadow-xs`), a 16-pt thumb 1 in, 14 across when on.
+    static let settingsTrack = CGSize(width: 32, height: 18.4)
+    static let settingsThumb: CGFloat = 16
+    /// The green switch: 40 × 24, a 20-pt thumb.
+    static let storeTrack = CGSize(width: 40, height: 24)
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            Capsule().fill(isOn ? palette.switchOn : palette.switchOff)
-            Circle().fill(.white).frame(width: 20, height: 20)
-                .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
-                .offset(x: isOn ? 18 : 2)
+        switch style {
+        case .settings:
+            ZStack(alignment: .leading) {
+                Capsule().fill(isOn ? palette.settingsSwitchOn : palette.settingsSwitchOff)
+                    .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
+                Circle().fill(palette.settingsSwitchThumb(on: isOn)).frame(width: Self.settingsThumb, height: Self.settingsThumb)
+                    .offset(x: isOn ? 1 + Self.settingsThumb - 2 : 1)
+            }
+            .frame(width: Self.settingsTrack.width, height: Self.settingsTrack.height)
+            .animation(ArisSettingsMotion.settingsToggle, value: isOn)
+        case .store:
+            ZStack(alignment: .leading) {
+                Capsule().fill(isOn ? palette.switchOn : palette.switchOff)
+                Circle().fill(.white).frame(width: 20, height: 20)
+                    .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
+                    .offset(x: isOn ? 18 : 2)
+            }
+            .frame(width: Self.storeTrack.width, height: Self.storeTrack.height)
+            .animation(ArisSettingsMotion.reduced ? .easeOut(duration: 0.15) : ArisSettingsMotion.toggle, value: isOn)
         }
-        .frame(width: 40, height: 24)
-        .animation(ArisSettingsMotion.reduced ? .easeOut(duration: 0.15) : ArisSettingsMotion.toggle, value: isOn)
     }
 }
 
@@ -73,7 +107,7 @@ struct ArisGlassSegmented: View {
 
     private var options: [ArisSettingOption] { given.map { ArisSettingOption(id: $0.id, title: w($0.title), detail: $0.detail) } }
 
-    /// The glass tab: 13/500, 16 each side, 6 above and below on a 1.5 line: 31.5 tall.
+    /// The measured glass tab: 13/500, `px-4` (16 each side), `py-1.5` on a 1.5 line: 31.5 tall.
     private static let font = NSFont.systemFont(ofSize: 13, weight: .medium)
     private static let side: CGFloat = 16
     private static let height: CGFloat = 31.5
@@ -116,7 +150,7 @@ struct ArisGlassSegmented: View {
             .frame(width: width, height: Self.height)
             .contentShape(Capsule())
         }
-        .buttonStyle(ArisPressScale(scale: ArisPressScale.light))
+        .buttonStyle(ArisPressScale(scale: ArisPressScale.measured))
         .disabled(off)
         .opacity(off ? 0.45 : 1)
         .onHover { hovered = $0 ? option.id : (hovered == option.id ? nil : hovered) }
@@ -127,11 +161,12 @@ struct ArisGlassSegmented: View {
 // MARK: - Buttons
 
 /// Press feedback for anything pressable: a button goes to 0.97 over 140 ms on a strong ease-out (emil-design-eng:
-/// 0.97, 100–160 ms); menu items, glass tabs and the select pass 0.98, key caps 0.95. Still under Reduce Motion.
+/// 0.97, 100–160 ms); what the measured app presses (menu items, glass tabs, the select: `active:scale-[0.98]`;
+/// key caps 0.95) passes its own. Still under Reduce Motion.
 struct ArisPressScale: ButtonStyle {
     var scale: CGFloat = 0.97
-    /// The lighter press for menu items, glass tabs and pills.
-    static let light: CGFloat = 0.98
+    /// The measured press for menu items, glass tabs and pills.
+    static let measured: CGFloat = 0.98
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -140,8 +175,8 @@ struct ArisPressScale: ButtonStyle {
     }
 }
 
-/// The window's button: ghost, primary (black / near-white), danger (red-600 on red-50, in dark red-400 on
-/// red-500/10, a 20–30% red border), and solid red for a sheet's last word.
+/// DashboardButton: ghost, primary (black / near-white), danger (the measured destructive: red-600 on red-50, in dark
+/// red-400 on red-500/10, a 20–30% red border), and solid red for a sheet's last word.
 struct ArisSettingsButton: View {
     @Environment(\.arisPalette) private var palette
     @Environment(\.arisWords) private var w
@@ -161,7 +196,7 @@ struct ArisSettingsButton: View {
                 Text(w(title)).lineLimit(1)
                 if let trailingSymbol {
                     if minWidth != nil { Spacer(minLength: 4) }
-                    Image(systemName: trailingSymbol).font(.system(size: 10, weight: .semibold))
+                    ArisLineIcon(trailingSymbol, size: 12, stroke: 2.25)
                 }
             }
             .font(.system(size: 12, weight: kind == .ghost || kind == .danger ? .medium : .semibold))
@@ -174,8 +209,8 @@ struct ArisSettingsButton: View {
             .animation(.easeInOut(duration: 0.2), value: hovering)
         }
         .buttonStyle(ArisPressScale())
-        // A button that can't be pressed yet keeps its place at half strength: it never hides, so nothing beside it
-        // moves when it wakes.
+        // A button that can't be pressed yet keeps its place at half strength (the measured DashboardButton:
+        // `disabled:opacity-50`): it never hides, so nothing beside it moves when it wakes.
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.5)
         .onHover { hovering = $0 && enabled }
@@ -184,7 +219,7 @@ struct ArisSettingsButton: View {
 
     private var ink: Color {
         switch kind {
-        case .ghost: hovering ? palette.buttonTextHover : palette.buttonText
+        case .ghost, .select: hovering ? palette.buttonTextHover : palette.buttonText
         case .primary: palette.primaryInk
         case .danger: palette.red
         case .solidRed: .white
@@ -193,7 +228,7 @@ struct ArisSettingsButton: View {
 
     private var fill: AnyShapeStyle {
         switch kind {
-        case .ghost: AnyShapeStyle(palette.buttonFill)
+        case .ghost, .select: AnyShapeStyle(palette.buttonFill)
         case .primary: AnyShapeStyle(hovering ? palette.primaryHover : palette.primary)
         case .danger: AnyShapeStyle(hovering ? palette.redFillHover : palette.redFill)
         case .solidRed: AnyShapeStyle(palette.solidRed)
@@ -202,7 +237,7 @@ struct ArisSettingsButton: View {
 
     private var border: Color {
         switch kind {
-        case .ghost: hovering ? palette.buttonBorderHover : palette.buttonBorder
+        case .ghost, .select: hovering ? palette.buttonBorderHover : palette.buttonBorder
         case .primary: hovering ? palette.primaryHover : palette.primary
         case .danger: palette.redBorder
         case .solidRed: palette.solidRed
@@ -238,7 +273,7 @@ struct ArisKeyCap: View {
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
         Text(w(text)).font(.system(size: 12, weight: .semibold)).lineLimit(1)
             .foregroundStyle(recording ? palette.capRecordingInk : palette.title)
-            .padding(.horizontal, 8).frame(minWidth: 28, minHeight: 28)
+            .padding(.horizontal, 8).frame(minWidth: 35, minHeight: 35)
             .background(shape.fill(recording ? palette.capRecording : palette.capFill))
             .overlay(shape.strokeBorder(recording ? palette.capRecordingBorder : palette.capBorder, lineWidth: 1))
             .shadow(color: palette.capShadow, radius: 1.5, x: 1, y: 2)
@@ -288,7 +323,7 @@ struct ArisShortcutCapsButton: View {
                 .frame(minHeight: 28)
                 .contentShape(Rectangle())
             }
-            // Key caps press to 0.95.
+            // The measured key caps press to 0.95.
             .buttonStyle(ArisPressScale(scale: 0.95))
             .focused($focused)
             .accessibilityLabel(w("\(w(label)) 단축키 바꾸기"))
@@ -322,7 +357,7 @@ extension EnvironmentValues {
 }
 
 
-/// The field's look: 36 tall (14-pt text, 8 above and below), r12, a 1-pt line that darkens on focus
+/// The field's look: 36 tall (the measured `py-2 text-sm`), r12, a 1-pt line that darkens on focus
 /// with a 2-pt ring.
 struct ArisFieldStyle: ViewModifier {
     @Environment(\.arisPalette) private var palette
@@ -452,7 +487,8 @@ struct ArisRangeSlider: View {
     }
 }
 
-/// The ring a control wears while the keyboard is on it: 2 pt of the accent at 40%, 2 pt clear of the control.
+/// The ring a control wears while the keyboard is on it: 2 pt of the accent at 40% (measured: `ring-2
+/// ring-[--color-…-blue]/40`), 2 pt clear of the control.
 struct ArisFocusRing: ViewModifier {
     @Environment(\.arisPalette) private var palette
     let shown: Bool
@@ -501,37 +537,6 @@ struct ArisSwatches: View {
         .buttonStyle(ArisPressScale(scale: 0.92))
         .accessibilityLabel(w(label))
         .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
-/// A removable language chip.
-struct ArisRemovableChip: View {
-    @Environment(\.arisPalette) private var palette
-    @Environment(\.arisWords) private var w
-    let title: String
-    let removable: Bool
-    let remove: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(w(title)).font(.system(size: 12, weight: .medium)).foregroundStyle(palette.title)
-            if removable {
-                Button(action: remove) {
-                    Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(hovering ? palette.title : palette.ink3)
-                        .frame(width: 18, height: 18)
-                        .background(Circle().fill(hovering ? palette.navFill : .clear))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering = $0 }
-                .accessibilityLabel(w("\(w(title)) 빼기"))
-            }
-        }
-        .padding(.leading, 12).padding(.trailing, removable ? 6 : 12).frame(height: 30)
-        .background(Capsule().fill(palette.chip))
-        .overlay(Capsule().strokeBorder(palette.hairline, lineWidth: 1))
     }
 }
 

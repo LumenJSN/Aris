@@ -24,6 +24,11 @@ struct ArisCardRead: Equatable {
     private(set) var seen: CGFloat?
     /// The card's whole height as last laid out.
     private(set) var content: CGFloat = 0
+    /// The scroller's last layout, of whichever card was up: its whole content fitted its room. A job's next card put
+    /// up in the same scroller at the same size gets no new layout event (eighth VM pass: its 허용 stayed at rest for two
+    /// minutes), so a card that follows starts from it: read when the one before it fitted (its click hold, ArisCardHold,
+    /// still applies), unread otherwise. A card of another size gets its own layout, which judges it again.
+    private(set) var fitted = false
 
     /// A point of rounding still counts as the end.
     static let slack: CGFloat = 1
@@ -33,13 +38,24 @@ struct ArisCardRead: Equatable {
         allow && !countdown && (source == .click || source == .key)
     }
 
-    /// The session's card as it is now: another card starts unread, none clears it.
+    /// The session's card as it is now: another card starts as the scroller last laid out (`fitted`), none clears it.
     func following(_ id: String?) -> ArisCardRead {
-        id == card ? self : ArisCardRead(card: id)
+        id == card ? self : started(id)
     }
 
-    /// Card `id` was put up now, also when the card before it had the same id: unread.
-    func shown(_ id: String) -> ArisCardRead { ArisCardRead(card: id) }
+    /// Card `id` was put up now, also when the card before it had the same id: unread, unless the scroller's last
+    /// layout fitted its room (`fitted`).
+    func shown(_ id: String) -> ArisCardRead { started(id) }
+
+    /// A card just put up: read at once when the scroller's last layout fitted (nothing of it can be below its room
+    /// until a layout says so), unread otherwise; after no card at all, unread.
+    private func started(_ id: String?) -> ArisCardRead {
+        var next = ArisCardRead(card: id)
+        guard id != nil, card != nil, fitted else { return next }
+        next.fitted = true
+        next.seen = 0
+        return next
+    }
 
     /// The card's scroller as it stands: `offset` from its top, `visible` of its `content` on screen.
     func scrolled(card id: String, offset: CGFloat, visible: CGFloat, content: CGFloat) -> ArisCardRead {
@@ -47,6 +63,7 @@ struct ArisCardRead: Equatable {
         var next = self
         next.content = content
         next.seen = max(seen ?? 0, min(content, max(0, offset) + visible))
+        next.fitted = content <= visible + Self.slack
         return next
     }
 

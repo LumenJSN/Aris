@@ -100,11 +100,11 @@ enum ArisSettingsCaption {
     /// The greeting says no AI can answer: it opens AI 서비스 on 기본으로 답하는 AI.
     static func asksForAI(_ greeting: String) -> Bool { greeting == noAI || greeting == quickKeyRefused || greeting == quickKeyUnchecked }
     static let brainAnchor = "ai.brain"
+}
 
-    /// "⌥ Space를 누르면 들어요" (or that there is none).
-    static func talk(_ caps: [String]) -> String {
-        caps.isEmpty ? "말하기 단축키가 없어요" : "\(ArisParticle.attach(caps.joined(separator: " "), .eulReul)) 누르면 들어요"
-    }
+/// The line Aris reads out to let a voice be heard (목소리 · 언어's 들어 보기, AI 서비스's 미리 듣기).
+enum ArisVoiceSample {
+    static let line = "안녕하세요, 아리스예요. 이 속도로 말할게요."
 }
 
 /// The window's toast: what its mark says, and how long it stays.

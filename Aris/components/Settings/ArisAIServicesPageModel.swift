@@ -127,8 +127,6 @@ struct ArisAIPage: Equatable, Sendable {
     var speak: ArisAICard
     var voiceLine: String?
     var savedKeys: [ArisAISavedKey]
-    /// The three names the notch preview shows ("Claude", "Whisper", "ElevenLabs · Geaun").
-    var who: [String]
 }
 
 struct ArisAIMenuItem: Equatable, Identifiable, Sendable {
@@ -164,13 +162,16 @@ struct ArisAIMenu: Equatable, Sendable {
     var foot: [ArisAIMenuItem] = []
     /// Where the list came from, small under the foot.
     var source: String?
+    /// A settings row's menu (the measured settings select's radio list): the chosen item is lit in glass and has no
+    /// check. The AI 서비스 page's menus mark theirs with the check.
+    var radio = false
 
     var items: [ArisAIMenuItem] { entries.compactMap { if case .item(let item) = $0 { return item }; return nil } }
 
     /// A settings row's choices as this menu's items (every page's menus are this one menu): each option, its line
-    /// under it, a check on the chosen one.
+    /// under it, the chosen one lit.
     static func choices(_ options: [ArisSettingOption], selected: String) -> ArisAIMenu {
-        ArisAIMenu(entries: options.map { .item(ArisAIMenuItem(id: $0.id, title: $0.title, subtitle: $0.detail, checked: $0.id == selected)) })
+        ArisAIMenu(entries: options.map { .item(ArisAIMenuItem(id: $0.id, title: $0.title, subtitle: $0.detail, checked: $0.id == selected)) }, radio: true)
     }
 
     /// The menu with only the items that match what is typed in its search (their title, line or id, whatever the
@@ -270,7 +271,8 @@ enum ArisAIServicesBuilder {
 
     static let voiceModels: [(id: String, label: String, trait: String)] = [
         ("eleven_flash_v2_5", "Flash v2.5", "가장 빨리 말을 시작해요"), ("eleven_v4_turbo", "v4 Turbo", "빠르고 자연스러워요"),
-        ("eleven_multilingual_v2", "Multilingual v2", "가장 자연스러워요 · 조금 느려요"),
+        ("eleven_v4", "v4", "가장 자연스러워요 · 말 시작이 조금 늦어요"),
+        ("eleven_multilingual_v2", "Multilingual v2", "고르고 차분해요 · 조금 느려요"),
     ]
 
     static func whisper(_ id: String) -> WhisperWords {
@@ -281,7 +283,7 @@ enum ArisAIServicesBuilder {
 
     static func page(_ state: ArisAIServicesState) -> ArisAIPage {
         ArisAIPage(think: thinkCard(state), thinkLine: thinkFallback(state), login: login(state), jev: jev(state), hear: hearCard(state), speak: speakCard(state),
-                   voiceLine: voiceFallback(state), savedKeys: savedKeys(state), who: who(state))
+                   voiceLine: voiceFallback(state), savedKeys: savedKeys(state))
     }
 
     /// The card's first row: the job, who does it and whether it stays on this Mac (or what it's missing), and the
@@ -302,12 +304,11 @@ enum ArisAIServicesBuilder {
         return preset.local
     }
 
-    /// What the 생각 card and the preview say when no AI is chosen, and when none can answer.
+    /// What the 생각 card says when no AI is chosen, and when none can answer.
     static let noBrainChosen = "고른 AI가 없어요"
     static let chooseBrain = "AI 고르기"
     static let noBrainHow = "아직 답할 수 있는 AI가 없어요. 위에서 Claude, ChatGPT, Gemini나 API 키로 쓰는 AI를 하나 골라 주세요."
     static let noBrainAnswers = "아직 답할 수 있는 AI가 없어요"
-    static let noBrainName = "AI 없음"
 
     private static func thinkCard(_ state: ArisAIServicesState) -> ArisAICard {
         // Nobody chose an AI and none is ready here (VM run 2026-11-11, bug 4: the card showed ChatGPT, ticked, on a
@@ -507,17 +508,6 @@ enum ArisAIServicesBuilder {
         case (false, true): return "안 되면 이 Mac의 macOS 목소리로 말해요"
         case (false, false): return nil
         }
-    }
-
-    private static func who(_ state: ArisAIServicesState) -> [String] {
-        let speak = ArisAICatalogue.current(.speak, in: state)
-        let voice = speak.id == "eleven" ? state.choices.elevenVoiceName : state.voices["macos"]?.voices.first { $0.id == state.choices.systemVoice && !$0.id.isEmpty }?.name
-        // The AI that is stored, not a pick still waiting for its key or its tool; none stored: none named.
-        var kept = state
-        kept.choices.think = state.thinkStored ?? state.choices.think
-        let think = kept.choices.think.isEmpty ? noBrainName : ArisAICatalogue.current(.think, in: kept).name
-        return [think, ArisAICatalogue.current(.hear, in: state).name,
-                [speak.id == "macos" ? "macOS" : speak.name, voice].compactMap { $0 }.joined(separator: " · ")]
     }
 
     // MARK: Menus

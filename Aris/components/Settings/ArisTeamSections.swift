@@ -91,7 +91,7 @@ struct ArisBrainPicker: View {
             Circle().strokeBorder(on ? palette.accent : palette.fieldBorder, lineWidth: 1.5).frame(width: 20, height: 20)
             if on {
                 Circle().fill(palette.accent).frame(width: 20, height: 20)
-                Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                ArisLineIcon("checkmark", size: 12, stroke: 2.5).foregroundStyle(.white)
             }
         }
         .accessibilityHidden(true)
@@ -129,7 +129,7 @@ struct ArisScopeSwitches: View {
             ForEach(shown, id: \.self) { scope in
                 if scope != shown.first { ArisRowDivider() }
                 HStack(spacing: 12) {
-                    Image(systemName: ArisTeamSymbols.scope(scope)).font(.system(size: 15)).foregroundStyle(palette.desc).frame(width: 24)
+                    ArisLineIcon(ArisTeamSymbols.scope(scope), size: 18).foregroundStyle(palette.desc).frame(width: 24)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(ArisTeamCopy.scopeTitle(scope)).font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.title)
                         Text(ArisTeamCopy.scopeDetail(scope)).font(.system(size: 11.5)).foregroundStyle(palette.desc)
@@ -147,7 +147,7 @@ struct ArisScopeSwitches: View {
             if !shown.contains(.terminal) {
                 ArisRowDivider()
                 HStack(spacing: 12) {
-                    Image(systemName: ArisTeamSymbols.scope(.terminal)).font(.system(size: 15)).foregroundStyle(palette.desc).frame(width: 24)
+                    ArisLineIcon(ArisTeamSymbols.scope(.terminal), size: 18).foregroundStyle(palette.desc).frame(width: 24)
                     Text(ArisTeamCopy.terminalOnClaude).font(.system(size: 11.5)).foregroundStyle(palette.desc)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
@@ -155,7 +155,7 @@ struct ArisScopeSwitches: View {
                 .padding(.horizontal, 16).padding(.vertical, 12)
             }
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "checkmark.shield").font(.system(size: 15)).foregroundStyle(palette.desc).frame(width: 24)
+                ArisLineIcon("checkmark.shield", size: 18).foregroundStyle(palette.desc).frame(width: 24)
                 Text(ArisTeamCopy.safeLine).font(.system(size: 11.5)).foregroundStyle(palette.desc).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -183,7 +183,7 @@ struct ArisNoteList: View {
         Group {
             if rows.isEmpty {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "book.closed").font(.system(size: 15)).foregroundStyle(palette.desc).frame(width: 24)
+                    ArisLineIcon("book.closed", size: 18).foregroundStyle(palette.desc).frame(width: 24)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(emptyTitle).font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.title)
                         Text(emptyDetail).font(.system(size: 11.5)).foregroundStyle(palette.desc).fixedSize(horizontal: false, vertical: true)
@@ -238,7 +238,7 @@ struct ArisNoteList: View {
                 ArisSettingsButton(title: ArisTeamCopy.keepNote, small: true) { keep(row.id) }
             }
             Button { forget(row.id) } label: {
-                Image(systemName: "xmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.desc)
+                ArisLineIcon("xmark", size: 13, stroke: 2.25).foregroundStyle(palette.desc)
                     .frame(width: 26, height: 26).contentShape(Rectangle())
             }
             .buttonStyle(ArisPressScale())
@@ -279,7 +279,7 @@ struct ArisTeamMakeByWords: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Image(systemName: "wand.and.stars").font(.system(size: 15)).foregroundStyle(palette.accent).frame(width: 24)
+                ArisLineIcon("wand.and.stars", size: 18).foregroundStyle(palette.accent).frame(width: 24)
                 Text(ArisTeamCopy.makeTitle).font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.title)
                 Spacer()
             }

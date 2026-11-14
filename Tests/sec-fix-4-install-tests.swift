@@ -289,9 +289,9 @@ private func secFix4OldRowsTests() {
     check(ArisAppFix.fixes(forLine: ArisHelperInstallWords.diskAfterSwitch(english: false)) == [.pane(.disk)] && ArisAppFix.fixes(forLine: "아무 말") == [],
           "sec4 M4: every other line keeps its one button, or none")
     let install = installCode("Aris/private/Aris/ArisHelperInstall.swift")
-    check(install.contains("ArisController.shared.fail(line)") && install.contains("await say(ArisHelperInstallWords.oldRows())") && install.contains("defaults.set(true, forKey: ArisHelperInstallWords.oldRowsSaidKey)")
+    check(install.contains("ArisController.shared.notify(ArisNoticeRoute.problem(line: line") && install.contains("await say(ArisHelperInstallWords.oldRows())") && install.contains("defaults.set(true, forKey: ArisHelperInstallWords.oldRowsSaidKey)")
             && install.contains("wasSetUp: defaults.bool(forKey: ArisOnboarding.seenKey)") && !install.contains("ArisSettingsNav"),
-          "sec4 M4: wiring: it is said through the notch's fix line (never a settings page), remembered once said, and kept due until the notch is quiet")
+          "sec4 M4: wiring: it is said on a card with the fix line's button (never a settings page), remembered once said, and kept due until the notch is quiet")
 }
 
 private func secFix4FilesTests() {

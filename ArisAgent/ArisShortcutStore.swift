@@ -45,13 +45,16 @@ final class ArisShortcutStore {
             process.environment = environment
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
-            do { try ArisChildren.run(process) } catch { return false }
+            let audit = { (ran: Bool) in ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(ArisShortcuts.replayAudit(command, ran: ran)), key: "local") }
+            do { try ArisChildren.run(process) } catch { audit(false); return false }
             let deadline = Date().addingTimeInterval(Self.commandTimeout)
             while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
             if process.isRunning {
                 ArisProcessEnd.end(process)
+                audit(false)
                 return false
             }
+            audit(process.terminationStatus == 0)
             guard process.terminationStatus == 0 else { return false }
         }
         return true

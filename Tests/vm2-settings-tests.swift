@@ -68,19 +68,18 @@ private func vm2BrainTruthTests() {
           "vm2 bug 4: the card says no AI can answer yet and how to get one; no model, sign-in or fallback of an AI nobody chose is shown")
     check(ticked(nobody).isEmpty && menu(.provider(.think), nobody, "").items.first { $0.id == "codex" }?.tail == "설치 필요",
           "vm2 bug 4: nothing is ticked in the 생각 dropdown, and ChatGPT is listed as not installed like the others")
-    check(empty.who == ["AI 없음", "Apple 받아쓰기", "macOS"], "vm2 bug 4: the preview strip names no AI, not ChatGPT")
 
     // Claude or Anthropic picked on that Mac: shown with what it needs, and nobody is said to answer meanwhile.
     for (pick, needs) in [("claude", "설치 필요"), ("codex", "설치 필요"), ("api:anthropic", "키 필요")] {
         let picked = vm2State { $0.choices.think = pick; $0.thinkStored = "" }
         let shown = page(picked)
-        check(shown.think.rows[0].warn == needs && shown.thinkLine == "아직 답할 수 있는 AI가 없어요" && shown.who[0] == "AI 없음" && ticked(picked) == [pick],
+        check(shown.think.rows[0].warn == needs && shown.thinkLine == "아직 답할 수 있는 AI가 없어요" && ticked(picked) == [pick],
               "vm2 bug 4: \(pick) picked on a Mac with no AI says what it needs and that no AI can answer yet; ChatGPT is not said to think")
     }
 
     // "Until it can be used, X thinks" only when X really can.
     let working = vm2State { $0.choices.think = "api:anthropic"; $0.thinkStored = "codex"; $0.brainReady["codex"] = true }
-    check(page(working).thinkLine == "쓸 수 있게 될 때까지 ChatGPT로 생각해요" && page(working).who[0] == "ChatGPT",
+    check(page(working).thinkLine == "쓸 수 있게 될 때까지 ChatGPT로 생각해요",
           "vm2 bug 4: a pick that can't answer yet names the stored AI as the one that thinks meanwhile when that one is set up")
     let keyed = vm2State { $0.choices.think = "claude"; $0.thinkStored = "api:openai"; $0.profiles = [ArisAIProfile(id: "openai", quick: "a", strong: "b", hasKey: true)] }
     check(page(keyed).thinkLine == "쓸 수 있게 될 때까지 OpenAI로 생각해요", "vm2 bug 4: an API brain with its key is named as the one that thinks meanwhile")
@@ -93,7 +92,7 @@ private func vm2BrainTruthTests() {
 
     // The security ruling: a brain the user stored stays the one shown, even when it can't answer here.
     let stored = vm2State { $0.choices.think = "codex" }
-    check(page(stored).think.rows[0].desc == "ChatGPT" && page(stored).think.rows[0].warn == "설치 필요" && ticked(stored) == ["codex"] && page(stored).who[0] == "ChatGPT"
+    check(page(stored).think.rows[0].desc == "ChatGPT" && page(stored).think.rows[0].warn == "설치 필요" && ticked(stored) == ["codex"]
           && ArisBrainChoice.resolve(stored: "codex", ready: none) == nil,
           "vm2 bug 4: a brain the user stored is still shown as theirs, with what it lacks, and is never replaced behind their back")
 
@@ -101,10 +100,8 @@ private func vm2BrainTruthTests() {
     ArisSettingsCopy.install(vm2Catalog())
     defer { ArisSettingsCopy.install([:]) }
     let english = ArisSettingsWording.make(page: .ai, english: true)
-    let lines = [ArisAIServicesBuilder.noBrainChosen, ArisAIServicesBuilder.chooseBrain, ArisAIServicesBuilder.noBrainHow, ArisAIServicesBuilder.noBrainAnswers,
-                 ArisAIServicesBuilder.noBrainName]
-    check(lines.allSatisfy { !vm2Hangul(english.dotted($0)) } && english.dotted(ArisAIServicesBuilder.noBrainAnswers) == "No AI can answer yet"
-          && english.dotted(empty.who.joined(separator: " · ")) == "No AI · Apple Dictation · macOS",
+    let lines = [ArisAIServicesBuilder.noBrainChosen, ArisAIServicesBuilder.chooseBrain, ArisAIServicesBuilder.noBrainHow, ArisAIServicesBuilder.noBrainAnswers]
+    check(lines.allSatisfy { !vm2Hangul(english.dotted($0)) } && english.dotted(ArisAIServicesBuilder.noBrainAnswers) == "No AI can answer yet",
           "vm2 bug 4: the no-AI lines have their English")
 }
 
@@ -221,20 +218,10 @@ private func vm2VoicePageTests() {
           && ArisSettingsBuilder.sections(.voice, { var s = ArisSettingsSnapshot(); s.hasVoiceKey = true; return s }()).first { $0.id == "voice.language" }?.note?.contains("요금") == true,
           "vm2 voice: with a key the switch shows and changes the stored choice as before")
 
-    func caption(_ voice: String?) -> String {
-        var input = ArisNotchPreviewInput()
-        input.page = .voice
-        if let voice { input.voiceName = voice }
-        return ArisNotchPreviewPlan.make(input).caption
-    }
     ArisSettingsCopy.install(vm2Catalog())
     defer { ArisSettingsCopy.install([:]) }
     let english = ArisSettingsWording.make(page: .voice, english: true)
-    check(caption(nil) == "말하기 속도 · 보통 · Mac 목소리" && caption(ArisNotchPreviewInput.macVoice) == caption(nil) && english(caption(nil)) == "Speaking speed · Normal · the Mac's voice",
-          "vm2 voice: the preview's caption names the Mac's voice in plain words (it read \"voice the Mac's voice\")")
-    check(caption("Rachel") == "말하기 속도 · 보통 · 목소리 Rachel" && english(caption("Rachel")) == "Speaking speed · Normal · voice Rachel", "vm2 voice: a named voice's caption is as it was")
     check(english(noKey?.desc ?? "가").unicodeScalars.allSatisfy { !(0xAC00...0xD7A3).contains($0.value) }, "vm2 voice: the no-key line has its English")
-    check(vm2Source("Aris/components/Settings/ArisLiveSettings.swift").contains(": ArisNotchPreviewInput.macVoice"), "vm2 voice: the settings window names the Mac's voice by the caption's own word")
 }
 
 private func vm2WordCountTests() {
@@ -335,7 +322,7 @@ private func vm2uMenuHighlightTests() {
 
 private func vm2uFirstClickTests() {
     let window = vm2Source("Aris/components/Settings/ArisSettingsWindow.swift")
-    check(window.contains("window.contentView = ArisSettingsHostingView(rootView: ArisSettingsRoot())")
+    check(window.contains("let host = ArisSettingsHostingView(rootView: ArisSettingsRoot())") && window.contains("material.addSubview(host)")
           && window.contains("override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }"),
           "vm2u restart: a click on a settings control counts even when it is the click that brings the window forward (다시 시작 did nothing on the first click)")
     let live = vm2Source("Aris/components/Settings/ArisLiveSettings.swift")

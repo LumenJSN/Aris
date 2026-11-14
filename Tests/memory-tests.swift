@@ -260,7 +260,7 @@ private func memoryRecallTests() {
     let budgeted = ArisMemoryRecall.pick(crowd, for: "엄마", now: now)
     check(budgeted.relevant.count == ArisMemoryRecall.limit, "memory recall: at most \(ArisMemoryRecall.limit) relevant per turn")
     check(ArisMemoryText.tokenEstimate(ArisMemoryRecall.block(budgeted) ?? "") <= ArisMemoryRecall.budget + 10, "memory recall: the block stays inside its token budget")
-    check(ArisMemoryRecall.line(mom).hasPrefix("- [사람] 엄마는 꽃을 좋아해 ("), "memory recall: a line names the kind and the day")
+    check(ArisMemoryRecall.line(mom).hasPrefix("- [사람 · 직접 말함] 엄마는 꽃을 좋아해 ("), "memory recall: a line names the kind and the day")
     check(ArisMemoryRecall.matching([mom, coffee, oldMom], words: "엄마").map(\.id).sorted() == ["mom", "old"], "memory recall: matching finds by subject or text")
 }
 

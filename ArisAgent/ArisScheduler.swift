@@ -169,7 +169,7 @@ final class ArisScheduler {
 
     private func heard(_ reply: ArisAgentReply, from job: ArisScheduledJob) {
         switch reply {
-        case .status, .stepFailed, .delta, .turn, .launched, .untrusted, .refusedJobs, .shownOnly, .operating, .skill, .helperAnswers: break
+        case .status, .stepFailed, .delta, .turn, .launched, .untrusted, .refusedJobs, .shownOnly, .operating, .skill, .helperAnswers, .savedSteps, .work: break
         case .file(let path): files[job.id] = path
         case .confirm(let ask):
             // The runner parks it (a day at most); the app asks the user when they're there. Kept with the job, so a restart

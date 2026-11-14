@@ -76,7 +76,7 @@ extension ArisController {
                 if await ArisAgentClient.confirm(ask.id, allow: false, shown: ask) == .refused {
                     await speak { await self.speaker.speak(ArisConfirmResult.refusedNotice(english: ArisUIWords.english)) }
                 }
-            case .file, .turn, .launched, .untrusted, .refusedJobs, .shownOnly, .operating, .skill, .helperAnswers:
+            case .file, .turn, .launched, .untrusted, .refusedJobs, .shownOnly, .operating, .skill, .helperAnswers, .savedSteps, .work:
                 break
             case .answer(let answer):
                 let new = answer.trimmingCharacters(in: .whitespacesAndNewlines)

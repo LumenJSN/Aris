@@ -81,6 +81,8 @@ extension Defaults.Keys {
     static let copyOnDrag = Key<Bool>("copyOnDrag", default: false)
     static let autoRemoveShelfItems = Key<Bool>("autoRemoveShelfItems", default: false)
     static let reverseShelfOrdering = Key<Bool>("reverseShelfOrdering", default: false)
+    /// The open notch's home shows what is on the shelf as chips above the composer (off: only the Shelf tab does).
+    static let shelfOnHome = Key<Bool>("shelfOnHome", default: true)
     static let quickShareProvider = Key<String>("quickShareProvider") { ArisQuickShareDefault.current }
 
     // Calendar

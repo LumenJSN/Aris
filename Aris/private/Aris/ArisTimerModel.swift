@@ -107,7 +107,7 @@ final class ArisTimerModel: ObservableObject {
             }
         }
         let (title, text) = ArisTimerWords.ended(ended.phase, cycle: ended.cycle, round: ended.round, total: ended.total, nextTotal: state?.total ?? 0, nextRound: state?.round ?? 1)
-        ArisController.shared.announce(title: title, text: text, hold: .seconds(12))
+        ArisController.shared.announce(title: title, text: text, kind: .reminder)
     }
 
     private func save() {

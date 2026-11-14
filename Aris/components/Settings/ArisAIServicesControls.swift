@@ -24,12 +24,7 @@ final class ArisAIServicesModel: ObservableObject {
         var custom: ArisAIMenu?
         /// Its one highlighted row: the keyboard's and the pointer's alike.
         var highlight = ArisAIMenuHighlight()
-        /// Opened with a key (Space or Return on its button): it is simply there, with no entrance.
-        var byKey = false
     }
-
-    /// The event being handled is a key press: what opens now was opened from the keyboard.
-    static var openedByKey: Bool { NSApp.currentEvent?.type == .keyDown }
 
     @Published var state = ArisAIServicesState()
     @Published var menu: OpenMenu?
@@ -43,7 +38,7 @@ final class ArisAIServicesModel: ObservableObject {
 
     /// Opens a dropdown under `anchor` (or closes it when it is the one open).
     func toggle(_ kind: ArisAIMenuKind, anchor: CGRect, custom: ArisAIMenu? = nil) {
-        menu = menu?.kind == kind ? nil : OpenMenu(kind: kind, anchor: anchor, custom: custom, byKey: Self.openedByKey)
+        menu = menu?.kind == kind ? nil : OpenMenu(kind: kind, anchor: anchor, custom: custom)
     }
 
     /// The open dropdown's content.
@@ -139,7 +134,7 @@ struct ArisAISelect: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "chevron.down").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(palette.ink3)
+                ArisLineIcon("chevron.down", size: 13, stroke: 2.25).foregroundStyle(palette.ink3)
             }
             .padding(.horizontal, 12)
             .frame(width: width, height: height)
@@ -164,7 +159,7 @@ struct ArisAISelect: View {
             .contentShape(shape)
             .animation(.easeInOut(duration: 0.2), value: hovering)
         }
-        .buttonStyle(ArisPressScale(scale: ArisPressScale.light))
+        .buttonStyle(ArisPressScale(scale: ArisPressScale.measured))
         .disabled(!face.enabled)
         .opacity(face.enabled ? 1 : 0.5)
         .onHover { hovering = $0 && face.enabled }
@@ -192,9 +187,9 @@ struct ArisAIIconButton: View {
         let shape = RoundedRectangle(cornerRadius: small ? 10 : 12, style: .continuous)
         Button { action(frame) } label: {
             HStack(spacing: 6) {
-                if let leading { Image(systemName: leading).font(.system(size: 12.5, weight: .medium)) }
+                if let leading { ArisLineIcon(leading, size: 15) }
                 Text(w(title)).lineLimit(1)
-                if let trailing { Image(systemName: trailing).font(.system(size: 9, weight: .semibold)) }
+                if let trailing { ArisLineIcon(trailing, size: 11, stroke: 2.25) }
             }
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(hovering ? palette.buttonTextHover : palette.buttonText)

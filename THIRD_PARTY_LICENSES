@@ -704,3 +704,89 @@ Used for: the built-in skill that writes new skills (bundled in the app; its lic
 Licensed under the Apache License, Version 2.0; the full text is ArisSkills/skill-creator/LICENSE.txt.
 Aris's copy is modified: it ships without scripts/, eval-viewer/ and assets/eval_review.html, and its SKILL.md
 says so at the top.
+
+==============================================================================
+gbrain (Garry Tan), ported to Swift in ArisAgent/ArisMemory*.swift
+Used for: the memory write gate's pattern families, the decay-by-kind table and the people and project pages' design
+(Aris's own Swift code following its design; nothing of it is copied as is)
+==============================================================================
+
+MIT License
+
+Copyright (c) 2026 Garry Tan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+OpenMausBot (Milind Soni and OpenMausBot contributors), two word lists in ArisAgent/ArisSavedStepsWords.swift
+Used for: the labels of final actions (send, delete, pay, …) and of secret fields, in sixteen languages, that keep a
+saved desktop step from being saved or replayed (data only; nothing from its enterprise/ folder)
+==============================================================================
+
+Copyright 2026 Milind Soni and OpenMausBot contributors
+Licensed under the Apache License, Version 2.0, the same text as swift-argument-parser above (without its Runtime
+Library Exception). Its NOTICE file says: "OpenMausBot was relicensed from the MIT License to the Apache License,
+Version 2.0, with the consent of all contributors whose copyright was incorporated before the transition." Changes made
+by Aris (also noted at the top of that file): the lists of server/saved-steps/screen-words.ts were converted to Swift,
+and the code that matches them was rewritten; no other part of OpenMausBot is included.
+
+==============================================================================
+Lucide (lucide.dev, the lucide-static package, v1.72.0), in Aris/components/Settings/ArisLineIconData.swift
+Used for: the Settings window's line icons (the path data of Lucide's published SVG icons, stored as data; the glyphs
+named aris-… in that file are Aris's own drawings and not part of Lucide)
+==============================================================================
+
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+The icons Lucide derived from Feather (among those Aris uses: check, chevron-down, chevron-left, chevron-right,
+chevron-up, clock, info, key, lock, log-in, monitor, moon, search, terminal, trash-2, x, and others listed in Lucide's
+LICENSE) are also under the MIT License:
+
+Copyright (c) 2013-present Cole Bemis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

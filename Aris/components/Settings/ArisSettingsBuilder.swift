@@ -21,7 +21,7 @@ enum ArisSettingsBuilder {
     static func sections(_ page: ArisSettingsPage, _ s: ArisSettingsSnapshot) -> [ArisSettingSection] {
         switch page {
         case .aris: conversation(s)
-        case .memory: ArisMemorySettingsRows.sections(s) + [ArisDropLearnedSetting.section(s.dropHabits)]
+        case .memory: withSavedStepsFeature(ArisMemorySettingsRows.sections(s)) + [ArisDropLearnedSetting.section(s.dropHabits)]
         case .team, .skills: []
         case .voice: voice(s)
         case .dictation: dictation(s)
@@ -33,6 +33,15 @@ enum ArisSettingsBuilder {
         case .general: general(s)
         case .keys: keys(s)
         case .about: about(s)
+        }
+    }
+
+    /// 기억 with 저장된 단계's detail sheet a link away, at the end of its section's title.
+    private static func withSavedStepsFeature(_ sections: [ArisSettingSection]) -> [ArisSettingSection] {
+        sections.map { section in
+            var out = section
+            if section.id == ArisFeature.savedSteps.sectionID { out.feature = .savedSteps }
+            return out
         }
     }
 
@@ -52,14 +61,14 @@ enum ArisSettingsBuilder {
                 ArisSettingItem(id: "aris.train", icon: .symbol("person.wave.2"), title: "내 목소리 익히기",
                                desc: s.hasVoiceModel ? "내 목소리로 익혀 뒀어요." : "아직 안 익혔어요.",
                                control: button(s.hasVoiceModel ? "다시 익히기" : "익히기", .trainVoice, enabled: !s.busy)),
-                ArisSettingItem(id: "aris.talkKey", icon: .symbol("keyboard"), title: "말하기 단축키",
+                ArisSettingItem(id: "aris.talkKey", icon: .symbol("aris-star"), title: "말하기 단축키",
                                desc: "누르고 바로 말해요.", control: .shortcut(name: "talkToAris", caps: s.talkCaps)),
                 ArisSettingItem(id: "aris.minutes", icon: .symbol("arrow.clockwise"), title: "대화 이어가기",
                                desc: "이 시간 안에 물으면 같은 대화로 이어져요.",
                                control: .choice(.minutes, options([("2", "2분"), ("5", "5분"), ("15", "15분")]), selected: String(s.minutes))),
             ]),
             ArisSettingSection(id: "aris.talk", heading: "대화 모드", note: "“됐어”, “그만”, Esc로 끝나고, 말이 없으면 고른 시간 뒤에 끝나요. 다른 앱 소리를 확인하는 동안 메뉴 막대에 보라색 표시가 뜨지만, 크기만 재고 녹음하지 않아요.", rows: [
-                ArisSettingItem(id: "aris.silence", icon: .symbol("bubble.left.and.bubble.right"), title: "계속 듣기",
+                ArisSettingItem(id: "aris.silence", icon: .symbol("hand"), title: "계속 듣기",
                                desc: "답한 뒤에도 바로 다시 들어요.",
                                control: .choice(.silence, options([("0", "끄기"), ("15", "15초"), ("30", "30초"), ("60", "1분")]), selected: String(s.silence))),
                 ArisSettingItem(id: "aris.bargeIn", icon: .symbol("hand.raised"), title: "스피커로 들을 때도 끼어들기",
@@ -77,11 +86,11 @@ enum ArisSettingsBuilder {
                                control: .link(.go(.ai, anchor: "ai.brain"), value: s.brainTitle), indexed: false),
             ]),
             ArisSettingSection(id: "aris.alerts", heading: "알림", rows: [
-                ArisSettingItem(id: "aris.sounds", icon: .symbol("speaker.wave.2"), title: "알림 효과음",
+                ArisSettingItem(id: "aris.sounds", icon: .symbol("volume-2"), title: "알림 효과음",
                                desc: "Claude가 일을 마치거나 승인이 필요할 때 짧은 소리를 내요.", control: .toggle(.sounds, s.sounds)),
                 ArisDayEndSetting.row(s.dayEndOffer),
                 ArisQuietSettingsRows.mute(s.muted),
-            ] + ArisQuietSettingsRows.hourRows(s.quietHours)),
+            ] + ArisQuietSettingsRows.hourRows(s.quietHours), feature: .notify),
             claudeCode(s),
         ]
     }
@@ -106,6 +115,13 @@ enum ArisSettingsBuilder {
         ])
     }
 
+    /// What the closed language select says (the measured one: "English + 2 more"): the first language, then how many
+    /// more ("한국어 외 1개"; the settings catalog has the English).
+    static func languagesSummary(_ names: [String]) -> String {
+        guard let first = names.first else { return "언어 추가" }
+        return names.count == 1 ? first : "\(first) 외 \(names.count - 1)개"
+    }
+
     private static func voice(_ s: ArisSettingsSnapshot) -> [ArisSettingSection] {
         let voiceRow = s.hasVoiceKey
             ? ArisSettingItem(id: "voice.voice", icon: .symbol("person.wave.2"), title: "목소리",
@@ -127,7 +143,7 @@ enum ArisSettingsBuilder {
             ArisSettingSection(id: "voice.language", heading: "언어", note: s.hasVoiceKey ? "여기 없는 언어로 말하면 소리 나는 대로 적혀요. Scribe를 켜면 말한 소리가 ElevenLabs로 가고 쓴 만큼 요금이 나와요." : "여기 없는 언어로 말하면 소리 나는 대로 적혀요.", rows: [
                 ArisSettingItem(id: "voice.languages", icon: .symbol("globe"), title: "쓰는 언어",
                                desc: "말할 때 이 언어들 중에서 알아서 찾아요.",
-                               control: button("언어 추가", .addLanguage), extra: .chips(s.languages, removable: s.languages.count > 1)),
+                               control: .buttons([ArisSettingButton(title: languagesSummary(s.languages.map(\.title)), action: .addLanguage, kind: .select)])),
                 scribeRow,
             ]),
             ArisSettingSection(id: "voice.voices", heading: "목소리", note: s.hasVoiceKey ? "들어 보기만 해서는 요금이 들지 않아요." : nil, rows: [
@@ -142,11 +158,19 @@ enum ArisSettingsBuilder {
     private static func dictation(_ s: ArisSettingsSnapshot) -> [ArisSettingSection] {
         [
             ArisSettingSection(id: "dictation.keys", heading: "단축키", note: "두 번 빠르게 누르면 손을 떼고 말할 수 있고, 한 번 더 누르면 넣어요. Esc로 취소하고, 한 번에 20분까지예요.", rows: [
-                ArisSettingItem(id: "dictation.key", icon: .symbol("text.alignleft"), title: "누르고 있는 동안 받아쓰기",
+                ArisSettingItem(id: "dictation.key", icon: .symbol("mic"), title: "누르고 있는 동안 받아쓰기",
                                desc: "누른 채로 말하고, 떼면 붙여 넣어요.",
                                control: .shortcut(name: ArisDictationKey.Choice.recorderName, caps: s.dictationCaps)),
-                ArisSettingItem(id: "dictation.pasteLast", icon: .symbol("arrow.uturn.backward"), title: "마지막 받아쓰기 다시 넣기",
+                ArisSettingItem(id: "dictation.pasteLast", icon: .symbol("clipboard-paste"), title: "마지막 받아쓰기 다시 넣기",
                                desc: "방금 받아 적은 말을 커서 자리에 한 번 더 넣어요.", control: .shortcut(name: "pasteLastDictation", caps: s.pasteLastCaps)),
+            ]),
+            ArisSettingSection(id: "dictation.screen", heading: "화면", note: "켜 두면 받아쓰는 동안 노치는 조용하고, 화면 아래 알약에 듣는 소리와 진행이 보여요. 알약을 눌러도 받아쓰기를 시작해요.", rows: [
+                ArisSettingItem(id: "dictation.pill", icon: .symbol("audio-lines"), title: "받아쓰기 알약 보이기",
+                               desc: "끄면 받아쓰기가 예전처럼 노치에 보여요.",
+                               control: .toggle(.dictationPill, s.dictationPill)),
+                ArisSettingItem(id: "dictation.pillIdle", icon: .symbol("moon"), title: "쉴 때도 보이기",
+                               desc: "끄면 받아 쓸 때만 나타나요.",
+                               control: .toggle(.dictationPillIdle, s.dictationPillIdle, enabled: s.dictationPill)),
             ]),
             ArisSettingSection(id: "dictation.polish", heading: "다듬기", note: "그때는 받아 적은 말과 커서 주변 글이 Anthropic으로 가요. 꺼 두면 말이 Mac 밖으로 나가지 않아요.", rows: [
                 ArisSettingItem(id: "dictation.brainPolish", icon: .symbol("text.badge.checkmark"), title: "Mac에서 못 다듬을 때 AI로 다듬기",
@@ -327,12 +351,12 @@ enum ArisSettingsBuilder {
             ArisSettingSection(id: "control.permissions", heading: "권한", note: s.permissions.allSatisfy(\.granted) ? nil : "허용하기를 누르면 시스템 설정이 열리고, Aris 아이콘을 목록으로 끌어다 놓으면 돼요.",
                                grouped: true, rows: permissionRows(s.permissions)),
             ArisSettingSection(id: "control.seeing", heading: "화면 보기", note: "다른 질문에는 화면을 찍지 않고, 암호 앱과 Aris 창은 언제나 빼요. 동그라미는 화면 기록 권한이 있어야 돼요.", rows: [
-                ArisSettingItem(id: "control.sees", icon: .symbol("eye"), title: "질문할 때 화면 같이 보기",
+                ArisSettingItem(id: "control.sees", icon: .symbol("sparkles"), title: "질문할 때 화면 같이 보기",
                                desc: "화면을 가리켜 물을 때만 화면을 찍어 보내요.",
                                control: .toggle(.seesScreen, s.seesScreen)),
                 ArisSettingItem(id: "control.circle", icon: .symbol("lasso"), title: "동그라미로 가리키기",
                                desc: "\(s.circleHint).", control: .toggle(.circle, s.circle)),
-            ]),
+            ], feature: .control),
             ArisSettingSection(id: "control.standing", heading: "묻지 않고 하는 일",
                                note: "같은 일을 세 번 연달아 허락하면 앞으로 그냥 할지 물어보고, 여기서 취소하면 다시 물어봐요. 앱 조작, 명령 실행, 파일 수정, 메일 보내기, 영구 삭제는 늘 물어보고, 돈이 드는 일은 하지 않아요.",
                                grouped: true, rows: standingRows),
@@ -379,12 +403,12 @@ enum ArisSettingsBuilder {
         return [
             ArisSettingSection(id: "notch.top", heading: "위 노치", rows: top),
             ArisSettingSection(id: "notch.side", heading: "사이드 노치", rows: [
-                ArisSettingItem(id: "notch.unhide", icon: .symbol("clock"), title: "숨긴 사이드 노치",
+                ArisSettingItem(id: "notch.unhide", icon: .symbol("aris-side-notch"), title: "숨긴 사이드 노치",
                                desc: "숨긴 사이드 노치를 다시 보이게 해요.", control: button("다시 보이기", .unhideSides, enabled: s.hiddenSides)),
-                ArisSettingItem(id: "notch.clipKey", icon: .symbol("doc.on.clipboard"), title: "왼쪽 사이드 노치 열기",
+                ArisSettingItem(id: "notch.clipKey", icon: .symbol("clipboard-list"), title: "왼쪽 사이드 노치 열기",
                                desc: s.hiddenSideTabs.contains(ArisSideTab.clipboard.rawValue) ? "클립보드 탭이 꺼져 있어서 지금은 열리지 않아요." : "포인터 없이 키로 클립보드 탭을 열어요.",
                                control: .shortcut(name: "openClipboard", caps: s.clipCaps)),
-                ArisSettingItem(id: "notch.rightKey", icon: .symbol("checklist"), title: "오른쪽 사이드 노치 열기",
+                ArisSettingItem(id: "notch.rightKey", icon: .symbol("aris-side-notch"), title: "오른쪽 사이드 노치 열기",
                                desc: ArisSideTabWork.takesRightKey(hidden: s.hiddenSideTabs) ? "포인터 없이 키로 할 일과 캘린더를 열고 닫아요."
                                    : "오른쪽 탭이 모두 꺼져 있어서 지금은 열리지 않아요.",
                                control: .shortcut(name: "openRightPanel", caps: s.rightPanelCaps)),
@@ -449,8 +473,8 @@ enum ArisSettingsBuilder {
         }
         return [
             ArisSettingSection(id: "general.all", rows: [
-                ArisSettingItem(id: "general.login", icon: .symbol("power"), title: "로그인할 때 열기", desc: "Mac을 켜면 Aris가 자동으로 켜져요.", control: .toggle(.login, s.login)),
-                ArisSettingItem(id: "general.name", icon: .symbol("person.crop.circle"), title: "부르는 이름", desc: "가끔 이 이름으로 불러요.",
+                ArisSettingItem(id: "general.login", icon: .symbol("log-in"), title: "로그인할 때 열기", desc: "Mac을 켜면 Aris가 자동으로 켜져요.", control: .toggle(.login, s.login)),
+                ArisSettingItem(id: "general.name", icon: .symbol("user-round"), title: "부르는 이름", desc: "가끔 이 이름으로 불러요.",
                                control: .field(.userName, text: s.userName, placeholder: "이름",
                                                ArisSettingButton(title: "지우기", action: .clearName, enabled: !s.userName.trimmingCharacters(in: .whitespaces).isEmpty))),
                 ArisSettingItem(id: "general.language", icon: .symbol("globe"), title: "앱 언어", desc: "설정과 메뉴 글자의 언어예요.", control: .menu(.appLanguage, s.appLanguages, selected: s.appLanguage)),
@@ -466,16 +490,16 @@ enum ArisSettingsBuilder {
     }
 
     private static func keys(_ s: ArisSettingsSnapshot) -> [ArisSettingSection] {
-        [ArisSettingSection(id: "keys.all", grouped: true, rows: [
-            ArisSettingItem(id: "keys.talk", icon: .symbol("waveform"), title: "Aris에게 말하기", desc: "누르고 바로 말해요.", control: .shortcut(name: "talkToAris", caps: s.talkCaps)),
-            ArisSettingItem(id: "keys.dictation", icon: .symbol("text.alignleft"), title: "받아쓰기", desc: "누르고 있는 동안 받아 적어요.", control: .shortcut(name: ArisDictationKey.Choice.recorderName, caps: s.dictationCaps)),
-            ArisSettingItem(id: "keys.pasteLast", icon: .symbol("arrow.uturn.backward"), title: "마지막 받아쓰기 다시 넣기", desc: "방금 받아 적은 말을 한 번 더 넣어요.",
+        [ArisSettingSection(id: "keys.all", rows: [
+            ArisSettingItem(id: "keys.talk", icon: .symbol("aris-star"), title: "Aris에게 말하기", desc: "누르고 바로 말해요.", control: .shortcut(name: "talkToAris", caps: s.talkCaps)),
+            ArisSettingItem(id: "keys.dictation", icon: .symbol("mic"), title: "받아쓰기", desc: "누르고 있는 동안 받아 적어요.", control: .shortcut(name: ArisDictationKey.Choice.recorderName, caps: s.dictationCaps)),
+            ArisSettingItem(id: "keys.pasteLast", icon: .symbol("clipboard-paste"), title: "마지막 받아쓰기 다시 넣기", desc: "방금 받아 적은 말을 한 번 더 넣어요.",
                            control: .shortcut(name: "pasteLastDictation", caps: s.pasteLastCaps)),
             ArisSettingItem(id: "keys.answer", icon: .symbol("bubble.left.and.text.bubble.right"), title: "Claude에게 답하기", desc: "승인 · 질문 카드가 떠 있을 때 말로 답해요.",
                            control: .shortcut(name: "answerClaude", caps: s.answerCaps)),
-            ArisSettingItem(id: "keys.clipboard", icon: .symbol("doc.on.clipboard"), title: "클립보드 기록", desc: "왼쪽 사이드 노치의 클립보드 탭을 열어요.",
+            ArisSettingItem(id: "keys.clipboard", icon: .symbol("clipboard-list"), title: "클립보드 기록", desc: "왼쪽 사이드 노치의 클립보드 탭을 열어요.",
                            control: .shortcut(name: "openClipboard", caps: s.clipCaps)),
-            ArisSettingItem(id: "keys.notch", icon: .symbol("rectangle.topthird.inset.filled"), title: "노치 열고 닫기", desc: "노치를 키로 열고 닫아요.",
+            ArisSettingItem(id: "keys.notch", icon: .symbol("aris-notch"), title: "노치 열고 닫기", desc: "노치를 키로 열고 닫아요.",
                            control: .shortcut(name: "toggleNotchOpen", caps: s.notchCaps)),
             ArisSettingItem(id: "keys.peek", icon: .symbol("music.note"), title: "음악 미리 보기", desc: "재생 중인 곡을 노치 아래에 잠깐 띄워요.",
                            control: .shortcut(name: "toggleSneakPeek", caps: s.peekCaps)),
@@ -490,7 +514,7 @@ enum ArisSettingsBuilder {
             ArisSettingSection(id: "about.help", heading: "문제 해결", rows: [
                 ArisSettingItem(id: "about.folder", icon: .symbol("folder"), title: "기록 폴더 열기", desc: "대화 기록과 로그가 있는 폴더예요.", control: button("Finder에서 보기", .openFolder)),
             ]),
-            ArisSettingSection(id: "about.data", heading: "데이터", grouped: true, rows: [
+            ArisSettingSection(id: "about.data", heading: "데이터", rows: [
                 ArisSettingItem(id: "about.export", icon: .symbol("square.and.arrow.up"), title: "데이터 내보내기", desc: "대화 기록, 기억, 팀원을 파일로 받아요.", control: .link(.export, value: nil)),
                 ArisSettingItem(id: "about.diagnostics", icon: .symbol("stethoscope"), title: "진단 내보내기", desc: "문제가 생겼을 때 보낼 기록 파일이에요.", control: .link(.diagnostics, value: nil)),
                 ArisSettingItem(id: "about.wipe", icon: .symbol("trash"), title: "데이터 지우기", desc: "골라서 지우고, 되돌릴 수 없어요.", control: button("지우기…", .wipe, .danger), danger: true),

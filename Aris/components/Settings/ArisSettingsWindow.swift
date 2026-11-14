@@ -2,8 +2,9 @@
 //  ArisSettingsWindow.swift
 //  Aris
 //
-//  The settings window: 1000 × 680 (mockup settings-redesign.html), the traffic lights over the sidebar, the app a
-//  regular app while it is open and back to the menu bar when it closes. Its root picks the appearance (설정 창 모양),
+//  The settings window, as measured (SETTINGS-REA.md §2): 1080 × 710, transparent, the whole window one live sidebar
+//  material (behind the window, active while it is key) rounded 20 and continuous, the traffic lights at 18, 18; the
+//  app a regular app while it is open and back to the menu bar when it closes. Its root picks the appearance (설정 창 모양),
 //  the accent, and the characters (the baked sprites). Also the window's shortcut recorder and accent colour panel.
 //
 
@@ -23,6 +24,8 @@ final class ArisSettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
     static let minimum = NSSize(width: ArisSidebarMetrics.windowMinimum.width, height: ArisSidebarMetrics.windowMinimum.height)
 
     private var window: NSWindow?
+    /// The window's material, the content view everything is drawn on.
+    private var material: NSVisualEffectView?
 
     func show() {
         let window = self.window ?? makeWindow()
@@ -36,6 +39,7 @@ final class ArisSettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
         }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        placeTrafficLights(window)
         visible = true
         if front.reactivates { takeMenuBar(for: window) }
         // Nothing starts focused, so the first key pressed can't land in the search field or a recorder.
@@ -62,7 +66,7 @@ final class ArisSettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
     func close() { window?.performClose(nil) }
 
     private func makeWindow() -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.size),
+        let window = ArisSettingsNSWindow(contentRect: NSRect(origin: .zero, size: Self.size),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         window.title = ArisUIWords.text("Aris 설정", "Aris Settings")
         window.titlebarAppearsTransparent = true
@@ -72,9 +76,37 @@ final class ArisSettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.managed, .participatesInCycle, .fullScreenAuxiliary]
         window.identifier = NSUserInterfaceItemIdentifier("ArisSettingsWindow")
-        window.contentView = ArisSettingsHostingView(rootView: ArisSettingsRoot())
+        // Transparent, so the material is the window's whole face (the sidebar and the gutter round the content card).
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
+        let material = ArisSettingsMaterial.make()
+        let host = ArisSettingsHostingView(rootView: ArisSettingsRoot())
+        host.frame = material.bounds
+        host.autoresizingMask = [.width, .height]
+        material.addSubview(host)
+        window.contentView = material
+        self.material = material
+        ArisSettingsMaterial.round(window, radius: ArisSidebarMetrics.windowRadius)
         window.delegate = self
         return window
+    }
+
+    /// The close, minimise and zoom buttons with the close button's corner 18 from the window's left and top, in their
+    /// own spacing: the strip that holds them is made as tall as a button plus 18, and they sit at its foot.
+    private func placeTrafficLights(_ window: NSWindow) {
+        guard !window.styleMask.contains(.fullScreen), let close = window.standardWindowButton(.closeButton),
+              let strip = close.superview?.superview else { return }
+        let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { window.standardWindowButton($0) }
+        let stride = buttons.count > 1 ? buttons[1].frame.minX - buttons[0].frame.minX : close.frame.width + 6
+        let height = close.frame.height + ArisSidebarMetrics.trafficLights.y
+        var frame = strip.frame
+        frame.size.height = height
+        frame.origin.y = window.frame.height - height
+        strip.frame = frame
+        for (index, button) in buttons.enumerated() {
+            button.setFrameOrigin(NSPoint(x: ArisSidebarMetrics.trafficLights.x + CGFloat(index) * stride, y: 0))
+        }
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -95,6 +127,60 @@ final class ArisSettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
 
     func windowDidBecomeKey(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        // The material stays active while the window is key, and rests when it isn't (the measured focus behaviour).
+        material?.state = .active
+        if let window { placeTrafficLights(window) }
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        material?.state = .inactive
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        if let window { placeTrafficLights(window) }
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        if let window { placeTrafficLights(window) }
+    }
+}
+
+/// The window's material: one behind-window sidebar material the size of the window, rounded 20 and continuous.
+enum ArisSettingsMaterial {
+    @MainActor static func make() -> NSVisualEffectView {
+        let view = NSVisualEffectView(frame: NSRect(origin: .zero, size: ArisSettingsWindow.size))
+        view.material = .sidebar
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.wantsLayer = true
+        view.layer?.cornerRadius = ArisSidebarMetrics.windowRadius
+        view.layer?.cornerCurve = .continuous
+        view.layer?.masksToBounds = true
+        view.maskImage = nil
+        view.autoresizingMask = [.width, .height]
+        return view
+    }
+
+    /// The window's own corners at `radius` too, where macOS offers it (it is not public API; a Mac without it keeps
+    /// its own corners and the material is still rounded 20 inside them).
+    @MainActor static func round(_ window: NSWindow, radius: CGFloat) {
+        let selector = NSSelectorFromString("_setCornerRadius:")
+        guard window.responds(to: selector) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, CGFloat) -> Void
+        let setter = unsafeBitCast(window.method(for: selector), to: Setter.self)
+        setter(window, selector, radius)
+    }
+}
+
+/// The settings window itself: ⌘Q with it in front quits Aris like the menu's Quit (ninth VM pass: it did nothing while
+/// the menu bar still belonged to the app before, ArisSettingsFront). The window hears a key equivalent before the menu.
+final class ArisSettingsNSWindow: NSWindow {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, ArisSettingsQuitKey.quits(characters: event.charactersIgnoringModifiers, keyCode: event.keyCode, flags: event.modifierFlags) {
+            NSApp.terminate(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }
 

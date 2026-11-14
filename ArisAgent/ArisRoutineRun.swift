@@ -76,7 +76,7 @@ struct ArisRoutineRun: Equatable {
         case .confirm(let ask):
             if !ask.proposal { next.cards.append(ask.id) }
             return (next, .pass(reply))
-        case .untrusted, .shownOnly, .operating, .skill, .file, .launched, .stepFailed, .helperAnswers:
+        case .untrusted, .shownOnly, .operating, .skill, .file, .launched, .stepFailed, .helperAnswers, .savedSteps, .work:
             return (self, .pass(reply))
         case .failure(let why):
             return next.ended(.failed(why))

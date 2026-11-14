@@ -172,8 +172,8 @@ struct ArisWorkEpisode: Equatable, Sendable {
     var clean: Bool { taint == .clean }
 }
 
-struct ArisWorkLesson: Equatable, Sendable {
-    enum Kind: String, Sendable {
+struct ArisWorkLesson: Codable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable {
         /// For this kind of request this way works here; these were tried and failed.
         case way
         /// This command needs this flag or argument on this Mac.
@@ -206,6 +206,11 @@ struct ArisWorkLesson: Equatable, Sendable {
     var outside = false
 
     var name: String { "L\(id)" }
+
+    /// All the words in it, as the write gate reads them (ArisMemoryGate): its key, the user's example, every argument.
+    var gateText: String {
+        ([key, asked] + (works + fails).flatMap { [$0.verb] + $0.args.map(\.value) }).joined(separator: "\n")
+    }
 
     static let startConfidence = 0.6
     /// Each repeat that worked the same way.

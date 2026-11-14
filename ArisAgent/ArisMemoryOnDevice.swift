@@ -23,7 +23,8 @@ enum ArisMemoryOnDevice {
     private static let extractInstructions = """
         You keep a personal assistant's long-term notes about its user. From the user's own words, pick out at most \
         three things that will still be true and useful weeks from now: preferences and defaults, facts about the user \
-        (school, work, where they live), ongoing projects, people they mention and what they call them, routines. Use \
+        (school, work, where they live), ongoing projects, people they mention and what they call them, routines, \
+        promises the user made or was made (commitment), and dated plans (event). Use \
         the user's own words and language. Ignore one-off requests, questions, commands and anything only about today. \
         Most words hold nothing lasting: then return no memories. Never invent anything that wasn't said.
         """
@@ -43,7 +44,7 @@ enum ArisMemoryOnDevice {
             let session = LanguageModelSession(instructions: extractInstructions)
             let reply = try await session.respond(to: "The user said: \(words)", generating: ArisPickedMemories.self)
             return reply.content.memories.map { picked in
-                ArisMemoryCandidate(kind: ArisMemoryKind(rawValue: picked.kind.lowercased()) ?? ArisMemoryKind.guess(picked.text),
+                ArisMemoryCandidate(kind: ArisMemoryKind.addressesOwner(picked.text) ? .preference : ArisMemoryKind(rawValue: picked.kind.lowercased()) ?? ArisMemoryKind.guess(picked.text),
                                     subject: picked.subject, text: picked.text, confidence: 0.7)
             }
         }
@@ -101,7 +102,7 @@ private final class ArisResultBox<T>: @unchecked Sendable {
 @available(macOS 26.0, *)
 @Generable
 struct ArisPickedMemory {
-    @Guide(description: "one of: preference, fact, project, person, routine")
+    @Guide(description: "one of: preference, fact, project, person, routine, commitment, event")
     var kind: String
     @Guide(description: "what it is about, in the user's words; empty if unclear")
     var subject: String
@@ -118,6 +119,12 @@ struct ArisPickedMemories {
 #endif
 
 extension ArisMemoryCurator {
-    /// The agent's curator: ~/.config/aris/aris/memory.sqlite and the on-device model.
-    static let live = ArisMemoryCurator(store: .live, extract: ArisMemoryOnDevice.extract, summarize: ArisMemoryOnDevice.summarize)
+    /// The agent's curator: ~/.config/aris/aris/memory.sqlite, the on-device model, and for the weekly tidy-up one
+    /// sealed question to the brain the owner chose (only that one: not on this Mac, or out, and nothing is asked).
+    static let live = ArisMemoryCurator(store: .live, extract: ArisMemoryOnDevice.extract, summarize: ArisMemoryOnDevice.summarize,
+                                        consolidate: { brainName, instruction, input in
+                                            guard let brain = ArisBrain(rawValue: brainName), ArisSealedOneShot.available(brain) else { return nil }
+                                            return ArisSealedOneShot(environment: ArisAgentRunner.environment())
+                                                .ask(brain, instruction: instruction, input: input, timeout: ArisMemoryConsolidation.timeout)
+                                        })
 }

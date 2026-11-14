@@ -416,6 +416,7 @@ enum ArisRiskPolicy {
     /// taint and repeat checks; any other desktop-looking line is judged as a command (C1).
     static func isDesktop(_ command: String, tools: String) -> Bool {
         guard let line = ArisDesktopShell.parse(command, tools: tools), !isNever(ArisDesktopShell.commandLine(command, tools: tools)) else { return false }
+        if ArisDesktopWords.isWait(line.words), line.text == nil { return true }
         let stdin = line.words.contains("--stdin")
         return (try? ArisDesktopWords.parse(line.words, text: line.text ?? (stdin ? "" : nil)).get()) != nil
     }
@@ -424,6 +425,10 @@ enum ArisRiskPolicy {
     /// line isn't a desktop call or reads fine (QA live on 827cfdb4: a batch with --title was "never" with no reason).
     static func desktopProblem(_ command: String, tools: String) -> String? {
         guard let line = ArisDesktopShell.parse(command, tools: tools) else { return nil }
+        if line.words.first == "wait" {
+            return ArisDesktopWords.isWait(line.words) && line.text == nil ? nil
+                : "Refused: Aris couldn't read that desktop call (\(ArisDesktopWords.waitUsage): the id the earlier call gave). Write it again as the usage says; nothing was done."
+        }
         let stdin = line.words.contains("--stdin")
         if case .failure(let usage) = ArisDesktopWords.parse(line.words, text: line.text ?? (stdin ? "" : nil)) {
             return "Refused: Aris couldn't read that desktop call (\(usage.text)). Write it again as the usage says; nothing was done."
@@ -604,6 +609,9 @@ enum ArisRiskPolicy {
         // A schedule is work that runs later on its own: making one always asks the user (and is never learned or approved by
         // anyone else: ArisEscalation.approvableTools). Listing them only reads, and removing one only takes work away.
         if tool == "schedule" { return ["list", "remove"].contains(arguments.dropFirst().first ?? "") ? .auto : .confirm }
+        // `type` only hands the text to the desktop engine (`desktop type --focused`), whose gate asks the user with the exact
+        // text as for any desktop type (taint, the app, his own words): asking here too would ask twice (ninth VM pass).
+        if tool == "type" { return .auto }
         // A settings deep link into a protected pane (Privacy & Security, Users & Groups, passwords, profiles) opens it
         // like any other settings link when it is the plain pane link and nothing else (audit gate-15: opening changes
         // nothing, and the app's own permission guide opens the same panes). Acting inside stays refused (the desktop
@@ -635,7 +643,7 @@ enum ArisRiskPolicy {
         // (QA BUG-53 retest: a card came up just to find the event).
         if tool == "event", arguments.dropFirst().first == "find" { return .auto }
         if critical { return .confirm }
-        if tool == "keys" || tool == "type" {
+        if tool == "keys" {
             // Keystrokes can run code in many apps (terminals, Script Editor, IDEs, Shortcuts, Office macros) or send
             // things (Mail, a browser's address bar). Only a few plain writing apps, named exactly, run at once on a
             // clean turn; aris-tools then insists that exact app is in front. Once outside text or the screen came in
@@ -788,7 +796,7 @@ enum ArisRiskPolicy {
     /// The user's card (security review 2 H1). And two small writes: which calendar new events go into, and a to-do ticked
     /// off (security review 2 L5).
     private static let readBackWrites = [["schedule", "add"], ["schedule", "remove"], ["remember"], ["forget"], ["event"], ["remind"], ["clipboard", "set"], ["todo", "add"],
-                                         ["todo", "edit"], ["weather", "--set-home"], ["keys"], ["type"], ["use-calendar"], ["todo", "done"]]
+                                         ["todo", "edit"], ["weather", "--set-home"], ["keys"], ["use-calendar"], ["todo", "done"]]
 
     /// Brings text into the AI that someone else may have written: a file outside Aris's work folder, the screen,
     /// the clipboard, a tool's result, a browser task's report, an app seen through computer use.

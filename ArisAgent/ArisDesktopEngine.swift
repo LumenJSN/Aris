@@ -31,6 +31,10 @@ protocol ArisDesktopTurn: ArisMCPTurn {
     /// The user's own words for the turn, and whether it is a critical one (QA BUG-15: their words typed into a safe app).
     var request: String { get }
     var critical: Bool { get }
+    /// The desktop lock's owner: the same id for every call of one turn (ArisDesktopEngine+Lock has the default).
+    var desktopOwner: String { get }
+    /// One desktop action of the turn ended: the step it could be saved as, or why not (ArisSavedSteps).
+    func noteDesktopAction(_ note: Result<ArisSavedStep, ArisSavedStepsRefusal>)
 }
 
 extension ArisDesktopTurn {
@@ -73,6 +77,19 @@ struct ArisDesktopBasis: Equatable {
     var cardYes = false
     /// A batch's step: the notch's line says which of how many ("… · 2/4", ArisStepLine). Nil for a single call.
     var step: ArisStepLine.Step? = nil
+    /// The user said yes on this action's own card, which named its control: if the window was looked at again while the
+    /// card waited (a job's card parked in 확인 대기), the control is found again in a fresh look by its role, label and
+    /// containers and acted on there, instead of refusing the ref as from an older look (eighth VM pass).
+    var refind = false
+    /// The step runs again after a pause for a sign-in or password window (ArisDesktopEngine+Lock): a look the brain
+    /// took of the window while it waited doesn't stop it; its control is found again, strictly, in a fresh look, and
+    /// it runs on the yes it already had (tenth VM pass: the resumed type met "That ref is from an older look", came
+    /// back not done, and the AI typed again on a second card).
+    var resumed = false
+    /// The call holds the desktop lock for its app alone (ArisDesktopLockScope): an element click is then the
+    /// element's own Accessibility press only, never a pointer fallback; a control with no press takes the whole Mac
+    /// first and is clicked the normal way (security review 10, M3).
+    var perApp = false
 }
 
 /// One flag a session sets once (a card it asked already).
@@ -99,6 +116,9 @@ protocol ArisDesktopApps {
     func isRunning(_ target: ArisDesktopTarget) -> Bool
     /// A password field (secure event input) is active somewhere.
     var secureInput: Bool { get }
+    /// The process whose password field turned secure input on (the session's kCGSSessionSecureInputPID); nil when it
+    /// can't be told.
+    func secureInputOwner() -> Int32?
     /// The folder a file browser's window (Finder) shows, by its window id; nil when it can't be read.
     func shownPath(_ target: ArisDesktopTarget, window: Int?) -> String?
     /// The process in front now (where keys typed for real go), and the frame of a process's focused window
@@ -107,6 +127,10 @@ protocol ArisDesktopApps {
     func focusedWindowFrame(pid: Int32) -> CGRect?
     /// Seconds since the last key went down on this Mac (anyone's: the user's typing), for the raise's last check.
     func secondsSinceKeyDown() -> Double
+    /// Seconds since the owner's own last input: a key, a click, a scroll, the mouse or trackpad moving, the synthetic
+    /// input `owner` (a turn's desktop lock owner) itself made left out, and no other turn's (ArisOwnerActivity). The
+    /// raise's last check.
+    func secondsSinceOwnerInput(owner: String) -> Double
     /// Raises the process's window at `frame` and makes it main (Accessibility's AXRaise and AXMain).
     func raiseWindow(pid: Int32, frame: CGRect)
     /// The process is Aris itself.
@@ -137,6 +161,8 @@ struct ArisDesktopWindow: Equatable {
 /// the window the card named its key window; else nothing is sent (QA BUG-53: a delete pressed "for real" must never
 /// land in whatever app is in front, a browser on a checkout page). Unknown counts as no. Pure.
 extension ArisDesktopApps {
+    func secureInputOwner() -> Int32? { nil }
+    func secondsSinceOwnerInput(owner: String) -> Double { secondsSinceKeyDown() }
     func raiseWindow(pid: Int32, frame: CGRect) {}
     func isAris(pid: Int32) -> Bool { false }
     func focusedInWebArea(pid: Int32) -> Bool? { nil }
@@ -310,9 +336,16 @@ protocol ArisDesktopVision {
     func available(for brain: ArisBrain) -> Bool
     /// The same look, by the brain the turn runs on when that one can, else another that can (audit desk-9).
     func locate(png: Data, width: Int, height: Int, target: String, marks: [String], brain: ArisBrain) -> ArisDesktopPick?
+    /// The same, with how sure it is and whether the target is small.
+    func locateAnswer(png: Data, width: Int, height: Int, target: String, marks: [String], brain: ArisBrain) -> ArisDesktopVisionAnswer?
 }
 
 extension ArisDesktopVision {
+    /// The same look, with how sure the brain is and whether the target is small (ArisDesktopZoom); by default a plain
+    /// pick, said neither way.
+    func locateAnswer(png: Data, width: Int, height: Int, target: String, marks: [String], brain: ArisBrain) -> ArisDesktopVisionAnswer? {
+        locate(png: png, width: width, height: height, target: target, marks: marks, brain: brain).map { ArisDesktopVisionAnswer(pick: $0) }
+    }
     func available(for brain: ArisBrain) -> Bool { true }
     func locate(png: Data, width: Int, height: Int, target: String, marks: [String], brain: ArisBrain) -> ArisDesktopPick? {
         locate(png: png, width: width, height: height, target: target, marks: marks)
@@ -337,6 +370,11 @@ final class ArisDesktopEngine {
     let tools: String
     /// The computer-use engine in force (ArisComputerEngineChoice): Peekaboo unless the user picked Codex and has it.
     let computerEngine: () -> ArisComputerEngine
+    /// One owner of the keys and pointer at a time, across turns and jobs (ArisDesktopLock); nil: no lock (an engine a
+    /// test makes for one turn at a time). The agent's engine has the shared one.
+    var lock: ArisDesktopLock?
+    /// How a step stopped by a sign-in or permission window waits for the user (ArisDesktopPause); nil: it fails at once.
+    var pausePolicy: ArisDesktopPause.Policy?
     /// One Peekaboo run's time limit.
     static let runTimeout: TimeInterval = 25
     /// Calls one conversation turn may take; a background job may take more. Past it, a teammate job.
@@ -345,7 +383,10 @@ final class ArisDesktopEngine {
 
     init(installer: ArisDesktopInstaller, apps: ArisDesktopApps, runner: ArisDesktopRunning = ArisDesktopProcess(), access: ArisDesktopAccess,
          windows: ArisDesktopWindows, pointer: ArisDesktopPointer, vision: ArisDesktopVision, reader: ArisDesktopTextReader,
-         identity: ArisDesktopIdentity, tools: String, computerEngine: @escaping () -> ArisComputerEngine = { .peekaboo }) {
+         identity: ArisDesktopIdentity, tools: String, computerEngine: @escaping () -> ArisComputerEngine = { .peekaboo },
+         lock: ArisDesktopLock? = nil, pausePolicy: ArisDesktopPause.Policy? = nil) {
+        self.lock = lock
+        self.pausePolicy = pausePolicy
         self.installer = installer
         self.apps = apps
         self.runner = runner
@@ -420,6 +461,13 @@ final class ArisDesktopEngine {
         return body.hasPrefix(noLine)
     }
     static let lateLine = "The answer came after this turn ended, so nothing was done."
+
+    /// A look or an action in an app while an action's card there waits for the user.
+    static func cardWaitingLine(app: String) -> String {
+        "Not done: \(ArisSlowCalls.ownerMarker) on a card for \(app) (it may wait in 확인 대기 until they look) — do not retry, " +
+            "and don't look at or act in \(app) again until it is answered: the action already asked about runs on their yes, " +
+            "and its result comes then. Say it waits for their OK."
+    }
     static let codexEngineLine = "Codex's own computer use is the one picked: work the app with it (cua_repl), not with desktop actions."
     static let unreadSendLine = "Refused: Aris couldn't read exactly what this would send (the message field, in full), so it won't ask the user to send it blind. Look again, or ask the user to send it."
     static let unreadLine = "Refused: Aris couldn't read the window before asking the user. Look again with `desktop see`."
@@ -438,7 +486,40 @@ final class ArisDesktopEngine {
         case .failure(let usage): return done(.failed(usage.text))
         case .success(let parsed): asked = parsed
         }
-        if asked.verb == .batch { return handleBatch(asked, turn: turn, done: done) }
+        // `type --focused` (aris-tools type): the field with the focus, found in a look Aris takes first, then the one way
+        // every type goes.
+        if asked.verb == .type, asked.focused {
+            return focusedField(asked, turn: turn) { [weak self] found in
+                switch found {
+                case .failure(let refused): done(refused)
+                case .success(let typed):
+                    guard let self else { return done(.failed(ArisDesktopSession.notTypedLead)) }
+                    self.handleParsed(typed, turn: turn, done: done)
+                }
+            }
+        }
+        handleParsed(asked, turn: turn, done: done)
+    }
+
+    /// One call as read: an action noted for the turn's saved steps, a batch, or one call held to its turn.
+    private func handleParsed(_ asked: ArisDesktopRequest, turn: ArisDesktopTurn, done: @escaping (ArisMCPOutcome) -> Void) {
+        // An action is noted for the turn's saved steps once it ended: the step it was, if it was done.
+        let candidate = ArisSavedStepBox()
+        let noted = asked.verb.kind == .read ? done : { (outcome: ArisMCPOutcome) in
+            turn.noteDesktopAction(outcome.status == 0 ? candidate.value ?? .failure(.kind) : .failure(.notDone))
+            done(outcome)
+        }
+        // A batch waits for its turn at the whole Mac's keys and pointer at once (it may type); any other action once the
+        // gate has decided it (ArisDesktopLockScope: per app or global). Read-only looks never wait.
+        if asked.verb == .batch {
+            guard let held = takeTurn(asked, scope: .global, turn: turn, done: noted) else { return }
+            return handleBatch(asked, turn: turn, done: held)
+        }
+        handleHeld(asked, turn: turn, candidate: candidate, done: noted)
+    }
+
+    /// One parsed call; an action takes its turn at the keys and pointer once the gate has decided it.
+    func handleHeld(_ asked: ArisDesktopRequest, turn: ArisDesktopTurn, candidate: ArisSavedStepBox, done: @escaping (ArisMCPOutcome) -> Void) {
         guard turn.desktopStep() <= (turn.isTask ? Self.maxJobSteps : Self.maxSteps) else {
             turn.audit(["answer": "refused (step cap)", "action": "desktop \(asked.verb.rawValue)", "brain": turn.brainName])
             return done(.failed(Self.stepsLine(job: turn.isTask)))
@@ -448,10 +529,22 @@ final class ArisDesktopEngine {
         case .failure(let why): return done(.failed(why.text))
         case .success(let found): target = found
         }
+        // A background job launching an app that already runs: nothing to launch and nothing brought forward, so it is done
+        // as it is, and the job is told to look at the app's window (ninth VM pass: the job gave up on the refusal).
+        if turn.isTask, launchesRunning(asked, target: target) {
+            turn.audit(["answer": "ran (already running: nothing launched, nothing brought forward)", "action": "desktop app launch · \(target.name)", "brain": turn.brainName])
+            return done(ArisMCPOutcome(status: 0, output: Self.alreadyRunningLine(app: target.name, windows: windows.windows(of: target.pid).count)))
+        }
         // Codex's own computer use picked: the Codex brain works apps with it, never with desktop's actions too (I14).
         if turn.brain == .codex, computerEngine() == .codex, asked.verb.kind == .action {
             turn.audit(["answer": "refused (Codex's own computer use is picked)", "action": "desktop \(asked.verb.rawValue)", "brain": turn.brainName])
             return done(.failed(Self.codexEngineLine))
+        }
+        // An action's card for this app waits for the user (a job's may be parked in 확인 대기): no new look and no other action
+        // there until he answers, and never a second card for the same action (eighth VM pass).
+        if turn.ledger.cardWaits(target.readKey) {
+            turn.audit(["answer": "not done (a card for this app waits for the user)", "action": "desktop \(asked.verb.rawValue)", "brain": turn.brainName])
+            return done(.failed(Self.cardWaitingLine(app: target.name)))
         }
         let taint = turn.taint(forApp: target.readKey)
         // The window the user named, if their words name one of the app's windows: an action on a ref in another one is refused
@@ -505,10 +598,58 @@ final class ArisDesktopEngine {
                                          pointsAtFrontDocument: request.verb == .dialogFile && !otherAppInFront && ArisDesktopGate.pointsAtDocument(turn.request))
         // A paste in a messaging app: the clipboard's text is read for the user's card and for nothing else.
         if target.sending, ArisDesktopGate.pastes(request) { context.clipboard = apps.clipboardText() }
-        let remembered = target.memoryKey.map { turn.ledger.allows($0, tainted: taint != .none) } ?? false
+        // The user's yes for this app in this conversation; or, in a saved-steps replay, their yes to an earlier card of the replay
+        // for a step the live run did on the app's yes (ArisSavedStep.afterYes).
+        let remembered = target.memoryKey.map { turn.ledger.allows($0, tainted: taint != .none) || turn.ledger.replayCovers($0) } ?? false
         let element = request.ref.flatMap { turn.ledger.element($0) }
-        let decision = ArisDesktopGate.decide(request, target: target, context: context, remembered: remembered, secureInput: apps.secureInput,
+        // What this action would be as a saved step (kept only if it is done).
+        let pinnedTitle = request.title ?? request.window.flatMap { id in appWindows.first { $0.id == id } }?.title ?? appWindows.first?.title
+        candidate.value = ArisSavedSteps.step(for: request, target: target, element: element, look: request.ref.flatMap { turn.ledger.observation($0.snapshot) },
+                                              window: pinnedTitle, words: turn.request)
+        // Secure input that belongs to another process's password field (a system password dialog) is no refusal here:
+        // the step pauses for it (ArisDesktopPause) and never types into it; the target's own, or a step aimed at a
+        // password field, is refused as before (eighth VM pass: the step ended with the secure-input line instead).
+        let secureHere = apps.secureInput && !(pausePolicy != nil && ArisDesktopPause.secureElsewhere(
+            secure: true, owner: apps.secureInputOwner(), target: target.pid, prompt: windows.promptOnScreen(), aimedAtSecret: element?.isSecure == true))
+        var decision = ArisDesktopGate.decide(request, target: target, context: context, remembered: remembered, secureInput: secureHere,
                                               element: element)
+        // A replay's look whose live look ran without the read judge runs without it again (ninth VM pass: the replay's look
+        // went to the judge, which a replay has no model for, and the request was handed over to a second card).
+        if case .judge = decision, request.verb == .see, turn.ledger.replayLookSkipsJudge { decision = .run }
+        // How the look a step acts on was decided, for its saved step: a replay decides its look the same way.
+        if request.verb.kind == .action, let ref = request.ref, case .success(var step)? = candidate.value, step.onControl {
+            step.lookJudged = turn.ledger.wasJudged(ref.snapshot)
+            candidate.value = .success(step)
+        }
+        // A step done on the app's yes with no card of its own: a replay of it may run on its own earlier yes too.
+        if case .run = decision, remembered, request.verb.kind == .action, case .success(var step)? = candidate.value {
+            step.afterYes = true
+            candidate.value = .success(step)
+        }
+        // A step done with no outside text for its app: a replay of it runs under the conversation's own taint, not the
+        // recipe's, so it asks only the cards this run asked (ArisSavedStep.appClean).
+        if taint == .none, request.verb.kind == .action, case .success(var step)? = candidate.value {
+            step.appClean = true
+            candidate.value = .success(step)
+        }
+        // Its turn at the keys and pointer: for this app alone when it needs neither the pointer, the focus nor the
+        // clipboard; for the whole Mac otherwise, or when its card's yes would hand the app the front.
+        let acts: Bool
+        switch decision {
+        case .run, .ask: acts = request.verb.kind == .action
+        case .refuse, .judge: acts = false
+        }
+        var raises = false
+        if case .ask = decision { raises = !turn.isTask && !target.sending }
+        let scope = ArisDesktopLockScope.call(request, target: target, raisesOnYes: raises)
+        // An action the user is asked about holds nothing while its card waits (it may wait in 확인 대기 for long): its turn at
+        // the keys and pointer is taken after their yes, and the action checks the window again then (seventh VM pass: a
+        // job's parked card kept the lock and the next turn waited 90 s and failed). It still waits its turn before the
+        // card goes up, so a card never comes up while another turn is at work.
+        let asks: Bool
+        if case .ask = decision { asks = true } else { asks = false }
+        if acts, asks, !waitsItsTurn(request, scope: scope, turn: turn, done: done) { return }
+        guard let done = acts && !asks ? takeTurn(request, scope: scope, turn: turn, done: done) : done else { return }
         let what = "desktop \(request.verb.rawValue) · \(target.name)"
         // What the card (or, with no card, the look the ref came from) showed: the action is held to it.
         let snapshotTitle = request.ref.flatMap { turn.ledger.observation($0.snapshot)?.title }
@@ -519,7 +660,8 @@ final class ArisDesktopEngine {
         case .run:
             turn.audit(["answer": remembered ? "ran (the user's yes for this app)" : "ran (\(request.verb.kind == .read ? "read" : "action"))", "action": what, "brain": turn.brainName])
             done(perform(request, target: target, turn: turn, basis: ArisDesktopBasis(title: snapshotTitle, settingsPane: pane,
-                                                                                    window: request.ref.flatMap { turn.ledger.observation($0.snapshot)?.window })))
+                                                                                    window: request.ref.flatMap { turn.ledger.observation($0.snapshot)?.window },
+                                                                                    perApp: acts && scope != .global)))
         case .judge:
             turn.judgeRead(Self.readCall(request, target: target)) { [weak self] verdict in
                 DispatchQueue.global(qos: .userInitiated).async {
@@ -535,7 +677,12 @@ final class ArisDesktopEngine {
                         return done(.failed(ArisReadGate.refusal(why)))
                     }
                     turn.audit(["answer": "ran (read, the judge allowed)", "action": what, "brain": turn.brainName])
-                    done(self.perform(request, target: target, turn: turn))
+                    let before = turn.ledger.lastLook?.snapshot
+                    let outcome = self.perform(request, target: target, turn: turn)
+                    if request.verb == .see, let look = turn.ledger.lastLook, look.snapshot != before, look.target.pid == target.pid {
+                        turn.ledger.noteJudged(look.snapshot)
+                    }
+                    done(outcome)
                 }
             }
         case .ask(let remember):
@@ -564,8 +711,12 @@ final class ArisDesktopEngine {
                                             english: ArisDesktopCopy.isEnglish(turn.request))
             turn.operating(operatingTarget(request, target: target, turn: turn))
             let frontBefore = apps.frontmostPid().flatMap(apps.identity)
+            // While it waits, nothing else is looked at or done in this app for the turn (one action, one card).
+            turn.ledger.cardUp(target.readKey)
             // A card whose yes may bring the window forward names its process: the app hands activation back to it.
             turn.ask(!turn.isTask && !target.sending ? card.aimed(pid: target.pid, bundle: target.bundle) : card) { [weak self] answer in
+                turn.ledger.cardDown(target.readKey)
+                if case .yes = answer, let key = target.memoryKey { turn.ledger.noteCardYes(key) }
                 DispatchQueue.global(qos: .userInitiated).async {
                     guard let self else { return done(.failed(Self.noLine)) }
                     guard case .yes = answer else {
@@ -576,10 +727,12 @@ final class ArisDesktopEngine {
                         turn.audit(["answer": "dropped (the yes came after the turn ended)", "action": what, "brain": turn.brainName])
                         return done(.failed(Self.lateLine))
                     }
+                    // Its turn at the keys and pointer, now that the user said yes (held until the action's answer).
+                    guard let acting = acts ? self.takeTurn(request, scope: scope, turn: turn, done: done) : done else { return }
                     // Finder may have gone to another folder while the card waited: a protected one is still never worked in.
                     if case .path(let shown) = shownPlace(), ArisProtectedPlaces.blocks(shown, home: self.identity.home) {
                         turn.audit(["answer": "refused (Finder now shows a protected place)", "action": what, "brain": turn.brainName])
-                        return done(.failed(ArisDesktopGate.placeRefusal))
+                        return acting(.failed(ArisDesktopGate.placeRefusal))
                     }
                     if remember, let key = target.memoryKey { turn.ledger.remember(key, tainted: turn.taint(forApp: target.readKey) != .none) }
                     turn.audit(["answer": "yes", "action": what, "brain": turn.brainName])
@@ -592,12 +745,14 @@ final class ArisDesktopEngine {
                     if held.field == nil { held.field = element }
                     held.settingsPane = pane
                     held.cardYes = !turn.isTask && !target.sending
+                    held.perApp = scope != .global
+                    held.refind = true
                     let outcome = self.perform(request, target: target, turn: turn, basis: held)
                     // A send from a field that can't be read gets one try: what Aris typed there no longer vouches for
                     // what the field holds.
                     if held.blindSend != nil { turn.ledger.clearBlindTyped(window: held.window) }
                     self.putBack(frontBefore, target: target)
-                    done(outcome)
+                    acting(outcome)
                 }
             }
         }

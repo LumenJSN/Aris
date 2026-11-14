@@ -19,7 +19,6 @@ func runFixLeftoversTests() {
     prerequisiteTests()
     settingsLinkTests()
     brainStatusTests()
-    previewCaptionTests()
     writtenTimeTests()
     volumeLimitTests()
     sideMenuTests()
@@ -365,20 +364,6 @@ private func brainStatusTests() {
           "brain choice: 로그인 says the terminal opened, or that the AI isn't installed when it couldn't")
 }
 
-// MARK: - the settings preview's caption about the screen
-
-private func previewCaptionTests() {
-    var input = ArisNotchPreviewInput()
-    input.page = .control
-    input.circleGesture = false
-    input.seesScreen = true
-    let caption = ArisNotchPreviewPlan.make(input).caption
-    check(caption == "화면을 가리켜 말할 때만 화면을 같이 봐요" && !caption.contains("질문할 때"),
-          "preview: with the switch on, the caption says the screen is seen only when the words point at it (not on every question)")
-    input.seesScreen = false
-    check(ArisNotchPreviewPlan.make(input).caption == "화면을 보내지 않아요", "preview: with it off nothing is sent, as before")
-}
-
 // MARK: - written times just after midnight
 
 private func writtenTimeTests() {
@@ -635,7 +620,7 @@ private func settingsCopyPageTests() {
     for page in ArisSettingsPage.allCases where ArisSettingsCopy.translatedPages.contains(page) {
         let wording = ArisSettingsWording.make(page: page, english: true)
         let left = leftoversSettingsVariants(page).flatMap { ArisSettingsWording.shown(wording.sections(ArisSettingsBuilder.sections(page, $0))) }
-            .filter { leftoversHasHangul($0) && $0 != "한국어" }
+            .filter { leftoversHasHangul($0.replacingOccurrences(of: "한국어", with: "")) } // the language's own name (alone, or in "한국어 + 1 more") is no leftover
         check(left.isEmpty, "settings in English: \(page.rawValue) has no Korean left" + (left.isEmpty ? "" : " (\(Array(Set(left)).sorted().prefix(4)))"))
         let sections = ArisSettingsBuilder.sections(page, ArisSettingsSnapshot())
         check(wording.sections(sections).map(\.id) == sections.map(\.id) && wording.sections(sections).flatMap(\.rows).map(\.id) == sections.flatMap(\.rows).map(\.id)
@@ -673,7 +658,7 @@ private func settingsCopyPageTests() {
 
     // The words the pages' own views and models hold: each has its English, and none is drawn past the wording.
     let files = ["Aris/components/Settings/ArisSettingsControls.swift", "Aris/components/Settings/ArisSettingsModal.swift", "Aris/components/Settings/ArisSettingsDropdown.swift",
-                 "Aris/components/Settings/ArisSettingsSidebar.swift", "Aris/components/Settings/ArisSettingsShell.swift", "Aris/components/Settings/ArisNotchPreview.swift",
+                 "Aris/components/Settings/ArisSettingsSidebar.swift", "Aris/components/Settings/ArisSettingsShell.swift", "Aris/components/Settings/ArisSettingsArt.swift",
                  "Aris/components/Settings/ArisSettingsPageView.swift", "Aris/components/Settings/ArisSettingsSheets.swift", "Aris/components/Settings/ArisDataSection.swift",
                  "Aris/private/Aris/ArisDataModel.swift", "Aris/private/Aris/ArisAppData.swift"] + leftoversEnglishPageFiles
     // Written both ways where they are (ArisUIWords), or not drawn in the window: the exported files' names.

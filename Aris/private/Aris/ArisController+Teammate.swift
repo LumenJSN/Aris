@@ -62,8 +62,7 @@ extension ArisController {
         let korean = isKorean(lost[0].title)
         let title = ArisJobLedger.lostTitle(lost, korean: korean), said = ArisJobLedger.lostSaid(lost, korean: korean)
         Task { [weak self] in
-            guard let self else { return }
-            _ = await self.announce { await self.speakUp(title, saying: said) { await self.speak { await self.speaker.speak(said) } } }
+            await self?.notify(ArisNoticeRoute.lostJobs(title: title, said: said), saying: said, parking: said)
         }
     }
 
@@ -140,7 +139,7 @@ extension ArisController {
             case .failure(let message):
                 await reportFailure(job, message, said: message)
                 return
-            case .stepFailed, .delta, .file, .turn, .untrusted, .refusedJobs, .shownOnly, .operating, .skill, .helperAnswers:
+            case .stepFailed, .delta, .file, .turn, .untrusted, .refusedJobs, .shownOnly, .operating, .skill, .helperAnswers, .savedSteps, .work:
                 break
             }
         }
@@ -270,8 +269,7 @@ extension ArisController {
         setState(id, .running(step: ArisTeammateWords.askingStep(korean: korean)))
         let said = ArisTeammateWords.asks(question, korean: korean)
         Task { [weak self] in
-            guard let self else { return }
-            _ = await self.announce { await self.speakUp(job.title, saying: said) { await self.speak { await self.speaker.speak(said) } } }
+            await self?.notify(ArisNoticeRoute.teammateAsks(title: job.title, said: said, english: !korean), saying: said, parking: said)
         }
         // Not for ever: a question left open (often just an offer after finished work) frees the job's slots in time.
         guard let askedAt = teammateWatch.askedAt(job: id) else { return }

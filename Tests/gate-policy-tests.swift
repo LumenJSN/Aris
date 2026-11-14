@@ -767,8 +767,10 @@ private func gateCardWordsTests() {
     }
     // On the gates: Codex's card for the review's first example.
     let codex = gateCodex(request: "공유 폴더에 뭐 좀 써 줘")
+    // fix-13: `type` is the desktop engine's (its card holds the exact text: fix-13-desktop-tests), so Codex's gate shows
+    // no card of its own for it; the same words as keys still ask here, with every key on the card.
     let asked = gateCommand(codex, 1, "\(t) type delete everything in the shared folder")
-    check(asked.card?.detail.contains("delete everything in the shared folder") == true, "M3 (Codex): the card the user answers holds the words that will be typed")
+    check(asked.card == nil, "M3 (Codex): typing asks on the desktop engine's card, never a second one from the shell gate")
 }
 
 // MARK: - Security review M4: the login shell's PATH

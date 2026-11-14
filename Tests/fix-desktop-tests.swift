@@ -126,6 +126,7 @@ private final class FixTurn: ArisDesktopTurn {
     func audit(_ fields: [String: String]) { audits.append(fields) }
     func operating(_ target: ArisOperatingTarget) {}
     func desktopStep() -> Int { steps += 1; return steps }
+    func noteDesktopAction(_ note: Result<ArisSavedStep, ArisSavedStepsRefusal>) {}
 }
 
 private func fixTarget(_ name: String, bundle: String, pid: Int32 = 4242, sending: Bool = false) -> ArisDesktopTarget {
@@ -509,7 +510,7 @@ private func fixDeskRelayTurnTests() {
           "desk-5: the relay turn's request is visible to the desktop engine's conformance in another file")
     check(!fixSource("ArisAgent/ArisDesktopEngine.swift").contains("var request: String { \"\" }"),
           "desk-5: the user's words have no silent default: a turn that doesn't give them doesn't compile")
-    check(fixSource("ArisAgent/ArisDesktopRoutes.swift").contains("static let relaySteps = ArisDesktopStepCount(onReset: { relayLedger.startTurn() })"),
+    check(fixSource("ArisAgent/ArisDesktopRoutes.swift").contains("static let relaySteps = ArisDesktopStepCount(onReset: { relayLedger.startTurn(); relayRecorder.start() })"),
           "desk-5: the relay's step count starts its ledger's turn over when it is reset")
     let ledger = ArisComputerUseLedger()
     let steps = ArisDesktopStepCount(onReset: { ledger.startTurn() })

@@ -70,16 +70,16 @@ private func reviewKnowhowTests() {
     let home = NSTemporaryDirectory() + "aris-review-\(UUID().uuidString)"
     defer { try? FileManager.default.removeItem(atPath: home) }
     let file = ArisNotesStore.knowhowFile(home: home)
-    let user = (1...3).map { ArisKeptNote(id: "p\($0)", text: "폴의 메모 \($0)", app: "Pages", date: date, source: .user, tainted: false, by: nil) }
+    let user = (1...3).map { ArisKeptNote(id: "p\($0)", text: "솔의 메모 \($0)", app: "Pages", date: date, source: .user, tainted: false, by: nil) }
     let learned = (1...3).map { ArisKeptNote(id: "l\($0)", text: "배운 것 \($0)", app: "Pages", date: date, source: .learned, tainted: false, by: nil) }
     _ = ArisNotesStore.add(user, to: file, limit: 4)
     _ = ArisNotesStore.add(learned, to: file, limit: 4)
     // The user's lines are written as they'd write them (no comment), so they read back by their words.
     let left = ArisNotesStore.load(file).map(\.text)
-    check(left == ["폴의 메모 1", "폴의 메모 2", "폴의 메모 3", "배운 것 3"], "M1: over the limit, the oldest learned notes go and the user's stay")
+    check(left == ["솔의 메모 1", "솔의 메모 2", "솔의 메모 3", "배운 것 3"], "M1: over the limit, the oldest learned notes go and the user's stay")
     check(ArisNotesStore.markKept(id: "l3", in: file) && ArisNotesStore.load(file).first { $0.id == "l3" }?.kept == true, "M1: the user keeps a note")
     _ = ArisNotesStore.add(learned, to: file, limit: 2)
-    check(Set(ArisNotesStore.load(file).map(\.text)).isSuperset(of: ["폴의 메모 1", "폴의 메모 2", "폴의 메모 3"]), "M1: the user's lines stay even past the limit")
+    check(Set(ArisNotesStore.load(file).map(\.text)).isSuperset(of: ["솔의 메모 1", "솔의 메모 2", "솔의 메모 3"]), "M1: the user's lines stay even past the limit")
 }
 
 private func reviewClaudeReadTests() {

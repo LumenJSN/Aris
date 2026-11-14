@@ -42,10 +42,11 @@ private func qaTaskResultShownTests() {
           "BUG-20a: the result draws as a lead, a label and a table (answer format A)")
     // The announcement shows what is shown, not what is said (the said text is one flattened line).
     let team = qaSource("Aris/private/Aris/ArisController+Team.swift")
-    check(team.contains("speakUp(job.title, saying: report.spoken, showing: report.shown)"),
-          "BUG-20a: a finished job's notch shows report.shown, never the spoken line")
+    check(team.contains("ArisNoticeRoute.jobDone(title: job.title, shown: report.shown") && team.contains("notify(card, saying: report.spoken, parking: report.shown)"),
+          "BUG-20a: a finished job's card and parked answer show report.shown, never the spoken line (notify-card)")
     let inbox = qaSource("Aris/private/Aris/ArisController+Inbox.swift")
-    check(inbox.contains("speakUp(item.title, saying: said, showing: report.shown"), "BUG-20a: a scheduled job's result shows report.shown too")
+    check(inbox.contains("ArisNoticeRoute.inbox(kind: item.kind, title: item.title, shown: report.shown") && inbox.contains("notify(card, saying: said, parking: report.shown)"),
+          "BUG-20a: a scheduled job's result shows report.shown too")
     let session = ArisSession.announcing("제곱표", report.shown)
     check(session.reply == report.shown, "BUG-20a: the announced session carries the shown Markdown")
 }

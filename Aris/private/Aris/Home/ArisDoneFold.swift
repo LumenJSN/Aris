@@ -42,6 +42,19 @@ enum ArisDoneFold {
 
     static func count(_ done: Int, english: Bool = ArisUIWords.english) -> String { ArisUIWords.text("\(done)개 끝남", "\(done) done", english: english) }
 
+    /// The chip's count, by each job's verdict: "2 done · 1 not done" (a failed, not-done or stopped job is never counted
+    /// as done: eighth VM pass, "✓ 4 done" with two of them failed).
+    static func count(_ fold: Fold, english: Bool = ArisUIWords.english) -> String {
+        let notDone = fold.done.filter(\.notDone).count, done = fold.done.count - notDone
+        let doneWords = count(done, english: english)
+        let notDoneWords = ArisUIWords.text("\(notDone)개 못 끝냄", "\(notDone) not done", english: english)
+        if notDone == 0 { return doneWords }
+        return done == 0 ? notDoneWords : doneWords + " · " + notDoneWords
+    }
+
+    /// The chip's mark: the check when every job in it was done, else the warning one.
+    static func symbol(_ fold: Fold) -> String { fold.done.contains(where: \.notDone) ? "exclamationmark" : "checkmark" }
+
     /// The chip's second half: the newest finished job.
     static func latest(_ fold: Fold) -> String? {
         fold.done.first.map { "· \($0.title)" }
@@ -77,4 +90,9 @@ enum ArisDoneFold {
         case .failed(let message): return ArisUIWords.status(message, english: english)
         }
     }
+}
+
+private extension ArisBackgroundTask {
+    /// It finished without its work done (failed, not done by its verdict, or stopped).
+    var notDone: Bool { if case .failed = state { true } else { false } }
 }

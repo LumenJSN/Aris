@@ -230,6 +230,8 @@ final class ArisController: ObservableObject {
     var jobQueue = ArisWorkerQueue()
     /// How each job runs and its running task, by job id (main actor only).
     var jobRuns: [UUID: ArisJobRun] = [:]
+    /// Jobs reported as not done, and how each ran: the card's 다시 시도 hands it out again (main actor only).
+    var notDoneJobs: [UUID: ArisJobRun] = [:]
     /// Which Claude hook event ends a launched Claude Code teammate's job, and the jobs waiting for it (main actor only).
     var teammateWatch = ArisTeammateCompletion()
     var teammateWaits: [UUID: CheckedContinuation<ArisTeammateEnd, Never>] = [:]
@@ -1087,7 +1089,7 @@ final class ArisController: ObservableObject {
                     saidHold = true
                     say([ArisSpeech.language(of: text) == "ko-KR" ? "확인해 볼게요." : "One moment."])
                 }
-            case .file, .launched:
+            case .file, .launched, .work:
                 break
             case .stepFailed(let label):
                 session = session.stepFailed(label.map { ArisUIWords.status($0) })
@@ -1106,6 +1108,11 @@ final class ArisController: ObservableObject {
                 helperAnswers = true
                 stats?.answered(by: ArisTurnPath.helper)
                 log.notice("aris-agent answers this itself (no AI asked)")
+            case .savedSteps:
+                // The request's saved steps were done again with no AI: the record says "saved-steps" (not "brain:api").
+                helperAnswers = true
+                stats?.answered(by: ArisTurnPath.savedSteps)
+                log.notice("the saved steps answer this (no AI asked)")
             case .turn(let id):
                 turnId = id
             case .untrusted(let sawScreen, let dispatch, let outside):

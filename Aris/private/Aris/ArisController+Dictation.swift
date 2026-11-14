@@ -177,12 +177,12 @@ extension ArisController {
                 let appOn = AXIsProcessTrusted()
                 if ArisHelperInstallWords.mappingLost(appSwitchOn: appOn, helperSays: false) { log.error("\(ArisHelperInstallWords.mappingLostLog, privacy: .public)") }
                 _ = state.copy(text)
-                return fail(ArisHelperInstallWords.notTyped(appSwitchOn: appOn))
+                return failDictation(ArisHelperInstallWords.notTyped(appSwitchOn: appOn))
             }
             if copied {
                 guard state.copy(text) else {
                     log.error("dictation: nowhere to type it and the clipboard refused it")
-                    return fail(ArisUIWords.text("입력하지 못했어요", "Couldn't type it"))
+                    return failDictation(ArisUIWords.text("입력하지 못했어요", "Couldn't type it"))
                 }
                 log.notice("dictation: nowhere to type it; copied")
             }
@@ -210,9 +210,53 @@ extension ArisController {
         case .typeDictation:
             finishDictation()
         case .endDictation, .endTurn, .failTurn:
-            dictation = nil
-            fail(ArisMicInterruption.dictationLine)
+            failDictation(ArisMicInterruption.dictationLine, endsDictation: true)
         }
+    }
+
+    /// A dictation went wrong. With the pill on, the line shows in the pill and the turn ends quietly (the notch stays
+    /// quiet for dictation); otherwise the notch says it, as before (`endsDictation`: the stage goes first, so the notch
+    /// shows the line as a failed turn).
+    func failDictation(_ line: String, endsDictation: Bool = false) {
+        guard ArisDictationPillGate.on else {
+            if endsDictation { dictation = nil }
+            return fail(line)
+        }
+        log.notice("dictation: failed, said in the pill")
+        ArisDictationState.shared.showPillError(line)
+        gestureCancelled()
+        finishTurn("error")
+        turn?.cancel()
+        releaseListener()
+        level = 0
+        session = session.done()
+        resumeMusicIfPaused()
+    }
+
+    // MARK: - The pill's controls
+
+    /// A click on the idle pill: a hands-free dictation into the app in front (the pill's panel never activates Aris,
+    /// so that app keeps the keyboard). ✕ cancels it, ↑ or the key puts it in.
+    func startDictationFromPill() {
+        guard dictation != .listening else { return }
+        startDictation()
+        guard dictation == .listening else { return }
+        log.notice("dictation: started from the pill")
+        lockDictation()
+        ArisDictationState.shared.fromPill = true
+        ArisDictationKeyTap.shared.lockFromPill()
+    }
+
+    func cancelDictationFromPill() {
+        guard dictation == .listening, !ArisDictationState.shared.finishing else { return }
+        ArisDictationKeyTap.shared.reset()
+        cancel()
+    }
+
+    func finishDictationFromPill() {
+        guard dictation == .listening, !ArisDictationState.shared.finishing else { return }
+        ArisDictationKeyTap.shared.reset()
+        finishDictation()
     }
 
     /// "넣었어요" a moment; the copied card longer, and while the pointer is on it (at most ArisNotch.longestHover).

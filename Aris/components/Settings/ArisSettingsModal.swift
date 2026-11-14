@@ -2,11 +2,11 @@
 //  ArisSettingsModal.swift
 //  Aris
 //
-//  The settings window's sheets and toast: 정보 › 데이터 and API 키 (mockup audit-4-settings-extra.html option C), and
-//  언어 추가, the restart question and 팀원 빼기 (settings-redesign.html). The sheet: 460 wide, r20, the backdrop at
-//  .38 / .78, in from scale .96 and 10 pt down, 300 ms ease-out. Destructive: red-600 on red-50 light, red-400 on
-//  red-500/10 dark, border rgba(239,68,68,.2/.3). Primary #0a0a0a / #f3f6fa. Input r12, focus ring 3 pt
-//  rgba(18,111,246,.25). The toast: a black chip bottom right, 14/500, r8.
+//  The settings window's sheets and toast: 정보 › 데이터 and API 키 (mockup audit-4-settings-extra.html option C), the
+//  restart question and 팀원 빼기 (settings-redesign.html), and 쓰는 언어 in the measured language dialog's own frame. Tokens: the measured sheet ( 460 wide, r20, backdrop .38 / .78, in from scale .96
+//  and 10 pt down, 300 ms ease-out), (destructive: red-600 on red-50 light, red-400 on red-500/10 dark, border
+//  rgba(239,68,68,.2/.3)), (primary #0a0a0a / #f3f6fa), (input r12, focus ring 3 pt rgba(18,111,246,.25)),
+//  (toast: black chip bottom right, 14/500, r8).
 //
 
 import AppKit
@@ -18,8 +18,17 @@ final class ArisSettingsOverlay: ObservableObject {
     static let shared = ArisSettingsOverlay()
 
     enum Sheet: String, Identifiable {
-        case export, diagnostics, wipe, uninstall, languages, restart, removeMate, memoryImport
+        case export, diagnostics, wipe, uninstall, languages, restart, removeMate, memoryImport, featureDetail
         var id: Self { self }
+    }
+
+    /// The feature whose detail sheet is open (`featureDetail`).
+    @Published var feature = ArisFeature.control
+
+    /// Opens a feature's detail sheet.
+    func open(_ feature: ArisFeature) {
+        self.feature = feature
+        sheet = .featureDetail
     }
 
     /// Opening a sheet remembers what had the keyboard, and closing it hands the keyboard back (item 16).
@@ -74,7 +83,22 @@ struct ArisSettingsModalHost<Sheet: View>: View {
 
     var body: some View {
         ZStack {
-            if let sheet = overlay.sheet {
+            if let sheet = overlay.sheet, sheet == .languages {
+                // 쓰는 언어 is the measured language dialog (ArisMenuLook): 340 wide, r16, its own fill, line, shadow and
+                // backdrop, and there at once (its animate classes have no rule).
+                ArisMenuLook.sheetBackdrop.color(palette.dark).ignoresSafeArea()
+                    .onTapGesture { overlay.sheet = nil }
+                    .transition(.identity)
+                ArisMeasuredSheet { content(sheet) }
+                    .transition(.identity)
+                    .onExitCommand { overlay.sheet = nil }
+                    .background(Button("") { overlay.sheet = nil }.keyboardShortcut(.cancelAction).opacity(0).accessibilityHidden(true))
+            } else if let sheet = overlay.sheet, sheet == .featureDetail {
+                // A feature's detail sheet (ArisFeatureSheet): its own panel, the backdrop there at once.
+                ArisFeaturePanel(close: { overlay.sheet = nil }) { content(sheet) }
+                    .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .offset(y: 10)).combined(with: .opacity),
+                                            removal: .scale(scale: 0.96).combined(with: .offset(y: 10)).combined(with: .opacity)))
+            } else if let sheet = overlay.sheet {
                 palette.backdrop.ignoresSafeArea()
                     .onTapGesture { overlay.sheet = nil }
                     .transition(.opacity)
@@ -102,8 +126,36 @@ struct ArisSettingsModalHost<Sheet: View>: View {
         }
         // In over 300 ms, out over 200: the way out is the system answering, and is quicker (emil-design-eng:
         // exits faster than entrances).
-        .animation(.easeOut(duration: overlay.sheet == nil ? 0.2 : 0.3), value: overlay.sheet)
+        .animation(overlay.sheet == .featureDetail ? .timingCurve(0, 0, 0.2, 1, duration: ArisFeatureLook.enter) : .easeOut(duration: overlay.sheet == nil ? 0.2 : 0.3), value: overlay.sheet)
         .animation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.18), value: overlay.toast)
+    }
+}
+
+/// The measured dialog's frame: 340 wide, r16, white / #1a1b1e with a gray-200 / modal line; shadow-lg light, the dark
+/// modal's 0 24 64 −20 and its 1-pt top light dark.
+private struct ArisMeasuredSheet<Content: View>: View {
+    @Environment(\.arisPalette) private var palette
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        let dark = palette.dark, shape = RoundedRectangle(cornerRadius: ArisMenuLook.sheetRadius, style: .continuous)
+        let fill = ArisMenuLook.sheetFill.color(dark)
+        content()
+            .frame(width: ArisMenuLook.sheetWidth)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(shape.fill(fill))
+            .overlay {
+                if dark { ArisInsetShade(shape: shape, shadow: .init(y: 1, blur: 0, spread: 0, shade: .init(0xeff1f5, 0x06 / 255.0), inset: true)) }
+            }
+            .overlay(shape.strokeBorder(ArisMenuLook.sheetBorder.color(dark), lineWidth: 1))
+            .clipShape(shape)
+            .background {
+                ZStack {
+                    ForEach(Array((dark ? ArisMenuLook.sheetShadowsDark : ArisMenuLook.sheetShadowsLight).enumerated()), id: \.offset) { _, shadow in
+                        ArisMenuShadow(shape: shape, fill: fill, shadow: shadow)
+                    }
+                }
+            }
     }
 }
 
@@ -123,7 +175,7 @@ struct ArisToast: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: tone.symbol).font(.system(size: 15, weight: .semibold)).foregroundStyle(mark)
+            ArisLineIcon(tone.symbol, size: 18, stroke: 2.25).foregroundStyle(mark)
             Text(w(text)).font(.system(size: 14, weight: .medium)).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
@@ -153,7 +205,7 @@ struct ArisSheetFrame<Body: View, Footer: View>: View {
                 Spacer(minLength: 0)
                 if let onClose {
                     Button(action: onClose) {
-                        Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.faint)
+                        ArisLineIcon("xmark", size: 14, stroke: 2.25).foregroundStyle(palette.faint)
                             .frame(width: 28, height: 28).contentShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .buttonStyle(.plain).help(w("닫기")).accessibilityLabel(w("닫기"))
@@ -269,7 +321,7 @@ struct ArisLandingCheck: View {
     @State private var landed = false
 
     var body: some View {
-        Image(systemName: "checkmark").font(.system(size: 8.5, weight: .heavy)).foregroundStyle(.white)
+        ArisLineIcon("checkmark", size: 10, stroke: 2.75).foregroundStyle(.white)
             .frame(width: 16, height: 16).background(Circle().fill(Color(red: 0x30 / 255, green: 0xd1 / 255, blue: 0x58 / 255)))
             .scaleEffect(landed ? 1 : 0.4).opacity(landed ? 1 : 0)
             .onAppear { withAnimation(.timingCurve(0.34, 1.56, 0.64, 1, duration: 0.46)) { landed = true } }

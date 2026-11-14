@@ -331,7 +331,7 @@ private func importBoardTests() {
     check(importRow?.title == C.rowTitle && importRow?.desc == C.rowDesc && importRow?.control == .buttons([ArisSettingButton(title: C.rowButton, action: .importMemory)]),
           "import settings: 기억 has the row, with one button that opens the sheet")
     let imported = rows.first { $0.id == "memory.item.i" }?.desc ?? ""
-    check(imported.contains("가져옴 · Gemini") && imported.contains("지시") && imported.contains("확인 전") && rows.first { $0.id == "memory.item.o" }?.desc?.contains("예전 기억") == true,
+    check(imported.contains("가져옴 · Gemini") && imported.contains("지시") && imported.contains("확인 전") && rows.first { $0.id == "memory.item.o" }?.desc?.contains("가져옴") == true,
           "import settings: an imported memory says where it came from and that it is an instruction; a memory.md one reads as before")
     check(ArisSettingsIndex.entries.contains { $0.id == "memory.import" && $0.title == C.rowTitle } && ArisSettingsCopy.english("가져옴") == "Imported" && ArisSettingsCopy.english("지시") == "Instruction",
           "import settings: the search finds the row, and the list's new words have their English")

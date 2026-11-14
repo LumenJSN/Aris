@@ -174,7 +174,7 @@ final class ArisSpeaker {
                     attempts: for attempt in 1...2 {
                         var got = 0
                         do {
-                            for try await samples in ArisElevenLabs.speech(for: spoken, key: key, voiceID: Defaults[.arisVoiceID], speed: Defaults[.arisVoiceSpeed]) {
+                            for try await samples in Self.cloudSpeech(spoken, key: key, after: asked.dropLast()) {
                                 guard let self, let buffer = Self.buffer(of: samples) else { return }
                                 self.cloudSamples += samples.count
                                 got += samples.count
@@ -274,6 +274,15 @@ final class ArisSpeaker {
         resume()
     }
 
+    /// The one way a line is asked of ElevenLabs, for an answer's sentences, a single line and the Settings window's
+    /// 미리 듣기 alike: the chosen voice (with its saved settings), model and speed, and the sentences of the same answer
+    /// said before it (`said`), so the answer reads as one flow.
+    private static func cloudSpeech(_ text: String, key: String, after said: ArraySlice<String> = []) -> AsyncThrowingStream<[Float], Error> {
+        let previous = said.suffix(2).joined(separator: " ")
+        return ArisElevenLabs.speech(for: text, key: key, voiceID: Defaults[.arisVoiceID], speed: Defaults[.arisVoiceSpeed],
+                                     previous: previous.isEmpty ? nil : previous)
+    }
+
     /// Streams Geaun's voice. False when no audio came, so the system voice can take over.
     private func speakWithElevenLabs(_ text: String, key: String) async -> Bool {
         startPlayback()
@@ -283,7 +292,7 @@ final class ArisSpeaker {
             finished = continuation
             cloud = Task { [weak self] in
                 do {
-                    for try await samples in ArisElevenLabs.speech(for: text, key: key, voiceID: Defaults[.arisVoiceID], speed: Defaults[.arisVoiceSpeed]) {
+                    for try await samples in Self.cloudSpeech(text, key: key) {
                         guard let self, let buffer = Self.buffer(of: samples) else { return }
                         self.cloudSamples += samples.count
                         self.play(buffer, of: mine)

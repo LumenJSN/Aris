@@ -207,7 +207,7 @@ enum ArisAIStore {
     static let hearEngines = ["apple", "whisper", "scribe"]
     static let speakEngines = ["macos", "eleven"]
     static let whisperModels = ["small", "large"]
-    static let voiceModels = ["eleven_flash_v2_5", "eleven_v4_turbo", "eleven_multilingual_v2"]
+    static let voiceModels = ["eleven_flash_v2_5", "eleven_v4_turbo", "eleven_v4", "eleven_multilingual_v2"]
 
     /// What else decides a choice that was never stored: how the earlier build behaved.
     struct Facts: Equatable, Sendable {

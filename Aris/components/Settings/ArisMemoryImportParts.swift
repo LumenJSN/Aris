@@ -139,7 +139,7 @@ struct ArisImportInfoIcon: View {
     var symbol = "info.circle"
 
     var body: some View {
-        Image(systemName: symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.calloutIcon)
+        ArisLineIcon(symbol, size: 17).foregroundStyle(palette.calloutIcon)
     }
 }
 
@@ -150,7 +150,7 @@ struct ArisImportLandingMark: View {
 
     var body: some View {
         let progress = seconds.map { ArisMemoryImportPacing.land.progress(at: $0) } ?? 1
-        Image(systemName: "checkmark").font(.system(size: 8.5, weight: .heavy)).foregroundStyle(.white)
+        ArisLineIcon("checkmark", size: 10, stroke: 2.75).foregroundStyle(.white)
             .frame(width: 16, height: 16).background(Circle().fill(Color(arisHex: 0x30d158)))
             .scaleEffect(0.4 + 0.6 * progress)
             .opacity(min(1, max(0, progress)))
@@ -162,7 +162,7 @@ struct ArisImportUndoneMark: View {
     @Environment(\.arisPalette) private var palette
 
     var body: some View {
-        Image(systemName: "arrow.uturn.backward").font(.system(size: 8, weight: .bold)).foregroundStyle(palette.desc)
+        ArisLineIcon("arrow.uturn.backward", size: 10, stroke: 2.5).foregroundStyle(palette.desc)
             .frame(width: 16, height: 16).background(Circle().fill(palette.chip))
     }
 }

@@ -91,6 +91,15 @@ struct ArisDesktopRequest: Equatable {
     var text: String? = nil
     /// batch's steps.
     var steps: [ArisDesktopStep] = []
+    /// see's filter for a huge window: only the controls whose name or value holds these words, at most `max`.
+    var find: String? = nil
+    var max: Int? = nil
+    /// `type --focused --app "<App>" --stdin`: into the field that has the keyboard focus in the app's window (the window
+    /// The user named, else its front one), found in a look Aris takes first; how `aris-tools type` reaches the one typing
+    /// path (ninth VM pass: it typed by itself, at the start, with a password dialog up).
+    var focused = false
+    /// type's `--at end|start`: where the caret goes first when the user's words say neither (ArisDesktopCaret.place(said:asked:)).
+    var at: ArisDesktopCaret.Place? = nil
 
     /// It brings a window or an app to the front (only with a card, only while the user is there).
     var bringsForward: Bool {
@@ -123,7 +132,7 @@ struct ArisDesktopUsage: Error, Equatable {
 
 enum ArisDesktopWords {
     static let usage = """
-        usage: aris-tools desktop see --app "<App>" [--window <id> | --title "<window title>"] [--ocr] | click <ref> [--double|--right] | type <ref> --stdin | \
+        usage: aris-tools desktop see --app "<App>" [--window <id> | --title "<window title>"] [--ocr] [--find "<words>" [--max N]] | click <ref> [--double|--right] | type <ref> --stdin | \
         set-value <ref> --stdin | press <keys…> --app "<App>" [--window <id> | --title "<window title>"] | scroll <ref> --direction up|down|left|right [--amount N] | \
         drag <ref> --to <ref> | menu list|click --app "<App>" [--path "File › Export › PDF…"] | \
         dialog list|click|input|file --app "<App>" [--button "<label>"] [--field "<label>"] [--path <folder or file>] [--name <file name>] | \
@@ -150,7 +159,11 @@ enum ArisDesktopWords {
         guard let (verb, used) = verb(words) else { return .failure(ArisDesktopUsage(text: usage)) }
         var rest = Array(words.dropFirst(used))
         var request = ArisDesktopRequest(verb: verb)
-        if verb.takesRef {
+        // `type --focused --app "<App>" --stdin`: no ref; the engine finds the focused field in a fresh look.
+        if verb == .type, rest.first == "--focused" {
+            request.focused = true
+            rest.removeFirst()
+        } else if verb.takesRef {
             guard let word = rest.first, let ref = ArisDesktopRef.parse(word) else {
                 return .failure(ArisDesktopUsage(text: "\(first) takes a ref from `desktop see`, like @s8f3k2:e3 (a bare e3 or elem_3 is refused)"))
             }
@@ -176,6 +189,12 @@ enum ArisDesktopWords {
         }
         return .success(request)
     }
+
+    /// `desktop wait <id>`: the result of a call of the brain's own that outlasted one shell command (ArisSlowCalls; the
+    /// route answers it, ArisDesktopRoutes). Read-only, no card, never one of the engine's verbs: the shell gate reads it
+    /// here (tenth VM pass: it was refused as a desktop call Aris couldn't read).
+    static let waitUsage = "usage: aris-tools desktop wait <id>"
+    static func isWait(_ words: [String]) -> Bool { words.count == 2 && words[0] == "wait" && ArisSlowCalls.isID(words[1]) }
 
     /// The verb and how many words name it (`menu click` is two).
     private static func verb(_ words: [String]) -> (ArisDesktopVerb, Int)? {
@@ -218,7 +237,7 @@ enum ArisDesktopWords {
         while index < rest.count {
             let word = rest[index]
             switch (verb, word) {
-            case (_, "--app") where ![.app, .dockList].contains(verb) && !verb.takesRef:
+            case (_, "--app") where ![.app, .dockList].contains(verb) && (!verb.takesRef || request.focused):
                 let app = try value(word)
                 guard isAppName(app) else { throw ArisDesktopUsage(text: "--app takes an app's name") }
                 request.app = app
@@ -227,7 +246,16 @@ enum ArisDesktopWords {
                 request.window = try number(word, 1...Int(Int32.max))
             case (.see, "--title"), (.window, "--title"), (.batch, "--title"), (.press, "--title"), (.clickAt, "--title"):
                 request.title = try words(word)
+            // The focused type looks at the window it names (a ref already has its window), and either type puts the caret
+            // at the end or the start first (eleventh VM pass: `aris-tools type` typed these flags as text).
+            case (.type, "--title") where request.focused:
+                request.title = try words(word)
+            case (.type, "--at"):
+                guard let place = ArisDesktopCaret.Place(rawValue: try value(word)) else { throw ArisDesktopUsage(text: "--at takes end or start") }
+                request.at = place
             case (.see, "--ocr"): request.ocr = true
+            case (.see, "--find"): request.find = try words(word, limit: 80)
+            case (.see, "--max"): request.max = try number(word, 1...200)
             case (.see, "--annotate"): request.annotate = true
             case (.see, "-i"), (.see, "--compact"): break // the old snapshot's flags: the tree is always the compact one
             case (.click, "--double"): request.double = true
@@ -306,6 +334,8 @@ enum ArisDesktopWords {
         switch verb {
         case .see, .menuList, .menuClick, .dialogList, .dialogClick, .dialogInput, .dialogFile, .windowList, .window, .press, .clickAt, .batch:
             guard request.app != nil else { throw ArisDesktopUsage(text: "\(verb.rawValue) needs --app \"<App>\"") }
+        case .type where request.focused:
+            guard request.app != nil else { throw ArisDesktopUsage(text: "type --focused needs --app \"<App>\"") }
         default: break
         }
         switch verb {

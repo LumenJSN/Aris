@@ -2,9 +2,9 @@
 //  ArisPrerequisiteNotice.swift
 //  Aris
 //
-//  At launch, what the install lacks (ArisPrerequisites) goes to the log, and into the notch as one line with what to
+//  At launch, what the install lacks (ArisPrerequisites) goes to the log, and onto a card under the notch with what to
 //  do: a missing helper every launch, the older macOS once. While the guide shows it says so itself on its first
-//  page, so the notch stays the guide's.
+//  page, so then there is no card.
 //
 
 import Foundation
@@ -24,9 +24,11 @@ enum ArisPrerequisiteNotice {
         guard let first = ArisPrerequisites.atLaunch(missing, voiceSaidBefore: defaults.bool(forKey: ArisPrerequisites.voiceSaidKey)) else { return }
         Task {
             try? await Task.sleep(for: delay)
-            // Never over the guide or a turn the user already started.
-            guard !ArisOnboardingGuide.shared.showing, ArisController.shared.session.phase == .idle else { return }
-            ArisController.shared.fail(ArisPrerequisites.full(first))
+            // The guide says it itself on its first page. Otherwise a card under the notch, never over a turn the user
+            // already started (it waits for it).
+            guard !ArisOnboardingGuide.shared.showing else { return }
+            let card = ArisNoticeRoute.problem(line: ArisPrerequisites.remedy(first), title: ArisPrerequisites.line(first), english: ArisUIWords.english)
+            guard await ArisController.shared.notify(card) else { return }
             if first == .voice { defaults.set(true, forKey: ArisPrerequisites.voiceSaidKey) }
         }
     }

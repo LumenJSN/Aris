@@ -28,7 +28,7 @@ struct ArisAIServicesPage: View {
         let page = model.page
         VStack(alignment: .leading, spacing: 0) {
             heading("생각").id("ai.think")
-            ArisAICardView(card: page.think, model: model).id("ai.brain").arisFlash("ai.brain").padding(.top, 12).modifier(ArisRise(index: 2))
+            ArisAICardView(card: page.think, model: model).id("ai.brain").arisFlash("ai.brain").padding(.top, ArisSettingsMetrics.headingGap).modifier(ArisRise(index: 2))
             if let line = page.thinkLine { quiet(line) }
             if let login = page.login {
                 ArisAILoginRow(line: login, model: model).id("ai.brainLogin").arisFlash("ai.brainLogin", radius: 10).padding(.top, 12).padding(.horizontal, 4)
@@ -42,7 +42,7 @@ struct ArisAIServicesPage: View {
                 ArisAIIconButton(title: "같은 회사로 맞추기", trailing: "chevron.down", small: true) { model.toggle(.both, anchor: $0) }
             }
             .padding(.top, 32).id("ai.voice")
-            ArisAICardView(card: page.hear, model: model).id("ai.hear").arisFlash("ai.hear").padding(.top, 12).modifier(ArisRise(index: 3))
+            ArisAICardView(card: page.hear, model: model).id("ai.hear").arisFlash("ai.hear").padding(.top, ArisSettingsMetrics.headingGap).modifier(ArisRise(index: 3))
             ArisAICardView(card: page.speak, model: model).id("ai.speak").arisFlash("ai.speak").padding(.top, 16).modifier(ArisRise(index: 4))
             if let line = page.voiceLine { quiet(line) }
 
@@ -56,7 +56,7 @@ struct ArisAIServicesPage: View {
     }
 
     private func heading(_ text: String) -> some View {
-        Text(w(text)).font(.system(size: 15, weight: .semibold)).tracking(-0.15).foregroundStyle(palette.title).accessibilityAddTraits(.isHeader)
+        ArisSectionTitle(text: w(text))
     }
 
     /// A small line under a card ("안 되면 …"): 12 pt, the faintest ink, 8 above, 4 in.
@@ -103,7 +103,7 @@ private struct ArisAIFoldedRows: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                if index > 0 { Rectangle().fill(palette.hairline).frame(height: 1) }
+                if index > 0 { ArisInsetHairline() }
                 Group {
                     if case .custom = row.control, let custom = handlers.custom(row) {
                         custom
@@ -132,7 +132,7 @@ struct ArisAICardView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(card.rows.enumerated()), id: \.offset) { index, row in
                 if index == voiceAt, let need = card.need { ArisAINeedRow(need: need, model: model) }
-                if index > 0 { Rectangle().fill(palette.hairline).frame(height: 1) }
+                if index > 0 { ArisInsetHairline() }
                 ArisAIRowView(row: row, job: card.job, model: model)
             }
             if voiceAt == card.rows.count, let need = card.need { ArisAINeedRow(need: need, model: model) }
@@ -155,7 +155,7 @@ struct ArisAIRowView: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             Group {
-                if let icon = row.icon { Image(systemName: icon).font(.system(size: 16.5, weight: .medium)).foregroundStyle(palette.icon) } else { Color.clear }
+                if let icon = row.icon { ArisLineIcon(icon, size: 20).foregroundStyle(palette.icon) } else { Color.clear }
             }
             .frame(width: 20, height: 20)
             VStack(alignment: .leading, spacing: 2) {
@@ -354,9 +354,9 @@ struct ArisAISavedKeys: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(keys.enumerated()), id: \.element.holder) { index, key in
-                if index > 0 { Rectangle().fill(palette.hairline).frame(height: 1) }
+                if index > 0 { ArisInsetHairline() }
                 HStack(spacing: 12) {
-                    Image(systemName: "key").font(.system(size: 16.5, weight: .medium)).foregroundStyle(palette.icon).frame(width: 20, height: 20)
+                    ArisLineIcon("key", size: 20).foregroundStyle(palette.icon).frame(width: 20, height: 20)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(w("\(key.name) API 키")).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
                         (Text(w("키체인에 저장됨")).font(.system(size: 12)) + Text(key.masked.map { " · " + $0 } ?? "").font(.system(size: 12, design: .monospaced)))

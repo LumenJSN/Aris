@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/LumenJSN/Aris/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/release-v1.0.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=dark" /><img alt="latest release" src="https://shieldcn.dev/badge/release-v1.0.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=light" /></picture></a>
+  <a href="https://github.com/LumenJSN/Aris/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/release-v1.1.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=dark" /><img alt="latest release" src="https://shieldcn.dev/badge/release-v1.1.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=light" /></picture></a>
   <a href="https://arismac.app"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/website-arismac.app.svg?logo=lu:Globe&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="Website: arismac.app" src="https://shieldcn.dev/badge/website-arismac.app.svg?logo=lu:Globe&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture></a>
   <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/macOS-14%2B_Apple_silicon.svg?logo=apple&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="macOS 14+ on Apple silicon" src="https://shieldcn.dev/badge/macOS-14%2B_Apple_silicon.svg?logo=apple&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Swift-5.svg?logo=swift&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="Swift" src="https://shieldcn.dev/badge/Swift-5.svg?logo=swift&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture>
@@ -101,7 +101,8 @@ A build from source has no onboarding sounds (they are not in the repository, se
   shrink, move, undo), music, timers, weather, stocks, maps and currency. Other apps' windows can be read and
   operated through [Peekaboo](https://github.com/openclaw/Peekaboo), downloaded on first use.
 - **Sees what you point at**: ask about the screen, circle something with the gesture, or pick windows to ask about.
-- **Dictation** into any app, with a learned dictionary and your own writing style.
+- **Dictation** into any app, with a learned dictionary and your own writing style, shown in a small pill at the
+  bottom of the screen while the notch stays quiet.
 - **Hands-free conversation**, with on-device end-of-turn detection and barge-in.
 - **Teammates**: background workers (a clone of Aris, Claude Code in a terminal) that take a job and report back.
 - **Skills** in the open Agent Skills format (`SKILL.md` plus optional `scripts/`, `references/`, `assets/`), so

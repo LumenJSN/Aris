@@ -32,7 +32,7 @@ struct ArisStoppedCard: View {
     static let quoteLines = 6
 
     var body: some View {
-        ArisFadingScroll(budget: min(ArisConfirmCard.maxHeight, budget),
+        ArisFadingScroll(budget: min(ArisConfirmCard.maxHeight, budget), refresh: question.id,
                          onScroll: { ArisCardReadLive.shared.scrolled(card: question.id, offset: $0, visible: $1, content: $2) }) {
             VStack(alignment: .leading, spacing: 0) {
                 header

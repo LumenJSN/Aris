@@ -139,6 +139,8 @@ if CommandLine.arguments.contains("--usage-report") {
 // From here on this process is Aris's helper. It answers its own tools' question "did you start me?" before it
 // starts anything (ArisVouchService): a tool that macOS charges to Aris runs only on the helper's own yes.
 ArisVouchService.start()
+// 설정 › 기억 hears of every memory write while it is open.
+ArisMemoryStore.announce = ArisMemoryStore.postChange
 // The commit this agent was built from: a line in agent.log and a file the app compares with its own (ArisBuildInfo).
 ArisBuildInfo.recordRunningAgent(in: ArisAgentRunner.directory)
 ArisUsageScanner.shared.kick()
@@ -213,7 +215,7 @@ func respond(_ connection: NWConnection, _ status: String, _ body: Data) {
 func ask(_ requested: ArisBrain, tier: ArisTier, prompt: String, request: String, learnAs: String?, untrusted: Bool = false,
          screenSeen: Bool = false, outsideConversation conversationOutside: Bool = false, vouches: Bool = false, handsFree: Bool = false,
          images: [ArisTurnImage] = [], sealed: Bool = false, learnFrom: String? = nil, relayRound: Int = 0, shownOnly: Bool = false,
-         ownData: Bool = false, screenText: Bool = false, on connection: NWConnection, retried: Bool = false) {
+         ownData: Bool = false, screenText: Bool = false, savedStepsKey: String? = nil, on connection: NWConnection, retried: Bool = false) {
     // The app dropped the stream (a cancel, a timeout) before this turn started: nothing of it starts (audit
     // orphan-turn-11: a relay round or a shortcut's fall-through started a turn nobody was waiting for, and the next
     // question met "still answering the last one").
@@ -267,8 +269,18 @@ func ask(_ requested: ArisBrain, tier: ArisTier, prompt: String, request: String
             let clean = !sealed && !untrusted && !conversationOutside && !runner.turnUsedTools
             return queue.async {
                 relay(commands, request: request, tier: tier, handsFree: handsFree, sealedTurn: sealed || !clean, round: relayRound,
-                      screenTurn: screenSeen || !images.isEmpty, untrustedTurn: untrusted || conversationOutside, on: connection)
+                      screenTurn: screenSeen || !images.isEmpty, untrustedTurn: untrusted || conversationOutside,
+                      savedStepsKey: relayRound == 0 ? learnAs : savedStepsKey, on: connection)
             }
+        }
+        // agy's last round of a turn whose relayed lines were desktop actions only, all done: its steps are saved under
+        // The user's words, as any brain's are (ArisSavedSteps.turnRecipe; seventh VM pass).
+        if brain == .antigravity, relayRound > 0, let key = savedStepsKey,
+           let recipe = ArisSavedSteps.turnRecipe(key: key, request: request, notes: ArisDesktopRoutes.relayRecorder.all,
+                                                  notDone: ArisDesktopRoutes.relayLedger.actionsThisTurn.notDone, otherTools: false, reply: text,
+                                                  outside: untrusted || conversationOutside) {
+            ArisSavedStepsLive.store.save(recipe)
+            ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(["answer": "saved \(recipe.steps.count) desktop step(s) for this request", "question": "agy relay"]), key: "relay")
         }
         // A hands-free turn whose reads Aris ran: shown, never spoken.
         if shownOnly { queue.async { stream(.shownOnly, on: connection) } }
@@ -324,7 +336,7 @@ func ask(_ requested: ArisBrain, tier: ArisTier, prompt: String, request: String
 /// what came back. One round (a few for connected services and the web): a sealed agy that asks again beyond that gets
 /// no more.
 func relay(_ commands: [[String]], request: String, tier: ArisTier, handsFree: Bool, sealedTurn: Bool, round: Int, screenTurn: Bool = false,
-           untrustedTurn: Bool = false, on connection: NWConnection) {
+           untrustedTurn: Bool = false, savedStepsKey: String? = nil, on connection: NWConnection) {
     // The app dropped the stream (the user cancelled): nothing more is run for a turn nobody waits for (audit orphan-turn-11).
     let waited = { ArisAskAdmission.proceeds(state: connection.state, cancelled: false) }
     guard waited() else { return }
@@ -356,6 +368,8 @@ func relay(_ commands: [[String]], request: String, tier: ArisTier, handsFree: B
         let outcome = ArisAgyRelay.runJudged(commands, permitted: permitted, judge: { memo.judgeNow($0, request: request) }) { words in
             // Cancelled meanwhile: the block's remaining lines aren't run.
             guard waited() else { return ArisAgyRelay.cancelled }
+            // A line that isn't a desktop call: the turn is no saved steps.
+            if !ArisAgyRelay.isDesktop(words) { ArisDesktopRoutes.relayRecorder.note(.failure(.kind)) }
             if ArisAgyRelay.isMCP(words) { return ArisMCPRoutes.relayed(words, turn: serviceTurn) }
             if ArisAgyRelay.isDesktop(words) { return ArisDesktopRoutes.relayed(words, turn: serviceTurn) }
             // Its file changes: the same gate and card as on every other brain, then aris-tools as Aris.
@@ -387,6 +401,8 @@ func relay(_ commands: [[String]], request: String, tier: ArisTier, handsFree: B
             return ArisAgyRelay.run(words, tools: ArisAgentRunner.toolsPath, environment: environment)
         }
         let results = outcome.results
+        // The round's hold on the keys and pointer ends with its lines (ArisDesktopLock): agy thinks with none held.
+        ArisDesktopLock.shared.release(serviceTurn.desktopOwner)
         ArisWorkDesk.live.relayed(permitted, on: ObjectIdentifier(connection))
         for why in outcome.blocked {
             ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(["answer": "read refused by the judge (\(why.rawValue))", "question": "agy relay"]), key: "relay")
@@ -413,7 +429,7 @@ func relay(_ commands: [[String]], request: String, tier: ArisTier, handsFree: B
             ask(.antigravity, tier: tier, prompt: ArisAgyRelay.prompt(request: request, results: results, moreServices: more, moreDesktop: moreDesktop,
                                                                         moreWrites: moreWrites), request: request,
                 learnAs: nil, untrusted: outside, outsideConversation: outside, handsFree: handsFree, sealed: true, relayRound: round + 1,
-                shownOnly: handsFree && (privateRead || services), on: connection)
+                shownOnly: handsFree && (privateRead || services), savedStepsKey: handsFree ? nil : savedStepsKey, on: connection)
         }
     }
 }
@@ -628,11 +644,15 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
         // The images (or why they couldn't come), and in a screen conversation the rule to quote the user's words as said.
         let notes = [route.sendsImages ? ArisAgentPrompt.images(images, focus: focus) : route.note,
                      sawScreen ? ArisAgentPrompt.screenWords : nil].compactMap { $0 }
-        // The few memories this turn is about (ArisMemoryRecall), only on the user's clean turn: none hands-free, after outside
-        // text or the screen, from another caller, or for a job (ArisMemoryLearning.mayRecall).
-        let memory = ArisMemoryCurator.live.context(for: request, eligible: ArisMemoryLearning.mayRecall(
+        // The few memories this turn is about (ArisMemoryRecall). The user's clean turn gets them as ever; their turn that saw
+        // the screen, read outside text or was heard hands-free gets only what his own words are about, each with its
+        // source, inside its own fence; another caller and a job get none (ArisMemoryLearning.recallMode). The send gate
+        // and the taint are untouched: anything outbound after outside text still asks.
+        let recallMode = ArisMemoryLearning.recallMode(
             fromApp: peerFailure == nil, task: object["task"] as? Bool == true, untrusted: untrusted, outsideConversation: sawOutside,
-            screenSeen: sawScreen, handsFree: handsFree, images: !images.isEmpty, screenText: screen != nil))
+            screenSeen: sawScreen, handsFree: handsFree, images: !images.isEmpty, screenText: screen != nil)
+        let recalled = ArisMemoryCurator.live.context(for: request, mode: recallMode, brain: requestedBrain.rawValue)
+        let memory = recalled.text
         // What Aris noted about the apps this involves, and a teammate's own block for its job (ArisTeamPrompt).
         let frontLine = context?.components(separatedBy: "\n").first { $0.hasPrefix("front app: ") }
         let knowhow = ArisTeamPrompt.knowhow(ArisNotesStore.load(ArisNotesStore.knowhowFile(home: home)), request: text, frontApp: frontLine)
@@ -660,7 +680,7 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
                                             teammates: dispatch.teammates ? teammatesBlock(for: text) : nil,
                                             imageNote: notes.isEmpty ? nil : notes.joined(separator: "\n"),
                                             skills: ArisSkillPrompt.block(ArisSkills.live.listings(), tools: route.brain == .api ? ArisAPICatalog.generic : ArisAgentRunner.toolsPath),
-                                            notes: noteBlock)
+                                            notes: noteBlock, memoryNonce: recalled.nonce)
         let brain = route.brain
         let tier = ArisTier.named(object["tier"] as? String)
         let model = brain.model(tier: tier)
@@ -821,12 +841,26 @@ func converse(_ object: [String: Any], text: String, request: String, prompt: St
               screenText: Bool = false, on connection: NWConnection) {
         let vouches = ArisHandsFree.vouches(ArisTeammateGate.vouches(mainTurn: mainTurn, fromApp: fromApp, context: context, memory: memory),
                                             handsFree: handsFree)
-        let askBrain = { ask(brain, tier: tier, prompt: prompt, request: request, learnAs: untrusted || handsFree ? nil : key, untrusted: outsideText,
-                             screenSeen: sawScreen, outsideConversation: sawOutside,
-                             vouches: vouches, handsFree: handsFree, images: sent, sealed: sealed, learnFrom: learnFrom, ownData: ownData,
-                             screenText: screenText, on: connection) }
+        // `note`: what saved steps already did, when the AI takes a request over from them (nothing is learned from that turn).
+        let askWith = { (note: String?) in
+            ask(brain, tier: tier, prompt: note.map { prompt + "\n\n" + $0 } ?? prompt, request: request,
+                learnAs: note != nil || untrusted || handsFree ? nil : key, untrusted: outsideText,
+                screenSeen: sawScreen, outsideConversation: sawOutside,
+                vouches: vouches, handsFree: handsFree, images: sent, sealed: sealed, learnFrom: learnFrom, ownData: ownData,
+                screenText: screenText, on: connection)
+        }
+        let askBrain = { askWith(nil) }
+        let mayReplay = ArisHandsFree.mayReplayShortcut(untrusted: untrusted, handsFree: handsFree)
         // A learned shortcut answers at once, without any AI; one that no longer works is forgotten.
-        guard ArisHandsFree.mayReplayShortcut(untrusted: untrusted, handsFree: handsFree), let learned = ArisShortcutStore.shared.lookup(key) else { return askBrain() }
+        guard mayReplay, let learned = ArisShortcutStore.shared.lookup(key) else {
+            // Saved desktop steps for these words: done again with no AI, each through the desktop gate and its cards.
+            if mayReplay, sent.isEmpty, !ArisShortcuts.isQuestion(key), let recipe = ArisSavedStepsLive.store.lookup(key),
+               !ArisSavedSteps.hasMomentWords(ArisMemoryText.ownWords(request)) {
+                return replaySaved(recipe, request: ArisMemoryText.ownWords(request), brain: brain, critical: tier == .critical, sawScreen: sawScreen,
+                                   sawOutside: sawOutside, askWith: askWith, on: connection)
+            }
+            return askBrain()
+        }
         // Learned before questions were kept out: forgotten, and the AI answers.
         guard !ArisShortcuts.isQuestion(key) else {
             ArisShortcutStore.shared.forget(key)
@@ -835,8 +869,20 @@ func converse(_ object: [String: Any], text: String, request: String, prompt: St
         // The replay runs commands: the turn shows a step before the first one starts (ArisAgentStatus.forReplay), so
         // the app knows this turn has done something and never asks it again by itself.
         stream(.status(ArisAgentStatus.forReplay(learned.commands, tools: ArisAgentRunner.toolsPath)), on: connection)
+        let english = ArisDesktopCopy.isEnglish(request)
         DispatchQueue.global(qos: .userInitiated).async {
-            if ArisShortcutStore.shared.replay(learned, tools: ArisAgentRunner.toolsPath, environment: ArisAgentRunner.environment()) {
+            // Its commands take their turn at the keys and pointer, as a desktop action does (ArisDesktopLock).
+            // Its window commands are told the id it holds them as (ArisDesktopLock.heldKey), which the agent confirms.
+            let owner = ArisDesktopLock.oneOff("shortcut")
+            let held = ArisDesktopLock.shared.holding(owner, live: { ArisAskAdmission.proceeds(state: connection.state, cancelled: false) },
+                                                      waiting: { queue.async { stream(.status(ArisDesktopLockWords.waitingLine(english: english)), on: connection) } }) {
+                ArisShortcutStore.shared.replay(learned, tools: ArisAgentRunner.toolsPath,
+                                                environment: ArisAgentRunner.environment().merging([ArisDesktopLock.heldKey: owner]) { $1 })
+            }
+            guard case .success(let replayed) = held else {
+                return queue.async { stream(.answer(ArisDesktopLockWords.userLine(english: english)), on: connection) }
+            }
+            if replayed {
                 queue.async { stream(.answer(learned.reply), on: connection) }
             } else {
                 ArisShortcutStore.shared.forget(key)
@@ -844,6 +890,41 @@ func converse(_ object: [String: Any], text: String, request: String, prompt: St
                 queue.async { askBrain() }
             }
         }
+}
+
+/// Saved desktop steps done again (ArisSavedStepsReplay), off the server queue: the answer when they all ran, the user's
+/// no as it is, else the AI takes the request over with a note of what was done.
+func replaySaved(_ recipe: ArisSavedRecipe, request: String, brain: ArisBrain, critical: Bool, sawScreen: Bool, sawOutside: Bool,
+                 askWith: @escaping (String?) -> Void, on connection: NWConnection) {
+    let english = ArisDesktopCopy.isEnglish(request)
+    stream(.status(ArisSavedStepsReplay.statusLine(english: english)), on: connection)
+    let turn = ArisSavedStepsTurn(brain: brain, request: request, critical: critical,
+                                  taint: ArisSavedStepsReplay.startTaint(recipe, sawScreen: sawScreen, sawOutside: sawOutside),
+                                  conversation: ArisSavedStepsReplay.conversationTaint(sawScreen: sawScreen, sawOutside: sawOutside),
+                                  screen: sawScreen, isOpen: { ArisAskAdmission.proceeds(state: connection.state, cancelled: false) }) { reply in
+        queue.async { stream(reply, on: connection) }
+    }
+    DispatchQueue.global(qos: .userInitiated).async {
+        let outcome = ArisSavedStepsReplay.run(recipe, request: request, engine: .shared, turn: turn)
+        turn.cancelAll()
+        // The replay's hold on the keys and pointer ends with it (the AI's turn takes its own).
+        ArisDesktopLock.shared.release(turn.desktopOwner)
+        turn.audit(["answer": "saved steps: \(outcome)", "action": "desktop saved steps", "brain": "saved-steps"])
+        queue.async {
+            switch outcome {
+            // Said first: the saved steps answer this turn, no AI was asked (ArisAgentReply.savedSteps).
+            case .done(let steps):
+                stream(.savedSteps, on: connection)
+                stream(.answer(ArisSavedStepsReplay.doneLine(steps: steps, english: english)), on: connection)
+            case .declined(let done):
+                stream(.savedSteps, on: connection)
+                stream(.answer(ArisSavedStepsReplay.declinedLine(done: done.count, english: english)), on: connection)
+            case .handOver(let done, let why):
+                guard ArisAskAdmission.proceeds(state: connection.state, cancelled: false) else { return }
+                askWith(ArisSavedStepsReplay.handOverNote(done: done, why: why, name: ArisSavedStepsReplay.installedName(engine: .shared)))
+            }
+        }
+    }
 }
 
 /// Every route but /ask, on the server queue.
@@ -910,6 +991,8 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         ArisMCPRoutes.tool(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
     case "/desktop-tool":
         ArisDesktopRoutes.tool(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
+    case "/desktop-hold":
+        ArisDesktopRoutes.hold(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
     case "/skills":
         guard isAppItself(object, on: connection, question: "skills") else { return }
         ArisSkillRoutes.settings(object) { status, body in queue.async { respond(connection, status, body) } }
@@ -1071,7 +1154,16 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
             ArisAgentRunner.writeAudit(String(decoding: line, as: UTF8.self), key: "local")
         }
         DispatchQueue.global(qos: .userInitiated).async {
-            let failure = ArisArrange.run(commands, tools: ArisAgentRunner.toolsPath, environment: ArisAgentRunner.environment())
+            // Window moves take their turn at the keys and pointer, as every desktop action does (ArisDesktopLock).
+            let owner = ArisDesktopLock.oneOff("arrange")
+            let held = ArisDesktopLock.shared.holding(owner) {
+                ArisArrange.run(commands, tools: ArisAgentRunner.toolsPath, environment: ArisAgentRunner.environment().merging([ArisDesktopLock.heldKey: owner]) { $1 })
+            }
+            let failure: String?
+            switch held {
+            case .success(let ran): failure = ran
+            case .failure: failure = ArisDesktopLockWords.insertRefusal
+            }
             // The change goes in the activity log (not undoable), so "방금 한 거 되돌려" never reaches past it (QA BUG-18).
             if failure == nil { logLocalChange(kind: "arrange", summary: "창 배치: \(app) \(count)개", id: nil, level: nil) }
             let body = (try? JSONSerialization.data(withJSONObject: failure.map { ["error": $0] } ?? [:])) ?? Data("{}".utf8)
@@ -1230,11 +1322,20 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         }
     case "/paste":
         guard isAppItself(object, on: connection, question: "paste") else { return }
-        // The clipboard history's "paste": the app set the clipboard; only ⌘V is pressed here.
-        DispatchQueue.main.async {
-            let failure = ArisInsert.pressPaste()
-            let body = (try? JSONSerialization.data(withJSONObject: failure.map(ArisInsertRefusal.reply) ?? [:])) ?? Data("{}".utf8)
-            queue.async { respond(connection, failure == nil ? "200 OK" : "500 Internal Server Error", body) }
+        // The clipboard history's "paste": the app set the clipboard; only ⌘V is pressed here, in its turn at the keys
+        // and pointer (ArisDesktopLock), never while a desktop action of a turn or job holds them.
+        let pasteOwner = ArisDesktopLock.oneOff("paste")
+        DispatchQueue.global(qos: .userInitiated).async {
+            if ArisDesktopLock.shared.take(pasteOwner) != nil {
+                let body = (try? JSONSerialization.data(withJSONObject: ArisInsertRefusal.reply(ArisDesktopLockWords.insertRefusal))) ?? Data("{}".utf8)
+                return queue.async { respond(connection, "500 Internal Server Error", body) }
+            }
+            DispatchQueue.main.async {
+                let failure = ArisInsert.pressPaste()
+                ArisDesktopLock.shared.release(pasteOwner)
+                let body = (try? JSONSerialization.data(withJSONObject: failure.map(ArisInsertRefusal.reply) ?? [:])) ?? Data("{}".utf8)
+                queue.async { respond(connection, failure == nil ? "200 OK" : "500 Internal Server Error", body) }
+            }
         }
     case "/insert":
         guard isAppItself(object, on: connection, question: "insert") else { return }
@@ -1244,11 +1345,20 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         // What was typed stays private: only how much.
         ArisAgentRunner.writeAudit("{\"action\":\"insert: \(text.count) characters\",\"risk\":\"dictated\"}", key: "local")
         let learn = object["learn"] as? Bool ?? false
-        DispatchQueue.main.async {
-            ArisInsert.paste(text, learn: learn) { pasted in
-                let reply: [String: Any] = pasted.failure.map(ArisInsertRefusal.reply) ?? ["confirmed": pasted.confirmed]
-                let body = (try? JSONSerialization.data(withJSONObject: reply)) ?? Data("{}".utf8)
-                queue.async { respond(connection, pasted.failure == nil ? "200 OK" : "500 Internal Server Error", body) }
+        // Typing the dictated text takes its turn at the keys and pointer too (ArisDesktopLock).
+        let insertOwner = ArisDesktopLock.oneOff("insert")
+        DispatchQueue.global(qos: .userInitiated).async {
+            if ArisDesktopLock.shared.take(insertOwner) != nil {
+                let body = (try? JSONSerialization.data(withJSONObject: ArisInsertRefusal.reply(ArisDesktopLockWords.insertRefusal))) ?? Data("{}".utf8)
+                return queue.async { respond(connection, "500 Internal Server Error", body) }
+            }
+            DispatchQueue.main.async {
+                ArisInsert.paste(text, learn: learn) { pasted in
+                    ArisDesktopLock.shared.release(insertOwner)
+                    let reply: [String: Any] = pasted.failure.map(ArisInsertRefusal.reply) ?? ["confirmed": pasted.confirmed]
+                    let body = (try? JSONSerialization.data(withJSONObject: reply)) ?? Data("{}".utf8)
+                    queue.async { respond(connection, pasted.failure == nil ? "200 OK" : "500 Internal Server Error", body) }
+                }
             }
         }
     case _ where ArisDictationRoutes.paths.contains(request.path):
@@ -1314,7 +1424,7 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         // The settings 기억 page: only the Aris app itself (ArisPeer). Off the server queue (SQLite).
         guard isAppItself(object, on: connection, question: "memory") else { return }
         DispatchQueue.global(qos: .userInitiated).async {
-            let reply = ArisMemoryRoute.handle(object, store: ArisMemoryCurator.live.store)
+            let reply = ArisMemoryRoute.handle(object, store: ArisMemoryCurator.live.store, savedSteps: ArisSavedStepsLive.store)
             ArisMemoryCurator.live.refresh()
             ArisWorkDesk.live.refresh()
             if let line = reply.audit { ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(["action": line, "risk": "settings"]), key: "memory") }

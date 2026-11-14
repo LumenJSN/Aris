@@ -68,7 +68,12 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         self.windows = windows
         windows.prepareInitialWindows()
         windows.setupDragDetectors()
+        // Notification cards go under the notch, never while it is open (ArisNoticeCenter).
+        ArisNoticeCenter.shared.attach(notchOpen: { [weak windows] in windows?.anyOpen ?? false },
+                                       screen: { [weak windows] in windows?.noticeScreen }, changes: windows.openChanges)
         ArisSidePanels.shared.start()
+        // Dictation shows in its own pill at the bottom of the screen being typed on (ArisDictationPillCenter).
+        ArisDictationPillCenter.shared.start()
         ArisUsageModel.shared.start()
         ArisStatusItem.shared.start()
         // The working tags' clocks count from when each began, whether or not the notch was open then.

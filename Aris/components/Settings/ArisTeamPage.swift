@@ -152,7 +152,7 @@ struct ArisTeamPage<Source: ArisTeamSource>: View {
         let full = team.teammates.count >= ArisTeamEditing.maxTeammates
         return Button { menu.toggle() } label: {
             HStack(spacing: 10) {
-                Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).frame(width: 30, height: 30)
+                ArisLineIcon("plus", size: 14, stroke: 2.25).frame(width: 30, height: 30)
                 Text(ArisTeamCopy.add).font(.system(size: 13, weight: .semibold))
                 Spacer(minLength: 0)
             }

@@ -171,7 +171,7 @@ struct ArisWhyBook: Equatable {
             case .failure(let line):
                 record.outcome = .failed(ArisWhySafe.kept(line, limit: ArisWhyRecord.lineLimit))
                 record.ended = now
-            case .delta, .file, .turn, .launched, .refusedJobs, .shownOnly, .operating, .skill, .stepFailed, .helperAnswers:
+            case .delta, .file, .turn, .launched, .refusedJobs, .shownOnly, .operating, .skill, .stepFailed, .helperAnswers, .savedSteps, .work:
                 break
             }
         }

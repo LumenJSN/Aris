@@ -87,7 +87,7 @@ private struct ArisAISheetFrame<Body: View, Foot: View>: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Button(action: close) {
-                    Image(systemName: "xmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.ink3).frame(width: 28, height: 28)
+                    ArisLineIcon("xmark", size: 13, stroke: 2.25).foregroundStyle(palette.ink3).frame(width: 28, height: 28)
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(ArisPressScale())
@@ -266,7 +266,7 @@ private struct ArisAILibrarySheet: View {
         ArisAISheetFrame(title: "ElevenLabs 라이브러리", meta: "공유된 목소리 · 추가하면 내 목소리에 들어가요", close: { model.performSheet(.close) }, hasFoot: false) {
             ArisAITextField(placeholder: "이름이나 느낌으로 찾기", text: search, leading: 32, autofocus: true) { model.performSheet(.searchLibrary) }
                 .overlay(alignment: .leading) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .medium)).foregroundStyle(palette.ink3).padding(.leading, 11).allowsHitTesting(false)
+                    ArisLineIcon("magnifyingglass", size: 14).foregroundStyle(palette.ink3).padding(.leading, 11).allowsHitTesting(false)
                 }
                 .onChange(of: library.query.search) { _, _ in model.performSheet(.searchLibrary) }
             HStack(spacing: 8) {

@@ -3,7 +3,7 @@
 //  Aris
 //
 //  Aris's voice from ElevenLabs (Geaun on Eleven v4 Turbo), streamed as raw PCM
-//  so playback starts with the first chunk. The API key lives in a private file,
+//  so playback starts with the first chunk, read with the voice's own saved settings (ArisVoiceSettings). The API key lives in a private file,
 //  ~/.config/aris/elevenlabs-key; without it Aris uses the system voice.
 //
 
@@ -13,7 +13,9 @@ enum ArisElevenLabs {
     static let voiceID = "k5siOxi4qsPS2kASoRt7"  // Geaun garage - Calm & Friendly
     static let modelID = "eleven_v4_turbo"
     /// The models settings › AI 서비스 › 말하기 offers, and where the pick is kept; nothing stored: v4 Turbo, as before.
-    static let models = ["eleven_flash_v2_5", modelID, "eleven_multilingual_v2"]
+    /// Eleven v4 is ElevenLabs' most expressive model but not a real-time one (no published start latency; Turbo's is
+    /// ~100 ms), so it is offered, not the default.
+    static let models = ["eleven_flash_v2_5", modelID, "eleven_v4", "eleven_multilingual_v2"]
     static let modelKey = "arisVoiceModel"
     static func model(stored: String?) -> String { stored.flatMap { models.contains($0) ? $0 : nil } ?? modelID }
     static var chosenModel: String { model(stored: UserDefaults.standard.string(forKey: modelKey)) }
@@ -21,6 +23,11 @@ enum ArisElevenLabs {
     /// About a tenth of a second of 16-bit mono audio per scheduled buffer.
     private static let chunkBytes = Int(sampleRate / 10) * 2
     private static let timeout: TimeInterval = 15
+    /// How long the voice's saved settings may take before the line is read without them (ArisVoiceSettingsCache).
+    private static let settingsTimeout: TimeInterval = 2
+    /// How much of what was said before a sentence goes with it as `previous_text`, so the sentences of one answer
+    /// keep one flow instead of each starting afresh (ElevenLabs' request stitching).
+    static let previousTextLimit = 300
     /// How long the first byte of audio (not the headers) may take; after that the system voice speaks instead of the
     /// notch staying silent.
     static let firstByte: Duration = .seconds(4)
@@ -71,29 +78,61 @@ enum ArisElevenLabs {
         return voices(from: data)
     }
 
-    static func request(text: String, key: String, voiceID: String = voiceID, speed: Double = 1, model: String = chosenModel) -> URLRequest {
+    /// A line as the voice gets it: a line cut at a line break ends on a word, and a voice reads a line with no ending
+    /// as if it went on; it gets a full stop, so it falls as a sentence does. Any ending it has ("?", "!", "…", "~",
+    /// "요.") is left exactly as it is.
+    static func withEnding(_ line: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let last = trimmed.unicodeScalars.last, CharacterSet.alphanumerics.contains(last) else { return trimmed }
+        return trimmed + "."
+    }
+
+    /// `GET /v1/voices/{id}/settings`: the voice's own sliders, as its owner saved them on ElevenLabs.
+    static func savedSettings(voiceID: String, key: String) async -> ArisVoiceSettings? {
+        guard let url = URL(string: "https://api.elevenlabs.io/v1/voices/\(voiceID)/settings") else { return nil }
+        var request = URLRequest(url: url, timeoutInterval: settingsTimeout)
+        request.setValue(key, forHTTPHeaderField: "xi-api-key")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return ArisVoiceSettings.parse(data)
+    }
+
+    /// The one request every line Aris says through ElevenLabs is made of, the Settings window's 미리 듣기 included:
+    /// the voice's saved settings (nil: none fetched) with Aris's speed, and what was said just before it.
+    static func request(text: String, key: String, voiceID: String = voiceID, speed: Double = 1, model: String = chosenModel,
+                        saved: ArisVoiceSettings? = nil, previous: String? = nil) -> URLRequest {
         var components = URLComponents(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceID)/stream")!
         components.queryItems = [URLQueryItem(name: "output_format", value: "pcm_\(Int(sampleRate))")]
         var request = URLRequest(url: components.url!, timeoutInterval: timeout)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(key, forHTTPHeaderField: "xi-api-key")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "text": text, "model_id": model,
-            "voice_settings": ["speed": min(max(speed, speedRange.lowerBound), speedRange.upperBound)],
-        ] as [String: Any])
+        var body: [String: Any] = [
+            "text": withEnding(text), "model_id": model,
+            "voice_settings": (saved ?? ArisVoiceSettings()).body(speed: speed, model: model),
+        ]
+        if let before = previous?.trimmingCharacters(in: .whitespacesAndNewlines), !before.isEmpty {
+            body["previous_text"] = String(before.suffix(previousTextLimit))
+        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         return request
     }
 
     /// The spoken audio as it arrives, in chunks of samples in -1...1.
-    static func speech(for text: String, key: String, voiceID: String = voiceID, speed: Double = 1) -> AsyncThrowingStream<[Float], Error> {
+    /// `previous`: what was said just before, in the same answer. The voice's saved settings are fetched first (once per
+    /// voice; ArisVoiceSettingsCache), within the first-byte deadline.
+    static func speech(for text: String, key: String, voiceID: String = voiceID, speed: Double = 1,
+                       previous: String? = nil) -> AsyncThrowingStream<[Float], Error> {
         AsyncThrowingStream { continuation in
             // A first byte that doesn't come within firstByte cancels the request: the system voice speaks instead of
             // the notch staying silent for the whole timeout.
             let timedOut = ArisFlag(), responded = ArisFlag()
             let task = Task {
                 do {
-                    let (bytes, response) = try await URLSession.shared.bytes(for: request(text: text, key: key, voiceID: voiceID, speed: speed))
+                    let saved = await ArisVoiceSettingsCache.shared.settings(for: voiceID, key: key)
+                    try Task.checkCancellation()
+                    let asked = request(text: text, key: key, voiceID: voiceID, speed: speed, saved: saved, previous: previous)
+                    let (bytes, response) = try await URLSession.shared.bytes(for: asked)
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                     guard status == 200 else {
                         var body = Data()

@@ -203,6 +203,7 @@ private final class FakeDesktopTurn: ArisDesktopTurn {
     func audit(_ fields: [String: String]) { audits.append(fields); onAudit?(fields) }
     func operating(_ target: ArisOperatingTarget) { shown.append(target) }
     func desktopStep() -> Int { steps += 1; return steps }
+    func noteDesktopAction(_ note: Result<ArisSavedStep, ArisSavedStepsRefusal>) {}
 }
 
 private func deskTarget(_ name: String, bundle: String, pid: Int32, never: Bool = false, browser: Bool = false, sending: Bool = false,
@@ -1263,7 +1264,7 @@ private func runDesktopShellReviewTests() {
     check(ArisTurnGate.verdict(tool: "Bash", command: "peekaboo see", tools: tools, tainted: false) == .deny(ArisSealedTools.runtimeRefusal)
           && !ArisSealedTools.permits(command: "peekaboo see", tools: tools),
           "desktop runtime (I11): the sealed and the open Claude never run it")
-    for command in ["ls ~/aris-bench/tools/peekaboo", "\(tools) web fetch https://github.com/openclaw/Peekaboo", "\(tools) note \"peekaboo; try it\"",
+    for command in ["ls ~/Aris/aris-bench/tools/peekaboo", "\(tools) web fetch https://github.com/openclaw/Peekaboo", "\(tools) note \"peekaboo; try it\"",
                     "echo peekaboo", "grep -r peekaboo ~/Desktop/notes"] {
         check(ArisRiskPolicy.risk(of: .shell(command), tools: tools, home: home) != .never && !ArisProtectedPlaces.executesComputerRuntime(command),
               "desktop runtime (re-review 1): naming Peekaboo isn't running it: \(command.debugDescription)")

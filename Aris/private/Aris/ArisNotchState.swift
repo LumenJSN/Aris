@@ -7,6 +7,7 @@
 //
 
 import Combine
+import Defaults
 import Foundation
 
 @MainActor
@@ -45,6 +46,8 @@ final class ArisNotchState: ObservableObject {
             aris.$inConversation.map { _ in () }.eraseToAnyPublisher(),
             aris.$pausedForOtherAudio.map { _ in () }.eraseToAnyPublisher(),
             ArisTeamModel.shared.$made.map { _ in () }.eraseToAnyPublisher(),
+            // The dictation pill's switch: the notch shows dictation again when it is turned off.
+            Defaults.publisher(.arisDictationPill, options: []).map { _ in () }.eraseToAnyPublisher(),
         ]
         watching = changes.map { publisher in
             publisher.receive(on: DispatchQueue.main).sink { [weak self] in
@@ -62,6 +65,8 @@ final class ArisNotchState: ObservableObject {
                           hasUnfinishedTask: aris.tasks.contains { !$0.isFinished }, taskJustFinished: aris.taskJustFinished,
                           inConversation: aris.inConversation, pausedForOtherAudio: aris.pausedForOtherAudio,
                           dictationCopied: aris.dictation == .typed && ArisDictationState.shared.copied,
-                          cardWaiting: ArisTeamModel.shared.made != nil)
+                          cardWaiting: ArisTeamModel.shared.made != nil,
+                          dictationQuiet: ArisDictationPillRules.notchQuiet(pillOn: ArisDictationPillGate.on, dictating: aris.dictation != nil,
+                                                                            endedDictation: aris.endedDictation, idle: aris.session.phase == .idle))
     }
 }

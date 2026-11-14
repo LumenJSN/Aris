@@ -104,7 +104,8 @@ private func secTypingTests() {
                              ["keys", "cmd+s", "--app", "TextEdit"], ["keys", "cmd+shift+/", "--app", "Notes"], ["keys", "cmd+a", "--app", "Numbers"],
                              ["keys", "delete", "--app", "Keynote", "--times", "20"], ["type", "hello", "--app", "Pages"], ["type", "hello", "--app", "Stickies"],
                              ["type", "안녕", "--app", "메모"]]
-    for words in chain {
+    // fix-13: typed text is the desktop engine's (`aris-tools type` is `desktop type --focused`): its gate is checked below.
+    for words in chain where words.first != "type" {
         let said = words.joined(separator: " ")
         for taint in [ArisTaint.screenSeen, .outsideText] {
             let claude = sHandOff(words, taint: taint), codex = sGate(words, taint: taint), agy = sHandOff(words, taint: taint, relay: true)
@@ -116,20 +117,29 @@ private func secTypingTests() {
         check(sHandOff(words) == .runs && sGate(words) == .runs, "H1: on the user's own clean turn `\(said)` runs as before, with no card")
     }
     // What asked before still asks, on a clean turn too.
-    for words in [["keys", "cmd+t", "--app", "Safari"], ["type", "hi", "--app", "Mail"], ["keys", "cmd+q"], ["type", "hello"]] {
+    for words in [["keys", "cmd+t", "--app", "Safari"], ["keys", "cmd+q"]] {
         check(sHandOff(words).asks && sGate(words).asks && sGate(words, taint: .outsideText).asks, "H1: `\(words.joined(separator: " "))` asks as it always did")
     }
-    // The user's own words on a clean turn: the typing they asked for is unchanged.
-    check(sGate(["type", "우유 사기", "--app", "Notes"], request: "메모에 우유 사기라고 입력해 줘") == .runs
-          && sHandOff(["type", "우유 사기", "--app", "Notes"], request: "메모에 우유 사기라고 입력해 줘") == .runs,
-          "H1: the user's own request to type into Notes on a clean turn is as it was")
-    // A hands-free turn on Codex (the Claudes and the API brain can't type at all there): a card too.
-    check(sGate(["type", "hello", "--app", "Notes"], handsFree: true).asks && sGate(["keys", "cmd+a", "--app", "TextEdit"], handsFree: true).asks,
-          "H1: words anyone near the Mac could have said don't type into an app without the user's card")
-    let action = ArisAction.shell(sLine(["type", "x", "--app", "Notes"]))
-    check(ArisRiskPolicy.asksAfterOutsideText(action, tools: sTools) && ArisRiskPolicy.asksAfterOutsideText(.shell(sLine(["keys", "cmd+s", "--app", "TextEdit"])), tools: sTools)
-          && !ArisRiskPolicy.coveredByRequest(action, tools: sTools, arguments: [:], request: "x 입력해 줘"),
-          "H1: keys and typed text are among what asks after outside text, and the screen never makes them the user's own words")
+    // Typed text, at the desktop engine's gate: after the screen or outside text, and on a hands-free turn, the user's card
+    // (with the exact text); his own words into a safe app on a clean turn run at once, as they did.
+    let editor = ArisDesktopTarget(name: "TextEdit", bundle: "com.apple.TextEdit", pid: 77, known: true, never: false, browser: false, sending: false, appleSigned: true)
+    func typed(_ text: String, _ context: ArisDesktopContext) -> ArisDesktopDecision {
+        var request = ArisDesktopRequest(verb: .type)
+        request.ref = ArisDesktopRef(snapshot: "s1abcd", element: 1)
+        request.text = text
+        return ArisDesktopGate.decide(request, target: editor, context: context, remembered: false, secureInput: false)
+    }
+    func asks(_ decision: ArisDesktopDecision) -> Bool { if case .ask = decision { return true } else { return false } }
+    for text in ["~/.zshenv", "alias ls=echo", "hello", "안녕"] {
+        check(asks(typed(text, ArisDesktopContext(screen: true, request: text))) && asks(typed(text, ArisDesktopContext(taintForApp: .outsideText, request: text)))
+              && asks(typed(text, ArisDesktopContext(handsFree: true, request: text))),
+              "H1: after the screen or outside text, and on a hands-free turn, typing `\(text)` asks on the user's card (the desktop engine's)")
+    }
+    check(typed("우유 사기", ArisDesktopContext(request: "TextEdit에 우유 사기라고 입력해 줘")) == .run,
+          "H1: the user's own request to type into a safe app on a clean turn is as it was")
+    check(sGate(["keys", "cmd+a", "--app", "TextEdit"], handsFree: true).asks, "H1: words anyone near the Mac could have said don't press keys without the user's card")
+    check(ArisRiskPolicy.asksAfterOutsideText(.shell(sLine(["keys", "cmd+s", "--app", "TextEdit"])), tools: sTools),
+          "H1: keys are among what asks after outside text")
 }
 
 // MARK: - L5: two small writes after outside text

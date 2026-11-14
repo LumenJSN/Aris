@@ -2,9 +2,9 @@
 //  ArisSettingsSidebar.swift
 //  Aris
 //
-//  The settings sidebar, mockup B's (the owner's pick for it): Aris's star greeting with how things are, the settings
-//  search, and the pages in their three groups with one glass highlight that slides to the page on screen (0.4 s on
-//  the house curve). While something is typed the pages give way to the settings that match (ArisSettingsIndex);
+//  The settings sidebar (SETTINGS-REA.md §3.2–3.3): Aris's star greeting with how things are, the settings search, and
+//  the pages in their three groups, 44-pt items with 20-pt line icons, and one liquid-glass highlight (the measured
+//  fill and four shades, its rim only under the pointer) on the page on screen: it simply appears on the new item, with no slide. While something is typed the pages give way to the settings that match (ArisSettingsIndex);
 //  choosing one opens its page, scrolls to it and highlights it once. Return picks the first, the arrows move.
 //
 
@@ -72,10 +72,11 @@ struct ArisSettingsSidebar: View {
     var helperFix: (title: String, press: () -> Void)?
     /// What pressing it does while a saved key has never answered: the key's check, made again.
     var aiFix: (title: String, press: () -> Void)?
-    @Namespace private var glass
     @FocusState private var searching: Bool
     @State private var cursor = 0
     @State private var listHeight: CGFloat = 0
+    /// The list's top in its scroller: 0, less once scrolled down.
+    @State private var listTop: CGFloat = 0
 
     /// In the English window a setting is found by its English name too.
     private var results: [ArisSettingsIndex.Match] {
@@ -87,39 +88,81 @@ struct ArisSettingsSidebar: View {
             greeting.padding(.horizontal, 6).padding(.bottom, ArisSidebarMetrics.greetingGap)
             search.padding(.horizontal, 2).padding(.bottom, ArisSidebarMetrics.searchGap)
             if still {
-                list
+                // Drawn once: the list as far as the window shows it, its end fading as the scroller's does.
+                GeometryReader { box in
+                    list.fixedSize(horizontal: false, vertical: true)
+                        .frame(width: box.size.width, height: box.size.height, alignment: .top)
+                        .clipped()
+                        .mask(fadeMask(fades(listHeight: listedHeight, box: box.size.height, listTop: 0)))
+                }
             } else {
                 scroller
             }
         }
         // ⌘F puts the keyboard in the search field from anywhere in the window (item 15).
         .background(Button("") { searching = true }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true))
-        .padding(.top, ArisSidebarMetrics.top).padding(.horizontal, 12).padding(.bottom, ArisSidebarMetrics.bottom)
+        .padding(.top, ArisSidebarMetrics.top).padding(.horizontal, ArisSidebarMetrics.padding).padding(.bottom, ArisSidebarMetrics.bottom)
         .frame(width: ArisSidebarMetrics.width)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
     /// The list scrolls only when the window is too short for it (or the results are many); then its end fades out
-    /// over 44 pt, so a cut row reads as more below and not as the end.
+    /// over 44 pt while more of it lies below, so a cut row reads as more below and not as the end. Scrolled to its end,
+    /// or with the chosen row in the fade, nothing fades (ArisSidebarMetrics.fades).
     private var scroller: some View {
         GeometryReader { box in
-            let more = listHeight > box.size.height + 1
             ScrollView {
                 list.background(GeometryReader { inner in
-                    Color.clear.onAppear { listHeight = inner.size.height }.onChange(of: inner.size.height) { _, next in listHeight = next }
+                    // macOS 14: the list's frame in the scroller, read where it is laid out (a preference from inside a
+                    // ScrollView never reached the scroller: thirteenth VM pass, the end never faded).
+                    let frame = inner.frame(in: .named(Self.scrollSpace))
+                    Color.clear
+                        .onAppear { follow(frame) }
+                        .onChange(of: frame) { _, next in follow(next) }
                 })
             }
+            .coordinateSpace(name: Self.scrollSpace)
             .scrollIndicators(.never)
-            .mask(VStack(spacing: 0) {
-                Rectangle()
-                LinearGradient(colors: [.black, more ? .clear : .black], startPoint: .top, endPoint: .bottom).frame(height: ArisSidebarMetrics.fade)
+            .modifier(ArisSidebarScrollWatch { height, top in
+                listHeight = height
+                listTop = top
             })
+            .mask(fadeMask(fades(listHeight: listHeight, box: box.size.height, listTop: listTop)))
+        }
+    }
+
+    /// The list's height and its top in the scroller (0, less once scrolled down), from its laid-out frame.
+    private func follow(_ frame: CGRect) {
+        if listHeight != frame.height { listHeight = frame.height }
+        if listTop != frame.minY { listTop = frame.minY }
+    }
+
+    private static let scrollSpace = "arisSidebarList"
+
+    /// The list's height as laid out: measured while it scrolls, the pages' own height in a still drawing.
+    private var listedHeight: CGFloat {
+        listHeight > 0 ? listHeight : (showsPages ? CGFloat(ArisSidebarMetrics.pagesHeight()) : 0)
+    }
+
+    private var showsPages: Bool { nav.query.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// Whether the end fades now, for a box `box` tall with the list's top at `listTop` in it.
+    private func fades(listHeight: CGFloat, box: CGFloat, listTop: CGFloat) -> Bool {
+        let top = Double(listTop)
+        let chosen = showsPages ? ArisSidebarMetrics.rowSpan(nav.page).map { (top: $0.top + top, bottom: $0.bottom + top) } : nil
+        return ArisSidebarMetrics.fades(listHeight: Double(listHeight), boxHeight: Double(box), listTop: top, chosen: chosen)
+    }
+
+    private func fadeMask(_ fading: Bool) -> some View {
+        VStack(spacing: 0) {
+            Rectangle()
+            LinearGradient(colors: [.black, fading ? .clear : .black], startPoint: .top, endPoint: .bottom).frame(height: ArisSidebarMetrics.fade)
         }
     }
 
     @ViewBuilder
     private var list: some View {
-        if nav.query.trimmingCharacters(in: .whitespaces).isEmpty { pages } else { found }
+        if showsPages { pages } else { found }
     }
 
     // MARK: greeting
@@ -186,7 +229,7 @@ struct ArisSettingsSidebar: View {
                 .onExitCommand { nav.query = "" }
                 .accessibilityLabel(w.frame("설정 검색"))
             }
-            Image(systemName: "magnifyingglass").font(.system(size: 11.5, weight: .medium)).foregroundStyle(palette.ink3)
+            ArisLineIcon("magnifyingglass", size: 14).foregroundStyle(palette.ink3)
                 .padding(.leading, 10).allowsHitTesting(false)
         }
         .environment(\.arisFieldLeading, 30)
@@ -200,7 +243,7 @@ struct ArisSettingsSidebar: View {
                     .padding(.trailing, 8).allowsHitTesting(false).accessibilityHidden(true)
             } else {
                 Button { nav.query = ""; searching = true } label: {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(palette.ink3)
+                    ArisLineIcon("xmark", size: 11, stroke: 2.5).foregroundStyle(palette.ink3)
                         .frame(width: 20, height: 20).contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(ArisPressScale())
@@ -242,20 +285,40 @@ struct ArisSettingsSidebar: View {
             ForEach(ArisSettingsGroup.allCases, id: \.self) { group in
                 Text(w.frame(group.rawValue)).font(.system(size: ArisSidebarMetrics.groupLabelSize, weight: .semibold)).foregroundStyle(palette.groupLabel)
                     .frame(height: ArisSidebarMetrics.groupLabel)
-                    .padding(.horizontal, 12).padding(.top, group == ArisSettingsGroup.allCases.first ? ArisSidebarMetrics.firstGroupTop : ArisSidebarMetrics.groupTop)
+                    .padding(.horizontal, ArisSidebarMetrics.rowLeading).padding(.top, group == ArisSettingsGroup.allCases.first ? ArisSidebarMetrics.firstGroupTop : ArisSidebarMetrics.groupTop)
                     .padding(.bottom, ArisSidebarMetrics.groupBottom)
                     .accessibilityAddTraits(.isHeader)
-                ForEach(group.pages) { page in
-                    ArisNavItem(page: page, current: nav.page == page, isNew: ArisSettingsIndex.showsNew(page, seen: nav.seen), glass: glass) { nav.go(page) }
+                VStack(spacing: ArisSidebarMetrics.rowGap) {
+                    ForEach(group.pages) { page in
+                        ArisNavItem(page: page, current: nav.page == page, isNew: ArisSettingsIndex.showsNew(page, seen: nav.seen)) { nav.go(page) }
+                    }
                 }
             }
         }
-        .animation(ArisSettingsMotion.reduced ? nil : ArisSettingsMotion.house(0.4), value: nav.page)
     }
 }
 
-/// A page in the sidebar: 32 tall, r12, a 16-pt icon and the name at 14 (500 when chosen); the chosen one carries
-/// the sliding glass.
+/// From macOS 15 the scroller itself says how tall its content is and how far it has scrolled (its own geometry, as it
+/// scrolls); on macOS 14 the list's laid-out frame says it (ArisSettingsSidebar.follow).
+private struct ArisSidebarScrollWatch: ViewModifier {
+    let changed: (_ height: CGFloat, _ top: CGFloat) -> Void
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.onScrollGeometryChange(for: CGRect.self) { geometry in
+                CGRect(x: 0, y: -(geometry.contentOffset.y + geometry.contentInsets.top), width: geometry.contentSize.width, height: geometry.contentSize.height)
+            } action: { _, next in
+                changed(next.height, next.minY)
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// A page in the sidebar: 44 tall, r12, a 20-pt line icon 12 from the name at 14 / 500, 15.5 in from the left and 16
+/// from the right; idle .5, chosen .9 / .98 (its colour eases over 200 ms), no fill under the pointer. The chosen one
+/// carries the glass (it appears there at once, as measured), whose rim shows while the pointer is on it.
 private struct ArisNavItem: View {
     @Environment(\.arisPalette) private var palette
     @Environment(\.arisWords) private var w
@@ -263,61 +326,131 @@ private struct ArisNavItem: View {
     let current: Bool
     /// Added lately and not opened yet: it carries 새.
     var isNew = false
-    let glass: Namespace.ID
     let go: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: go) {
-            HStack(spacing: 10) {
-                Image(systemName: page.symbol).font(.system(size: 13.5)).frame(width: ArisSidebarMetrics.iconSize)
-                Text(w.frame(page.title)).font(.system(size: ArisSidebarMetrics.labelSize, weight: current ? .medium : .regular)).lineLimit(1)
-                Spacer(minLength: 0)
+            HStack(spacing: ArisSidebarMetrics.iconGap) {
+                ArisLineIcon(page.lineIcon, size: ArisSidebarMetrics.iconSize)
+                // The name takes the whole room after the icon (ArisSidebarMetrics.labelRoom): no gap to a spacer eats
+                // into it. Every name fits there at 14 pt (tested); the scale is only a guard.
+                Text(w.frame(page.title)).font(.system(size: ArisSidebarMetrics.labelSize, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 if isNew {
-                    Text(w.frame("새")).font(.system(size: 9.5, weight: .semibold)).foregroundStyle(palette.accent)
-                        .padding(.horizontal, 6).frame(height: 16)
+                    Text(w.frame("새")).font(.system(size: ArisSidebarMetrics.newSize, weight: .semibold)).foregroundStyle(palette.accent)
+                        .padding(.horizontal, ArisSidebarMetrics.newPadding).frame(height: 16)
                         .background(Capsule().fill(palette.accent.opacity(palette.dark ? 0.2 : 0.1)))
                 }
             }
-            .foregroundStyle(current ? palette.navOn : hovering ? palette.navHover : palette.navIdle)
-            .padding(.horizontal, 10)
+            .foregroundStyle(current ? palette.navOn : palette.navIdle)
+            .animation(.easeInOut(duration: 0.2), value: current)
+            .padding(.leading, ArisSidebarMetrics.rowLeading).padding(.trailing, ArisSidebarMetrics.rowTrailing)
             .frame(height: ArisSidebarMetrics.row)
             .background {
                 if current {
-                    ArisGlassHighlight().matchedGeometryEffect(id: "nav", in: glass)
-                } else if hovering {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(palette.navFill)
+                    ArisGlassHighlight(radius: ArisSidebarMetrics.rowRadius, hovering: hovering)
                 }
             }
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .animation(.easeInOut(duration: 0.15), value: hovering)
+            .contentShape(RoundedRectangle(cornerRadius: ArisSidebarMetrics.rowRadius, style: .continuous))
         }
-        .buttonStyle(ArisPressScale(scale: ArisPressScale.light))
+        .buttonStyle(ArisPressScale(scale: ArisPressScale.measured))
         .onHover { hovering = $0 }
         .accessibilityLabel(w.frame(page.title))
         .accessibilityAddTraits(current ? .isSelected : [])
     }
 }
 
-/// Liquid glass, light (a sheen, a shade at the top, light at the bottom, a conic rim); a quiet fill, dark.
+/// The chosen item's liquid glass (§3.3), both appearances: the −75° sheen (edge, middle, edge) and its four shades
+/// (ArisMenuLook.radioShadows*: a top shade and a bottom light inside, a lift under it, an inner glow), with no rim at
+/// rest. Under the pointer a 1-pt rim fades in over 0.2 s: light, a turning conic ring over a pale vertical one; dark,
+/// a white radial that follows the pointer.
 struct ArisGlassHighlight: View {
     @Environment(\.arisPalette) private var palette
     var radius: CGFloat = 12
+    var hovering = false
+    @State private var pointer: CGPoint?
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        if palette.dark {
-            shape.fill(palette.segTrack)
-                .overlay(shape.strokeBorder(Color(arisHex: 0xdfe2e8, 0.06), lineWidth: 1))
-                .overlay(shape.strokeBorder(LinearGradient(colors: [Color(arisHex: 0xeff1f5, 0.024), .clear], startPoint: .top, endPoint: .center), lineWidth: 1))
-        } else {
-            shape.fill(palette.sheen)
-                .overlay(shape.stroke(.black.opacity(0.05), lineWidth: 2).blur(radius: 1).offset(y: 1).clipShape(shape))
-                .overlay(shape.stroke(.white.opacity(0.5), lineWidth: 2).blur(radius: 1).offset(y: -1).clipShape(shape))
-                .overlay(shape.strokeBorder(AngularGradient(colors: [palette.rim[0], palette.rim[1], palette.rim[2], palette.rim[1], palette.rim[0]],
-                                                            center: .center, angle: .degrees(-75)), lineWidth: 1))
-                .shadow(color: Color(arisHex: 0x1e1e1e, 0.15), radius: 1, y: 2)
+        let dark = palette.dark, edge = ArisMenuLook.radioEdge.color(dark), middle = ArisMenuLook.radioMiddle.color(dark)
+        let shades = dark ? ArisMenuLook.radioShadowsDark : ArisMenuLook.radioShadowsLight
+        GeometryReader { box in
+            ZStack {
+                ForEach(Array(shades.enumerated()), id: \.offset) { _, shade in
+                    if !shade.inset {
+                        shape.inset(by: -shade.spread).fill(Color.black).shadow(color: shade.shade.color, radius: shade.blur / 2, y: shade.y)
+                            .mask(Rectangle().padding(-40).overlay(shape.fill(Color.black).blendMode(.destinationOut)).compositingGroup())
+                    }
+                }
+                shape.fill(Self.sheen(edge: edge, middle: middle, size: box.size))
+                ForEach(Array(shades.enumerated()), id: \.offset) { _, shade in
+                    if shade.inset { ArisInsetShade(shape: shape, shadow: shade) }
+                }
+                ArisNavGlassRim(shape: shape, dark: dark, pointer: pointer, size: box.size)
+                    .opacity(hovering ? 1 : 0)
+                    .animation(.easeOut(duration: 0.2), value: hovering)
+            }
         }
+        .onContinuousHover { phase in
+            if case .active(let point) = phase { pointer = point } else { pointer = nil }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// A CSS `linear-gradient(-75deg, …)` on a box of `size`: the gradient line runs toward 285°, as long as the box's
+    /// extent along it, through the centre.
+    static func sheen(edge: Color, middle: Color, size: CGSize) -> LinearGradient {
+        let angle = -75.0 * Double.pi / 180
+        let dx = sin(angle), dy = -cos(angle)
+        let length = abs(size.width * dx) + abs(size.height * dy)
+        let w = max(size.width, 1), h = max(size.height, 1)
+        let half = CGSize(width: dx * length / 2 / w, height: dy * length / 2 / h)
+        return LinearGradient(colors: [edge, middle, edge], startPoint: UnitPoint(x: 0.5 - half.width, y: 0.5 - half.height),
+                              endPoint: UnitPoint(x: 0.5 + half.width, y: 0.5 + half.height))
+    }
+}
+
+/// The glass's 1-pt rim (shown under the pointer only). Light: a conic ring that turns once every 3 s from 90°, over a
+/// #dcf0ff → white .5 vertical ring, with a .5-pt #dcf0ff .5 line inside. Dark: the ring filled with a white radial
+/// (.4 → .2, a 120-pt circle) where the pointer is, and a .5-pt #96aac8 .2 line inside. Still under Reduce Motion.
+private struct ArisNavGlassRim<S: InsettableShape>: View {
+    @Environment(\.arisPalette) private var palette
+    @Environment(\.arisSettingsStill) private var still
+    let shape: S
+    let dark: Bool
+    let pointer: CGPoint?
+    let size: CGSize
+
+    var body: some View {
+        if dark {
+            let at = pointer ?? CGPoint(x: size.width / 2, y: size.height / 2)
+            ZStack {
+                shape.strokeBorder(RadialGradient(colors: [.white.opacity(0.4), .white.opacity(0.2)], center: UnitPoint(x: at.x / max(size.width, 1), y: at.y / max(size.height, 1)),
+                                                  startRadius: 0, endRadius: 60), lineWidth: 1)
+                shape.inset(by: 0.5).strokeBorder(Color(arisHex: 0x96aac8, 0.2), lineWidth: 0.5)
+            }
+        } else {
+            ZStack {
+                shape.strokeBorder(LinearGradient(colors: [Color(arisHex: 0xdcf0ff, 0.5), .white.opacity(0.5)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                if still || ArisSettingsMotion.reduced {
+                    conic(90)
+                } else {
+                    TimelineView(.animation) { time in
+                        conic(90 + time.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3) / 3 * 360)
+                    }
+                }
+                shape.inset(by: 1).strokeBorder(Color(arisHex: 0xdcf0ff, 0.5), lineWidth: 0.5)
+            }
+        }
+    }
+
+    private func conic(_ degrees: Double) -> some View {
+        let rim = palette.rim
+        return shape.strokeBorder(AngularGradient(stops: [.init(color: rim[0], location: 0), .init(color: rim[1], location: 0.08), .init(color: rim[2], location: 0.15),
+                                                          .init(color: rim[1], location: 0.5), .init(color: rim[2], location: 0.85), .init(color: rim[1], location: 0.92),
+                                                          .init(color: rim[0], location: 1)],
+                                                  center: .center, angle: .degrees(degrees)), lineWidth: 1)
     }
 }
 
@@ -335,7 +468,7 @@ private struct ArisSearchResultRow: View {
     var body: some View {
         Button(action: pick) {
             HStack(spacing: 10) {
-                Image(systemName: entry.page.symbol).font(.system(size: 13)).foregroundStyle(palette.navIdle).frame(width: 16)
+                ArisLineIcon(entry.page.symbol, size: 16).foregroundStyle(palette.navIdle).frame(width: 16)
                 VStack(alignment: .leading, spacing: 1) {
                     // A long name takes a second line (in English: "Look at the screen w…").
                     Text(w.of(entry.page, entry.title)).font(.system(size: 13, weight: .medium)).foregroundStyle(palette.navOn).lineLimit(2)
@@ -349,7 +482,7 @@ private struct ArisSearchResultRow: View {
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .animation(.easeInOut(duration: 0.15), value: hovering)
         }
-        .buttonStyle(ArisPressScale(scale: ArisPressScale.light))
+        .buttonStyle(ArisPressScale(scale: ArisPressScale.measured))
         .onHover { hovering = $0 }
         .accessibilityLabel("\(w.of(entry.page, entry.title)), \(w.frame(entry.page.title))")
     }

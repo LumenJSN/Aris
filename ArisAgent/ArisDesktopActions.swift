@@ -52,7 +52,13 @@ extension ArisDesktopSession {
         }
         let front = ArisDesktopFocus.restoreFront(beforeCard: before, atAction: saved.frontmost, target: target.pid,
                                                   isAris: { self.engine.apps.isAris(pid: $0) })
-        engine.pointer.restore(ArisDesktopPointerState(location: saved.location, frontmost: front))
+        putPointerBack(ArisDesktopPointerState(location: saved.location, frontmost: front))
+    }
+
+    /// The pointer put back (ArisDesktopPointer.restore), noted as this turn's own input: the warp's move is never the
+    /// owner's to this turn's checks (ArisOwnInput).
+    func putPointerBack(_ state: ArisDesktopPointerState) {
+        ArisOwnInput.shared.during(owner: turn.desktopOwner) { engine.pointer.restore(state) }
     }
 
     /// What a consent card that wasn't a yes says: the user's no, or that they didn't answer (never their no).
@@ -107,7 +113,12 @@ extension ArisDesktopSession {
         guard let before = turn.ledger.observation(ref.snapshot) else { return .failure(.failed(ArisDesktopEngine.notOursLine)) }
         guard let element = before.element(ref) else { return .failure(.failed("There is no \(ref.text) in that look.")) }
         let window = windows.first { $0.id == before.window }
-        guard turn.ledger.isLatest(ref.snapshot) else {
+        // After the user's yes on this action's own card (`refind`), a newer look of the window doesn't stop it: the control is
+        // found again below, strictly, in a fresh look (eighth VM pass: the yes to a parked job card met "older look").
+        let refinding = basis.refind && !ref.mark && !turn.ledger.isLatest(ref.snapshot)
+        // A step run again after a pause: a look the brain took while it waited doesn't stop it (found again below).
+        let resuming = basis.resumed && !ref.mark && !turn.ledger.isLatest(ref.snapshot)
+        guard turn.ledger.isLatest(ref.snapshot) || refinding || resuming else {
             guard let window, case .success(let (now, _)) = look(window) else { return .failure(.failed("That ref is from an older look, and the window is gone. Look again.")) }
             return .failure(.failed(Self.staleLine(now)))
         }
@@ -131,7 +142,7 @@ extension ArisDesktopSession {
         case .failure(let why): return .failure(.failed("Couldn't look at the window again before acting (\(why.text)), so nothing was done."))
         case .success(let (found, _)): now = found
         }
-        guard let current = ArisDesktopVerify.find(element, in: now) else {
+        guard let current = refinding ? Self.refound(element, was: before, in: now) : ArisDesktopVerify.find(element, in: now) else {
             return .failure(.failed("“\(ArisDesktopVerify.short(element.label))” (\(element.role)) isn't there any more: the window changed, so nothing was done.\n\n" + now.render()))
         }
         if !titleHolds(now, was: before.title, window: before.window, field: (element, current)) {
@@ -140,6 +151,16 @@ extension ArisDesktopSession {
         if Self.moved(element, in: before, to: current, in: now) { return .failure(.failed(Self.movedLine(element.label) + "\n\n" + now.render())) }
         if let refused = held(now, field: current) { return .failure(refused) }
         return .success((now, current, before))
+    }
+
+    /// The control the user's card named, found again in a fresh look as a saved step is (ArisSavedSteps.find): a label, the
+    /// same role and label and the same containers around it, and the only such one in a look read in full. Nil otherwise.
+    static func refound(_ element: ArisDesktopElement, was before: ArisDesktopObservation, in now: ArisDesktopObservation) -> ArisDesktopElement? {
+        guard !element.label.trimmingCharacters(in: .whitespaces).isEmpty, !now.truncated, !now.hidden else { return nil }
+        let path = ArisSavedSteps.ancestors(of: element, in: before)
+        let matches = now.elements.filter { $0.role == element.role && $0.label == element.label && ArisSavedSteps.ancestors(of: $0, in: now) == path }
+        guard matches.count == 1, !now.hiddenRegions.contains(where: { $0.intersects(matches[0].bounds) }) else { return nil }
+        return matches[0]
     }
 
     /// The control sits somewhere else in its window than it did (more than `drift`).
@@ -205,6 +226,29 @@ extension ArisDesktopSession {
         return ArisDesktopResult(ok: false, text: lines.joined(separator: "\n"))
     }
 
+    /// An action-only click that did nothing because the element has no Accessibility action to invoke: Peekaboo
+    /// refused it with nothing dispatched, and not because the window or its snapshot is gone.
+    static func noActionPress(_ envelope: ArisDesktopEnvelope) -> Bool {
+        guard !envelope.success, !envelope.dispatched else { return false }
+        return envelope.refusal != "target_unavailable" && !["SNAPSHOT_NOT_FOUND", "WINDOW_NOT_FOUND", "ELEMENT_NOT_FOUND"].contains(envelope.code ?? "")
+    }
+
+    /// `work` with this turn holding the whole Mac's keys and pointer (ArisDesktopLock, global), given back to its
+    /// app-only hold after; with no lock, as it is. `.failure`: the lock refused it (nothing ran).
+    func wholeMac<T>(_ work: () -> T) -> Result<T, ArisDesktopLock.Refusal> {
+        guard let lock = engine.lock else { return .success(work()) }
+        let owner = turn.desktopOwner, turn = self.turn
+        let english = ArisDesktopCopy.isEnglish(turn.request)
+        if case .refused(let why) = lock.acquire(ArisDesktopLock.Owner(id: owner, live: { turn.live }), scope: .global,
+                                                 waiting: { turn.quiet(ArisDesktopLockWords.waitingLine(english: english)) }) {
+            turn.audit(["answer": "refused (desktop lock: \(why))", "action": "desktop click (no Accessibility press)", "brain": turn.brainName])
+            return .failure(why)
+        }
+        defer { lock.done(owner, scope: .global) }
+        turn.audit(["answer": "the control has no Accessibility press: clicked holding the whole Mac", "action": "desktop click · \(target.name)", "brain": turn.brainName])
+        return .success(work())
+    }
+
     /// click, set-value, scroll and drag on a ref.
     func actOnRef(_ request: ArisDesktopRequest) -> ArisDesktopResult {
         guard let ref = request.ref else { return .failed(ArisDesktopWords.usage) }
@@ -227,11 +271,21 @@ extension ArisDesktopSession {
             return report(.done("“\(ArisDesktopVerify.short(element.label))” already has the keyboard focus, so it wasn't clicked\(caret)"), envelope: nil, after: fresh)
         }
         let before = windowIds
-        let (envelope, used): (ArisDesktopEnvelope?, ArisDesktopObservation)
+        var (envelope, used): (ArisDesktopEnvelope?, ArisDesktopObservation)
         switch request.verb {
         case .click:
             (envelope, used) = attempt(fresh, element: element) { look, current in
-                ArisPeekabooCommands.click(current.id, snapshot: look.peekaboo, double: request.double, right: request.right)
+                ArisPeekabooCommands.click(current.id, snapshot: look.peekaboo, double: request.double, right: request.right, actionOnly: basis.perApp)
+            }
+            // Held for this app alone, the click is the element's own press only. A control with no press was not
+            // clicked: the step takes the whole Mac first, then clicks it the normal way (security review 10, M3).
+            if basis.perApp, let first = envelope, Self.noActionPress(first) {
+                switch wholeMac({ attempt(used, element: element) { look, current in
+                    ArisPeekabooCommands.click(current.id, snapshot: look.peekaboo, double: request.double, right: request.right)
+                } }) {
+                case .failure(let why): return .failed(ArisDesktopLockWords.refusal(why, waited: engine.lock?.waitLimit ?? 0))
+                case .success(let again): (envelope, used) = (again.envelope, again.used)
+                }
             }
         case .setValue:
             (envelope, used) = attempt(fresh, element: element) { look, current in ArisPeekabooCommands.setValue(request.text ?? "", element: current.id, snapshot: look.peekaboo) }
@@ -415,9 +469,10 @@ extension ArisDesktopSession {
         // And the pinned window made main and raised by Accessibility itself (the app may have put another window first).
         engine.apps.raiseWindow(pid: target.pid, frame: window.frame)
         guard Self.settles(check, tries: 15, wait: 0.1) else { return false }
-        // The raise took a moment: the user typing meanwhile (their keys would mix with Aris's), a password field, or a sign-in
-        // prompt that came up stops it, checked again right before the keys (security review).
-        if engine.apps.secondsSinceKeyDown() < Date().timeIntervalSince(raised) { return false }
+        // The raise took a moment: the user at the Mac meanwhile (typing, clicking, scrolling or moving the pointer: their input
+        // would mix with Aris's; Aris's own never counts), a password field, or a sign-in prompt that came up stops it,
+        // checked again right before the keys (security review).
+        if engine.apps.secondsSinceOwnerInput(owner: turn.desktopOwner) < Date().timeIntervalSince(raised) { return false }
         return !engine.apps.secureInput && engine.windows.promptOnScreen() == nil
     }
 
@@ -454,7 +509,7 @@ extension ArisDesktopSession {
         let operation = request.operation ?? "focus"
         let saved = operation == "focus" ? nil : engine.pointer.save()
         let envelope = run(ArisPeekabooCommands.window(operation, window: window.id, x: request.x, y: request.y, width: request.width, height: request.height))
-        if let saved { engine.pointer.restore(saved) }
+        if let saved { putPointerBack(saved) }
         let now = windows.first { $0.id == window.id }
         let check: ArisDesktopCheck
         switch operation {

@@ -217,7 +217,8 @@ enum ArisMemoryIntent: Equatable {
     }
 
     /// The words before the verb, without the quoting tail ("…라는 거", "…라고") and polite fillers.
-    private static let spanLeads = ["좀 ", "꼭 ", "Aris ", "아리스 ", "아리스야 ", "앞으로 "]
+    /// "앞으로" stays: it is part of what the user wants kept ("앞으로 나를 솔이라고 불러", ninth VM pass).
+    private static let spanLeads = ["좀 ", "꼭 ", "Aris ", "아리스 ", "아리스야 "]
     /// The quoting tail, longest first; only one goes. A bare 거/것 only after a space ("자전거" keeps its 거).
     private static let quoteTails = ["이라는 것", "이라는 거", "라는 것", "라는 거", "다는 것", "다는 거", "는 것", "는 거", "인 것", "인 거", "이라고", "라고", "다고", " 것", " 거"]
     private static let fillerTails = [" 꼭", " 좀", " 제발"]
@@ -366,6 +367,9 @@ enum ArisMemoryAnswer {
         case .secret: return ArisMemoryStore.secretLine(korean: korean)
         case .empty: return korean ? "뭘 기억할지 못 알아들었어요." : "I didn't catch what to remember."
         case .failed: return korean ? "기억을 저장하지 못했어요." : "I couldn't save that."
+        // Never for his own 기억해 (the gate reads only what others wrote), but every outcome has its words.
+        case .held: return korean ? "AI에게 내리는 지시처럼 보여서, 설정 › 기억에서 확인한 다음에 넣을게요." : "That reads like an instruction to an AI, so it waits in Settings › Memory for you to check."
+        case .refused: return korean ? "비밀번호나 키를 넘기라는 말이라 기억하지 않았어요." : "That asks for a password or key to be handed over, so I didn't keep it."
         }
     }
 

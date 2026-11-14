@@ -294,6 +294,8 @@ final class ArisAgentRunner {
     let computerUse = ArisComputerUseLedger(forget: { ArisPeekabooSnapshots.remove($0, record: ArisPeekabooSnapshots.recordFile) })
     /// This turn's desktop calls (ArisDesktopEngine.maxSteps).
     private let desktopSteps = ArisDesktopStepCount()
+    /// This turn's desktop actions, each the step it could be saved as (ArisSavedSteps), from POST /desktop-tool.
+    let savedSteps = ArisSavedStepsRecorder()
 
     /// The runner whose brain process carries `credential` (ARIS_MCP_TURN); nil for any other.
     /// `aside`: the caller is /aside-tool, the one route an agy job's credential reaches (ArisAside.credentialServes).
@@ -381,6 +383,9 @@ final class ArisAgentRunner {
     private var learnKey: String?
     private var commands: [String] = []
     private var usedOtherTools = false
+    /// The turn's tool calls and its steps that ended with an error, for a job's report (ArisJobWork).
+    private var toolCalls = 0
+    private var failedSteps = 0
     /// A tool that is not a shell command was used (a service, Aside, a skill, the desktop, a changed card run): not a
     /// card for a shell command, which `commands` and `cardAnswers` already hold (ArisSendClaim).
     private var nonShellTools = false
@@ -506,9 +511,12 @@ final class ArisAgentRunner {
             drift.reset()
             eventsThisTurn = 0
             desktopSteps.reset()
+            savedSteps.start()
             acted = false
             learnKey = learnAs
             commands = []
+            toolCalls = 0
+            failedSteps = 0
             usedOtherTools = false
             nonShellTools = false
             nonDesktopTool = false
@@ -724,6 +732,8 @@ final class ArisAgentRunner {
             // The user was shown a card (a service's, a message's, a handed-off write's): the turn teaches memory nothing.
             showedCard = true
             restartTimeout(after: limit + answerLimit)
+            // An API brain's helper waits for it as long (its whole turn had five minutes; a job's card waits ten).
+            write(driver.cardWaits(limit + answerLimit))
             pending?(.confirm(shown))
         }
     }
@@ -975,6 +985,7 @@ final class ArisAgentRunner {
                     Self.writeAudit(line, key: key)
                 case .status(let text): pending?(.status(said(text)))
                 case .stepFailed(let label):
+                    failedSteps += 1
                     // A step failed: no mark waits for a row that may never come (ArisAutoMarks; a conversation's only).
                     if !isTask { ArisAutoMarks.shared.dropWaiting() }
                     pending?(.stepFailed(label))
@@ -996,6 +1007,7 @@ final class ArisAgentRunner {
                     if driver.escalation(for: ask.id)?.read == nil { showedCard = true }
                     escalate(ask)
                 case .tools(let calls):
+                    toolCalls += calls.count
                     for call in calls {
                         if call.name == "Bash", let command = call.command { commands.append(command) } else { usedOtherTools = true; nonShellTools = true }
                         if !(call.name == "Bash" && call.command.map { ArisDesktopHonesty.isDesktopCommand($0, tools: Self.toolsPath) } == true) { nonDesktopTool = true }
@@ -1008,10 +1020,12 @@ final class ArisAgentRunner {
                     if !followedUp, !ArisSlowCalls.shared.pending(owner: mcpTurn).isEmpty {
                         followedUp = true
                         let owner = mcpTurn
-                        restartTimeout(after: ArisCardEdit.questionTimeout + answerLimit)
+                        // A job's card waits ten minutes (mcpTaskWait), a conversation's two.
+                        let cardLimit = isTask ? Self.mcpTaskWait : ArisCardEdit.questionTimeout
+                        restartTimeout(after: cardLimit + answerLimit)
                         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                             // The card's own limit, then time for the work the user's yes lets run (a type, a batch).
-                            let results = ArisSlowCalls.shared.finishAll(owner: owner, deadline: Date().addingTimeInterval(ArisCardEdit.questionTimeout + ArisSlowCalls.workAfterAnswer))
+                            let results = ArisSlowCalls.shared.finishAll(owner: owner, deadline: Date().addingTimeInterval(cardLimit + ArisSlowCalls.workAfterAnswer))
                             self?.queue.async { [weak self] in
                                 guard let self, self.pending != nil, ArisMCPTurnCredential.same(self.mcpTurn, owner) else { return }
                                 Self.writeAudit(Self.auditJSON(["answer": "held the turn for \(results.count) call(s) under way", "question": "slow calls"]), key: "desktop")
@@ -1103,6 +1117,14 @@ final class ArisAgentRunner {
                     answer = ArisWindowHonesty.checked(answer, done: acted.done, titles: acted.titles, korean: koreanRequest)
                     // A claim of success with none of the turn's desktop actions done: the true line (QA BUG-33 reopened).
                     let actions = computerUse.actionsThisTurn
+                    // A conversation turn done with desktop actions only, all of them saveable and done: its steps are
+                    // saved under the user's words, replayed next time with no AI (ArisSavedSteps). Never a job's, never a
+                    // hands-free or screen turn's (learnKey is nil for those), never with an answer that says it failed.
+                    if let recipe = ArisSavedSteps.turnRecipe(key: isTask ? nil : learnKey, request: request, notes: savedSteps.all, notDone: actions.notDone,
+                                                              otherTools: nonDesktopTool, reply: answer, outside: mcpOutsideThisTurn || driver.isTainted), let key = learnKey {
+                        ArisSavedStepsLive.store.save(recipe)
+                        Self.writeAudit(Self.auditJSON(["answer": "saved \(recipe.steps.count) desktop step(s) for this request", "question": key]), key: key)
+                    }
                     if !nonDesktopTool {
                         answer = ArisDesktopHonesty.checked(answer, done: actions.done, notDone: actions.notDone, korean: koreanRequest)
                         answer = ArisDesktopHonesty.declineWorded(answer, done: actions.done, notDone: actions.notDone,
@@ -1120,6 +1142,13 @@ final class ArisAgentRunner {
                                                                  korean: koreanRequest)
                         if checked != answer { Self.writeAudit(Self.auditJSON(["answer": "a job's claim about Aris's own data was checked against the store", "question": key]), key: key) }
                         answer = checked
+                    }
+                    // A job says what it did before its answer: the app never ticks green a job that did nothing, or whose
+                    // step failed (seventh VM pass: ArisJobVerdict).
+                    if isTask {
+                        let desk = computerUse.actionsThisTurn
+                        pending?(.work(ArisJobWork(tools: toolCalls, failed: failedSteps + desk.notDone,
+                                                   acted: desk.done || (toolCalls > 0 && failedSteps < toolCalls && desk.notDone == 0))))
                     }
                     // What the agent did for the user's changed card comes first; the AI's answer (a task's result, a card) stays.
                     finish(ArisEditableAction.answer(answer, outcomes: editedOutcomes), nil)
@@ -1674,6 +1703,8 @@ final class ArisAgentRunner {
         // The turn's slow calls end with it: their results are no longer collected (ArisSlowCalls).
         let ended = mcpTurn
         if !ended.isEmpty { ArisSlowCalls.shared.endTurn(owner: ended) }
+        // The turn's hold on the keys and pointer ends with it (ArisDesktopLock): the next turn or job in line goes.
+        if !ended.isEmpty { ArisDesktopLock.shared.release(ArisDesktopRoutes.owner(credential: ended)) }
         rotateCredential(active: false)
         Self.registry.withLock {
             let mine = Self.questions.filter { $0.value === self }.keys

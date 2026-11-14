@@ -169,7 +169,7 @@ private func decisionNameTests() {
     check(ArisUserName.current == "Alex", "N10: kept trimmed")
     ArisUserName.set("   ")
     check(ArisUserName.current == nil && defaults.string(forKey: ArisUserName.key) == nil, "N10: an empty name clears it")
-    check(ArisUserName.clean("<b>Alex</b>") == nil && ArisUserName.clean(String(repeating: "가", count: 40)) == nil && ArisUserName.clean("폴") == "폴",
+    check(ArisUserName.clean("<b>Alex</b>") == nil && ArisUserName.clean(String(repeating: "가", count: 40)) == nil && ArisUserName.clean("솔") == "솔",
           "N10: only a plain, short name")
     defaults.set("<script>", forKey: ArisUserName.key)
     check(ArisUserName.current == nil, "N10: a stored name that isn't plain isn't used")

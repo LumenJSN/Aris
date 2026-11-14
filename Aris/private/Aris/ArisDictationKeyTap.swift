@@ -77,6 +77,14 @@ final class ArisDictationKeyTap {
         updateEscapeTap()
     }
 
+    /// A dictation started from the pill: hands-free, as after a double tap (the key's next press puts it in, Esc
+    /// cancels).
+    func lockFromPill() {
+        tick?.cancel()
+        state.lockFromPill(at: .now)
+        updateEscapeTap()
+    }
+
     /// The dictation is over, however it ended (the notch was clicked, it failed): Esc goes back to the apps.
     func dictationEnded() {
         guard ArisController.shared.dictation != .listening else { return }

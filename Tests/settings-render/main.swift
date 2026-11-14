@@ -119,7 +119,6 @@ ArisFace.store.removePersistentDomain(forName: faceSuite)
     s.notchCaps = ["⌥", "⌘", "N"]
     s.peekCaps = ["⌥", "⌘", "M"]
     s.versionLine = "버전 2.1.0 (412)"
-    s.teammateNames = ["코디", "몽실", "쑥"]
     // ARIS_RENDER_NO_AI=1: a new Mac with no AI set up, where 기본으로 답하는 AI marks all four as missing (its widest).
     if ProcessInfo.processInfo.environment["ARIS_RENDER_NO_AI"] == "1" {
         s.brains = ArisBrain.allCases.map { .init(id: $0.rawValue, title: $0.shortTitle) }
@@ -137,7 +136,7 @@ ArisFace.store.removePersistentDomain(forName: faceSuite)
     h.custom = { item in
         guard case .custom(let kind) = item.control else {
             if case .trailing("voicePicker") = item.control {
-                return AnyView(ArisSettingsButton(title: "Rachel", minWidth: 150, trailingSymbol: "chevron.down") {})
+                return AnyView(ArisSettingSelect(choice: "Rachel", label: "목소리") { _ in })
             }
             return nil
         }
@@ -147,22 +146,6 @@ ArisFace.store.removePersistentDomain(forName: faceSuite)
     }
     h.logo = { id in AnyView(Text(["claude": "C", "codex": "G", "antigravity": "A"][id] ?? "?").font(.system(size: 12, weight: .bold))) }
     return h
-}
-
-@MainActor func plan(_ page: ArisSettingsPage, _ s: ArisSettingsSnapshot) -> ArisNotchPreviewPlan {
-    var input = ArisNotchPreviewInput()
-    input.page = page
-    input.wakeWord = s.wakeWord
-    input.talkCaps = s.talkCaps
-    input.speedTitle = "보통"
-    input.voiceName = s.voiceName
-    input.heightMode = s.heightMode
-    input.customHeight = s.notchHeight
-    input.hoverOpens = s.hover
-    input.circleGesture = s.circle
-    input.seesScreen = s.seesScreen
-    input.teammateNames = s.teammateNames
-    return ArisNotchPreviewPlan.make(input)
 }
 
 /// The 팀원 page opens on 몽실, or (`face`) on Aris's own row, with the notice when a teammate was moved.
@@ -175,7 +158,7 @@ nonisolated(unsafe) var teamMoved: ArisFaceDetail.Moved?
 
 @MainActor func window(_ page: ArisSettingsPage, dark: Bool, s: ArisSettingsSnapshot, menus: ArisSettingMenus? = nil) -> some View {
     ArisSettingsShell(nav: .shared, menus: menus, status: ArisSettingsCaption.greeting(agentDown: false, missingPermissions: 0),
-                      plan: plan(page, s), vibrancy: false) {
+                      vibrancy: false) {
         pageBody(page, s)
     }
     .environment(\.arisWords, wording(page))
@@ -201,11 +184,11 @@ nonisolated(unsafe) var teamMoved: ArisFaceDetail.Moved?
     print("\(name).png \(cg.width / 2)×\(cg.height / 2)")
 }
 
-/// The page's whole column (stage, title, every section) on the pane, for comparing with the mockup's.
+/// The page's whole column (팀원's face, title, every section) on the pane, for comparing with the mockup's.
 @MainActor func column(_ page: ArisSettingsPage, dark: Bool, s: ArisSettingsSnapshot) -> some View {
     let palette = ArisPalette(dark: dark)
     return VStack(alignment: .leading, spacing: 0) {
-        Group { if page == .team { ArisFaceStageView(shownMode: .rest) } else { ArisNotchPreview(plan: plan(page, s)) } }.padding(.bottom, 22)
+        if page == .team { ArisFaceStageView(shownMode: .rest).padding(.bottom, 22) }
         HStack(alignment: .firstTextBaseline) {
             Text(wording(page).frame(page.title)).font(.system(size: 22, weight: .semibold)).tracking(-0.44).foregroundStyle(palette.title)
             Spacer()
@@ -290,7 +273,7 @@ nonisolated(unsafe) var teamMoved: ArisFaceDetail.Moved?
         teamSelected = "mong"
         var fresh = s
         fresh.hasVoiceKey = false
-        fresh.voiceName = ArisNotchPreviewInput.macVoice
+        fresh.voiceName = ""
         fresh.languages = ArisLanguages.starting(system: ["en-US"]).map { .init(id: $0, title: ArisLanguages.named($0)?.native ?? $0) }
         ArisSettingsNav.shared.page = .voice
         save(window(.voice, dark: false, s: fresh), "vm2-voice-new-mac", dark: false)
@@ -472,3 +455,4 @@ enum ArisActivityTab {
     draw([ArisTerminalSetting.section(pinned: "auto", installed: [.terminal, .iTerm, .ghostty, .warp])], page: .team, "terminal")
     draw([ArisDropLearnedSetting.section(4)], page: .memory, "drop-learned")
 }
+

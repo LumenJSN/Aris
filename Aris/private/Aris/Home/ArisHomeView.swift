@@ -8,6 +8,7 @@
 //  follows the content.
 //
 
+import Defaults
 import SwiftUI
 
 struct ArisHomeView: View {
@@ -22,6 +23,8 @@ struct ArisHomeView: View {
     @ObservedObject private var desk = ArisCardDesk.shared
     /// A sent request is being edited in its card: the composer steps aside (ArisPromptEditing).
     @ObservedObject private var promptEdit = ArisPromptEditing.shared
+    /// 노치 기능 › 선반 › 첫 화면에도 보이기.
+    @Default(.shelfOnHome) private var shelfOnHome
     /// The rows that share the notch with a turn, measured for the answer's height budget.
     @State private var tasksHeight: CGFloat = 0
     @State private var timerHeight: CGFloat = 0
@@ -59,7 +62,7 @@ struct ArisHomeView: View {
                 if !showsTurn && (!music.isPlayerIdle || music.isPlaying) {
                     ArisMusicStrip().transition(.opacity)
                 }
-                if !showsTurn && !ArisShelfChips.visible(shelf.items).isEmpty {
+                if ArisShelfTileLayout.homeRowShown(files: ArisShelfChips.visible(shelf.items).count, turnShowing: showsTurn, onHome: shelfOnHome) {
                     ArisShelfChips { coordinator.currentView = .shelf }.transition(.opacity)
                 }
             }

@@ -528,7 +528,7 @@ final class ArisAIServicesLive {
         guard !was else { return }
         model.state.ui.playing = ""
         preview = Task { [weak self] in
-            await ArisController.shared.speaker.speak(ArisNotchPreviewPlan.line, preview: true)
+            await ArisController.shared.speaker.speak(ArisVoiceSample.line, preview: true)
             guard !Task.isCancelled, let self, self.model.state.ui.playing == "" else { return }
             self.model.state.ui.playing = nil
         }
@@ -548,7 +548,7 @@ final class ArisAIServicesLive {
             player?.play()
             model.state.ui.playing = id
         } else if let voice = AVSpeechSynthesisVoice(identifier: id) {
-            let utterance = AVSpeechUtterance(string: voice.language.hasPrefix("ko") ? ArisNotchPreviewPlan.line : "Hello, I'm Aris. This is how I sound.")
+            let utterance = AVSpeechUtterance(string: voice.language.hasPrefix("ko") ? ArisVoiceSample.line : "Hello, I'm Aris. This is how I sound.")
             utterance.voice = voice
             synthesizer.speak(utterance)
             model.state.ui.playing = id

@@ -4,7 +4,7 @@
 //
 //  The settings window wired to the app: reads every setting where the app keeps it (Defaults, Reminders, Calendar,
 //  the usage model, the agent) into one ArisSettingsSnapshot, hands the page its rows, and writes a change back
-//  where it belongs. The notch preview's plan and line come from the same snapshot, so it follows every change.
+//  where it belongs.
 //
 
 import AppKit
@@ -79,6 +79,8 @@ struct ArisLiveSettings: View {
     @Default(.displayMode) private var displayMode
     @Default(.appLanguage) private var appLanguage
     @Default(.arisDictationBrainPolish) private var brainPolish
+    @Default(.arisDictationPill) private var dictationPill
+    @Default(.arisDictationPillIdle) private var dictationPillIdle
     @Default(.arisDictationStyles) private var dictationStyles
 
     /// What the install itself lacks (ArisPrerequisites), read when the window opens and when Aris comes forward.
@@ -96,7 +98,6 @@ struct ArisLiveSettings: View {
     @State private var standingLoaded = false
     @State private var launchAtLogin = ArisLoginItem.isEnabled
     @State private var screens: [ArisSettingOption] = ArisLiveSettings.readScreens()
-    @State private var replay = 0
     @State private var hasVoiceKey = ArisElevenLabs.loadKey() != nil
     /// The quick commands' key's state (ArisRouterKeyHealth), seen as it changes.
     @AppStorage(ArisRouterKeyHealth.preferenceKey) private var quickKeyState: String?
@@ -108,8 +109,7 @@ struct ArisLiveSettings: View {
 
     var body: some View {
         let s = snapshot
-        ArisSettingsShell(nav: nav, menus: menus, status: status, plan: ArisNotchPreviewPlan.make(previewInput(s)),
-                          replay: replay,
+        ArisSettingsShell(nav: nav, menus: menus, status: status,
                           searchable: ArisSettingsBuilder.searchable(s),
                           helperFix: (ArisFixWords.title(.settings(.helper), english: ArisUIWords.english), { restartHelper() }),
                           aiFix: (ArisUIWords.text("다시 확인", "Check again"), { recheckAI() }),
@@ -129,18 +129,20 @@ struct ArisLiveSettings: View {
             }
         }
         .environment(\.arisSettingsHandlers, handlers)
-        .environment(\.arisSettingsSpeed, speed)
         .overlay { ArisAIServicesOverlay(model: aiServices) }
         .overlay { ArisSettingsModalHost(overlay: overlay) { sheet($0) } }
         // Everything drawn here, the sheets and toasts too, words itself for the page that is open.
         .environment(\.arisWords, wording)
-        .task(id: nav.page) {
+        // Each time a page shows: switched to, or the window opened again on it (seventh VM pass: 기억 kept the list it
+        // had when the window last closed until another page was picked).
+        .task(id: "\(nav.page.rawValue)|\(window.visible)") {
+            guard window.visible else { return }
             // Which AIs are set up may have changed since the page last showed (a tool installed, a key saved). Asked
             // on the side: an agent that is slow to answer never holds the page's own data back.
             Task { await brainSetup.refresh() }
             // A key saved on AI 서비스 since: 목소리 · 언어 shows its voice row at once, not after Aris next comes forward.
             hasVoiceKey = ArisElevenLabs.loadKey() != nil
-            if window.visible { nav.markSeen(nav.page) }
+            nav.markSeen(nav.page)
             await pageOpened(nav.page)
         }
         // Permissions change in System Settings while 컴퓨터 제어 is open: read them each second, only while it's seen.
@@ -171,6 +173,11 @@ struct ArisLiveSettings: View {
         // aris-agent learned or proposed a word while 받아쓰기 is open.
         .onReceive(DistributedNotificationCenter.default().publisher(for: .init("com.lumenjsn.aris.dictionary"))) { _ in
             if nav.page == .dictation { learned = Self.readLearned() }
+        }
+        // A memory written or forgotten while 기억 is open (a 기억해 in the notch, the agent's own learning): the page reads
+        // the list again (ninth VM pass: it said "9가지" until it was opened again).
+        .onReceive(DistributedNotificationCenter.default().publisher(for: .init(ArisMemorySettingsRows.changedNotification))) { _ in
+            if ArisMemorySettingsRows.reloadsOnChange(page: nav.page) { Task { await memory.reload() } }
         }
         .onChange(of: nav.sheet) { _, sheet in if sheet == "language" { overlay.sheet = .languages } }
     }
@@ -264,6 +271,8 @@ struct ArisLiveSettings: View {
         s.words = words
         s.learned = learned
         s.brainPolish = brainPolish
+        s.dictationPill = dictationPill
+        s.dictationPillIdle = dictationPillIdle
         s.styles = dictationStyles
         s.pasteLastCaps = Self.caps(.pasteLastDictation)
         s.dictationCaps = [ArisDictationKey.Choice.current.name(english: wording.pageEnglish)]
@@ -301,11 +310,17 @@ struct ArisLiveSettings: View {
         s.dropHabits = dropModel.learned.habits.count
         s.memoryQuery = memory.query
         s.autoMemory = memory.auto
+        s.consolidateMemory = memory.consolidate
+        s.memoryHeld = memory.held
+        s.memoryConflicts = memory.conflicts
+        s.memoryEntities = memory.entities
+        s.memoryChanges = memory.changes
         s.confirmingMemoryClear = memory.confirmingClear
         s.workLessons = memory.workLessons
         s.workEpisodes = memory.workEpisodes
         s.workMemory = memory.workOn
         s.confirmingWorkClear = memory.confirmingWorkClear
+        s.savedSteps = memory.savedSteps
         s.hover = hover
         s.haptics = haptics
         s.gestures = gestures
@@ -336,7 +351,6 @@ struct ArisLiveSettings: View {
         s.peekCaps = Self.caps(.toggleSneakPeek)
         let version = "버전 \(Bundle.main.releaseVersionNumber ?? "?") (\(ArisBuildInfo.buildDetail(number: Bundle.main.buildVersionNumber)))"
         s.versionLine = Defaults[.releaseName].isEmpty ? version : "\(Defaults[.releaseName]) · \(version)"
-        s.teammateNames = team.teammates.map { ArisTeammateName.display($0.name) }
         s.more = more.values
         return s
     }
@@ -344,25 +358,6 @@ struct ArisLiveSettings: View {
     private static let displayIDs: [(DisplayMode, String)] = [(.preferredDisplay, "preferred"), (.fallbackIfPreferredUnavailable, "fallback"),
                                                               (.activeDisplay, "active"), (.allDisplays, "all")]
     private static func displayID(_ mode: DisplayMode) -> String { displayIDs.first { $0.0 == mode }?.1 ?? "active" }
-
-    private func previewInput(_ s: ArisSettingsSnapshot) -> ArisNotchPreviewInput {
-        var input = ArisNotchPreviewInput()
-        input.page = nav.page
-        input.wakeWord = s.wakeWord
-        input.talkCaps = s.talkCaps
-        input.speedTitle = s.speed < 0.95 ? "느리게" : s.speed > 1.05 ? "빠르게" : "보통"
-        input.voiceName = s.hasVoiceKey && !s.voiceName.isEmpty ? s.voiceName : ArisNotchPreviewInput.macVoice
-        input.heightMode = s.heightMode
-        input.customHeight = s.notchHeight
-        input.hoverOpens = s.hover
-        input.circleGesture = s.circle
-        input.seesScreen = s.seesScreen
-        input.teammateNames = s.teammateNames
-        input.skillsOn = skills.status.ready
-        input.skillTitles = skills.status.skills.filter { $0.phase == "ready" && $0.source != "builtin" }.map(\.title)
-        input.aiWho = aiServices.page.who.map { wording.dotted($0) }
-        return input
-    }
 
     /// What a page needs fresh each time it opens.
     private func pageOpened(_ page: ArisSettingsPage) async {
@@ -414,6 +409,8 @@ struct ArisLiveSettings: View {
             if silence == 0 { ArisController.shared.closeConversation(.dismissed) }
         case .bargeInSpeakers: bargeInSpeakers = on ?? bargeInSpeakers
         case .dictationBrainPolish: brainPolish = on ?? brainPolish
+        case .dictationPill: dictationPill = on ?? dictationPill
+        case .dictationPillIdle: dictationPillIdle = on ?? dictationPillIdle
         case .dictationStyle(let kind): dictationStyles[kind] = text
         case .sounds: sounds = on ?? sounds
         case .dayEndOffer: dayEndOffer = on ?? dayEndOffer
@@ -446,6 +443,7 @@ struct ArisLiveSettings: View {
             memory.query = text
             return
         case .autoMemory: Task { await memory.setAuto(on ?? true) }
+        case .consolidateMemory: Task { await memory.setConsolidate(on ?? true) }
         case .workMemory: Task { await memory.setWork(on ?? true) }
         case .calendar(let id):
             if let entry = calendar.eventCalendars.first(where: { $0.id == id }) {
@@ -511,14 +509,12 @@ struct ArisLiveSettings: View {
         case .listen:
             let speaker = aris.speaker
             speaker.stop()
-            // The sample is read in the page's wording, the words the preview lights.
-            let line = wording(ArisNotchPreviewPlan.line)
+            // The sample is read in the page's wording.
+            let line = wording(ArisVoiceSample.line)
             Task { await speaker.speak(line, preview: true) }
-            replay += 1
         case .editWords: ArisLiveSettings.openVocabulary()
         case .voicePicker: nav.sheet = "voice"
         case .addLanguage: overlay.sheet = .languages
-        case .removeLanguage(let code): if languages.count > 1 { languages.removeAll { $0 == code } }
         case .remindersAccess: Task { await reminders.requestAccess() }
         case .createList:
             let name = newListName
@@ -544,14 +540,28 @@ struct ArisLiveSettings: View {
         case .forgetAllMemories:
             Task { if await memory.clearPressed() { overlay.show("기억을 모두 지웠어요") } }
         case .keepMemories: memory.cancelClear()
+        case .keepHeldMemory(let id):
+            Task { if await memory.keepHeld(id: id) { overlay.show(ArisMemoryReviewRows.keptToast) } }
+        case .dropHeldMemory(let id):
+            Task { if await memory.dropHeld(id: id) { overlay.show(ArisMemoryReviewRows.droppedToast) } }
+        case .settleMemoryConflict(let id, let keep):
+            Task { if await memory.settle(conflict: id, keep: keep) { overlay.show(ArisMemoryReviewRows.settledToast) } }
+        case .forgetMemoryEntity(let id):
+            Task { if await memory.forgetEntity(id: id) { overlay.show(ArisMemoryReviewRows.entityToast) } }
+        case .undoMemoryChange(let id):
+            Task { if await memory.undoChange(id: id) { overlay.show(ArisMemoryReviewRows.undoneToast) } }
         case .forgetWorkLesson(let id):
             Task { if await memory.forgetLesson(id: id) { overlay.show(ArisWorkSettingsRows.forgotToast) } }
         case .forgetAllWork:
             Task { if await memory.clearWorkPressed() { overlay.show(ArisWorkSettingsRows.clearedToast) } }
         case .keepWork: memory.cancelWorkClear()
+        case .forgetSavedSteps(let key):
+            Task { if await memory.forgetSavedSteps(key: key) { overlay.show(ArisSavedStepsSettingsRows.forgotToast) } }
         case .importMemory:
             importer.open()
             overlay.sheet = .memoryImport
+        case .feature(let feature):
+            overlay.open(feature)
         case .forgetDropHabits: dropModel.forgetAllLearned()
         case .clearMemoryQuery: memory.query = ""
         case .unhideSides: for edge in ArisSidePanels.Edge.allCases { panels.unhide(edge) }
@@ -724,8 +734,25 @@ struct ArisLiveSettings: View {
                 removal?.remove()
                 if let name = removal?.name { overlay.show("\(ArisParticle.attach(name, .eulReul)) 팀에서 뺐어요") }
             }
+        case .featureDetail:
+            featureSheet(overlay.feature)
         default:
             ArisDataSheet(kind: sheet, model: .shared)
+        }
+    }
+
+    /// A feature's detail sheet, its switch the feature's own setting: 질문할 때 화면 같이 보기, or the skills switch.
+    @ViewBuilder
+    private func featureSheet(_ feature: ArisFeature) -> some View {
+        let close = { overlay.sheet = nil }
+        switch feature {
+        case .control:
+            ArisFeatureSheet(feature: feature, isOn: seesScreen, toggle: { set(.seesScreen, .bool(!seesScreen), ArisFeature.control.content.title) }, close: close)
+        case .skills:
+            let on = skills.status.enabled
+            ArisFeatureSheet(feature: feature, isOn: on, toggle: { on ? skills.turnOff() : skills.turnOn(saying: true) }, close: close)
+        case .notify, .savedSteps:
+            ArisFeatureSheet(feature: feature, close: close)
         }
     }
 }

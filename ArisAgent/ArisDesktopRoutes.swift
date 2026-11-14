@@ -22,6 +22,10 @@ extension ArisRunnerMCPTurn: ArisDesktopTurn {
     var live: Bool { runner.mcpSnapshot().active && ArisMCPTurnCredential.same(runner.mcpTurn, credential) }
     var request: String { runner.messageSnapshot().request }
     var critical: Bool { runner.messageSnapshot().critical }
+    /// Every call of one turn makes its own object: the lock knows the turn by its credential (released in finish).
+    var desktopOwner: String { ArisDesktopRoutes.owner(credential: credential) }
+    /// The turn's desktop actions, for its saved steps (only this turn's: a late call of an ended turn isn't noted).
+    func noteDesktopAction(_ note: Result<ArisSavedStep, ArisSavedStepsRefusal>) { if live { runner.savedSteps.note(note) } }
 }
 
 extension ArisRelayMCPTurn: ArisFileRelayTurn {}
@@ -32,16 +36,24 @@ extension ArisRelayMCPTurn: ArisDesktopTurn {
     func taint(forApp app: String) -> ArisTaint { taint }
     func markAppRead(_ app: String) { takeOutsideText() }
     func desktopStep() -> Int { ArisDesktopRoutes.relaySteps.next() }
+    /// agy's relayed actions go to its turn's own recorder (every round of the turn), for its saved steps.
+    func noteDesktopAction(_ note: Result<ArisSavedStep, ArisSavedStepsRefusal>) { if live { ArisDesktopRoutes.relayRecorder.note(note) } }
 }
 
 enum ArisDesktopRoutes {
+    /// The desktop lock's owner id for a runner's turn.
+    static func owner(credential: String) -> String { "mcp:" + credential }
+
     /// agy's conversation's ledger (its relay turns come and go; its snapshots and the user's yeses stay for the conversation).
     static let relayLedger = ArisComputerUseLedger(forget: { ArisPeekabooSnapshots.remove($0, record: ArisPeekabooSnapshots.recordFile) })
     /// agy's relayed desktop calls in its current turn (counted again from the turn's first relay round).
     /// A new relayed turn is a new turn for its ledger too (main.swift resets the count at the turn's first relay
     /// round): what the last turn selected, did or was refused no longer counts (audit desk-5: one select-all blocked
     /// typing in that window until the agent restarted).
-    static let relaySteps = ArisDesktopStepCount(onReset: { relayLedger.startTurn() })
+    static let relaySteps = ArisDesktopStepCount(onReset: { relayLedger.startTurn(); relayRecorder.start() })
+    /// agy's relayed desktop actions in its current turn, each the step it could be saved as (and a line of the block
+    /// that wasn't a desktop call, as a step that can't be): saved at the turn's last round (main.swift's ask).
+    static let relayRecorder = ArisSavedStepsRecorder()
 
     /// How long one relayed desktop call may take, its card included.
     static let relayLimit: TimeInterval = ArisCardEdit.questionTimeout + 10
@@ -98,10 +110,11 @@ enum ArisDesktopRoutes {
             }
             // Until it is known, an action counts as not done: a reply can't claim it while its card is still up.
             let action = ArisDesktopHonesty.isAction(words)
-            if action { turn.ledger.noteNotDone() }
-            ArisSlowCalls.shared.run(owner: credential, kind: "desktop", work: { done in
+            if action { turn.ledger.noteActionStarted() }
+            // While an action's card of this turn waits for the user, the waiting line says so (no retry, no new look).
+            ArisSlowCalls.shared.run(owner: credential, kind: "desktop", waitingOnOwner: { turn.ledger.anyCardWaits }, work: { done in
                 engine.handle(words, text: text, turn: turn) { outcome in
-                    if action, outcome.status == 0 { turn.ledger.noteActed() }
+                    if action { turn.ledger.noteActionEnded(ok: outcome.status == 0) }
                     if outcome.status != 0 { ArisDesktopRoutes.noteNotDone(outcome, words: words, turn: turn) }
                     done(outcome)
                 }
@@ -111,6 +124,45 @@ enum ArisDesktopRoutes {
 }
 
 extension ArisDesktopRoutes {
+    /// POST /desktop-hold {"turn"}: `aris-tools window …` from inside a brain's turn takes that turn's turn at the keys
+    /// and pointer before it moves a window (ArisDesktopLock), checked exactly as /desktop-tool is (the turn's credential,
+    /// no Antigravity turn, the caller inside the brain's own process tree). The turn keeps it as after any desktop
+    /// action. {"held": id}: the agent's own replay or arrangement says it holds them already (ArisDesktopLock
+    /// .holdsForOwnWork). {"status", "output"}.
+    static func hold(_ object: [String: Any], on connection: NWConnection, agentPort: UInt16, lock: ArisDesktopLock = .shared,
+                     reply: @escaping (String, Data) -> Void) {
+        let refuse = { (why: String) in
+            ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(["answer": "refused (\(why))", "question": "desktop-hold"]), key: "desktop")
+            reply("403 Forbidden", ArisMCPRoutes.json(["status": 1, "output": "aris-tools window works only inside an Aris turn."]))
+        }
+        // The agent's own one-off work (a learned shortcut's replay, a window arrangement) that holds the whole Mac now.
+        if let held = object["held"] as? String {
+            guard held.count <= 80, lock.holdsForOwnWork(held) else { return refuse("not the agent's own held work") }
+            return reply("200 OK", ArisMCPRoutes.json(["status": 0, "output": "held"]))
+        }
+        guard let credential = object["turn"] as? String, let runner = ArisAgentRunner.runner(forMCPTurn: credential) else { return refuse("no turn credential") }
+        let remotePort = ArisTeammateDesk.remotePort(of: connection)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let now = runner.mcpSnapshot()
+            guard now.active else { return refuse("no turn under way") }
+            // As /desktop-tool: Antigravity's desktop goes through its relay, never this route.
+            guard runner.brain != .antigravity else { return refuse("Antigravity uses the relay") }
+            guard let pid = now.pid, let remotePort, ArisMCPCaller.isInside(root: pid, remotePort: remotePort, agentPort: agentPort) else {
+                return refuse("not from the brain's own process")
+            }
+            let turn = ArisRunnerMCPTurn(runner: runner, handsFree: now.handsFree, screen: now.screen, credential: credential)
+            let english = ArisDesktopCopy.isEnglish(turn.request)
+            let started = Date()
+            switch lock.acquire(ArisDesktopLock.Owner(id: turn.desktopOwner, live: { turn.live }), waiting: { turn.quiet(ArisDesktopLockWords.waitingLine(english: english)) }) {
+            case .acquired:
+                lock.done(turn.desktopOwner)
+                reply("200 OK", ArisMCPRoutes.json(["status": 0, "output": "held"]))
+            case .refused(let why):
+                reply("200 OK", ArisMCPRoutes.json(["status": 1, "output": ArisDesktopLockWords.refusal(why, waited: Date().timeIntervalSince(started))]))
+            }
+        }
+    }
+
     /// A desktop call that wasn't done: the engine's own reason, in the audit and in the turn's ledger (QA's next live
     /// run shows the exact check that stopped it).
     static func noteNotDone(_ outcome: ArisMCPOutcome, words: [String], turn: ArisDesktopTurn) {

@@ -68,6 +68,10 @@ enum ArisDictationKey {
         /// Forget everything (the app dropped the dictation on its own).
         mutating func reset() { phase = .idle }
 
+        /// A dictation started with a click on the pill is hands-free: the key's next press puts it in (never read as
+        /// the triple tap that cancels), Esc cancels.
+        mutating func lockFromPill(at now: ContinuousClock.Instant) { phase = .locked(firstDown: now - ArisDictationKey.multiTapWindow) }
+
         mutating func handle(_ event: Event, at now: ContinuousClock.Instant) -> Action {
             switch phase {
             case .idle:

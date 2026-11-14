@@ -133,6 +133,15 @@ enum ArisConfirmResult: Equatable, Sendable {
     var acknowledges: Bool { self != .refused }
 }
 
+/// What a background job's turn did, as the agent counted it: its tool calls, its steps that failed or weren't done
+/// (a refused or failed desktop action, a command that exited non-zero), and whether anything was done. Sent just
+/// before the job's answer, so the app never ticks a job green that did nothing, or whose step failed (ArisJobVerdict).
+struct ArisJobWork: Equatable, Sendable {
+    var tools: Int
+    var failed: Int
+    var acted: Bool
+}
+
 enum ArisAgentReply: Equatable, Sendable {
     /// What the AI is doing ("웹 검색 중").
     case status(String)
@@ -175,11 +184,17 @@ enum ArisAgentReply: Equatable, Sendable {
     /// you do that?", a routine made, changed, shown or deleted): the app's log and turns.jsonl say so, and no longer
     /// name a brain that was never asked (third VM run: "asking api" / "codex answered" on a Mac with no Codex).
     case helperAnswers
+    /// A request's saved desktop steps were done again with no AI (ArisSavedStepsReplay) and answer this turn: the app's
+    /// turns.jsonl says "saved-steps", not the brain that was never asked (eighth VM pass). A replay handed over to the AI
+    /// says nothing: that turn is the brain's.
+    case savedSteps
+    /// A background job's work, just before its answer (ArisJobWork).
+    case work(ArisJobWork)
 
     var isLast: Bool {
         switch self {
         case .answer, .failure: return true
-        case .status, .stepFailed, .delta, .confirm, .file, .turn, .launched, .untrusted, .refusedJobs, .shownOnly, .operating, .skill, .helperAnswers: return false
+        case .status, .stepFailed, .delta, .confirm, .file, .turn, .launched, .untrusted, .refusedJobs, .shownOnly, .operating, .skill, .helperAnswers, .savedSteps, .work: return false
         }
     }
 
@@ -228,6 +243,8 @@ enum ArisAgentReply: Equatable, Sendable {
             object = ["operating": fields]
         case .skill(let title): object = ["skill": title]
         case .helperAnswers: object = ["own": true]
+        case .savedSteps: object = ["savedSteps": true]
+        case .work(let work): object = ["work": ["tools": work.tools, "failed": work.failed, "acted": work.acted]]
         }
         return ((try? JSONSerialization.data(withJSONObject: object)) ?? Data()) + Data("\n".utf8)
     }
@@ -249,6 +266,10 @@ enum ArisAgentReply: Equatable, Sendable {
         if let id = object["turn"] as? String { return .turn(id) }
         if object["refusedJobs"] as? Bool == true { return .refusedJobs }
         if object["own"] as? Bool == true { return .helperAnswers }
+        if object["savedSteps"] as? Bool == true { return .savedSteps }
+        if let work = object["work"] as? [String: Any], let tools = work["tools"] as? Int, let failed = work["failed"] as? Int {
+            return .work(ArisJobWork(tools: max(0, tools), failed: max(0, failed), acted: work["acted"] as? Bool == true))
+        }
         if object["shownOnly"] as? Bool == true { return .shownOnly }
         if let fields = object["operating"] as? [String: Any], let app = fields["app"] as? String,
            let pid = (fields["pid"] as? Int).flatMap({ Int32(exactly: $0) }), pid > 0, let line = fields["line"] as? String {

@@ -38,6 +38,11 @@ enum ArisDataExport {
              "fails": lesson.fails.map(\.line), "basedOn": lesson.evidence.map { "E\($0)" }, "confidence": lesson.confidence,
              "expired": lesson.expired, "learnedWhereOutsideTextWasRead": lesson.outside]
         }
-        return ["memoryDetails": details, "work": ["on": work.isOn, "episodes": episodes, "lessons": lessons] as [String: Any]]
+        // The people and project pages: summary, names and the timeline with each entry's source.
+        let pages = memory.entities().map { entity -> [String: Any] in
+            ["name": entity.name, "kind": entity.kind.rawValue, "summary": entity.summary, "aliases": entity.aliases,
+             "timeline": memory.timeline(of: entity.id).map { ["date": ArisMemoryText.day($0.at), "text": $0.text, "source": $0.source.rawValue] }]
+        }
+        return ["memoryDetails": details, "people": pages, "work": ["on": work.isOn, "episodes": episodes, "lessons": lessons] as [String: Any]]
     }
 }

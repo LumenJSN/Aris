@@ -3,7 +3,7 @@
 //  Aris
 //
 //  Every value the settings pages show, read at once from where the app keeps it (ArisLiveSettings), so the pages
-//  and the notch preview are plain functions of it. The defaults are a fresh install's. Foundation only (tested).
+//  are plain functions of it. The defaults are a fresh install's. Foundation only (tested).
 //
 
 import Foundation
@@ -84,6 +84,12 @@ struct ArisSettingsSnapshot: Equatable {
     var dropHabits = 0
     var memoryQuery = ""
     var autoMemory = true
+    /// 매주 정리하기, what waits for the user's look, the people and project pages and the tidy-up's changes (ArisMemoryReviewRows).
+    var consolidateMemory = true
+    var memoryHeld: [ArisMemoryHeldItem] = []
+    var memoryConflicts: [ArisMemoryConflictItem] = []
+    var memoryEntities: [ArisMemoryEntityItem] = []
+    var memoryChanges: [ArisMemoryChangeItem] = []
     /// 모두 지우기 was pressed once: the row asks again.
     var confirmingMemoryClear = false
     /// 일하면서 배운 것 (ArisWorkSettingsRows): the lessons (nil until the agent answers), how many episodes there are,
@@ -92,6 +98,8 @@ struct ArisSettingsSnapshot: Equatable {
     var workEpisodes = 0
     var workMemory = true
     var confirmingWorkClear = false
+    /// 저장된 단계 (ArisSavedStepsSettingsRows): the saved desktop steps (nil until the agent answers).
+    var savedSteps: [ArisSavedStepsItem]?
 
     // 목소리 · 언어
     var languages: [ArisSettingOption] = [.init(id: "ko", title: "한국어"), .init(id: "en", title: "English")]
@@ -110,6 +118,10 @@ struct ArisSettingsSnapshot: Equatable {
     }
     var pasteLastCaps = ["⌃", "⌘", "V"]
     var brainPolish = false
+    /// 받아쓰기 알약 보이기 (ArisDictationPillCenter).
+    var dictationPill = true
+    /// 쉴 때도 보이기: the pill's idle sliver between dictations (ArisDictationPillRules showIdle).
+    var dictationPillIdle = true
     /// The user's style picks by app kind (missing: the kind's default).
     var styles: [String: String] = [:]
     var learned: [LearnedWord] = []
@@ -190,9 +202,6 @@ struct ArisSettingsSnapshot: Equatable {
 
     // 정보
     var versionLine = ""
-
-    // 팀원 (the preview's line-up)
-    var teammateNames: [String] = []
 
     // 노치 · 노치 기능's further rows
     var more = ArisMoreSettings()

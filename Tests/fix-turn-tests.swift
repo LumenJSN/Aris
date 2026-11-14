@@ -412,9 +412,10 @@ private func leftBehindTests() {
     let brief = fixTurnSource("Aris/private/Aris/ArisController+Brief.swift")
     let announce = fixTurnFunction("announce(title: String", in: brief)
     let remembered = announce.range(of: "remember(ArisHistoryEntry(date: Date(), heard: title, reply: text))")?.lowerBound ?? announce.endIndex
-    let firstGuard = announce.range(of: "guard ")?.lowerBound ?? announce.endIndex
-    check(remembered < firstGuard && announce.contains("_ = await announce {"),
-          "imp-5: the timer's end is in the 기록 list whatever Aris is doing, and its notch line waits for a pause")
+    let firstGuard = announce.range(of: "await notify(")?.lowerBound ?? announce.endIndex
+    check(remembered < firstGuard && announce.contains("Task { await notify(card, parking: text) }")
+          && fixTurnSource("Aris/private/Aris/Notice/ArisController+Notice.swift").contains("await announce(recheck:"),
+          "imp-5: the timer's end is in the 기록 list whatever Aris is doing, and its card waits for a pause (notify-card)")
     let controller = fixTurnSource("Aris/private/Aris/ArisController.swift")
     check(controller.contains("didSet { watchTurnEnd(turn) }") && fixTurnSource("Aris/private/Aris/ArisController+Watch.swift").contains("ArisTurnWatch.isLeftBehind("),
           "imp-5: every turn is watched to its end")

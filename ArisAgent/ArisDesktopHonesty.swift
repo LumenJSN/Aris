@@ -55,12 +55,15 @@ enum ArisDesktopHonesty {
             || (verb == "window" && words.count > 1 && words[1] != "list") || verb == "app"
     }
 
-    /// A shell line that is only `aris-tools desktop …` (its wait too), nothing else chained.
+    /// A shell line that is only `aris-tools desktop …` (its wait too) or `aris-tools type <text>` (the desktop engine's
+    /// `desktop type --focused`, ArisTypeRequest: tenth VM pass, a turn typed that way was never saved as steps), nothing
+    /// else chained.
     static func isDesktopCommand(_ command: String, tools: String) -> Bool {
         guard let pieces = ArisCommandPolicy.segments(command), !pieces.isEmpty else { return false }
         return pieces.allSatisfy { piece in
             guard let words = ArisCommandPolicy.words(piece), words.count > 1 else { return false }
-            return (words[0] == tools || (words[0] as NSString).lastPathComponent == "aris-tools") && words[1] == "desktop"
+            guard words[0] == tools || (words[0] as NSString).lastPathComponent == "aris-tools" else { return false }
+            return words[1] == "desktop" || (words[1] == "type" && words.count > 2)
         }
     }
 

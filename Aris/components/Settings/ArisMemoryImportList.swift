@@ -111,7 +111,7 @@ struct ArisImportPress: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let down = (configuration.isPressed || forced) && !ArisSettingsMotion.reduced
         configuration.label
-            .scaleEffect(down ? ArisPressScale.light : 1)
+            .scaleEffect(down ? ArisPressScale.measured : 1)
             .animation(ArisSettingsMotion.press, value: configuration.isPressed)
     }
 }

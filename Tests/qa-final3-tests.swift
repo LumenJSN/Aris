@@ -467,10 +467,10 @@ func runQAFinal3Review2Tests() {
           "review2 2: and the turn counts it as outside text")
     // 3–6.
     let runner = final3Source("ArisAgent/ArisAgentRunner.swift")
-    check(runner.contains("ArisCardEdit.questionTimeout + ArisSlowCalls.workAfterAnswer") && runner.contains("!showsOnly, ArisSlowCalls.shared.pending(owner: mcpTurn).isEmpty {"),
+    check(runner.contains("let cardLimit = isTask ? Self.mcpTaskWait : ArisCardEdit.questionTimeout") && runner.contains("cardLimit + ArisSlowCalls.workAfterAnswer") && runner.contains("!showsOnly, ArisSlowCalls.shared.pending(owner: mcpTurn).isEmpty {"),
           "review2 3: the hold covers the work after a late yes, and nothing streams while a call waits")
     let actions = final3Source("ArisAgent/ArisDesktopActions.swift")
-    check(actions.contains("if engine.apps.secondsSinceKeyDown() < Date().timeIntervalSince(raised) { return false }")
+    check(actions.contains("if engine.apps.secondsSinceOwnerInput(owner: turn.desktopOwner) < Date().timeIntervalSince(raised) { return false }")
           && actions.contains("return !engine.apps.secureInput && engine.windows.promptOnScreen() == nil"), "review2 4: after the raise, the user's typing, a password field or a prompt stops it")
     let card = ArisSaveAnswer.card(path: "~/Desktop/a.txt", text: String(repeating: "가", count: 1_234), outside: true)
     check(card.detail.contains("전체 1,234자 중 앞부분") && card.detail.contains("바깥 글"), "review2 5: the save card says how much there is, and when it came from outside text")

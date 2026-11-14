@@ -132,7 +132,14 @@ final class ArisAgentMonitor: ObservableObject {
     private func apply(_ next: ArisAgentLink) {
         guard next != link else { return }
         log.notice("agent link \(String(describing: next), privacy: .public)")
+        let was = link
         link = next
         if next == .up { quietTries = 0; refusals = 0 }
+        // The star begins to doze: a card under the notch with 다시 시작; it goes once the helper answers again.
+        switch ArisNoticeRoute.helperCard(from: was, to: next) {
+        case .post: Task { await ArisController.shared.notify(ArisNoticeRoute.helperDown(english: ArisUIWords.english)) }
+        case .withdraw: ArisNoticeCenter.shared.withdraw(key: ArisNoticeRoute.helperKey)
+        case .keep: break
+        }
     }
 }

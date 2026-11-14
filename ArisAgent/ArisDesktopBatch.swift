@@ -620,7 +620,7 @@ extension ArisDesktopEngine {
             let result: ArisDesktopResult
             // The notch's line for this step says which of how many it is (the steps are counted: they are on the card).
             held.step = ArisStepLine.Step(index: index, of: steps.count)
-            switch performed(single, target: target, turn: turn, basis: held, openPause: ArisDesktopBatch.openWait) {
+            switch performedPausing(single, target: target, turn: turn, basis: held, openPause: ArisDesktopBatch.openWait) {
             case .refused(let outcome): return stopped(index, outcome.output)
             case .result(let found): result = found
             }

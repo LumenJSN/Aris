@@ -12,6 +12,9 @@ import SwiftUI
 
 struct ArisFadingScroll<Content: View>: View {
     let budget: CGFloat
+    /// What the content is (the confirm card's id): when it changes, the layout is told again even at the same size
+    /// (eighth VM pass: a job's next card of the same height got no layout, so its 허용 stayed at rest).
+    var refresh: String? = nil
     /// Told the scroller's offset, how much of it shows and its content's whole height, as each changes (the confirm
     /// card's "read to its end", ArisCardRead).
     var onScroll: ((_ offset: CGFloat, _ visible: CGFloat, _ content: CGFloat) -> Void)? = nil
@@ -50,6 +53,7 @@ struct ArisFadingScroll<Content: View>: View {
         .frame(height: visible)
         .mask { ArisEdgeFadeMask(stops: edges.stops(height: visible)) }
         .onChange(of: budget) { updateEdges() }
+        .onChange(of: refresh) { updateEdges() }
     }
 
     /// From the content's own height and the budget (the targets, not the frame mid-growth), so a line being eased in

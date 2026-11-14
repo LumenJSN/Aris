@@ -31,11 +31,11 @@ extension ArisDesktopSession {
         if let refused = held(look, field: nil) { return refused }
         let marks = look.elements.filter { $0.actionable }.map(\.id)
         guard engine.vision.available(for: turn.brain) else { return .failed(ArisDesktopEngine.noVisionLine(app: target.name)) }
-        guard let pick = engine.vision.locate(png: png, width: size.width, height: size.height, target: request.target ?? "", marks: marks, brain: turn.brain) else {
+        guard let answer = engine.vision.locateAnswer(png: png, width: size.width, height: size.height, target: request.target ?? "", marks: marks, brain: turn.brain) else {
             return .failed("Aris looked at \(target.name)'s window, but the AI that looks at the picture couldn't find that there (or gave no answer in time), so nothing was clicked. " +
                            "`desktop see --app \"\(target.name)\" --ocr` lists the text on the window with boxes.")
         }
-        switch pick {
+        switch answer.pick {
         case .mark(let id):
             guard let element = look.element(id: id) else { return .failed("The vision brain picked a mark that isn't in the window.") }
             // In a sending app the control the vision brain chose is shown to the user before it is pressed (I10).
@@ -47,8 +47,17 @@ extension ArisDesktopSession {
             let envelope = run(ArisPeekabooCommands.click(element.id, snapshot: look.peekaboo))
             let after = lookAfter(window.id)
             return readBack(after.map { ArisDesktopVerify.acted(on: element, before: look, after: $0) } ?? .notSeen("the window is gone"), envelope: envelope, after: after, before: before)
-        case .point(let pixel):
+        case .point(let first):
             let scale = window.frame.width / CGFloat(max(size.width, 1))
+            // Unsure, or a small target: one closer look at an enlarged crop of the same (privacy-painted) picture, its
+            // point mapped back (ArisDesktopZoom). The control under the first point, in points, tells "small" too.
+            let firstPoint = CGPoint(x: window.frame.minX + first.x * scale, y: window.frame.minY + first.y * scale)
+            let refined = ArisDesktopZoom.refine(answer, png: png, width: size.width, height: size.height, target: request.target ?? "",
+                                                 under: Self.control(at: firstPoint, in: look)?.bounds) { picture, width, height, question in
+                engine.vision.locateAnswer(png: picture, width: width, height: height, target: question, marks: [], brain: turn.brain)?.pick
+            }
+            if refined?.zoomed == true { turn.audit(["answer": "zoomed in for a closer look", "action": "desktop click-at · \(target.name)", "brain": turn.brainName]) }
+            let pixel = refined?.point ?? first
             let point = CGPoint(x: window.frame.minX + pixel.x * scale, y: window.frame.minY + pixel.y * scale)
             // A raw point: what is there is shown on its own card before anything is clicked (I10). The job's own card covers
             // it only in a known document app, onto a labelled text control (ArisDesktopBatch.spotCovered: an allowlist,
@@ -71,6 +80,11 @@ extension ArisDesktopSession {
             if condition() { return true }
         }
         return false
+    }
+
+    /// The smallest accessibility control under a point (no text marks).
+    static func control(at point: CGPoint, in look: ArisDesktopObservation) -> ArisDesktopElement? {
+        look.shown.filter { $0.bounds.contains(point) && $0.bounds.width > 0 }.min { $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height }
     }
 
     /// The smallest element or text mark under a point.

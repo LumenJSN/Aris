@@ -7,7 +7,7 @@
 //
 //    aris-tools weather [place] [--days N] [--ko|--en] [--json]   the weather (home from aris/home.json); --json: the notch card's values
 //    aris-tools weather --set-home <city>    save the home place (a new Mac has none: the time zone's city is the guess until then)
-//    aris-tools remember <fact>              keep a fact about the user
+//    aris-tools remember <fact>              keep a fact about the user in their own words (a standing preference word for word, 앞으로 kept)
 //    aris-tools forget <words> [--all]       drop the fact that contains <words> (several only with --all)
 //    aris-tools memory [words]               print what's remembered (or what mentions words)
 //    aris-tools recall [words] [--id E12]    Aris's own record of past work (ArisRecallCommand)
@@ -21,7 +21,7 @@
 //    aris-tools note <text>
 //    aris-tools selection | clipboard [set <text>] | tab [--text] | finder | screen [--image]
 //    aris-tools windows [app] | tile <app>[,<app>…] [--grid RxC] | new <app> [--count N]
-//    aris-tools keys <cmd+shift+t> [--app X] [--times N] | type <text> [--app X]
+//    aris-tools keys <cmd+shift+t> [--app X] [--times N] | type '<text>' [--app X] [--title <window>] [--at end|start]
 //    aris-tools message <name|number|email> <text>   (an iMessage; the risk gate asks first)
 //    aris-tools trash <path>…                        (to the Trash, never deleted)
 //    aris-tools move <from> <to>                     (inside ~, never overwrites; can be undone)
@@ -162,13 +162,19 @@ func memoryStore() -> ArisMemoryStore {
 
 func remember(_ fact: String) {
     let candidate = ArisMemoryCandidate(kind: ArisMemoryKind.guess(fact), subject: "", text: fact, confidence: ArisMemoryStore.toolConfidence)
-    switch memoryStore().remember(candidate, source: .tool, turnAt: Date()) {
+    // The gate let this very call run (the user's yes to its card, or their own words): written as their, past the override and
+    // standing holds; anything that runs aris-tools without that pass is held as before (ArisMessagePass.memoryName).
+    let approved = ArisMessagePass.consume(to: ArisMessagePass.memoryName, text: fact)
+    switch memoryStore().remember(candidate, source: .tool, turnAt: Date(), approved: approved) {
     case .added(let r): logActivity(ArisActSummary.remembered(r.text), undo: nil); print("remembered: \(r.text)")
     case .updated(let r, _): logActivity(ArisActSummary.remembered(r.text), undo: nil); print("updated: \(r.text)")
     case .duplicate(let r): print("already remembered: \(r.text)")
     case .secret: fail("not remembered: it looks like a password, a code, a key or a card number, and memory is a plain file. Tell the user it wasn't kept and why (a password manager is the place for it); don't keep it another way.")
-    case .empty: fail("usage: remember <fact>")
+    case .empty: fail("usage: remember <fact, in the user's own words>")
     case .failed: fail("couldn't save memory")
+    // The write gate (ArisMemoryGate): what reads like an order to an AI waits for the user's look; a credential request is never kept.
+    case .held: print("not remembered yet: it reads like an instruction to an AI, so it waits in Settings › Memory for the user to keep or drop. Tell the user that; don't keep it another way.")
+    case .refused: fail("not remembered: it asks for a password, key or token to be handed over. Tell the user it wasn't kept; don't keep it another way.")
     }
 }
 
@@ -182,6 +188,8 @@ func printMemory(_ words: String) {
 
 func arrangeWindow(_ args: [String]) {
     guard let layout = args.first else { fail("usage: window left|right|full|center [app]") }
+    // Inside a turn, the turn's turn at the keys and pointer first (ArisDesktopHold).
+    desktopHold()
     let appName = args.dropFirst().joined(separator: " ")
     guard AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary) else {
         fail("\(ArisFix.Pane.accessibility.title(english: true)) permission needed: System Settings → Privacy & Security → \(ArisFix.Pane.accessibility.title(english: true)) → allow Aris, then try again", fix: .pane(.accessibility))
@@ -216,6 +224,8 @@ func arrangeWindow(_ args: [String]) {
 // MARK: - main
 
 let arguments = Array(CommandLine.arguments.dropFirst())
+// 설정 › 기억 hears of a memory this process writes (remember, forget) while it is open.
+ArisMemoryStore.announce = ArisMemoryStore.postChange
 // `aris-tools --version`: the commit this program was built from (deploy.sh stamps it), and nothing else runs.
 if arguments.first == "--version" {
     print(ArisBuildInfo.versionLine(program: "aris-tools"))
@@ -312,7 +322,7 @@ case "open": openFile(Array(arguments.dropFirst()))
 case "osascript": power(Array(arguments))
 case "remember":
     let fact = arguments.dropFirst().joined(separator: " ")
-    guard !fact.isEmpty else { fail("usage: remember <fact>") }
+    guard !fact.isEmpty else { fail("usage: remember <fact, in the user's own words>") }
     remember(fact)
 case "forget":
     // Only memories that contain the words; more than one goes only with --all (a flag, so the risk gate asks the user).

@@ -229,7 +229,8 @@ private func quietWiringTests() {
     let direct = ["ArisController.swift", "ArisController+Wake.swift", "ArisController+Tasks.swift", "ArisController+Local.swift", "ArisController+Inbox.swift",
                   "ArisController+CardPark.swift", "ArisController+Team.swift", "ArisController+Teammate.swift", "ArisController+TeamMaking.swift",
                   "ArisController+Undo.swift", "ArisController+Look.swift", "ArisController+Countdown.swift", "ArisController+Conversation.swift",
-                  "ArisController+Arrange.swift", "ArisController+Practice.swift", "ArisController+SaveAnswer.swift", "ArisController+Brief.swift"]
+                  "ArisController+Arrange.swift", "ArisController+Practice.swift", "ArisController+SaveAnswer.swift", "ArisController+Brief.swift",
+                  "Notice/ArisController+Notice.swift"]
         .flatMap { file in quietSource("Aris/private/Aris/" + file).components(separatedBy: "\n").filter { $0.contains("speaker.speak(") } }
     let ungated = direct.filter { line in
         !line.contains("speak { await self.speaker.speak(") && !line.contains("speak(timeout:") && !line.contains("ArisQuietGate.maySound(")

@@ -227,7 +227,7 @@ private func enSettingsPageTests() {
         let wording = ArisSettingsWording.make(page: page, english: true)
         check(wording.pageEnglish, "settings in English: \(page.rawValue) is drawn in English")
         let left = enSettingsVariants(page).flatMap { ArisSettingsWording.shown(wording.sections(ArisSettingsBuilder.sections(page, $0))) }
-            .filter { enHasHangul($0) && $0 != "한국어" }
+            .filter { enHasHangul($0.replacingOccurrences(of: "한국어", with: "")) } // the language's own name (alone, or in "한국어 + 1 more") is no leftover
         check(left.isEmpty, "settings in English: \(page.rawValue) has no Korean left" + (left.isEmpty ? "" : " (\(Array(Set(left)).sorted().prefix(4)))"))
         for snapshot in enSettingsVariants(page) {
             let sections = ArisSettingsBuilder.sections(page, snapshot)
@@ -298,41 +298,14 @@ private func enSettingsUserWordsTests() {
     }
 }
 
-// MARK: - The notch preview
+// MARK: - The voice sample and the line after a change
 
 private func enSettingsPreviewTests() {
-    func caption(_ page: ArisSettingsPage, _ change: (inout ArisNotchPreviewInput) -> Void = { _ in }) -> String {
-        var input = ArisNotchPreviewInput()
-        input.page = page
-        change(&input)
-        return ArisSettingsWording.make(page: page, english: true)(ArisNotchPreviewPlan.make(input).caption)
-    }
-    let captions = [caption(.voice), caption(.voice) { $0.speedTitle = "느리게"; $0.voiceName = "Rachel" }, caption(.voice) { $0.speedTitle = "빠르게" },
-                    caption(.control), caption(.control) { $0.circleGesture = false }, caption(.control) { $0.circleGesture = false; $0.seesScreen = false },
-                    caption(.team), caption(.team) { $0.teammateNames = ["Cody", "Tam"] },
-                    caption(.skills), caption(.skills) { $0.skillsOn = true }, caption(.skills) { $0.skillsOn = true; $0.skillTitles = ["Meeting notes"] }]
-        + [ArisSettingsPage.memory, .dictation, .todo, .features, .keys].map { caption($0) }
-    let left = captions.filter(enHasHangul)
-    check(left.isEmpty, "preview in English: every page's line under the notch is English" + (left.isEmpty ? "" : " (\(left.prefix(3)))"))
-    check(caption(.voice) { $0.speedTitle = "느리게"; $0.voiceName = "Rachel" } == "Speaking speed · Slow · voice Rachel" && caption(.voice) == "Speaking speed · Normal · the Mac's voice",
-          "preview in English: the voice page's line names the speed and the voice")
-    check(caption(.team) { $0.teammateNames = ["Cody", "Tam"] } == "2 teammates · Cody, Tam" && caption(.team) == "0 teammates",
-          "preview in English: the team's line counts the teammates and names them")
-    let voice = ArisSettingsWording.make(page: .voice, english: true), skills = ArisSettingsWording.make(page: .skills, english: true)
-    check(voice(ArisNotchPreviewPlan.line) == "Hello, I'm Aris. This is how fast I'll speak." && !enHasHangul(skills(ArisNotchPreviewPlan.skillLine)),
-          "preview in English: the sample line Aris reads out, and the sample answer under a skill's tag")
-    var input = ArisNotchPreviewInput()
-    input.page = .skills
-    input.skillsOn = true
-    input.skillTitles = ["Meeting notes"]
-    if case .skillAnswer(let tag, _) = ArisNotchPreviewPlan.make(input).content {
-        check(skills(tag) == "Using the Meeting notes skill", "preview in English: the tag over an answer that followed a skill")
-    } else {
-        check(false, "preview in English: the tag over an answer that followed a skill")
-    }
+    let voice = ArisSettingsWording.make(page: .voice, english: true)
+    check(voice(ArisVoiceSample.line) == "Hello, I'm Aris. This is how fast I'll speak.", "voice sample in English: the line Aris reads out")
     check(voice(ArisSettingsCaption.changed("Speaking speed", on: nil)) == "Changed Speaking speed" && voice("목소리를 Rachel로 바꿨어요") == "Changed the voice to Rachel"
           && voice("목소리를 Adam으로 바꿨어요") == "Changed the voice to Adam",
-          "preview in English: the line after a change")
+          "settings in English: the line after a change")
 }
 
 // MARK: - Toasts and lines the pages build while they work
@@ -391,7 +364,7 @@ private let enSettingsFiles: [String] = [
     "Aris/components/Settings/ArisTeamPage.swift", "Aris/components/Settings/ArisTeamSections.swift", "Aris/components/Settings/ArisTeammateInspector.swift",
     // Every page
     "Aris/components/Settings/ArisSettingsBuilder.swift", "Aris/components/Settings/ArisSettingsCatalog.swift", "Aris/components/Settings/ArisLiveSettings.swift",
-    "Aris/components/Settings/ArisNotchPreviewPlan.swift", "Aris/components/Settings/ArisNotchPreview.swift", "Aris/components/Settings/ArisSettingsWords.swift",
+    "Aris/components/Settings/ArisFaceStage.swift", "Aris/components/Settings/ArisSettingsArt.swift", "Aris/components/Settings/ArisSettingsWords.swift",
     "Aris/components/Settings/ArisSettingsWindow.swift",
 ]
 
@@ -418,7 +391,6 @@ private let enSettingsPieces: [String: [String]] = [
     "7 이 Mac에 아직 없어요. 아래에서 준비하거나 다른 AI를 골라 주세요.": ["%@는 이 Mac에 아직 없어요. 아래에서 준비하거나 다른 AI를 골라 주세요.", "%@은 이 Mac에 아직 없어요. 아래에서 준비하거나 다른 AI를 골라 주세요."],
     "7 이 Mac에 설치돼 있지 않아요. 먼저 설치해 주세요": ["%@가 이 Mac에 설치돼 있지 않아요. 먼저 설치해 주세요", "%@이 이 Mac에 설치돼 있지 않아요. 먼저 설치해 주세요"],
     "7 바꿨어요": ["%@를 바꿨어요", "%@을 바꿨어요"], "켰어요": ["%@를 켰어요", "%@을 켰어요"], "껐어요": ["%@를 껐어요", "%@을 껐어요"],
-    "7 누르면 들어요": ["%@를 누르면 들어요", "%@을 누르면 들어요"],
     "권한 ": ["권한 %d개가 더 필요해요"], "더 필요해요": ["권한 %d개가 더 필요해요"],
     "누른 채 화면에 동그라미를 그리면 그 부분을 같이 봐요": ["%@를 누른 채 화면에 동그라미를 그리면 그 부분을 같이 봐요", "%@을 누른 채 화면에 동그라미를 그리면 그 부분을 같이 봐요"],
     "7를 7": ["말하기 단축키를 누른 채 화면에 동그라미를 그리면 그 부분을 같이 봐요"],

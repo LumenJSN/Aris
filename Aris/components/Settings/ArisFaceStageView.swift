@@ -136,14 +136,14 @@ struct ArisFaceStageView: View {
     }
 }
 
-/// The four listening bars, 2.5 wide, a new height every 58 ms while on (ArisNotchPreviewWave's levels); flat when off.
+/// The four listening bars, 2.5 wide, a new height every 58 ms while on (ArisFaceStageWave); flat when off.
 private struct ArisFaceStageBars: View {
     let on: Bool
 
     var body: some View {
         if on {
-            TimelineView(.periodic(from: .now, by: ArisNotchPreviewWave.tick)) { context in
-                bars(ArisNotchPreviewWave.bars(tick: Int(context.date.timeIntervalSinceReferenceDate / ArisNotchPreviewWave.tick)).map(\.height))
+            TimelineView(.periodic(from: .now, by: ArisFaceStageWave.tick)) { context in
+                bars(ArisFaceStageWave.heights(tick: Int(context.date.timeIntervalSinceReferenceDate / ArisFaceStageWave.tick)))
             }
         } else {
             bars([2, 2, 2, 2])

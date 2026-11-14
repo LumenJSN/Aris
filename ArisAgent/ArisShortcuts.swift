@@ -49,6 +49,14 @@ enum ArisShortcuts {
         return shapes.contains { command.range(of: $0, options: .regularExpression) != nil }
     }
 
+    /// actions.log's line for one command of a learned shortcut done again with no AI: what ran and whether it worked,
+    /// as every other action Aris takes has (seventh VM pass: "put TextEdit on the left half" moved the window and wrote
+    /// no line). Never the user's words.
+    static func replayAudit(_ command: String, ran: Bool) -> [String: String] {
+        ["action": ArisDesktopShell.audited(command), "risk": "learned shortcut (no AI)", "answer": ran ? "ran" : "failed (the shortcut is forgotten)",
+         "question": "shortcut replay"]
+    }
+
     /// A question, not a request (its key has no "?" left): "노션 캘린더 접근할 수 있어" was once learned as opening the
     /// calendar, and then answered that way every time. Never saved or replayed.
     static func isQuestion(_ key: String) -> Bool {

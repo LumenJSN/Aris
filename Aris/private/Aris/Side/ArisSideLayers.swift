@@ -85,6 +85,8 @@ final class ArisSideLayers: NSObject {
     private var glowTask: Task<Void, Never>?
     /// Runs while the outline moves, to hand the glass the outline that is on screen.
     private var link: CADisplayLink?
+    /// The outline's morph now running on the render server, for the glass to be sampled from (ArisSideMorph).
+    private var morph: ArisSideMorph?
     private var linkUntil: CFTimeInterval = 0
     private var health: AnyCancellable?
 
@@ -243,28 +245,41 @@ final class ArisSideLayers: NSObject {
         apply(spec, open: open, dots: dots, motion: .none, force: true)
     }
 
-    /// While the outline moves, the glass gets the outline that is on screen on every frame; at rest, once.
+    /// While the outline moves, the glass gets the outline of the frame about to be shown on every frame (the measured
+    /// side notch redraws its glass per frame of a morph too); at rest, once. Not the one on screen now: that is a frame behind
+    /// the wash, and closing, the bare glass's edge showed outside it as a silver flash (ArisSideMorph).
     private func followOutline(for duration: CFTimeInterval) {
         guard glass != nil else { return stopLink() }
         guard duration > 0 else {
             stopLink()
             return setGlassOutline(fill.path)
         }
-        linkUntil = CACurrentMediaTime() + duration + 0.05
-        setGlassOutline(fill.presentation()?.path ?? fill.path, moving: true)
+        linkUntil = (morph?.end ?? CACurrentMediaTime() + duration) + 0.05
+        let frame = frameInterval
+        setGlassOutline(glassPath(shown: CACurrentMediaTime() + frame, frame: frame), moving: true)
         guard link == nil else { return }
         let link = container.displayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
     }
 
+    /// One frame of this screen.
+    private var frameInterval: CFTimeInterval { 1 / Double(max(1, container.window?.screen?.maximumFramesPerSecond ?? 60)) }
+
     @objc private func tick(_ link: CADisplayLink) {
         if CACurrentMediaTime() >= linkUntil {
             stopLink()
             setGlassOutline(fill.path)
         } else {
-            setGlassOutline(fill.presentation()?.path ?? fill.path, moving: true)
+            setGlassOutline(glassPath(shown: link.targetTimestamp, frame: link.targetTimestamp - link.timestamp), moving: true)
         }
+    }
+
+    /// The glass's outline for the frame shown at `shown`: the morph's own sample then (a frame on while it shrinks),
+    /// so the glass moves with the wash and never stands outside it (ArisSideMorph).
+    private func glassPath(shown: CFTimeInterval, frame: CFTimeInterval) -> CGPath? {
+        guard let morph, shown < morph.end + frame else { return fill.path }
+        return morph.path(at: morph.glassTime(shown: shown, frame: frame))
     }
 
     private func stopLink() {
@@ -416,10 +431,23 @@ final class ArisSideLayers: NSObject {
     // MARK: - Animating
 
     private func animate(_ path: CGPath, motion: Motion) {
-        for layer in [fill, mask, dotsMask, backdropMask] {
-            animate(layer, "path", to: path, motion: motion)
+        // One begin for every layer of the outline and for the glass's samples, so they all run on the same clock; a
+        // shrinking morph starts a little later than its glass (ArisSideMorph.washDelay).
+        let now = CACurrentMediaTime()
+        var begin = now
+        let shown = fill.presentation()?.path ?? fill.path
+        morph = nil
+        if motion.duration > 0, let look = motion.look, let shown {
+            let timing = ArisSideLook.Timing(duration: motion.duration, x1: look.x1, y1: look.y1, x2: look.x2, y2: look.y2)
+            if let asked = ArisSideMorph(from: shown, to: path, begin: now, timing: timing) {
+                begin = ArisSideMorph.begin(now: now, frame: frameInterval, shrinking: asked.shrinks)
+                morph = ArisSideMorph(from: shown, to: path, begin: begin, timing: timing)
+            }
         }
-        animate(rim, "shadowPath", to: path, motion: motion)
+        for layer in [fill, mask, dotsMask, backdropMask] {
+            animate(layer, "path", to: path, duration: motion.duration, timing: motion.timing, begin: begin)
+        }
+        animate(rim, "shadowPath", to: path, duration: motion.duration, timing: motion.timing, begin: begin)
         for layer in glows {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -433,7 +461,9 @@ final class ArisSideLayers: NSObject {
     }
 
     /// Sets the model value and runs a basic animation from what's on screen now, so a reversal mid-way is smooth.
-    private func animate(_ layer: CALayer, _ key: String, to value: Any, duration: CFTimeInterval, timing: CAMediaTimingFunction) {
+    /// `begin`: when it starts, in CACurrentMediaTime()'s clock (nil: when committed).
+    private func animate(_ layer: CALayer, _ key: String, to value: Any, duration: CFTimeInterval, timing: CAMediaTimingFunction,
+                         begin: CFTimeInterval? = nil) {
         let from = layer.presentation()?.value(forKeyPath: key) ?? layer.value(forKeyPath: key)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -445,6 +475,11 @@ final class ArisSideLayers: NSObject {
         animation.toValue = value
         animation.duration = duration
         animation.timingFunction = timing
+        if let begin {
+            animation.beginTime = layer.convertTime(begin, from: nil)
+            // A morph that starts a frame or two late holds its first outline until then (ArisSideMorph.washDelay).
+            animation.fillMode = .backwards
+        }
         layer.add(animation, forKey: key)
     }
 }

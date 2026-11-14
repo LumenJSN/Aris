@@ -3,9 +3,10 @@
 //  Aris
 //
 //  Scheduled work runs in aris-agent, whether or not the app is open; what it produced waits in the agent's inbox.
-//  The app fetches it at launch and whenever the agent nudges (com.lumenjsn.aris.inbox): results are said when Aris is
-//  free, and a parked question is asked when the user is at the Mac (only if the agent still waits for it). Each item is
-//  acknowledged once it has been delivered, so one the app couldn't say (it quit first) comes back next launch.
+//  The app fetches it at launch and whenever the agent nudges (com.lumenjsn.aris.inbox): results come up on a card
+//  under the notch (and are said) when Aris is free, and a parked question is asked when the user is at the Mac (only if
+//  the agent still waits for it). Each item is acknowledged once it has been delivered, so one the app couldn't show
+//  (it quit first) comes back next launch.
 //  A question the user's turn covered, or nobody answered, waits in 확인 대기 (ArisController+CardPark): it is never sent as
 //  his no, and it is acknowledged only once he answered or the agent stopped waiting for it.
 //
@@ -83,22 +84,20 @@ extension ArisController {
         }
     }
 
-    /// Says a result, failure or note at the next pause, in its turn; false when a turn of the user's took the moment (it
-    /// waits for the next delivery).
+    /// Puts a result, failure or note on a card at the next pause, in its turn, and says it once when Aris may speak;
+    /// false when the delivery was cancelled first (it waits for the next delivery).
     private func say(_ item: ArisInboxItem) async -> Bool {
         guard !item.spoken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
         // Shown and said like any answer: no code or data block, nothing read aloud as code (ArisSpeakable).
         let report = ArisSpeakable.report(item.spoken, korean: ArisSpeech.language(of: item.title) == "ko-KR")
         let said = report.spoken
-        let spoken: Bool? = await announce {
-            self.flashTaskDone()
-            return await self.speakUp(item.title, saying: said, showing: report.shown, { await self.speak { await self.speaker.speak(said) } }) != nil
-        }
-        guard spoken == true else {
+        let card = ArisNoticeRoute.inbox(kind: item.kind, title: item.title, shown: report.shown, file: item.file, english: ArisUIWords.english)
+        let shown = await notify(card, saying: said, parking: report.shown) { self.flashTaskDone() }
+        guard shown else {
             inboxAgain = true
             return false
         }
-        // Recorded once it was said, so a retried result isn't in the history twice.
+        // Recorded once it was shown, so a retried result isn't in the history twice.
         if item.kind == "result" {
             remember(ArisHistory.jobEntry(title: item.title, shown: report.shown, file: item.file, date: item.date))
             // A scheduled job's long rest opens in Aris's reader, as a handed-out job's does.

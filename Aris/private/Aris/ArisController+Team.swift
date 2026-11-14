@@ -182,20 +182,44 @@ extension ArisController {
 
     /// Runs one job in its own AI process and speaks up when it needs an answer or is done. A teammate other than
     /// Claude Code (runTeammate) runs here too, under its own name and face (the agent logs its id). Its answer is
-    /// never parsed as a dispatch.
+    /// never parsed as a dispatch. An answer is a job done only by ArisJobVerdict: a job that did nothing is asked once
+    /// more with a firmer instruction, then reported as not done (never a green tick: seventh VM pass).
     private func run(_ job: ArisJob, _ run: ArisJobRun) async {
+        var prompt = job.prompt
+        for attempt in 0..<2 {
+            guard let ended = await runOnce(job, run, prompt: prompt) else { return }
+            switch ArisJobVerdict.judge(task: job.prompt, answer: ended.answer, work: ended.work) {
+            case .done:
+                return await reportDone(job, answer: ended.answer, file: ended.file)
+            case .notDone(let why):
+                if attempt == 0, ArisJobVerdict.retries(why, work: ended.work), !Task.isCancelled {
+                    log.notice("background task not done (\(why.rawValue, privacy: .public)): asked once more")
+                    setState(job.id, .running(step: ""))
+                    prompt = job.prompt + ArisJobVerdict.firmer(korean: ArisSpeech.language(of: job.title) == "ko-KR")
+                    continue
+                }
+                return await reportNotDone(job, run, answer: ended.answer, why: why)
+            }
+        }
+    }
+
+    /// One ask of a job's AI process: its answer, saved file and counted work; nil when it ended otherwise (a failure,
+    /// said already; a cancel; a cut-off stream, said already).
+    private func runOnce(_ job: ArisJob, _ run: ArisJobRun, prompt: String) async -> (answer: String, file: String?, work: ArisJobWork?)? {
         var savedFile: String?
+        var work: ArisJobWork?
         let teammate: String? = if case .teammate(let id) = job.assignee { id } else { nil }
         // A helper's name, so the 한 일 tab files its rows under "도우미 N", not its brain (N14).
         let helper: String? = if case .helper(let index) = job.assignee { ArisHelpers.name(index) } else { nil }
         let plan = run.plan
-        let source = ArisAgentClient.ask(job.prompt, context: await currentContext(conversation: !plan.cleanContext), tier: run.tier, brain: plan.brain,
+        let source = ArisAgentClient.ask(prompt, context: await currentContext(conversation: !plan.cleanContext), tier: run.tier, brain: plan.brain,
                                          task: job.title, job: job.id, browser: run.browser, untrusted: plan.provenance.untrusted, request: plan.request,
                                          screenConversation: plan.provenance.screenConversation,
                                          outsideConversation: plan.provenance.outsideConversation, handsFree: plan.provenance.handsFree,
                                          teammate: teammate, helper: helper)
         // Relayed, so the end of the agent's stream is noted even while a question is parked here.
         let (replies, relay) = AsyncStream.makeStream(of: ArisAgentReply.self)
+        jobRuns[job.id]?.streamEnded = false
         let pump = Task { [weak self] in
             for await reply in source { relay.yield(reply) }
             self?.jobRuns[job.id]?.streamEnded = true
@@ -205,7 +229,7 @@ extension ArisController {
         // Only this job's own "working on this window" overlay comes down with it.
         defer { ArisOperatingOverlay.shared.end(owner: job.id) }
         for await reply in replies {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return nil }
             switch reply {
             case .status(let status):
                 setState(job.id, .running(step: status))
@@ -214,23 +238,24 @@ extension ArisController {
             case .file(let path):
                 savedFile = path
             case .confirm(let ask):
-                guard await settle(ask, of: job) else { return }
-            case .stepFailed, .turn, .launched, .untrusted, .refusedJobs, .shownOnly, .skill, .helperAnswers:
+                guard await settle(ask, of: job) else { return nil }
+            case .work(let counted):
+                work = counted
+            case .stepFailed, .turn, .launched, .untrusted, .refusedJobs, .shownOnly, .skill, .helperAnswers, .savedSteps:
                 break
             case .operating(let target):
                 // A job working in another app's window: the same overlay, and its step in the job's row.
                 ArisOperatingOverlay.shared.show(target, owner: job.id)
                 setState(job.id, .running(step: target.line))
             case .answer(let answer):
-                await reportDone(job, answer: answer, file: savedFile)
-                return
+                return (answer, savedFile, work)
             case .failure(let message):
                 // The stream may have failed while the task still runs in the agent: make sure it stops.
                 Task { [weak self] in await self?.cancelInAgent(job.id, parked: nil, markUnconfirmed: false) }
                 // A stream that died with the agent already says so by name (ArisJobLoss, from the error's code); any
                 // other failure is said with the agent's own reason (audit team-3).
                 await reportFailure(job, message)
-                return
+                return nil
             }
         }
         // The stream ended without an answer or a failure: don't leave the job running forever, here or in the agent,
@@ -239,6 +264,34 @@ extension ArisController {
             Task { [weak self] in await self?.cancelInAgent(job.id, parked: nil, markUnconfirmed: false) }
             await reportFailure(job, ArisJobFailure.cutOff(korean: ArisSpeech.language(of: job.title) == "ko-KR"))
         }
+        return nil
+    }
+
+    /// A job whose answer isn't a job done (ArisJobVerdict): its tray row fails with why, its 기록 entry says so, and its
+    /// card is a problem's (never the green tick) with what it answered and 다시 시도, which hands it out again.
+    func reportNotDone(_ job: ArisJob, _ run: ArisJobRun, answer: String, why: ArisJobVerdict.Why) async {
+        log.notice("background task not done: \(why.rawValue, privacy: .public)")
+        let korean = ArisSpeech.language(of: job.title) == "ko-KR"
+        let english = ArisUIWords.english
+        let reason = ArisJobVerdict.reason(why, korean: korean)
+        let report = ArisSpeakable.report(answer, korean: korean)
+        let shown = [reason, report.shown].filter { !$0.isEmpty }.joined(separator: " ")
+        setState(job.id, .failed(reason))
+        finish(job.id)
+        flashTaskDone()
+        notDoneJobs[job.id] = run
+        pastTurns = ArisHistory.finishing(job: job.id, title: job.title, shown: ArisJobFailure.shown(reason: shown, korean: korean), file: nil, in: pastTurns)
+        ArisHistory.save(pastTurns)
+        let card = ArisNoticeRoute.jobNotDone(title: job.title, shown: shown, job: job.id, english: english)
+        let said = ArisJobFailure.said(title: job.title, reason: reason, korean: korean)
+        await notify(card, saying: ArisSpeakable.speakable(said), parking: said)
+    }
+
+    /// The not-done card's 다시 시도: the same job, handed out again as it ran.
+    func retryNotDone(_ id: UUID) {
+        guard let run = notDoneJobs.removeValue(forKey: id) else { return }
+        log.notice("background task handed out again")
+        dispatch([run.plan], tier: run.tier, browser: run.browser)
     }
 
     /// A job's question parks (the agent holds it for a day) until Aris is free and the user is at the Mac; meanwhile its
@@ -274,14 +327,13 @@ extension ArisController {
             jobFiles[job.id] = file
             ArisBoard.shared.read(file: file)
         }
-        // Said at the next pause, one at a time (in a conversation: when neither the user nor Aris is talking).
-        _ = await announce {
+        // On a card under the notch at the next pause, one at a time (in a conversation: when neither the user nor Aris is
+        // talking), and said once when Aris may speak.
+        let card = ArisNoticeRoute.jobDone(title: job.title, shown: report.shown, job: job.id, english: ArisUIWords.english)
+        await notify(card, saying: report.spoken, parking: report.shown) {
             // An untrusted job's answer in the context is outside text: the conversation dispatches nothing after it.
             self.outsideConversation = true
             self.history = ArisContext.remembering(ArisContext.Turn(heard: job.title, reply: report.shown), after: self.history)
-            return await self.speakUp(job.title, saying: report.spoken, showing: report.shown) {
-                await self.speak { await self.speaker.speak(report.spoken) }
-            }
         }
     }
 
@@ -300,6 +352,7 @@ extension ArisController {
         ArisHistory.save(pastTurns)
         let said = said ?? ArisJobFailure.said(title: job.title, reason: reason, korean: korean)
         let spoken = ArisSpeakable.speakable(said)
-        _ = await announce { await self.speakUp(job.title, saying: said) { await self.speak { await self.speaker.speak(spoken.isEmpty ? said : spoken) } } }
+        let card = ArisNoticeRoute.jobFailed(title: job.title, shown: ArisJobFailure.shown(reason: reason, korean: korean))
+        await notify(card, saying: spoken.isEmpty ? said : spoken, parking: said)
     }
 }

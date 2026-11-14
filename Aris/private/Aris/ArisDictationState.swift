@@ -44,8 +44,14 @@ final class ArisDictationState: ObservableObject {
     private var polishSession: AnyObject?
     private var context: (before: String, after: String)?
     private var contextRead: Task<Void, Never>?
-    /// Its words are being written down and typed: the key and the cap can't end it again.
-    var finishing = false
+    /// Its words are being written down and typed: the key and the cap can't end it again. Published for the pill
+    /// (its ring starts here).
+    @Published var finishing = false
+    /// Started with a click on the dictation pill: its row has ✕ and ↑ (ArisDictationPillCenter).
+    @Published var fromPill = false
+    /// What went wrong, for a moment in the pill (the notch stays quiet for dictation while the pill is on).
+    @Published private(set) var pillError: String?
+    private var pillErrorClear: Task<Void, Never>?
     /// Counts dictations, so a watch left from the last one knows it's stale.
     private(set) var generation = 0
     /// What dictation typed last, in memory only.
@@ -82,6 +88,17 @@ final class ArisDictationState: ObservableObject {
         }
     }
 
+    /// A dictation went wrong while the pill has it: the line shows in place, then goes.
+    func showPillError(_ line: String) {
+        pillErrorClear?.cancel()
+        pillError = line
+        pillErrorClear = Task { [weak self] in
+            try? await Task.sleep(for: ArisDictationPillRules.errorLinger)
+            guard !Task.isCancelled else { return }
+            self?.pillError = nil
+        }
+    }
+
     func clearRefusal() {
         refusalClear?.cancel()
         refusalClear = nil
@@ -97,6 +114,8 @@ final class ArisDictationState: ObservableObject {
         style = ArisWritingStyles.style(for: kind, choices: Defaults[.arisDictationStyles])
         copied = false
         cardHovered = false
+        pillErrorClear?.cancel()
+        if pillError != nil { pillError = nil }
         polishSession = ArisDictationPolish.prepare(style: style, words: ArisVocabulary.load())
         guard style.polishes else { return }
         contextRead = Task { [weak self] in

@@ -306,20 +306,22 @@ extension ArisController {
 
     /// Aris's own news waits its turn (first come, first said) and for a pause (ArisPause): in a conversation, a
     /// moment when neither the user nor Aris is talking; otherwise whenever Aris is idle, as before. `present`: and the user is
-    /// at the Mac (a question). Nil when cancelled before its turn came.
-    func announce<T>(present: Bool = false, _ body: () async -> T) async -> T? {
+    /// at the Mac (a question). `when`: and this holds too (a card under the notch: the notch is closed), looked at every
+    /// `recheck`. Nil when cancelled before its turn came.
+    func announce<T>(present: Bool = false, recheck: Duration = .milliseconds(250), when ready: () -> Bool = { true },
+                     _ body: () async -> T) async -> T? {
         let (queue, ticket) = announcements.adding()
         announcements = queue
         defer { announcements = announcements.removing(ticket) }
-        while !(announcements.isFirst(ticket) && isPause(present: present)) {
+        while !(announcements.isFirst(ticket) && isPause(present: present) && ready()) {
             guard !Task.isCancelled else { return nil }
-            try? await Task.sleep(for: .milliseconds(250))
+            try? await Task.sleep(for: recheck)
         }
         guard !Task.isCancelled else { return nil }
         return await body()
     }
 
-    private func isPause(present: Bool) -> Bool {
+    func isPause(present: Bool) -> Bool {
         let seconds = { (instant: ContinuousClock.Instant?) in instant.map { (ContinuousClock.now - $0) / .seconds(1) } }
         return (!present || !screenAway)
             && ArisPause.isPause(idle: session.phase == .idle && listener == nil && wakeListener == nil, training: training != nil,

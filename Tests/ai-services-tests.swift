@@ -194,7 +194,7 @@ private func aiPageTests() {
     check(empty.hear.rows.map(\.title) == ["듣기"] && empty.hear.rows[0].desc == "Apple 받아쓰기 · 이 Mac에 머물러요" && empty.hear.need == nil
           && empty.speak.rows.map(\.title) == ["말하기", "목소리"] && empty.speak.rows[0].desc == "macOS 목소리 · 이 Mac에 머물러요"
           && empty.speak.rows[1].control == .select(.voice, ArisAISelectFace(label: "자동")) && empty.speak.rows[1].preview == true
-          && empty.voiceLine == nil && empty.jev == .off && empty.savedKeys.isEmpty && empty.who == ["ChatGPT", "Apple 받아쓰기", "macOS"],
+          && empty.voiceLine == nil && empty.jev == .off && empty.savedKeys.isEmpty,
           "ai page: a new install listens with Apple's recognition and speaks with the Mac's best voice, all on this Mac")
 
     // Claude, Scribe and an ElevenLabs voice.
@@ -214,7 +214,7 @@ private func aiPageTests() {
           && claude.speak.rows.map(\.title) == ["말하기", "모델", "목소리"] && claude.speak.rows[1].control == .select(.model(.speak), ArisAISelectFace(label: "v4 Turbo"))
           && claude.speak.rows[2].desc == "female · korean" && claude.speak.rows[2].control == .select(.voice, ArisAISelectFace(label: "Geaun"))
           && claude.voiceLine == "안 되면 이 Mac의 Whisper로 듣고 macOS 목소리로 말해요" && claude.jev == .on(masked: "••••••••77aa")
-          && claude.savedKeys == [ArisAISavedKey(holder: "elevenlabs", name: "ElevenLabs", masked: "••••••••9c1e")] && claude.who == ["Claude", "ElevenLabs Scribe", "ElevenLabs · Geaun"],
+          && claude.savedKeys == [ArisAISavedKey(holder: "elevenlabs", name: "ElevenLabs", masked: "••••••••9c1e")],
           "ai page: Scribe and the ElevenLabs voice with their key; the line under them names what this Mac falls back to")
     check(ArisAIServicesBuilder.page(aiState { $0.choices.hear = "scribe"; $0.elevenKey = "x" }).voiceLine == "안 되면 이 Mac의 Apple 받아쓰기로 들어요"
           && ArisAIServicesBuilder.page(aiState { $0.choices.speak = "eleven"; $0.elevenKey = "x" }).voiceLine == "안 되면 이 Mac의 macOS 목소리로 말해요"
@@ -303,7 +303,7 @@ private func aiPageTests() {
         $0.choices.systemVoice = "yuna.premium"
         $0.voices["macos"] = .loaded([ArisAIVoice(id: "yuna.premium", name: "유나", desc: "여성 · 한국어(대한민국)", tail: "프리미엄")])
     })
-    check(mac.speak.rows[1].control == .select(.voice, ArisAISelectFace(label: "유나", tail: "프리미엄")) && mac.speak.rows[1].desc == "여성 · 한국어(대한민국)" && mac.who[2] == "macOS · 유나",
+    check(mac.speak.rows[1].control == .select(.voice, ArisAISelectFace(label: "유나", tail: "프리미엄")) && mac.speak.rows[1].desc == "여성 · 한국어(대한민국)",
           "ai page: a picked macOS voice shows its name, what it is and its quality")
 }
 
@@ -356,8 +356,8 @@ private func aiMenuTests() {
     let whisper = ArisAIServicesBuilder.menu(.model(.hear), state)
     check(whisper.items.map(\.title) == ["작은 모델 · 기본", "큰 모델"] && whisper.items.map(\.tail) == [nil, "630 MB"] && whisper.items[0].checked,
           "ai menu: a Whisper model that isn't on this Mac shows its size")
-    check(ArisAIServicesBuilder.menu(.model(.speak), state).items.map(\.title) == ["Flash v2.5", "v4 Turbo · 기본", "Multilingual v2"],
-          "ai menu: ElevenLabs' three models, v4 Turbo the default")
+    check(ArisAIServicesBuilder.menu(.model(.speak), state).items.map(\.title) == ["Flash v2.5", "v4 Turbo · 기본", "v4", "Multilingual v2"],
+          "ai menu: ElevenLabs' four models, v4 Turbo the default")
 
     var voices = state
     voices.voices["eleven"] = .loaded([ArisAIVoice(id: "v1", name: "Alex", desc: "male · korean", own: true, preview: "https://x/p.mp3"), ArisAIVoice(id: "v2", name: "지영", desc: "female", own: true),
@@ -598,7 +598,7 @@ private func aiShown(_ page: ArisAIPage) -> [String] {
         case nil: break
         }
     }
-    out += [page.thinkLine, page.voiceLine, page.login?.title, page.login?.desc].compactMap { $0 } + page.who
+    out += [page.thinkLine, page.voiceLine, page.login?.title, page.login?.desc].compactMap { $0 }
     return out.filter { !$0.isEmpty }
 }
 
@@ -753,17 +753,6 @@ private func aiSettingsWindowTests() {
           "ai settings: the search finds 생각, Jev, 듣기 and 말하기 by their names and by the services in them")
     check(ArisSettingsIndex.entry("ai.apiBrain") == nil && ArisSettingsIndex.entry("ai.key.elevenlabs-key") == nil && ArisSettingsIndex.entry("ai.add") == nil,
           "ai settings: the rows the page no longer draws are out of the search")
-    var input = ArisNotchPreviewInput()
-    input.page = .ai
-    check(!ArisNotchPreviewPlan.make(input).shown, "ai settings: before the page's state is read there is nothing to show, and no preview (settings pick 1-A)")
-    input.aiWho = ["Claude", "Whisper", "ElevenLabs · Geaun"]
-    let plan = ArisNotchPreviewPlan.make(input)
-    check(plan.content == .who(["Claude", "Whisper", "ElevenLabs · Geaun"]) && plan.width == 502 && plan.height == 74 && plan.wide && plan.stageHeight == 100 && plan.caption.isEmpty,
-          "ai settings: the notch preview names who thinks, listens and speaks, 502 wide and 74 tall in a 100-point stage")
-    input.aiWho = ["내 연결로 붙인 아주 긴 이름의 서버", "ElevenLabs Scribe", "ElevenLabs · Aris 낭독 목소리 이름이 긴 것"]
-    check(ArisNotchPreviewPlan.make(input).width > 502, "ai settings: long names widen the notch past 502")
-    input.page = .general
-    check(ArisNotchPreviewPlan.make(input).content == .none, "ai settings: other pages' previews are as they were")
 }
 
 private func aiConnectionTests() {

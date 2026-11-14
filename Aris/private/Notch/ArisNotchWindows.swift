@@ -9,6 +9,7 @@
 //
 
 import AppKit
+import Combine
 import Defaults
 import SwiftUI
 
@@ -236,6 +237,25 @@ final class ArisNotchWindows {
     /// The windows of the current mode.
     private var panels: [ArisNotchPanel] {
         (allDisplays ? Array(windows.values) : [window].compactMap { $0 }).compactMap { $0 as? ArisNotchPanel }
+    }
+
+    // MARK: - For the notification cards (ArisNoticeCenter)
+
+    /// A notch of the current mode is open.
+    var anyOpen: Bool {
+        allDisplays ? viewModels.values.contains { $0.notchState == .open } : primaryViewModel.notchState == .open
+    }
+
+    /// The display the cards go on: the single notch's, or in "all displays" mode the main one.
+    var noticeScreen: NSScreen? {
+        if !allDisplays, let window { return Self.singleScreen(of: window) }
+        return NSScreen.main
+    }
+
+    /// Each time a notch may have opened or closed.
+    var openChanges: AnyPublisher<Void, Never> {
+        let models = [primaryViewModel] + Array(viewModels.values)
+        return Publishers.MergeMany(models.map { $0.$notchState.map { _ in () } }).eraseToAnyPublisher()
     }
 
     /// Everything off (the app is quitting).

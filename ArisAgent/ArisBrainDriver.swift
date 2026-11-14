@@ -137,10 +137,14 @@ protocol ArisBrainDriver: AnyObject {
     var quietKinds: Set<String> { get }
     /// Aside started for this turn (ArisAsideTool): lines that let the process wait for it (the API brain's helper).
     func asideStarted() -> [Data]
+    /// A card of this turn waits for the owner up to `seconds`: lines that let the process wait as long (the API brain's
+    /// helper, whose whole turn had five minutes while a job's card waits ten).
+    func cardWaits(_ seconds: TimeInterval) -> [Data]
 }
 
 extension ArisBrainDriver {
     func asideStarted() -> [Data] { [] }
+    func cardWaits(_ seconds: TimeInterval) -> [Data] { [] }
     var takesImages: Bool { false }
     var environment: [String: String] { [:] }
     var isolatedFolder: Bool { false }
@@ -594,6 +598,8 @@ final class ArisClaudeDriver: ArisBrainDriver {
         ungatedRefused.filter { command in
             !ArisLocalReadPolicy.privateReads.contains(command) && command != "memory" && command != "message"
                 && !ArisHandOff.names(command.split(separator: " ").map(String.init))
+                // `type` goes to the agent's desktop engine (as `desktop` does), which asks the user itself.
+                && command != "type"
         }
     }
     /// The sealed Claude's refusals: the open list (the owner, 2026-11-08: its `message` goes to the agent too, which shows

@@ -119,7 +119,7 @@ struct ArisSkillBadge: View {
     let tint: Color
 
     var body: some View {
-        Image(systemName: symbol).font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+        ArisLineIcon(symbol, size: 14, stroke: 2.5).foregroundStyle(.white)
             .frame(width: 26, height: 26).background(Circle().fill(tint))
     }
 }
@@ -134,8 +134,7 @@ struct ArisSkillFileLine: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: file.kind == "script" ? "chevron.left.forwardslash.chevron.right" : "doc")
-                .font(.system(size: 12)).foregroundStyle(palette.icon).frame(width: 16).padding(.top, 2)
+            ArisLineIcon(file.kind == "script" ? "chevron.left.forwardslash.chevron.right" : "doc", size: 14).foregroundStyle(palette.icon).frame(width: 16).padding(.top, 2)
             VStack(alignment: .leading, spacing: 3) {
                 Text(file.path).font(.system(size: 12, design: .monospaced)).foregroundStyle(palette.title)
                 Text(w(ArisSkillWords.fileLine(file, notes: findings + checked))).font(.system(size: 11.5)).foregroundStyle(palette.desc).lineLimit(2)
@@ -196,7 +195,7 @@ struct ArisSkillJobCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 ArisSkillInset(tone: .warn) {
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle").foregroundStyle(palette.warn)
+                        ArisLineIcon("exclamationmark.triangle", size: 16).foregroundStyle(palette.warn)
                         (Text(w("인터넷에서 받은 스킬은 나쁜 일을 하도록 만들어졌을 수도 있어요. ")).fontWeight(.semibold)
                          + Text(w("그래서 추가하기 전에 SkillSpector로 검사해요.")))
                             .font(.system(size: 12.5)).foregroundStyle(palette.title).fixedSize(horizontal: false, vertical: true)
@@ -267,20 +266,16 @@ struct ArisSkillJobCard: View {
     }
 }
 
-/// A skill's icon: a soft tile with a symbol and tint chosen by what the skill is about (its title and name, by
-/// keyword), else picked from its name (always the same for one skill).
+/// A skill's icon: the measured app-icon tile (ArisIconTile) on a gradient of the tint chosen by what the skill is about
+/// (its title and name, by keyword, else picked from its name: always the same for one skill), its glyph white.
 struct ArisSkillTile: View {
-    @Environment(\.arisPalette) private var palette
     let name: String
     var title = ""
     var size: CGFloat = 36
 
     var body: some View {
         let look = ArisSkillLook.pick(name: name, title: title)
-        Image(systemName: look.symbol).font(.system(size: size * 0.42, weight: .medium)).foregroundStyle(Color(arisHex: look.tint))
-            .frame(width: size, height: size)
-            .background(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(Color(arisHex: look.tint, palette.dark ? 0.16 : 0.08)))
-            .overlay(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).strokeBorder(Color(arisHex: look.tint, 0.18), lineWidth: 1))
+        ArisIconTile(look.symbol, size: size, fill: .tinted(look.tint))
     }
 }
 

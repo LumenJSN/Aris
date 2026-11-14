@@ -12,7 +12,7 @@ func runFix8Tests() {
     fix8CalendarCardDayTests()
     MainActor.assumeIsolated { fix8LongRequestCaptureTests() }
     fix8KeyHoldRuleTests()
-    MainActor.assumeIsolated { fix8KeyHoldPanelTests() }
+    MainActor.assumeIsolated { keyPanelHarness("vm4 4") { fix8KeyHoldPanelTests() } }
     fix8SendClaimTests()
 }
 

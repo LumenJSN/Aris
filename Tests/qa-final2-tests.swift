@@ -359,7 +359,7 @@ func runQAFinal2SafetyTests() {
     let ledger = ArisComputerUseLedger()
     ledger.noteNotDone()
     check(ledger.actionsThisTurn.done == false && ledger.actionsThisTurn.notDone == 1, "BUG-33 (reopened): the ledger keeps what wasn't done")
-    check(source("ArisAgent/ArisDesktopRoutes.swift").contains("if action { turn.ledger.noteNotDone() }")
+    check(source("ArisAgent/ArisDesktopRoutes.swift").contains("if action { turn.ledger.noteActionStarted() }")
           && runner.contains("answer = ArisDesktopHonesty.checked(answer, done: actions.done, notDone: actions.notDone, korean: koreanRequest)"),
           "BUG-33 (reopened): every desktop outcome reaches the ledger, and every reply is checked")
     // BUG-16 inverted.
@@ -593,7 +593,7 @@ func runQAFinal2ReviewTests() {
     check(ledger.actionsThisTurn.done && ArisDesktopHonesty.checked("보냈어요.", done: ledger.actionsThisTurn.done, notDone: 1, korean: true) == "보냈어요.",
           "review MEDIUM 3: a click that closed its window (no window read after) still counts as done")
     check(ArisDesktopHonesty.isDesktopCommand("/t desktop type @s1:e2 --stdin", tools: tools) && !ArisDesktopHonesty.isDesktopCommand("/t message 엄마 곧 가", tools: tools)
-          && runner.contains("if !nonDesktopTool {") && source("ArisAgent/ArisDesktopRoutes.swift").contains("if action, outcome.status == 0 { turn.ledger.noteActed() }"),
+          && runner.contains("if !nonDesktopTool {") && source("ArisAgent/ArisDesktopRoutes.swift").contains("if action { turn.ledger.noteActionEnded(ok: outcome.status == 0) }"),
           "review MEDIUM 3: a declined desktop action and another tool that worked: the reply stands")
     // MEDIUM 4: event find is outside text, and offers no double-quoted title.
     check(ArisRiskPolicy.bringsInUntrusted(.shell("/t event find QA --start '2026-11-10 15:00'"), tools: tools, home: "/Users/me"),

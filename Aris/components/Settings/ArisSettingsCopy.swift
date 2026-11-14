@@ -38,14 +38,21 @@ enum ArisSettingsCopy {
     static func install(_ pairs: [String: String]) {
         lock.lock()
         defer { lock.unlock() }
-        table = ArisSettingsCopyTable(pairs)
+        table = ArisSettingsCopyTable(withMore(pairs))
+    }
+
+    /// The catalog's pairs and the rows' own (ArisSettingsCopyMore), the catalog's first: one table, so a row's own pair
+    /// with a number in it ("기록 %d개") is a pattern too, and a part of a dotted line finds it (seventh VM pass: "기록
+    /// 1개" stayed Korean on an English Mac).
+    static func withMore(_ pairs: [String: String]) -> [String: String] {
+        pairs.merging(ArisSettingsCopyMore.english) { catalog, _ in catalog }
     }
 
     /// The English for a Korean string, or nil when the catalog has none.
     static func english(_ korean: String) -> String? {
         lock.lock()
         defer { lock.unlock() }
-        if table == nil { table = ArisSettingsCopyTable(compiled()) }
+        if table == nil { table = ArisSettingsCopyTable(withMore(compiled())) }
         // Rows added since the catalog was last written carry their English beside them (ArisSettingsCopyMore).
         return table?.english(korean) ?? ArisSettingsCopyMore.english[korean]
     }
@@ -279,7 +286,6 @@ struct ArisSettingsWording: Equatable {
     private func extra(_ extra: ArisSettingExtra) -> ArisSettingExtra {
         switch extra {
         case .none, .swatches: extra
-        case .chips(let chips, let removable): .chips(chips.map(option), removable: removable)
         }
     }
 
@@ -289,7 +295,7 @@ struct ArisSettingsWording: Equatable {
     static func shown(_ sections: [ArisSettingSection]) -> [String] {
         sections.flatMap { section in
             [section.heading, section.note, section.fold?.title].compactMap { $0 } + (section.fold?.desc.components(separatedBy: " · ") ?? []) + section.rows.flatMap { row in
-                [row.title, row.desc].compactMap { $0 } + shown(row.control) + shown(row.extra)
+                [row.title, row.desc].compactMap { $0 } + shown(row.control)
             }
         }
     }
@@ -308,10 +314,5 @@ struct ArisSettingsWording: Equatable {
         case .said(let text): [text]
         case .field(_, _, let placeholder, let action): [placeholder, action.title]
         }
-    }
-
-    private static func shown(_ extra: ArisSettingExtra) -> [String] {
-        if case .chips(let chips, _) = extra { return chips.map(\.title) }
-        return []
     }
 }

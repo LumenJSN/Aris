@@ -2,11 +2,13 @@
 //  ArisSettingsShell.swift
 //  Aris
 //
-//  The settings window's frame: B's sidebar on the left (220, the system sidebar material under its tint), and C's
-//  content pane (the pane gradient, one 700-wide column 44 from the top, a 20-pt fade at the top of the scroll and an
-//  80-pt fade at the bottom): the notch preview on the pages that have something to show in it (pick 1-A), the page's
-//  title with its line under it, then the page's cards, which are all that changes when another page is chosen (pick
-//  4-A). A search result jumps to its setting and highlights it once.
+//  The settings window's frame, as measured (SETTINGS-REA.md §3.1, §4.3): the window's material shows through the
+//  sidebar under a light tint and through a 7-pt gutter under a .15 wash; the content is a floating card inset 7 on
+//  its top, bottom and right, radius 13, with a white .8 border (light) or a #dfe2e8 ring (dark) and nothing between
+//  it and the sidebar. In it, one column at most 800 wide, 48 from the left and 40 from the top: Aris's face on the
+//  팀원 page, the page's 22/600 title, then the page's cards, which are all that changes when another page is chosen
+//  (pick 4-A); a 20-pt fade at the top of the scroll and an 80-pt fade at the bottom. No page shows a notch preview
+//  (the owner, 2026-11-12). A search result jumps to its setting and highlights it once.
 //
 
 import AppKit
@@ -20,11 +22,9 @@ struct ArisSettingsShell<Page: View>: View {
     /// The pages' open menu (the window's one menu control).
     var menus: ArisSettingMenus?
     let status: String
-    let plan: ArisNotchPreviewPlan
-    var replay = 0
     /// What the search may offer (ArisSettingsBuilder.searchable); nil offers every setting.
     var searchable: Set<String>?
-    /// The real sidebar material (the offscreen renders draw a stand-in under the tint).
+    /// The window's real material is behind this view (the offscreen renders draw a stand-in: ArisMaterialStandIn).
     var vibrancy = true
     /// The helper's restart, for the status line while the helper doesn't answer.
     var helperFix: (title: String, press: () -> Void)?
@@ -37,54 +37,55 @@ struct ArisSettingsShell<Page: View>: View {
     var body: some View {
         HStack(spacing: 0) {
             ArisSettingsSidebar(nav: nav, status: status, searchable: searchable, helperFix: helperFix, aiFix: aiFix)
-                .background(ArisSidebarBackdrop(vibrancy: vibrancy))
-            pane
-                .overlay(alignment: .leading) { Rectangle().fill(palette.hairline).frame(width: 1) }
+                .frame(maxHeight: .infinity)
+                .background(palette.sidebarTint.ignoresSafeArea())
+            ZStack {
+                palette.wash.ignoresSafeArea()
+                card.padding(EdgeInsets(top: inset, leading: 0, bottom: inset, trailing: inset))
+            }
         }
+        .background { if !vibrancy { ArisMaterialStandIn() } }
         .overlay { if let menus { ArisSettingMenuHost(menus: menus) } }
         .environment(\.arisSettingsFlash, nav.flash)
     }
 
-    private var pane: some View {
-        ZStack(alignment: .bottom) {
+    private var inset: CGFloat { ArisSidebarMetrics.cardInset }
+
+    /// The content card: the pane gradient, the column, the bottom fade (its corners are the card's), and its edge.
+    private var card: some View {
+        let shape = RoundedRectangle(cornerRadius: ArisSidebarMetrics.cardRadius, style: .continuous)
+        return ZStack(alignment: .bottom) {
             palette.pane
             scroller
             LinearGradient(colors: [palette.fade, palette.fade.opacity(0)], startPoint: .bottom, endPoint: .top)
-                .frame(height: 80).opacity(0.9).allowsHitTesting(false)
+                .frame(height: ArisSettingsMetrics.bottomFade).opacity(0.9).allowsHitTesting(false)
         }
-        .background(palette.wash)
+        .clipShape(shape)
+        .overlay {
+            // Light: a 1-pt border inside the card. Dark: a 1-pt ring just outside it (`0 0 0 1px`).
+            if palette.dark { shape.inset(by: -0.5).stroke(palette.paneEdge, lineWidth: 1) } else { shape.strokeBorder(palette.paneEdge, lineWidth: 1) }
+        }
     }
 
-    /// The preview (on the pages that have one) and the title stay as pages change; only the cards under them are the
-    /// page's own, and they come in over 0.15 s (ArisPageSwap). The whole column is made anew each time the window
-    /// opens, which is when its entrance plays.
+    /// The title stays as pages change (팀원 shows Aris's face above it); only the cards under it are the page's own,
+    /// and they come in over 0.15 s (ArisPageSwap). The whole column is made anew each time the window opens, which is
+    /// when its entrance plays.
     private var column: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if hasStage { stage.padding(.bottom, 22).modifier(ArisRise(index: 0)) }
+            if nav.page == .team { ArisFaceStageView().padding(.bottom, 22).modifier(ArisRise(index: 0)) }
             title.padding(.bottom, ArisSettingsMetrics.titleGap).modifier(ArisRise(index: 1))
             page().id(nav.page).modifier(ArisPageSwap(animated: !entering && !still && !nav.byKey))
         }
-        .frame(maxWidth: 700, alignment: .leading)
-        .padding(.horizontal, 40).padding(.top, 44).padding(.bottom, 80)
+        // The wrapper's 48 on the left, then the column centred in what is left, at most 800 wide.
+        .frame(maxWidth: ArisSettingsMetrics.columnMaxWidth, alignment: .leading)
         .frame(maxWidth: .infinity)
+        .padding(.leading, ArisSettingsMetrics.columnLeading).padding(.trailing, ArisSettingsMetrics.columnTrailing)
+        .padding(.top, ArisSettingsMetrics.columnTop).padding(.bottom, ArisSettingsMetrics.bottomFade)
         .id(nav.opens)
         .environment(\.arisSettingsEntering, entering)
     }
 
     private static var top: String { "settings.top" }
-
-    /// 팀원 plays Aris's face; the other pages their notch preview when they have something to show in it.
-    private var hasStage: Bool { nav.page == .team || plan.shown }
-
-    /// The 팀원 page plays Aris's face (Settings A); every other page its notch preview.
-    @ViewBuilder
-    private var stage: some View {
-        if nav.page == .team {
-            ArisFaceStageView()
-        } else {
-            ArisNotchPreview(plan: plan, replay: replay)
-        }
-    }
 
     @ViewBuilder
     private var scroller: some View {
@@ -140,48 +141,48 @@ struct ArisSettingsShell<Page: View>: View {
         }
     }
 
-    /// The page's name, and its line under it (mockup `.ttl.under`: 22/600, then 13 pt in the second ink 4 below).
+    /// The page's name alone (22 / 600, −0.02em; the measured pages carry no line under it), with the page's control at
+    /// the end of its row. What the page is for is the title's help.
     private var title: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 12) {
-                // The page's name and its line are the window's frame: English whenever the UI is, like the sidebar's names.
-                Text(w.frame(nav.page.title)).font(.system(size: 22, weight: .semibold)).tracking(-0.44).foregroundStyle(palette.title)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 0)
-                if let accessory { accessory }
-            }
-            Text(w.frame(nav.page.subtitle)).font(.system(size: 13)).foregroundStyle(palette.desc).fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .center, spacing: 12) {
+            // The page's name is the window's frame: English whenever the UI is, like the sidebar's names.
+            Text(w.frame(nav.page.title)).font(.system(size: ArisSettingsMetrics.pageTitleSize, weight: .semibold))
+                .tracking(ArisSettingsMetrics.pageTitleTracking).foregroundStyle(palette.title)
+                .accessibilityAddTraits(.isHeader)
+                .help(w.frame(nav.page.subtitle))
+            Spacer(minLength: 0)
+            if let accessory { accessory }
         }
     }
 }
 
-/// The sidebar's backdrop: the system sidebar material (or a stand-in) under mockup B's tint.
-struct ArisSidebarBackdrop: View {
+/// What the window's material shows, for the offscreen renders that can't sample a desktop: a flat stand-in, or with
+/// `arisSettingsWallpaper` a generated wallpaper blurred and washed the way the sidebar material treats a desktop.
+struct ArisMaterialStandIn: View {
     @Environment(\.arisPalette) private var palette
-    let vibrancy: Bool
+    @Environment(\.arisSettingsWallpaper) private var wallpaper
 
     var body: some View {
-        ZStack {
-            if vibrancy {
-                ArisVisualEffect()
-            } else {
-                // Offscreen renders: about what the material shows over a plain desktop.
-                palette.dark ? Color(arisHex: 0x24262c) : Color(arisHex: 0xe4e7ec)
+        if wallpaper {
+            ZStack {
+                ArisWallpaper()
+                    .blur(radius: 28)
+                    .saturation(1.4)
+                palette.dark ? Color(arisHex: 0x1e1e20, 0.62) : Color(arisHex: 0xf2f2f4, 0.6)
             }
-            palette.sidebarTint
+            .ignoresSafeArea()
+        } else {
+            palette.materialStandIn.ignoresSafeArea()
         }
-        .ignoresSafeArea()
     }
 }
 
-private struct ArisVisualEffect: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .sidebar
-        view.blendingMode = .behindWindow
-        view.state = .followsWindowActiveState
-        return view
-    }
+private struct WallpaperKey: EnvironmentKey { static let defaultValue = false }
 
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+extension EnvironmentValues {
+    /// Offscreen only: a stand-in wallpaper behind the window's stand-in material.
+    var arisSettingsWallpaper: Bool {
+        get { self[WallpaperKey.self] }
+        set { self[WallpaperKey.self] = newValue }
+    }
 }

@@ -2,10 +2,11 @@
 //  ArisSettingsPageView.swift
 //  Aris
 //
-//  Draws a page's sections, each as one card with its rows split by hairlines (the owner's pick 2-B, the shape of the AI
-//  서비스 page): a section title (15/600), its card, and under the card the section's one small line. One rhythm and
-//  one row anatomy on every page (ArisSettingsMetrics: 32 / 12 / 16, rows 20 inside, a 20-pt icon column). Values go
-//  out through ArisSettingsHandlers; nothing here knows where a setting is kept.
+//  Draws a page's sections as measured (SETTINGS-REA.md §4.2): a section title (20/700, −0.01em), then each row as its
+//  own card 16 apart (a list or a folded section is one card, its hairlines inset to the words), and under the cards
+//  the section's one small line. One rhythm and one row anatomy on every page (ArisSettingsMetrics: 32 / 16 / 16, rows
+//  20 inside, a 20-pt icon 12 from a 14 / 500 title). Values go out through ArisSettingsHandlers; nothing here knows
+//  where a setting is kept.
 //
 
 import SwiftUI
@@ -92,7 +93,7 @@ struct ArisSettingsPageView: View {
     @Environment(\.arisSettingsFlash) private var flash
 
     private enum Element: Identifiable {
-        case heading(String, anchor: String)
+        case heading(String, anchor: String, feature: ArisFeature?)
         /// A section's card; `fold`: the one line it is until opened, and the section it belongs to.
         case card([ArisSettingItem], anchor: String?, fold: ArisSettingFold?, section: String)
         /// The small line under a card: what must be known about the rows above it.
@@ -100,14 +101,14 @@ struct ArisSettingsPageView: View {
 
         var id: String {
             switch self {
-            case .heading(_, let anchor): "h." + anchor
+            case .heading(_, let anchor, _): "h." + anchor
             case .fine(let text, _): "n." + text
             case .card(let rows, _, _, let section): "g." + section + "." + rows.map(\.id).joined(separator: ",")
             }
         }
     }
 
-    /// Each element with the space above it: a title 32 under what came before and 12 over its card, cards 16 apart,
+    /// Each element with the space above it: a title 32 under what came before and 16 over its card, cards 16 apart,
     /// the small line 8 under its card. The page's first element sits right under the page's title.
     private var elements: [(element: Element, top: CGFloat)] {
         typealias M = ArisSettingsMetrics
@@ -116,7 +117,7 @@ struct ArisSettingsPageView: View {
             var previous: String?
             var anchor: String? = section.id
             if let heading = section.heading {
-                out.append((.heading(heading, anchor: section.id), M.sectionGap))
+                out.append((.heading(heading, anchor: section.id, feature: section.feature), M.sectionGap))
                 previous = "heading"
                 anchor = nil
             }
@@ -155,7 +156,13 @@ struct ArisSettingsPageView: View {
     @ViewBuilder
     private func element(_ element: Element) -> some View {
         switch element {
-        case .heading(let text, let anchor): ArisSectionTitle(text: text).id(anchor)
+        case .heading(let text, let anchor, let feature):
+            HStack(alignment: .center, spacing: 12) {
+                ArisSectionTitle(text: text)
+                Spacer(minLength: 0)
+                if let feature { ArisFeatureLink(feature: feature) }
+            }
+            .id(anchor)
         case .fine(let text, let anchor): ArisFineLine(text: text).id(anchor ?? element.id)
         case .card(let rows, let anchor, let fold, let section):
             ArisGroupCard(rows: rows, fold: fold, section: section, folds: folds)
@@ -167,8 +174,8 @@ struct ArisSettingsPageView: View {
 }
 
 /// The window's entrance: each element rises 6 pt and fades in, 0.34 s on the house curve, 40 ms apart (at most 8).
-/// It plays when the window opens and never when a page is chosen (pick 4-A: staggered entrances are for first
-/// presentation; emil-design-eng: nothing staged on what is done tens of times).
+/// It plays when the window opens and never when a page is chosen (pick 4-A: the measured app keeps its staggered entrances
+/// for first presentation; emil-design-eng: nothing staged on what is done tens of times).
 struct ArisRise: ViewModifier {
     @Environment(\.arisSettingsStill) private var still
     @Environment(\.arisSettingsEntering) private var entering
@@ -207,7 +214,8 @@ struct ArisSectionTitle: View {
     let text: String
 
     var body: some View {
-        Text(text).font(.system(size: 15, weight: .semibold)).tracking(-0.15).foregroundStyle(palette.title)
+        Text(text).font(.system(size: ArisSettingsMetrics.sectionTitleSize, weight: .bold)).tracking(ArisSettingsMetrics.sectionTitleTracking)
+            .foregroundStyle(palette.title)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -237,8 +245,20 @@ struct ArisFineLine: View {
 
 // MARK: - Cards
 
-/// A section's card: its rows one under the other, a hairline between, each row 20 inside. A folded section's card is
-/// its one line, and the rows under it only while it is open.
+/// The hairline between a list's rows: from where the words start (20 + 20 + 12) to 20 from the right.
+struct ArisInsetHairline: View {
+    @Environment(\.arisPalette) private var palette
+
+    var body: some View {
+        Rectangle().fill(palette.hairline).frame(height: 1)
+            .padding(.leading, ArisSettingsMetrics.rowInset + ArisSettingsMetrics.iconBox + ArisSettingsMetrics.iconGap)
+            .padding(.trailing, ArisSettingsMetrics.rowInset)
+    }
+}
+
+/// A card: one row, or a list's rows one under the other with a hairline between that starts where the words do (20 +
+/// 20 + 12 in) and stops 20 from the right; each row 20 inside. A folded section's card is its one line, and the rows
+/// under it only while it is open.
 struct ArisGroupCard: View {
     @Environment(\.arisPalette) private var palette
     @Environment(\.arisSettingsHandlers) private var handlers
@@ -262,7 +282,12 @@ struct ArisGroupCard: View {
             }
             if open {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                    if index > 0 || fold != nil { Rectangle().fill(palette.hairline).frame(height: 1) }
+                    if index > 0 || fold != nil {
+                        // From where the row's words start: past a 36-pt tile on an app's row.
+                        Rectangle().fill(palette.hairline).frame(height: 1)
+                            .padding(.leading, ArisSettingsMetrics.rowInset + (row.icon.isTile ? 36 : ArisSettingsMetrics.iconBox) + ArisSettingsMetrics.iconGap)
+                            .padding(.trailing, ArisSettingsMetrics.rowInset)
+                    }
                     rowView(row)
                         // The tag a search result scrolls to (ArisSettingsLayout.tags).
                         .id(row.id)
@@ -305,14 +330,14 @@ struct ArisFoldRow: View {
     var body: some View {
         Button(action: toggle) {
             HStack(spacing: ArisSettingsMetrics.iconGap) {
-                Image(systemName: symbol).font(.system(size: 16.5, weight: .medium)).foregroundStyle(palette.icon)
+                ArisLineIcon(symbol, size: 20).foregroundStyle(palette.icon)
                     .frame(width: ArisSettingsMetrics.iconBox, height: ArisSettingsMetrics.iconBox)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(w(title)).font(.system(size: 14, weight: .medium)).tracking(-0.07).foregroundStyle(palette.title)
+                    Text(w(title)).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
                     Text(w.dotted(desc)).font(.system(size: 12)).foregroundStyle(palette.desc)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.title)
+                ArisLineIcon("chevron.right", size: 14, stroke: 2.25).foregroundStyle(palette.title)
                     .rotationEffect(.degrees(open ? 90 : 0))
             }
             .padding(ArisSettingsMetrics.rowInset).frame(minHeight: ArisSettingsMetrics.rowMinHeight)
@@ -391,7 +416,7 @@ struct ArisRowIcon: View {
     var body: some View {
         switch icon {
         case .symbol(let name):
-            Image(systemName: name).font(.system(size: 16.5, weight: .medium)).foregroundStyle(palette.icon)
+            ArisLineIcon(name, size: 20).foregroundStyle(palette.icon)
                 .frame(width: ArisSettingsMetrics.iconBox, height: ArisSettingsMetrics.iconBox)
         case .dot(let hex):
             Circle().fill(Color(arisHexString: hex) ?? .gray).overlay(Circle().strokeBorder(.black.opacity(0.1), lineWidth: 0.5))
@@ -400,10 +425,8 @@ struct ArisRowIcon: View {
             Circle().fill(ok ? palette.ok : palette.bad).frame(width: 9, height: 9).frame(width: 20, height: 20)
                 .accessibilityLabel(w(ok ? "허용됨" : "허용 안 됨"))
         case .logo(let id):
-            handlers.logo(id).frame(width: 20, height: 20)
-                .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(palette.appTile))
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(palette.appTileRing, lineWidth: 1))
+            // A connected app is a list row: the measured app-icon tile, its logo on the image fill.
+            ArisIconTile(size: 36, fill: .image) { handlers.logo(id).frame(width: 20, height: 20) }
         case .none:
             // The column is kept: a row with no icon starts its words where every other row does.
             Color.clear.frame(width: ArisSettingsMetrics.iconBox, height: ArisSettingsMetrics.iconBox)
@@ -411,12 +434,10 @@ struct ArisRowIcon: View {
     }
 }
 
-/// An icon, the title and its line (and chips under them), and the control at the end.
+/// An icon, the title and its line, and the control at the end.
 struct ArisSettingRowView: View {
     @Environment(\.arisPalette) private var palette
     let item: ArisSettingItem
-
-    private var chips: Bool { if case .chips = item.extra { true } else { false } }
 
     var body: some View {
         switch item.control {
@@ -427,34 +448,17 @@ struct ArisSettingRowView: View {
     }
 
     private var row: some View {
-        HStack(alignment: chips ? .top : .center, spacing: ArisSettingsMetrics.iconGap) {
+        HStack(alignment: .center, spacing: ArisSettingsMetrics.iconGap) {
             // A row that destroys something looks like any other: the red is said once, on its button (item 13).
             ArisRowIcon(icon: item.icon)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).font(.system(size: 14, weight: .medium)).tracking(-0.07).foregroundStyle(palette.title)
+                Text(item.title).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
                 if let desc = item.desc, !desc.isEmpty {
-                    Text(ArisKoreanText.keepAll(desc)).font(.system(size: 12)).foregroundStyle(palette.desc).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+                    Text(ArisKoreanText.keepAll(desc)).font(.system(size: 12)).foregroundStyle(palette.desc).lineSpacing(2).fixedSize(horizontal: false, vertical: true)
                 }
-                ArisRowChips(item: item)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             ArisRowControl(item: item)
-        }
-    }
-}
-
-private struct ArisRowChips: View {
-    @Environment(\.arisSettingsHandlers) private var handlers
-    let item: ArisSettingItem
-
-    var body: some View {
-        if case .chips(let chips, let removable) = item.extra {
-            ArisFlow(spacing: 6) {
-                ForEach(chips, id: \.id) { chip in
-                    ArisRemovableChip(title: chip.title, removable: removable) { handlers.perform(.removeLanguage(chip.id)) }
-                }
-            }
-            .padding(.top, 10)
         }
     }
 }
@@ -487,14 +491,14 @@ struct ArisLinkRowButton: View {
                 HStack(spacing: ArisSettingsMetrics.iconGap) {
                     ArisRowIcon(icon: item.icon)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(item.title).font(.system(size: 14, weight: .medium)).tracking(-0.07).foregroundStyle(palette.title)
+                        Text(item.title).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
                         if let desc = item.desc {
-                            Text(ArisKoreanText.keepAll(desc)).font(.system(size: 12)).foregroundStyle(palette.desc).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+                            Text(ArisKoreanText.keepAll(desc)).font(.system(size: 12)).foregroundStyle(palette.desc).lineSpacing(2).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     if let value { Text(value).font(.system(size: 13)).foregroundStyle(palette.desc) }
-                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                    ArisLineIcon("chevron.right", size: 14, stroke: 2.25)
                         .foregroundStyle(hovering ? palette.desc : palette.ink3)
                         .offset(x: hovering && !ArisSettingsMotion.reduced ? 1 : 0)
                 }
@@ -522,8 +526,8 @@ struct ArisSaid: View {
     }
 }
 
-/// A card with nothing to list yet, or still being read: plain centred 13-pt text in the second ink, 32 above and
-/// below, no illustration. While it loads the words shimmer.
+/// A card with nothing to list yet, or still being read (the measured empty and loading states:
+/// plain centred 13-pt text in the second ink, `py-8`; no illustration). While it loads the words shimmer.
 struct ArisEmptyRow: View {
     @Environment(\.arisPalette) private var palette
     let title: String
@@ -542,7 +546,7 @@ struct ArisEmptyRow: View {
     }
 }
 
-/// Words with a soft light passing over them every 2.4 s while
+/// Words with a soft light passing over them every 2.4 s (the measured shimmer) while
 /// something is on its way: one sweep, nothing blinks. Under Reduce Motion, and offscreen, the words are still.
 struct ArisShimmerText: View {
     @Environment(\.arisPalette) private var palette
@@ -586,6 +590,9 @@ struct ArisRowControl: View {
             ArisSaid(text: text)
         case .toggle(let key, let on, let enabled):
             ArisSwitch(isOn: on, enabled: enabled, label: item.title) { handlers.set(key, .bool(!on), item.title) }
+        case .choice(.theme, let options, let selected, _, _):
+            // 설정 창 모양: the measured preview tiles.
+            ArisThemeTiles(options: options, selected: selected, label: item.title) { handlers.set(.theme, .text($0), item.title) }
         case .choice(let key, let options, let selected, let disabled, let lead):
             HStack(spacing: 8) {
                 if let lead { button(lead) }
@@ -624,7 +631,12 @@ struct ArisRowControl: View {
         }
     }
 
+    @ViewBuilder
     private func button(_ b: ArisSettingButton) -> some View {
-        ArisSettingsButton(title: b.title, kind: b.kind, enabled: b.enabled) { handlers.perform(b.action) }
+        if b.kind == .select {
+            ArisSettingSelect(choice: b.title, label: item.title, enabled: b.enabled) { _ in handlers.perform(b.action) }
+        } else {
+            ArisSettingsButton(title: b.title, kind: b.kind, enabled: b.enabled) { handlers.perform(b.action) }
+        }
     }
 }

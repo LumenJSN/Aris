@@ -59,7 +59,7 @@ struct ArisSkillsPage<Source: ArisSkillsSource>: View {
             } else {
                 ArisSkillsChat(model: model).id("skills.add").arisFlash("skills.add").modifier(ArisRise(index: 2))
                 HStack {
-                    Text(w("내 스킬 \(model.status.ready ? model.status.skills.count : 0)개")).font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.desc)
+                    Text(w("내 스킬 \(model.status.ready ? model.status.skills.count : 0)개")).font(.system(size: 15, weight: .semibold)).tracking(-0.15).foregroundStyle(palette.title)
                     Spacer()
                     Text(w("폴더를 끌어 놓아도 돼요")).font(.system(size: 11.5)).foregroundStyle(palette.ink3)
                 }
@@ -88,7 +88,7 @@ struct ArisSkillsPage<Source: ArisSkillsSource>: View {
             VStack(spacing: 0) {
                 ForEach(Array(model.status.skills.enumerated()), id: \.element.id) { index, row in
                     ArisSkillListRow(row: row, brains: model.status.brains, model: model)
-                    if index < model.status.skills.count - 1 { Rectangle().fill(palette.hairline).frame(height: 1).padding(.leading, 70) }
+                    if index < model.status.skills.count - 1 { Rectangle().fill(palette.hairline).frame(height: 1).padding(.leading, ArisSettingsMetrics.rowInset + 36 + 12) }
                 }
             }
             .arisCard()
@@ -130,10 +130,12 @@ struct ArisSkillsOffCard: View {
         HStack(alignment: .center, spacing: ArisSettingsMetrics.iconGap) {
             art.star(34).frame(width: 34, height: 34)
             VStack(alignment: .leading, spacing: 2) {
-                Text(w("스킬을 켜면 일하는 방법을 가르칠 수 있어요")).font(.system(size: 14, weight: .medium)).tracking(-0.07).foregroundStyle(palette.title)
+                Text(w("스킬을 켜면 일하는 방법을 가르칠 수 있어요")).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
                 Text(w("처음 한 번 준비가 필요해요 · 약 \(megabytes)MB · 1~2분")).font(.system(size: 12)).foregroundStyle(palette.desc)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // What skills are, with a demo (ArisFeatureSheet).
+            ArisFeatureLink(feature: .skills)
             ArisSettingsButton(title: "스킬 켜기", kind: .primary, action: turnOn)
         }
         .padding(ArisSettingsMetrics.rowInset)
@@ -221,9 +223,14 @@ struct ArisSkillsChat<Source: ArisSkillsSource>: View {
         HStack(alignment: .top, spacing: 14) {
             art.star(34).frame(width: 34, height: 34)
             VStack(alignment: .leading, spacing: 8) {
-                Text(w("어떤 일을 스킬로 만들까요?")).font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.title)
+                HStack(alignment: .center, spacing: 12) {
+                    Text(w("어떤 일을 스킬로 만들까요?")).font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.title)
+                    Spacer(minLength: 0)
+                    // What skills are, with a demo (ArisFeatureSheet).
+                    ArisFeatureLink(feature: .skills)
+                }
                 Text(w("평소에 시키는 일을 말로 설명해 주세요. Aris 안의 skill-creator가 SKILL.md를 써 드려요. GitHub 링크를 붙여 넣으면 SkillSpector로 먼저 검사하고 알려 줘요."))
-                    .font(.system(size: 12.5)).foregroundStyle(palette.desc).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 13)).foregroundStyle(palette.desc).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
                 suggestions.padding(.top, 6)
             }
         }
@@ -274,7 +281,7 @@ struct ArisSkillsChat<Source: ArisSkillsSource>: View {
         HStack {
             Spacer(minLength: 60)
             HStack(spacing: 6) {
-                if link { Image(systemName: "link").font(.system(size: 11)) }
+                if link { ArisLineIcon("link", size: 13) }
                 Text(text).font(.system(size: link ? 12.5 : 13.5, design: link ? .monospaced : .default)).fixedSize(horizontal: false, vertical: true)
             }
             .foregroundStyle(palette.title)
@@ -286,7 +293,7 @@ struct ArisSkillsChat<Source: ArisSkillsSource>: View {
     private func chip(_ title: String, symbol: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if let symbol { Image(systemName: symbol).font(.system(size: 11)) }
+                if let symbol { ArisLineIcon(symbol, size: 13) }
                 Text(w(title)).font(.system(size: 12.5, weight: .medium))
             }
             .foregroundStyle(palette.buttonText)
@@ -326,7 +333,7 @@ struct ArisSkillsChat<Source: ArisSkillsSource>: View {
 
     private func round(symbol: String, filled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 14, weight: .semibold))
+            ArisLineIcon(symbol, size: 17, stroke: 2.25)
                 .foregroundStyle(filled ? palette.primaryInk : palette.icon)
                 .frame(width: 38, height: 38)
                 .background(Circle().fill(filled ? AnyShapeStyle(palette.primary) : AnyShapeStyle(palette.buttonFill)))
@@ -351,7 +358,7 @@ struct ArisSkillListRow<Source: ArisSkillsSource>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if open { ArisSkillDetail(row: row, brains: brains, model: model).padding(.leading, 70).padding(.trailing, 20).padding(.bottom, 18) }
+            if open { ArisSkillDetail(row: row, brains: brains, model: model).padding(.leading, 68).padding(.trailing, 20).padding(.bottom, 18) }
         }
         .background(hovering && !open ? palette.rowHover : .clear)
         .onHover { hovering = $0 }
@@ -359,18 +366,20 @@ struct ArisSkillListRow<Source: ArisSkillsSource>: View {
     }
 
     private var header: some View {
-        HStack(spacing: 14) {
-            ArisSkillTile(name: row.name, title: row.title, size: 38)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(row.title).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(palette.title)
+        // The measured list row (StoreRow): a 36-pt tile 12 from a 13 / 600 title and its 11-pt line.
+        HStack(spacing: 12) {
+            ArisSkillTile(name: row.name, title: row.title, size: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.title)
                 // Where it came from in the page's wording, then the skill's own line as it was written.
                 Text(w(ArisSkillWords.source(row)) + " · " + (row.summary.isEmpty ? row.description : row.summary))
-                    .font(.system(size: 12)).foregroundStyle(palette.desc).lineLimit(1)
+                    .font(.system(size: 11)).foregroundStyle(palette.desc).lineLimit(1)
             }
             Spacer(minLength: 8)
             phase
-            ArisSwitch(isOn: row.enabled, label: row.title) { model.toggle(row.name, on: !row.enabled) }
-            Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.ink3).frame(width: 14)
+            ArisSwitch(isOn: row.enabled, style: .store, label: row.title) { model.toggle(row.name, on: !row.enabled) }
+            ArisLineIcon(open ? "chevron.down" : "chevron.right", size: ArisIconSizes.chevron, stroke: ArisIconSizes.chevronStroke)
+                .foregroundStyle(palette.desc).opacity(hovering ? 0.8 : 0.4).frame(width: 15)
         }
         .padding(.horizontal, 20).padding(.vertical, 14)
         .contentShape(Rectangle())

@@ -18,7 +18,7 @@ enum ArisSettingsGroup: String, CaseIterable {
     var pages: [ArisSettingsPage] { ArisSettingsPage.allCases.filter { $0.group == self } }
 }
 
-/// The window's 14 pages, in the sidebar's order: every one is visible at the window's default height. 할 일 and 캘린더
+/// The window's 14 pages, in the sidebar's order (the list scrolls when the window is too short for it). 할 일 and 캘린더
 /// are one page (its rows keep their `todo.` and `calendar.` ids), and what the 모양 page held is in 일반 and 노치 (its
 /// rows keep their `look.` ids), so a search or a link that names a row still lands on it.
 enum ArisSettingsPage: String, CaseIterable, Identifiable {
@@ -65,7 +65,7 @@ enum ArisSettingsPage: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The line under the page's title.
+    /// What the page is for, in one line (its title's help; the measured pages carry no line under their title).
     var subtitle: String {
         switch self {
         case .aris: "부르는 방법과 대화가 이어지는 시간을 정해요."
@@ -82,6 +82,27 @@ enum ArisSettingsPage: String, CaseIterable, Identifiable {
         case .general: "켜고 끄기, 모양, 화면, 언어예요."
         case .keys: "Aris를 부르는 키를 모아 뒀어요."
         case .about: "버전, 문제 해결, 내 데이터예요."
+        }
+    }
+
+    /// The page's line icon in the sidebar (ArisLineIconData): the measured names where a measured page matches, Aris's
+    /// own glyphs (aris-…) where the measured one is that app's own drawing.
+    var lineIcon: String {
+        switch self {
+        case .aris: "aris-star"
+        case .ai: "blocks"
+        case .voice: "audio-lines"
+        case .memory: "brain"
+        case .team: "users"
+        case .skills: "wand-sparkles"
+        case .dictation: "mic"
+        case .todo: "list-checks"
+        case .control: "mouse-pointer-click"
+        case .notch: "aris-notch"
+        case .features: "layout-grid"
+        case .general: "settings"
+        case .keys: "keyboard"
+        case .about: "info"
         }
     }
 
@@ -106,20 +127,28 @@ enum ArisSettingsPage: String, CaseIterable, Identifiable {
     }
 }
 
-/// The sidebar's measurements, and what its list needs: with 14 pages in three groups it fits the window's default
-/// height with nothing to scroll to (pick 6-B). A 16-pt icon and a 14-pt label, 500 when chosen; the search field
-/// 36 tall with 14-pt text; the rows are 32 (rows of 40 would not fit 14 pages in the window).
+/// The window and its sidebar, as measured (SETTINGS-REA.md §2–3): a 1080 × 710 window rounded 20 with its traffic
+/// lights at 18, 18; a 220 sidebar `px-4` whose header is `pt-10`; nav items 44 tall, r12, 4 apart, a 20-pt icon 12
+/// from a 14 / 500 label, 15.5 in from the left and 16 from the right. With 14 pages in three groups the list is
+/// taller than the window, so it scrolls and fades at its end.
 enum ArisSidebarMetrics {
-    /// The settings window's default and smallest sizes.
-    static let windowSize = (width: 1000.0, height: 680.0)
+    /// The settings window's default and smallest sizes, its corner radius and where its traffic lights sit.
+    static let windowSize = (width: 1080.0, height: 710.0)
     static let windowMinimum = (width: 900.0, height: 620.0)
+    static let windowRadius = 20.0
+    static let trafficLights = (x: 18.0, y: 18.0)
+    /// The content card: 7 from the window's top, bottom and right, radius 13 (7 + 13 = the window's 20).
+    static let cardInset = 7.0
+    static let cardRadius = 13.0
     static let width = 220.0
-    /// Above the star (the traffic lights' strip), and under the list.
-    static let top = 46.0
+    /// The sidebar's side padding (`px-4`).
+    static let padding = 16.0
+    /// Above the star (the header's `pt-10`, under the traffic lights), and under the list.
+    static let top = 40.0
     static let bottom = 12.0
     /// The star and the two lines beside it, and the gap under them.
     static let greeting = 34.0
-    static let greetingGap = 12.0
+    static let greetingGap = 16.0
     static let searchHeight = 36.0
     static let searchGap = 8.0
     /// A group's name: 11 pt, 13 tall; 12 above (2 for the first) and 4 below.
@@ -127,19 +156,94 @@ enum ArisSidebarMetrics {
     static let groupTop = 12.0
     static let firstGroupTop = 2.0
     static let groupBottom = 4.0
-    static let row = 32.0
+    static let row = 44.0
+    static let rowGap = 4.0
+    static let rowRadius = 12.0
+    static let rowLeading = 15.5
+    static let rowTrailing = 16.0
+    static let iconGap = 12.0
     static let labelSize = 14.0
-    static let iconSize = 16.0
+    static let iconSize = 20.0
     static let groupLabelSize = 11.0
     /// Where an overflowing list fades out (a window at its smallest height).
     static let fade = 44.0
 
     /// The height the sidebar needs to show every page of `groups`.
     static func height(_ groups: [ArisSettingsGroup] = ArisSettingsGroup.allCases) -> Double {
-        let labels = groups.indices.reduce(0.0) { $0 + ($1 == 0 ? firstGroupTop : groupTop) + groupLabel + groupBottom }
-        let rows = Double(groups.reduce(0) { $0 + $1.pages.count }) * row
-        return top + greeting + greetingGap + searchHeight + searchGap + labels + rows + bottom
+        top + greeting + greetingGap + searchHeight + searchGap + pagesHeight(groups) + bottom
     }
+
+    /// The list of pages alone: its group names and rows.
+    static func pagesHeight(_ groups: [ArisSettingsGroup] = ArisSettingsGroup.allCases) -> Double {
+        let labels = groups.indices.reduce(0.0) { $0 + ($1 == 0 ? firstGroupTop : groupTop) + groupLabel + groupBottom }
+        let rows = groups.reduce(0.0) { $0 + Double($1.pages.count) * row + Double(max(0, $1.pages.count - 1)) * rowGap }
+        return labels + rows
+    }
+
+    /// Where `page`'s row lies in the list of pages, from the list's own top: the group names and rows above it.
+    static func rowSpan(_ page: ArisSettingsPage, groups: [ArisSettingsGroup] = ArisSettingsGroup.allCases) -> (top: Double, bottom: Double)? {
+        var y = 0.0
+        for (index, group) in groups.enumerated() {
+            y += (index == 0 ? firstGroupTop : groupTop) + groupLabel + groupBottom
+            for (place, shown) in group.pages.enumerated() {
+                if place > 0 { y += rowGap }
+                if shown == page { return (y, y + row) }
+                y += row
+            }
+        }
+        return nil
+    }
+
+    /// Whether the list's end fades out: only while more of the list lies below what its box shows (a list that fits,
+    /// or one scrolled to its end, has none), and never over the chosen row (twelfth VM pass: 정보, chosen and scrolled
+    /// to, stayed faded). `listTop` is the list's top in the box (0, less once scrolled down); `chosen` is the chosen
+    /// row's span in the box.
+    static func fades(listHeight: Double, boxHeight: Double, listTop: Double, chosen: (top: Double, bottom: Double)?) -> Bool {
+        guard listTop + listHeight > boxHeight + 1 else { return false }
+        if let chosen, chosen.bottom > boxHeight - fade, chosen.top < boxHeight { return false }
+        return true
+    }
+
+    /// The room a page's name has on its row: the row less its insets, the icon and the gap after it (the name is never
+    /// cut: an English name that doesn't fit here at 14 pt is a shorter one; twelfth VM pass, "Notch · Side notch…").
+    static var labelRoom: Double { width - 2 * padding - rowLeading - rowTrailing - iconSize - iconGap }
+    /// The 새 / New mark after a page added lately: its side padding, and the gap before it.
+    static let newPadding = 6.0
+    static let newSize = 9.5
+}
+
+/// The window's measurements, the same on every page (§4.2–4.3): sections `mb-8` (32) with a 20/700 title `mb-4` (16)
+/// over their cards, one card per row 16 apart (`mt-4`), each row `p-5` (20) with a 20-pt icon 12 from its words; the
+/// page's 22/600 title `mb-5` (20) over its first section; a card radius of 18.
+enum ArisSettingsMetrics {
+    /// A section's title to what is above it; the title to its card; a card to the next.
+    static let sectionGap: CGFloat = 32
+    static let headingGap: CGFloat = 16
+    static let cardGap: CGFloat = 16
+    /// The page's title to its first section (`mb-5`).
+    static let titleGap: CGFloat = 20
+    /// Section titles: `text-xl` 20 / 700, −0.01em.
+    static let sectionTitleSize: CGFloat = 20
+    static let sectionTitleTracking: CGFloat = -0.2
+    /// The page title: 22 / 600, −0.02em.
+    static let pageTitleSize: CGFloat = 22
+    static let pageTitleTracking: CGFloat = -0.44
+    /// The page column inside the content card: 6 + 18 + 16 from the card's top, 48 from its left, at most 800 wide.
+    static let columnTop: CGFloat = 40
+    static let columnLeading: CGFloat = 48
+    static let columnTrailing: CGFloat = 32
+    static let columnMaxWidth: CGFloat = 800
+    /// The bottom fade over the card: 80 tall.
+    static let bottomFade: CGFloat = 80
+    /// A row inside its card: 20 all round, a 20-pt icon column, 12 to the text, the control after it.
+    static let rowInset: CGFloat = 20
+    static let iconBox: CGFloat = 20
+    static let iconGap: CGFloat = 12
+    static let rowMinHeight: CGFloat = 60
+    static let cardRadius: CGFloat = 18
+    /// The small line under a card (mockup `.fine`: 12 pt, 8 above, 4 in).
+    static let fineGap: CGFloat = 8
+    static let fineInset: CGFloat = 4
 }
 
 /// One thing the search can find.
@@ -174,6 +278,7 @@ enum ArisSettingsIndex {
         e("memory.auto", .memory, "자동으로 기억하기", "기억, 메모리, 학습, 자동, 배우기"),
         e("memory.search", .memory, "기억 찾기", "기억, 메모리, 검색, 찾기, 지우기, 잊기"),
         e("memory.clear", .memory, "기억 모두 지우기", "기억, 메모리, 전부 지우기, 초기화, 잊기"),
+        e("memory.consolidate", .memory, ArisMemoryReviewRows.tidyTitle, "정리, 요약, 매주, 사람, 프로젝트, 기억 정리, 되돌리기, 메모리"),
         e("memory.import", .memory, ArisMemoryImportCopy.rowTitle, "가져오기, 다른 AI, 옮기기, 이전, 내보내기, import, 기억 가져오기, 메모리"),
         e("memory.work", .memory, ArisWorkSettingsRows.toggleTitle, "한 일, 작업 기억, 배운 것, 방법, 학습, 사용량, 토큰, 일하면서 배운 것"),
         e("memory.work.clear", .memory, ArisWorkSettingsRows.clearTitle, "한 일, 작업 기억, 배운 것, 전부 지우기, 초기화, 잊기"),
@@ -193,6 +298,8 @@ enum ArisSettingsIndex {
         e("voice.speed", .voice, "말하기 속도", "속도, 빠르게, 느리게, 들어 보기"),
         e("dictation.key", .dictation, "누르고 있는 동안 받아쓰기", "받아쓰기, 오른쪽 옵션, 딕테이션, 받아 적기"),
         e("dictation.pasteLast", .dictation, "마지막 받아쓰기 다시 넣기", "다시 넣기, 붙여 넣기, 컨트롤 커맨드 V, 받아쓰기 단축키"),
+        e("dictation.pill", .dictation, "받아쓰기 알약 보이기", "알약, 받아쓰기 표시, 화면 아래, 파형, 노치 조용히"),
+        e("dictation.pillIdle", .dictation, "쉴 때도 보이기", "알약, 쉴 때, 대기, 숨기기, 받아 쓸 때만"),
         e("dictation.brainPolish", .dictation, "Mac에서 못 다듬을 때 AI로 다듬기", "다듬기, 교정, 맞춤법, Claude, AI 다듬기"),
         e("dictation.style.chat", .dictation, "채팅 앱 문체", "문체, 말투, 채팅, 카카오톡, 편하게"),
         e("dictation.style.mail", .dictation, "메일 문체", "문체, 메일, 이메일, 격식"),
@@ -275,6 +382,7 @@ enum ArisSettingsIndex {
         e("features.tinting", .features, "플레이어에 앨범 색", "색, 틴트, 앨범 아트"),
         e("features.shelf", .features, "선반", "파일, 공유, 에어드롭"),
         e("features.shelfOn", .features, "선반 쓰기", "선반 켜기, 파일, 탭"),
+        e("features.shelfOnHome", .features, "첫 화면에도 보이기", "선반, 첫 화면, 홈, 칩, 파일"),
         e("features.wideDrop", .features, "노치 근처에서도 받기", "끌어 놓기, 드래그, 넓게"),
         e("features.copyOnDrag", .features, "끌어낼 때 복사", "복사, 드래그, 옮기기"),
         e("features.removeAfterDrag", .features, "끌어낸 뒤 선반에서 빼기", "자동 삭제, 드래그, 빼기"),

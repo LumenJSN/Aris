@@ -97,12 +97,11 @@ final class ArisHelperInstall {
         return outcome
     }
 
-    /// One line in the notch with its button (ArisAppFix), never over the setup or a turn already under way.
+    /// One line on a card under the notch with its button (ArisAppFix, the same press the button under the line made),
+    /// never over the setup or a turn already under way: it waits for them (ArisController.notify). True once it is up.
     @discardableResult
     private func say(_ line: String) async -> Bool {
         try? await Task.sleep(for: Self.sayAfter)
-        guard !ArisOnboardingGuide.shared.showing, ArisController.shared.session.phase == .idle else { return false }
-        ArisController.shared.fail(line)
-        return true
+        return await ArisController.shared.notify(ArisNoticeRoute.problem(line: line, english: ArisUIWords.english))
     }
 }

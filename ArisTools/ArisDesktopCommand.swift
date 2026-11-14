@@ -21,14 +21,21 @@ func desktopText(from handle: FileHandle, limit: Int) -> String? {
 }
 
 func desktop(_ args: [String]) {
+    var text: String?
+    if args.contains("--stdin") {
+        guard let read = desktopText(from: FileHandle.standardInput, limit: 131_072) else { fail("the text on stdin must be UTF-8, at most 128 KiB") }
+        text = read
+    }
+    desktopCall(args, text: text)
+}
+
+/// One call to the agent's desktop engine with this turn's credential (`type` comes here too, as `type --focused`).
+func desktopCall(_ args: [String], text: String?) {
     guard let path = ProcessInfo.processInfo.environment["ARIS_MCP_TURN_FILE"], path.hasPrefix("/"), let turn = readCredential(path), !turn.isEmpty else {
-        fail("aris-tools desktop works only inside an Aris turn")
+        fail("aris-tools \(args.first == "type" ? "type" : "desktop") works only inside an Aris turn")
     }
     var body: [String: Any] = ["turn": turn, "words": args]
-    if args.contains("--stdin") {
-        guard let text = desktopText(from: FileHandle.standardInput, limit: 131_072) else { fail("the text on stdin must be UTF-8, at most 128 KiB") }
-        body["text"] = text
-    }
+    if let text { body["text"] = text }
     guard let token = ClaudeHookToken.load(), let url = URL(string: "http://127.0.0.1:23351/desktop-tool") else { fail("Aris's agent isn't set up (no token)") }
     // A card waits up to ten minutes for a background job, a minute in a conversation; an install downloads first.
     let wait: TimeInterval = 780

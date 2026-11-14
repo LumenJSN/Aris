@@ -3,8 +3,9 @@
 //  Aris
 //
 //  목소리 · 언어 › 목소리 with an ElevenLabs key: a menu button naming the voice, opening the account's voices
-//  (fetched once per run, own ones first), each with a free preview. The list is the window's dropdown look
-//  (r16, items r8 9 × 12, a check on the chosen voice) in a popover, because it loads and plays.
+//  (fetched once per run, own ones first), each with a free preview. The button is the settings rows' select; the
+//  list has the window's dropdown rows (ArisMenuLook: r8, 10 × 12, 14/500 over 11, a 16-pt accent check on the chosen
+//  voice) in a popover, because it loads and plays.
 //
 
 import AVFoundation
@@ -20,8 +21,7 @@ struct ArisVoiceMenu: View {
     let changed: (String) -> Void
 
     var body: some View {
-        ArisAISelect(face: ArisAISelectFace(label: voiceName.isEmpty ? "목소리 고르기" : voiceName), label: "목소리", width: nil, minWidth: ArisAISelect.pageWidth,
-                     expanded: picking) { _ in picking = true }
+        ArisSettingSelect(choice: voiceName.isEmpty ? "목소리 고르기" : voiceName, label: "목소리") { _ in picking = true }
             .popover(isPresented: $picking, arrowEdge: .bottom) {
                 ArisVoicePicker { name in
                     picking = false
@@ -119,7 +119,7 @@ private struct ArisVoiceRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Button(action: preview) {
-                Image(systemName: playing ? "stop.fill" : "play.fill").font(.system(size: 10)).foregroundStyle(palette.icon)
+                ArisLineIcon(playing ? "stop.fill" : "play.fill", size: 12).foregroundStyle(palette.icon)
                     .frame(width: 26, height: 26).background(Circle().fill(palette.chip))
             }
             .buttonStyle(ArisPressScale(scale: 0.95))
@@ -129,18 +129,20 @@ private struct ArisVoiceRow: View {
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(voice.name).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title).lineLimit(1)
-                        if !voice.detail.isEmpty { Text(voice.detail).font(.system(size: 11.5)).foregroundStyle(palette.desc).lineLimit(1) }
+                        if !voice.detail.isEmpty { Text(voice.detail).font(.system(size: 11)).foregroundStyle(palette.desc).lineLimit(1) }
                     }
                     Spacer(minLength: 4)
-                    Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.title).opacity(chosen ? 1 : 0)
+                    // The measured voice menu's check: 16 square, in the accent.
+                    ArisLineIcon("checkmark", size: 14).foregroundStyle(palette.accent)
+                        .frame(width: ArisMenuLook.checkBox, height: ArisMenuLook.checkBox).opacity(chosen ? 1 : 0)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(chosen ? .isSelected : [])
         }
-        .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(hovering ? palette.menuHover : .clear))
+        .padding(.horizontal, ArisMenuLook.rowPaddingH).padding(.vertical, ArisMenuLook.rowPaddingV)
+        .background(RoundedRectangle(cornerRadius: ArisMenuLook.rowRadius, style: .continuous).fill(hovering ? ArisMenuLook.rowHover.color(palette.dark) : .clear))
         .onHover { hovering = $0 }
     }
 }

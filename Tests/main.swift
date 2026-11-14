@@ -24,8 +24,12 @@ func testSuiteName(_ name: String) -> String {
 }
 
 func check(_ condition: Bool, _ name: String, line: Int = #line) {
+    // A harness that may run again (keyPanelHarness) holds its checks until it is through.
+    if checkHeld != nil { checkHeld?.append((condition, name, line)); return }
     if condition { print("ok   \(name)") } else { failures += 1; print("FAIL \(name) (line \(line))") }
 }
+/// The checks a harness holds back while it runs (nil: every check is told at once).
+nonisolated(unsafe) var checkHeld: [(ok: Bool, name: String, line: Int)]?
 
 func event(_ json: [String: Any]) -> ClaudeHookEvent { ClaudeHookEvent(json: json)! }
 func body(_ decision: ClaudeDecision, input: [String: Any] = [:]) -> [String: Any] {
@@ -835,7 +839,7 @@ check(voiceRequest.url?.path == "/v1/text-to-speech/\(ArisElevenLabs.voiceID)/st
 check(voiceRequest.url?.query == "output_format=pcm_\(Int(ArisElevenLabs.sampleRate))", "elevenlabs: asks for raw PCM at the player's rate")
 check(voiceRequest.value(forHTTPHeaderField: "xi-api-key") == "sk_test", "elevenlabs: key goes in the xi-api-key header")
 let voiceBody = (try? JSONSerialization.jsonObject(with: voiceRequest.httpBody ?? Data())) as? [String: Any]
-check(voiceBody?["text"] as? String == "안녕 the user" && voiceBody?["model_id"] as? String == "eleven_v4_turbo", "elevenlabs: body carries the text and the Turbo model")
+check(voiceBody?["text"] as? String == "안녕 the user." && voiceBody?["model_id"] as? String == "eleven_v4_turbo", "elevenlabs: body carries the text (ending as a sentence) and the Turbo model")
 let pcm = ArisPCM.floats(from: Data([0x00, 0x80, 0xFF, 0x7F, 0x00, 0x00, 0x12]))
 check(pcm.samples.count == 3, "pcm: three whole 16-bit samples")
 check(pcm.samples.first == -1 && pcm.samples[2] == 0 && abs(pcm.samples[1] - 1) < 0.0001, "pcm: little-endian 16-bit -> -1...1")
@@ -1509,7 +1513,8 @@ check(shellRisk("\(riskTools) remind 'milk' --at '2026-10-26 09:00'") == .auto, 
 check(shellRisk("\(riskTools) message 엄마 '늦어요'") == .confirm, "risk: sending a message -> ask first")
 check(shellRisk("\(riskTools) trash ~/Downloads/a.png") == .confirm, "risk: moving to the trash -> ask first")
 check(shellRisk("\(riskTools) type 'hello' --app Notes") == .auto, "risk: typing into a named app -> auto")
-check(shellRisk("\(riskTools) type 'hello'") == .confirm, "risk: typing into whatever is in front -> ask first")
+// fix-13: `type` only hands its text to the desktop engine (`desktop type --focused`), whose gate asks: no card here too.
+check(shellRisk("\(riskTools) type 'hello'") == .auto, "risk: typing into whatever is in front -> the desktop engine's gate decides (one typing path)")
 check(shellRisk("\(riskTools) type 'rm -rf ~'") == .never, "risk: typing a home-wiping command anywhere -> never")
 check(shellRisk("\(riskTools) keys cmd+n --app Terminal") == .confirm, "risk: keys into a terminal -> ask first")
 check(shellRisk("\(riskTools) keys cmd+n --app 'Microsoft Word'") == .confirm, "risk: keys into Word -> ask first (its macro editor runs code)")
@@ -2134,7 +2139,9 @@ check(ArisTalkKey.turnWindow([Float](repeating: 0.1, count: 200_000)).count == 1
 
 // MARK: - Security 2026-10-26: keys/type can't reach a terminal through a loose app name
 for app in ["term", "TERMINAL", "warp", "Warp Stable", "iterm", "ghost", "keychain", "1password"] {
-    check(shellRisk("\(riskTools) type 'rm -rf ~/Documents' --app '\(app)'") == .confirm, "risk: typing into an app named like a terminal or vault (\(app)) -> ask first")
+    // fix-13: typing goes to the desktop engine, which never works in a terminal or a vault (ArisDesktopGate.neverRefusal); keys still ask here.
+    check(shellRisk("\(riskTools) keys return --app '\(app)'") == .confirm && shellRisk("\(riskTools) type 'rm -rf ~/Documents' --app '\(app)'") != .confirm,
+          "risk: keys into an app named like a terminal or vault (\(app)) -> ask first; its typing is the engine's to refuse")
 }
 check(shellRisk("\(riskTools) keys return --app Te") == .confirm, "risk: a very short app name -> ask first")
 check(shellRisk("\(riskTools) type hello --app Notes") == .auto && shellRisk("\(riskTools) type hi --app TextEdit") == .auto
@@ -2186,7 +2193,9 @@ check(!ArisDucking.isHeadphones(transport: .other, dataSource: nil), "duck: moni
 
 // MARK: - Security 2026-10-27: keys/type only auto in apps that can't run code; no quiet sending after untrusted reads
 for app in ["Script Editor", "Automator", "Xcode", "Visual Studio Code", "Cursor", "Shortcuts", "Microsoft Excel", "Safari", "Mail"] {
-    check(shellRisk("\(riskTools) type x --app '\(app)'") == .confirm, "risk: typing into \(app) -> ask first (it can run code or send)")
+    // fix-13: the engine's type asks in these apps (only the user's words into a safe app, on a clean turn, run at once).
+    check(shellRisk("\(riskTools) keys cmd+n --app '\(app)'") == .confirm && shellRisk("\(riskTools) type x --app '\(app)'") == .auto,
+          "risk: keys into \(app) -> ask first (it can run code or send); typing there is the desktop engine's card")
 }
 check(ArisRiskPolicy.isOutbound(.shell("\(riskTools) link https://x.example/?d=1"), tools: riskTools)
       && ArisRiskPolicy.isOutbound(.shell("\(riskTools) shortcut 'Send'"), tools: riskTools)
@@ -2314,11 +2323,16 @@ check(ArisConfirmReply.countdownSeconds == 3, "countdown: three seconds")
 // Audit gate-2: the open Claude isn't refused these any more; aris-tools hands each to the agent's gate (the user's card when
 // that says to ask), and never runs one inside the Claude's own process. A brain with no hand-off (agy's shell) still is.
 let ungated = claudeList("--disallowedTools")
-for risky in ["trash", "keys", "type", "link", "shortcut", "clipboard set"] {
+for risky in ["trash", "keys", "link", "shortcut", "clipboard set"] {
     check(!ungated.contains("Bash(/t \(risky):*)") && ArisClaudeDriver.ungatedRefused.contains(risky) && ArisAgyRules.refusedCommands.contains(risky)
           && handOffRouting(risky.split(separator: " ").map(String.init) + ["x"], environment: [ArisTurnGate.stateKey: "/nowhere"]) != .direct,
           "claude: aris-tools \(risky) goes to the agent's gate, never run in its own process (a brain with no hand-off is still refused it)")
 }
+// fix-13: `type` runs in the Claude's process only as a call to the agent's desktop engine (`desktop type --focused`), as
+// `desktop` does; a brain with no hand-off is still refused it.
+check(!ungated.contains("Bash(/t type:*)") && ArisClaudeDriver.ungatedRefused.contains("type") && ArisAgyRules.refusedCommands.contains("type")
+      && ArisTurnGate.verdict(tool: "Bash", command: "/t type 안녕 --app Notes", tools: "/t", tainted: true) == .allow,
+      "claude: aris-tools type goes to the desktop engine (which asks), never typed by aris-tools; agy is still refused it")
 // A message is the exception: aris-tools hands it to the agent's gate (ArisMessageGate, countdown-parity-tests.swift).
 check(!ungated.contains("Bash(/t message:*)"), "claude: aris-tools message goes to the agent's gate, not refused")
 check(ArisTurnGate.verdict(tool: "Bash", command: "/t mail kim@x.com hi", tools: "/t", tainted: false) != .allow
@@ -11181,6 +11195,7 @@ runClaudeUsageTests()
 runScreenNeedTests()
 runFixNotchTests()
 runFixVoiceTests()
+runVoiceFeelTests()
 runFixToolsTests()
 runFixTeamTests()
 runFixShipTests()
@@ -11488,6 +11503,7 @@ runGlass3Tests()
 runTeamQuietTests()
 runFix5Tests()
 runVSideTests()
+runSideCloseTests()
 runFxTests()
 runVNotchTests()
 runSiriLookTests()
@@ -11497,10 +11513,33 @@ runAutomodeIntTests()
 runVNotchVM2Tests()
 runWorkMemTests()
 runMemoryImportTests()
+runMemoryV2Tests()
+runMemoryV2TurnTests()
 runMemoryImportMotionTests()
 runFix6Tests()
 runFix7Tests()
 runFix8Tests()
 runThemesTests()
+runNotifyCardTests()
+runDesktopV2Tests()
+runFix10Tests()
+runFix10APITests()
+runSettingsTidyTests()
+runFix11Tests()
+runFix11DesktopTests()
+runFix12Tests()
+runFix12DesktopTests()
+runFix13Tests()
+runFix13DesktopTests()
+runFix14Tests()
+runFix14DesktopTests()
+runFix15Tests()
+runFix15DesktopTests()
+runSettingsLookTests()
+runSettings1to1Tests()
+runFix16Tests()
+runFix17Tests()
+runDictationPillTests()
+runPillIdleTests()
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

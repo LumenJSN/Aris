@@ -47,7 +47,8 @@ struct ArisTaskTagsContent: View {
                     .transition(ArisTaskTagsContent.tagExit)
                 }
                 if !fold.done.isEmpty {
-                    ArisDoneSummaryChip(count: ArisDoneFold.count(fold.done.count), latest: ArisDoneFold.latest(fold) ?? "", open: trayOpen) {
+                    ArisDoneSummaryChip(count: ArisDoneFold.count(fold), latest: ArisDoneFold.latest(fold) ?? "", open: trayOpen,
+                                        symbol: ArisDoneFold.symbol(fold)) {
                         withAnimation(ArisGlass.opening) { trayOpen.toggle() }
                     }
                     .transition(ArisTaskTagsContent.tagExit)

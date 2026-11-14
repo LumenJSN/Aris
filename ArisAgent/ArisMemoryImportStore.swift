@@ -100,7 +100,8 @@ extension ArisMemoryStore {
                                         detail: ArisMemoryText.cleaned(line.text) == ArisMemoryText.cleaned(title) ? nil : String(line.text.prefix(ArisMemoryImport.mostText)))
             switch ArisMemoryMerge.plan(candidate, existing: existing) {
             case .insert:
-                guard case .added(let record) = remember(candidate, source: .imported, turnAt: line.date ?? now, now: now) else { result.skipped += 1; continue }
+                // His tick is his look: the write gate only refuses a credential request here (ArisMemoryGate).
+                guard case .added(let record) = remember(candidate, source: .imported, turnAt: line.date ?? now, now: now, reviewed: true) else { result.skipped += 1; continue }
                 journal(result.batch, memory: record.id, before: nil, at: now)
                 stamp(record.id, batch: result.batch, extra: extra, confidence: line.category == .instructions ? Self.saidConfidence : nil)
                 result.added += 1
@@ -115,7 +116,7 @@ extension ArisMemoryStore {
                 // The newer date wins, not the import's order; a line with no date replaces nothing.
                 guard let old = existing.first(where: { $0.id == id }), let date = line.date, date > old.turnAt else { result.skipped += 1; continue }
                 journal(result.batch, memory: id, before: old, at: now)
-                guard case .updated = remember(candidate, source: .imported, turnAt: date, now: now) else { result.skipped += 1; continue }
+                guard case .updated = remember(candidate, source: .imported, turnAt: date, now: now, reviewed: true) else { result.skipped += 1; continue }
                 stamp(id, batch: result.batch, extra: extra, confidence: line.category == .instructions ? Self.saidConfidence : nil)
                 result.updated += 1
             }
@@ -159,20 +160,28 @@ extension ArisMemoryStore {
     func undoImport(batch: String) -> (removed: Int, restored: Int)? {
         locked(emptiesLog: true) { db in
             ensureImport(db)
-            let rows = db.query("SELECT memory, before FROM import_journal WHERE batch = ? ORDER BY n DESC", [.text(batch)])
+            let rows = db.query("SELECT memory, before, at FROM import_journal WHERE batch = ? ORDER BY n DESC", [.text(batch)])
             guard !rows.isEmpty else { return nil }
             var removed = 0, restored = 0
             for row in rows {
                 guard let id = row.first?.text else { continue }
                 guard let before = row[1].text, let old = (try? JSONSerialization.jsonObject(with: Data(before.utf8))) as? [String: Any] else {
-                    if db.run("DELETE FROM memories WHERE id = ?", [.text(id)]) { removed += 1 }
+                    let text = db.query("SELECT text FROM memories WHERE id = ?", [.text(id)]).first?.first?.text
+                    if db.run("DELETE FROM memories WHERE id = ?", [.text(id)]) {
+                        removed += 1
+                        // Its history, page entries and conflicts go with it, and its words from any page.
+                        _ = db.run("DELETE FROM memories WHERE superseded_by = ?", [.text(id)])
+                        Self.forgetEverywhere(id, text: text, db)
+                    }
                     continue
                 }
+                // The wording the batch replaced is the memory again, so the history row the change kept goes.
+                if let at = row[2].real { _ = db.run("DELETE FROM memories WHERE superseded_by = ? AND valid_until >= ?", [.text(id), .real(at)]) }
                 let text = { (key: String) -> Value in (old[key] as? String).map { .text($0) } ?? .null }
                 let real = { (key: String) -> Value in .real((old[key] as? NSNumber)?.doubleValue ?? 0) }
-                if db.run("UPDATE memories SET kind = ?, subject = ?, text = ?, source = ?, turn_at = ?, confidence = ?, updated_at = ?, via = ?, mark = ?, detail = ?, batch = NULL WHERE id = ?",
+                if db.run("UPDATE memories SET kind = ?, subject = ?, text = ?, source = ?, turn_at = ?, confidence = ?, updated_at = ?, via = ?, mark = ?, detail = ?, batch = NULL, valid_from = ?, valid_until = NULL WHERE id = ?",
                           [text("kind"), text("subject"), text("text"), text("source"), real("turnAt"), real("confidence"), real("updatedAt"), text("via"), text("mark"),
-                           text("detail"), .text(id)]) { restored += 1 }
+                           text("detail"), real("turnAt"), .text(id)]) { restored += 1 }
             }
             _ = db.run("DELETE FROM import_journal WHERE batch = ?", [.text(batch)])
             return (removed, restored)

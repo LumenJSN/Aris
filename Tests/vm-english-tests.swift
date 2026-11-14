@@ -607,7 +607,7 @@ private func vmEnglishSettingsPathTests() {
           && ArisSettingsPath.shown("Settings > 노치 기능", english: true) == "Settings › Music · Shelf"
           && ArisSettingsPath.shown("설정 › 팀원 › 쓸 수 있는 것에서 켜 주세요.", english: true) == "Settings › Teammates › 쓸 수 있는 것에서 켜 주세요."
           && ArisSettingsPath.shown("Open Settings > 기억 to see it.", english: true) == "Open Settings › Memory to see it."
-          && ArisSettingsPath.shown("설정 › 노치 · 사이드 노치", english: true) == "Settings › Notch · Side notches"
+          && ArisSettingsPath.shown("설정 › 노치 · 사이드 노치", english: true) == "Settings › Notch"
           && ArisSettingsPath.shown("설정 › 할 일에서 켜 주세요.", english: false) == "설정 › 할 일 · 캘린더에서 켜 주세요." && ArisSettingsPath.shown("설정 › 팀원에서 봐요.", english: false) == "설정 › 팀원에서 봐요."
           && ArisSettingsPath.shown("할 일 3개 있어요.", english: true) == "할 일 3개 있어요.",
           "settings path: a reply that points to a page reads as the window names it, a page's former name as the page that has its rows now (settings pick 6-B); a reply that names no page is untouched")

@@ -94,6 +94,8 @@ struct ArisTurnStats {
 /// Who answered a turn, for turns.jsonl's "path" and the log: aris-agent itself when it said so (no AI was asked).
 enum ArisTurnPath {
     static let helper = "helper"
+    /// A request's saved desktop steps answered it, with no AI (ArisAgentReply.savedSteps).
+    static let savedSteps = "saved-steps"
 
     /// The name the log's "… answered" line gives: the brain that was asked, or aris-agent when it answered itself.
     static func answerer(brain: String, helper: Bool) -> String { helper ? "aris-agent" : brain }

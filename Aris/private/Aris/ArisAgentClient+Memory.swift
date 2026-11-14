@@ -11,11 +11,37 @@ import Foundation
 extension ArisAgentClient {
     private static let memoryURL = URL(string: "http://127.0.0.1:23351/memory")!
 
-    /// The memories and the switch; nil when the agent didn't answer (the list says so, rather than looking empty).
-    static func memories() async -> (items: [ArisMemoryItem], auto: Bool)? {
+    /// The memories, the switches, and what waits for the user (held items, conflicts), the people and project pages and
+    /// the weekly tidy-up's changes; nil when the agent didn't answer (the list says so, rather than looking empty).
+    static func memories() async -> ArisMemoryPage? {
         guard let data = await memoryCall(["op": "list"]) else { return nil }
-        struct Reply: Decodable { let memories: [ArisMemoryItem]; let auto: Bool }
-        return (try? JSONDecoder().decode(Reply.self, from: data)).map { ($0.memories, $0.auto) }
+        return try? JSONDecoder().decode(ArisMemoryPage.self, from: data)
+    }
+
+    /// 확인할 것 › 넣기 / 버리기. True when the agent did it.
+    static func keepHeldMemory(id: String) async -> Bool { await memoryFlag(["op": "heldKeep", "id": id], "kept") }
+    static func dropHeldMemory(id: String) async -> Bool { await memoryFlag(["op": "heldDrop", "id": id], "dropped") }
+
+    /// A conflict settled: `keep` is the memory that is right now, or "both".
+    static func settleMemoryConflict(id: String, keep: String) async -> Bool { await memoryFlag(["op": "conflictKeep", "id": id, "keep": keep], "settled") }
+
+    /// A person's or project's page removed (its memories stay).
+    static func forgetMemoryEntity(id: String) async -> Bool { await memoryFlag(["op": "entityDelete", "id": id], "removed") }
+
+    /// The weekly tidy-up's change taken back.
+    static func undoMemoryChange(id: Int) async -> Bool { await memoryFlag(["op": "changeUndo", "id": id], "undone") }
+
+    /// 매주 정리하기 as the agent now has it; nil when it didn't answer.
+    static func setConsolidateMemory(_ on: Bool) async -> Bool? {
+        guard let data = await memoryCall(["op": "consolidate", "on": on]),
+              let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return body["consolidate"] as? Bool
+    }
+
+    /// The answer's `key` is true.
+    private static func memoryFlag(_ body: [String: Any], _ key: String) async -> Bool {
+        guard let data = await memoryCall(body), let reply = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return reply[key] as? Bool == true
     }
 
     /// True when the agent removed it.
@@ -67,6 +93,21 @@ extension ArisAgentClient {
 
     static func forgetAllWork() async -> Bool {
         await memoryCall(["op": "workClear", "confirm": "모두"]) != nil
+    }
+
+    // MARK: 저장된 단계 (the agent's saved desktop steps: ArisSavedStepsRoute)
+
+    /// The saved requests, newest first; nil when the agent didn't answer.
+    static func savedSteps() async -> [ArisSavedStepsItem]? {
+        guard let data = await memoryCall(["op": "savedSteps"]) else { return nil }
+        struct Reply: Decodable { let recipes: [ArisSavedStepsItem] }
+        return (try? JSONDecoder().decode(Reply.self, from: data))?.recipes
+    }
+
+    static func forgetSavedSteps(key: String) async -> Bool {
+        guard let data = await memoryCall(["op": "savedStepsDelete", "key": key]),
+              let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return body["removed"] as? Bool == true
     }
 
     // MARK: 다른 AI에서 가져오기 (ArisImportRoute)

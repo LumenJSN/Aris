@@ -8,7 +8,7 @@ func runSettingsCatalogTests() {
     wordTests()
     builderTests()
     layoutTests()
-    previewTests()
+    faceStageWaveTests()
 }
 
 /// Everything turned on, every list filled: each conditional row on screen.
@@ -99,7 +99,6 @@ private func wordTests() {
     check(ArisSettingsCaption.greeting(agentDown: false, missingPermissions: 0) == "모두 잘 되고 있어요"
           && ArisSettingsCaption.greeting(agentDown: false, missingPermissions: 2) == "권한 2개가 더 필요해요"
           && ArisSettingsCaption.greeting(agentDown: true, missingPermissions: 2) == "에이전트와 연결이 끊겼어요", "caption: the sidebar's greeting says what needs the user")
-    check(ArisSettingsCaption.talk(["⌥", "Space"]) == "⌥ Space를 누르면 들어요", "caption: the talk shortcut")
     check(ArisShortcutCaps.caps("⌃⌥Space") == ["⌃", "⌥", "Space"] && ArisShortcutCaps.caps("⇧⌘I") == ["⇧", "⌘", "I"], "caps: one per modifier, then the key")
     check(ArisShortcutCaps.problem(modifiers: ["⌥"], key: "Space", functionKey: false) == nil
           && ArisShortcutCaps.problem(modifiers: [], key: "F5", functionKey: true) == nil, "shortcut rule: ⌥ Space and F5 alone are fine")
@@ -111,7 +110,6 @@ private func wordTests() {
     }
     check(ArisShortcutCaps.problem(modifiers: ["⇧", "⌘"], key: "Z", functionKey: false) != nil
           && ArisShortcutCaps.problem(modifiers: ["⌥", "⌘"], key: "C", functionKey: false) == nil, "shortcut rule: ⇧⌘Z is redo; ⌥⌘C is free")
-    check(ArisSettingsCaption.talk([]) == "말하기 단축키가 없어요", "caption: no talk shortcut")
     check(ArisKoreanText.keepAll("다른 AI가 답해요") == "다\u{2060}른 A\u{2060}I\u{2060}가 답\u{2060}해\u{2060}요"
           && ArisKoreanText.keepAll("") == "" && ArisKoreanText.keepAll("a\nb c") == "a\nb c", "keep-all: words never break inside, only at spaces")
     check(ArisShortcutCaps.caps("⌥ ") == ["⌥", "Space"] && ArisShortcutCaps.caps("F5") == ["F5"], "caps: a blank key is Space; no modifiers")
@@ -200,7 +198,7 @@ private func moreTests() {
     let moved = ArisMoreRows.notch(all.more, gestures: true) + [ArisMoreRows.music(all.more), ArisMoreRows.shelf(all.more)]
     let movedIDs = ArisSettingsLayout.tags(moved)
     let pageTags = ArisSettingsLayout.tags(ArisSettingsBuilder.sections(.notch, all) + ArisSettingsBuilder.sections(.features, all))
-    check(movedIDs.allSatisfy { ArisSettingsIndex.entry($0) != nil } && movedIDs.isSubset(of: pageTags) && movedIDs.count == 34,
+    check(movedIDs.allSatisfy { ArisSettingsIndex.entry($0) != nil } && movedIDs.isSubset(of: pageTags) && movedIDs.count == 35,
           "more: every moved row and section is in the search index and is a tag its page carries (\(movedIDs.count))")
 }
 
@@ -232,7 +230,8 @@ private func builderTests() {
           && ArisSettingsBuilder.sections(.general, ArisSettingsSnapshot()).flatMap(\.rows).contains { $0.id == "general.screen" }, "builder: 선호하는 화면 only when it applies")
     var one = ArisSettingsSnapshot()
     one.languages = [.init(id: "ko", title: "한국어")]
-    check(ArisSettingsBuilder.sections(.voice, one).flatMap(\.rows).first?.extra == .chips(one.languages, removable: false), "builder: the last language can't be removed")
+    check(ArisSettingsBuilder.sections(.voice, one).flatMap(\.rows).first?.control == .buttons([ArisSettingButton(title: "한국어", action: .addLanguage, kind: .select)]),
+          "builder: one language: the select names it alone (the sheet keeps the last one on)")
     check(ArisSettingsBuilder.sections(.team, s).isEmpty, "builder: 팀원 draws itself")
     let total = allRows(s).count
     check(total >= 70, "builder: every page's rows are there (\(total))")
@@ -253,59 +252,19 @@ private func layoutTests() {
     let card = ArisSettingItem(id: "c", icon: .symbol("x"), title: "c", control: .buttons([]))
     let dotted = ArisSettingItem(id: "d", icon: .dot("#fff"), title: "d", control: .toggle(.sounds, true))
     let blocks = ArisSettingsLayout.blocks(ArisSettingSection(id: "s", rows: [tile("a"), tile("b"), card, tile("e"), dotted]))
-    check(blocks == [.group([tile("a"), tile("b"), card, tile("e"), dotted])], "layout: a section is one card, whatever its rows are (pick 2-B)")
+    // Settings 1:1 (2026-11-13): each row is its own card, as measured; a list (grouped) stays one card.
+    check(blocks == [.group([tile("a")]), .group([tile("b")]), .group([card]), .group([tile("e")]), .group([dotted])], "layout: each row of a section is its own card, whatever its control")
     check(ArisSettingsLayout.blocks(ArisSettingSection(id: "g", grouped: true, rows: [tile("a"), card])) == [.group([tile("a"), card])], "layout: a section written as grouped is the same one card")
     check(ArisSettingsLayout.blocks(ArisSettingSection(id: "e", grouped: true, rows: [])).isEmpty, "layout: an empty section draws nothing")
     let tagged = ArisSettingsLayout.tags([ArisSettingSection(id: "s", heading: "h", rows: [tile("a"), card]), ArisSettingSection(id: "g", grouped: true, rows: [dotted])])
     check(tagged == ["s", "a", "c", "g", "d"], "layout: the tags are every section and every row")
 }
 
-private func previewTests() {
-    var input = ArisNotchPreviewInput()
-    input.page = .aris
-    var plan = ArisNotchPreviewPlan.make(input)
-    check(plan.width == 270 && plan.height == 32 && plan.content == .wave && plan.caption == "“아리스” 하고 부르면 바로 들어요", "preview: 대화 with the wake word listens")
-    input.wakeWord = false
-    plan = ArisNotchPreviewPlan.make(input)
-    check(plan.width == 150 && plan.height == 29 && plan.content == .none && plan.caption == "⌥ Space를 누르면 들어요", "preview: without it, the shortcut")
-    input.page = .voice
-    input.speedTitle = "빠르게"
-    input.voiceName = "Rachel"
-    plan = ArisNotchPreviewPlan.make(input)
-    check(plan.width == 440 && plan.height == 76 && plan.wide && plan.content == .words(["안녕하세요,", "아리스예요.", "이", "속도로", "말할게요."]),
-          "preview: 목소리 speaks a line in the open notch")
-    check(plan.caption == "말하기 속도 · 빠르게 · 목소리 Rachel", "preview: 목소리's caption")
-    check(abs(ArisNotchPreviewPlan.wordInterval(speed: 1.15) - 0.3 / 1.15) < 0.0001, "preview: words light at 300 ms over the speed")
-    input.page = .notch
-    input.heightMode = "menubar"
-    plan = ArisNotchPreviewPlan.make(input)
-    check(plan.height == 24 && plan.opensOnHover && plan.caption == "노치에 포인터를 올려 보세요", "preview: 노치 shows its height and opens on hover")
-    input.heightMode = "custom"
-    input.customHeight = 41
-    input.hoverOpens = false
-    plan = ArisNotchPreviewPlan.make(input)
-    check(plan.height == 41 && !plan.opensOnHover && plan.caption == "제스처나 단축키로 열어요", "preview: a custom height; no hover")
-    input.page = .control
-    plan = ArisNotchPreviewPlan.make(input)
-    check(plan.content == .window(circle: true) && plan.caption == "⌥⇧를 누른 채 동그라미를 그리면 그 부분을 같이 봐요", "preview: 컴퓨터 제어 circles a window")
-    input.circleGesture = false
-    input.seesScreen = false
-    check(ArisNotchPreviewPlan.make(input).caption == "화면을 보내지 않아요", "preview: not seeing the screen")
-    input.page = .team
-    input.teammateNames = ["코디", "몽실"]
-    plan = ArisNotchPreviewPlan.make(input)
-    check(plan.lineup == 2 && plan.caption == "팀원 2명 · 코디, 몽실", "preview: 팀원 lines the teammates up")
-    input.page = .general
-    check(!ArisNotchPreviewPlan.make(input).shown && ArisNotchPreviewPlan.make(input).caption.isEmpty, "preview: a page with nothing to show has no stage (pick 1-A)")
-    check([ArisSettingsPage.aris, .voice, .notch, .control, .team].allSatisfy { page in var i = ArisNotchPreviewInput(); i.page = page; return ArisNotchPreviewPlan.make(i).shown },
-          "preview: the pages with something to show keep their stage")
-    check(ArisNotchPreviewPlan.make(input).radius == 13 && plan.width == 150, "preview: a closed notch has 13 corners")
-    check(ArisNotchPreviewPlan.starX(stageWidth: 700, notchWidth: 150) == 433, "preview: the star sits 8 right of the notch")
-    check(ArisNotchPreviewPlan.motion(from: 150, to: 440) == .open && ArisNotchPreviewPlan.motion(from: 440, to: 150) == .close, "preview: growing opens, shrinking closes")
-    let a = ArisNotchPreviewWave.bars(tick: 3), b = ArisNotchPreviewWave.bars(tick: 3)
+private func faceStageWaveTests() {
+    // The notch preview is gone from the settings window (the owner, 2026-11-12); the 팀원 strip's listening bars remain.
+    let a = ArisFaceStageWave.heights(tick: 3), b = ArisFaceStageWave.heights(tick: 3)
     check(a == b && a.count == 4, "wave: four bars, the same for the same tick")
-    let all = (0..<200).flatMap { ArisNotchPreviewWave.bars(tick: $0) }
-    check(all.allSatisfy { (2...17).contains($0.height) && (110...255).contains($0.grey) }, "wave: bars 2–17 tall, grey 110 to white")
-    check(Set(all.map(\.height)).count > 20, "wave: the bars move")
-    check(ArisNotchPreviewWave.rest.count == 4 && ArisNotchPreviewWave.burstTicks * 58 >= 2000, "wave: plays about two seconds, then rests")
+    let all = (0..<200).flatMap { ArisFaceStageWave.heights(tick: $0) }
+    check(all.allSatisfy { (2...17).contains($0) }, "wave: bars 2–17 tall")
+    check(Set(all).count > 20 && ArisFaceStageWave.tick == 0.058, "wave: the bars move, a step every 58 ms")
 }

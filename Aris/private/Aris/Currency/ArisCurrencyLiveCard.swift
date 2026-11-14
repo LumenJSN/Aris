@@ -136,7 +136,7 @@ final class ArisCurrencyLiveModel: ObservableObject {
             ArisAIMenu.Entry.item(ArisAIMenuItem(id: code, title: code, tail: ArisCurrencyNames.name(code, korean: !english), checked: code == current))
         }
         menuSide = side
-        menu.menu = .init(kind: .sheet("currency"), anchor: anchor, custom: ArisAIMenu(entries: items), byKey: false)
+        menu.menu = .init(kind: .sheet("currency"), anchor: anchor, custom: ArisAIMenu(entries: items))
     }
 
     var menuOpen: ArisCurrencyLive.Side? { menu.menu == nil ? nil : menuSide }

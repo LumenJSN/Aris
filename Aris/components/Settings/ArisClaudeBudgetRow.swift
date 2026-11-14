@@ -27,9 +27,9 @@ struct ClaudeBudgetRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                Image(systemName: "dollarsign").font(.system(size: 16.5, weight: .medium)).foregroundStyle(palette.icon).frame(width: 20, height: 20)
+                ArisLineIcon("dollarsign", size: 20).foregroundStyle(palette.icon).frame(width: 20, height: 20)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(w(title)).font(.system(size: 14, weight: .medium)).tracking(-0.07).foregroundStyle(palette.title)
+                    Text(w(title)).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
                     Text(ArisKoreanText.keepAll(w(ClaudeBudget.line(on ? amount : nil)))).font(.system(size: 12))
                         .foregroundStyle(palette.desc).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
                 }

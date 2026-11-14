@@ -202,8 +202,9 @@ enum ArisAPICatalog {
                 return ["note", "--markdown", markdown]
             }),
         ArisAPICatalogEntry(function: ArisAPIFunction(
-            name: "remember", description: "Remember a fact about the user, in their words (never passwords, codes or account numbers).",
-            parameters: object(["fact": string("The fact")], required: ["fact"])),
+            name: "remember", description: "Remember a fact about the user, in their own words. A standing preference or rule (앞으로, 이제부터, 항상, from now on, always) " +
+                "is kept word for word as they said it, 앞으로 or \"from now on\" included, never reworded (never passwords, codes or account numbers).",
+            parameters: object(["fact": string("The user's own sentence, word for word (e.g. 앞으로 답은 짧게 해 줘)")], required: ["fact"])),
             sealed: false, argv: { arguments in
                 guard let fact = text(arguments["fact"]), !fact.isEmpty else { return nil }
                 return ["remember", fact]

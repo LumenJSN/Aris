@@ -189,9 +189,21 @@ final class ArisWorkStore: @unchecked Sendable {
     /// Writes a lesson (a new one, or the one with its id again). Refused (nil) unless every episode it is based on is
     /// in the table as a conversation turn that may teach (rule 2: never a job, a hands-free turn or another caller's);
     /// marked outside when any of them read outside content (rule 3), whatever the lesson said.
+    /// The write gate reads a lesson first (ArisMemoryGate): one whose words read like an order to an AI waits in 설정 ›
+    /// 기억 › 확인할 것 (nil here); one that asks for a credential is never saved. `reviewed`: the user kept it there.
     @discardableResult
-    func save(_ lesson: ArisWorkLesson) -> ArisWorkLesson? {
-        tables { db in
+    func save(_ lesson: ArisWorkLesson, reviewed: Bool = false) -> ArisWorkLesson? {
+        switch ArisMemoryGate.verdict(lesson.gateText) {
+        case .allow: break
+        case .refuse: return nil
+        case .review(let hit):
+            guard reviewed else {
+                let payload = (try? JSONEncoder().encode(lesson)).map { String(decoding: $0, as: UTF8.self) } ?? ""
+                _ = memory.holdLesson(text: ArisMemoryText.cleaned(lesson.key + " — " + lesson.asked), payload: payload, hit: hit)
+                return nil
+            }
+        }
+        return tables { db in
             guard !lesson.evidence.isEmpty else { return nil }
             var outside = lesson.outside
             for id in lesson.evidence {
@@ -216,6 +228,15 @@ final class ArisWorkStore: @unchecked Sendable {
             }
             return saved
         }
+    }
+
+    /// 넣기 on a held lesson: saved as the user has seen it (its evidence is checked again, as for any lesson).
+    @discardableResult
+    func saveReviewed(payload: String) -> ArisWorkLesson? {
+        guard let lesson = try? JSONDecoder().decode(ArisWorkLesson.self, from: Data(payload.utf8)) else { return nil }
+        var fresh = lesson
+        fresh.id = 0
+        return save(fresh, reviewed: true)
     }
 
     /// Past `lessonCapacity`: expired ones go first, then the least sure.

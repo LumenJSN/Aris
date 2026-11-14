@@ -20,7 +20,7 @@ struct ArisTeammateMadeCard: View {
                              confirm: {
                                  // The card goes at once; a save that failed is said in the notch (audit team-11).
                                  team.confirmMade(aris: ArisFace.current) { saved in
-                                     if saved == nil { ArisController.shared.announce(title: ArisTeamCopy.madeTitle, text: ArisTeamCopy.madeFailed) }
+                                     if saved == nil { ArisController.shared.announce(title: ArisTeamCopy.madeTitle, text: ArisTeamCopy.madeFailed, kind: .problem) }
                                  }
                                  ArisController.shared.dismissAnswer()
                              },

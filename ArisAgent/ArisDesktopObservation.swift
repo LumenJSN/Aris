@@ -127,11 +127,29 @@ struct ArisDesktopObservation {
     static let poorLineTextOnly = "This window shows almost nothing to accessibility (a canvas or a custom-drawn view). `desktop see --app \"<App>\" --ocr` " +
         "adds the text on screen as @…:tN marks with their boxes (click one)."
 
+    /// The controls (and text marks) whose name or value holds every one of `words` (any case), the first `max` of
+    /// them; and how many there were in all. A huge window's listing, cut down to what the brain looks for.
+    func matching(_ words: String, max: Int) -> (elements: [ArisDesktopElement], marks: [ArisDesktopElement], total: Int) {
+        let wanted = words.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        let holds = { (element: ArisDesktopElement) -> Bool in
+            let said = (element.label + " " + (element.value ?? "")).lowercased()
+            return !wanted.isEmpty && wanted.allSatisfy(said.contains)
+        }
+        let elements = shown.filter(holds), marks = self.marks.filter(holds)
+        let kept = Array(elements.prefix(max))
+        return (kept, Array(marks.prefix(Swift.max(0, max - kept.count))), elements.count + marks.count)
+    }
+
     /// `poor`: what a poor tree says next, when not the default (the user picked another engine: ArisDesktopFallback).
-    func render(limit: Int = 30_000, poor: String? = nil) -> String {
+    /// `find`: only the controls holding these words, at most `max` (`see --find`); the refs are the look's own.
+    func render(limit: Int = 30_000, poor: String? = nil, find: String? = nil, max: Int = ArisDesktopObservation.findMax) -> String {
         var lines = ["\(target.name) · window \(window) “\(title)”\(isDialog ? " (a dialog)" : "") · see \(snapshot)"]
         if let note { lines.append(note) }
-        for element in shown {
+        let found = find.map { matching($0, max: max) }
+        if let found, let find {
+            lines.append("Only the controls holding “\(ArisDesktopCard.shown(find))”: \(min(found.total, max)) of \(found.total) shown (the window has \(shown.count + marks.count) in all).")
+        }
+        for element in found?.elements ?? shown {
             var line = "\(ref(element)) \(element.role)"
             if !element.label.isEmpty { line += " “\(ArisDesktopCard.shown(String(element.label.prefix(160))))”" }
             if let value = element.value, !value.isEmpty, value != element.label { line += " value=“\(ArisDesktopCard.shown(value))”" }
@@ -140,16 +158,19 @@ struct ArisDesktopObservation {
             if !element.enabled { line += " (disabled)" }
             lines.append(line)
         }
-        for mark in marks {
+        for mark in found?.marks ?? marks {
             let box = mark.bounds
             let round = { (value: CGFloat) in Int(value.rounded()) }
             lines.append("\(ref(mark)) text “\(ArisDesktopCard.shown(mark.label))” at \(round(box.minX)),\(round(box.minY)) \(round(box.width))×\(round(box.height))")
         }
         if hidden { lines.append(ArisDesktopPrivacy.hiddenLine) }
-        if isPoor { lines.append(poor ?? Self.poorLine.replacingOccurrences(of: "<App>", with: target.name)) }
+        if isPoor, found == nil { lines.append(poor ?? Self.poorLine.replacingOccurrences(of: "<App>", with: target.name)) }
         let text = lines.joined(separator: "\n")
         return text.count > limit ? String(text.prefix(limit)) + "\n(cut: the window has more)" : text
     }
+
+    /// How many controls `see --find` lists when no --max is given.
+    static let findMax = 40
 
     // MARK: - Making one
 

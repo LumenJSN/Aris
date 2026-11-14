@@ -102,7 +102,7 @@ private func runHandOffShapeTests() {
     let writes: [[String]] = [["todo", "add", "우유 사기"], ["todo", "done", "우유"], ["todo", "edit", "우유", "--due", "금요일"], ["todo", "remove", "우유"],
                               ["remind", "약 먹기", "--at", "2026-11-12 17:00"], ["event", "치과", "--start", "2026-11-12 15:00"], ["event", "find", "치과", "--start", "2026-11-12 15:00"],
                               ["note", "--markdown", "# 장보기\\n- [ ] 우유"], ["remember", "커피는 라떼"], ["forget", "커피"], ["link", "https://naver.com"],
-                              ["shortcut", "출근"], ["trash", "~/Desktop/a.txt"], ["keys", "cmd+t", "--app", "Safari"], ["type", "안녕", "--app", "Notes"],
+                              ["shortcut", "출근"], ["trash", "~/Desktop/a.txt"], ["keys", "cmd+t", "--app", "Safari"],
                               ["schedule", "add", "--title", "날씨", "--prompt", "오늘 날씨 알려 줘", "--daily", "08:00"], ["schedule", "remove", "87DA4F10"],
                               ["undo"], ["clipboard", "set", "x"], ["move", "~/a", "~/b"], ["rename", "~/a", "b"], ["folder", "new", "~/Desktop/qa54"],
                               ["convert", "~/a.heic", "--to", "png"], ["open", "~/Documents/a.pdf"], ["maps", "search", "서울역"], ["use-calendar", "집"]]
@@ -110,7 +110,9 @@ private func runHandOffShapeTests() {
     let direct: [[String]] = [["todo"], ["weather", "Seoul"], ["stock", "AAPL"], ["timer", "25"], ["volume", "40"], ["music", "play"], ["app", "Figma"],
                               ["folder", "Downloads"], ["calendars"], ["schedule", "list"], ["clipboard"], ["mail", "recent"], ["files", "read", "--shelf"],
                               ["memory"], ["maps", "search", "서울역", "--json"], ["message", "엄마", "곧 갈게"], ["mcp", "list"], ["desktop", "see", "--app", "Notes"],
-                              ["aside", "x"], ["board", "# x"], ["find", "세금"], ["activity", "--today"], ["turn-gate"], ["sealed-gate"]]
+                              ["aside", "x"], ["board", "# x"], ["find", "세금"], ["activity", "--today"], ["turn-gate"], ["sealed-gate"],
+                              // fix-13: `type` is a call to the desktop engine (`desktop type --focused`), like `desktop`.
+                              ["type", "안녕", "--app", "Notes"]]
     check(direct.allSatisfy { !H.names($0) && !H.isWrite($0) }, "hand-off: a read, a timer, the volume, a message (its own route) and the hooks are never handed off")
     check(!H.isWrite(["todo", "add", "x\ny"]) && !H.isWrite(["note", "a\u{0}b"]) && !H.isWrite(["todo", "add", ""]) && H.names(["todo", "add", "x\ny"])
           && !H.isWrite(["todo", "add"] + Array(repeating: "x", count: 200)) && !H.isWrite(["trash", String(repeating: "a", count: 20_001)]),
@@ -121,7 +123,7 @@ private func runHandOffShapeTests() {
           "hand-off: a call that says back only what the brain passed (a to-do added, a file moved) brings nothing in")
     check(!H.bringsNothingIn(["event", "find", "치과", "--start", "2026-11-12 15:00"]) && !H.bringsNothingIn(["event", "delete", "--id", "1"]) && !H.bringsNothingIn(["undo"])
           && !H.bringsNothingIn(["todo", "done", "우유"]) && !H.bringsNothingIn(["shortcut", "출근"]) && !H.bringsNothingIn(["schedule", "remove", "x"])
-          && !H.bringsNothingIn(["forget", "x"]) && !H.bringsNothingIn(["type", "x"]) && !H.bringsNothingIn(["weather"]),
+          && !H.bringsNothingIn(["forget", "x"]) && !H.bringsNothingIn(["weather"]),
           "hand-off: a call whose answer may carry others' words (an event's title, a matched to-do, an undo, a shortcut) counts as outside text")
 
     // aris-tools inside a Claude's process: never runs one itself.
@@ -150,7 +152,7 @@ private func runOpenClaudeHandOffTests() {
           && gVerdict(["event", "회의", "--start", "2026-11-12 15:00"], request: "내일 3시에 회의 일정 넣어 줘") == .auto,
           "open Claude, clean turn: a to-do, a reminder and an event are added at once (they used to be refused)")
     for risky in [["trash", "~/Desktop/a.txt"], ["schedule", "add", "--title", "날씨", "--prompt", "오늘 날씨 알려 줘", "--daily", "08:00"], ["undo"],
-                  ["keys", "cmd+t", "--app", "Safari"], ["type", "안녕", "--app", "Terminal"], ["move", "~/Desktop/a.txt", "~/Documents"],
+                  ["keys", "cmd+t", "--app", "Safari"], ["move", "~/Desktop/a.txt", "~/Documents"],
                   ["rename", "~/Desktop/a.txt", "b.txt"], ["folder", "new", "~/Desktop/qa54"], ["todo", "remove", "우유"], ["event", "delete", "--id", "E1", "--title", "회의", "--start", "2026-11-12 15:00"]] {
         check(gVerdict(risky, request: "그거 해 줘") == .card, "open Claude, clean turn: `\(risky.prefix(2).joined(separator: " "))` asks on the user's card (it used to be refused)")
     }
@@ -178,7 +180,7 @@ private func runOpenClaudeHandOffTests() {
     let commands: [[String]] = [["todo", "add", "우유 사기"], ["todo", "done", "우유"], ["todo", "remove", "우유"], ["remind", "약"], ["event", "회의", "--start", "2026-11-12 15:00"],
                                 ["event", "find", "회의", "--start", "2026-11-12 15:00"], ["note", "메모"], ["note", "--markdown", "# 장보기"], ["remember", "우유 사기 할 일에 추가해 줘"],
                                 ["forget", "커피"], ["link", "https://example.com"], ["shortcut", "출근"], ["trash", "~/Desktop/a.txt"], ["keys", "cmd+t", "--app", "Notes"],
-                                ["type", "안녕", "--app", "Notes"], ["schedule", "add", "--title", "t", "--prompt", "p", "--daily", "08:00"], ["schedule", "remove", "x"], ["undo"],
+                                ["schedule", "add", "--title", "t", "--prompt", "p", "--daily", "08:00"], ["schedule", "remove", "x"], ["undo"],
                                 ["clipboard", "set", "x"], ["move", "~/a", "~/b"], ["folder", "new", "~/x"], ["convert", "~/a.heic", "--to", "png"], ["open", "~/Documents/a.pdf"],
                                 ["maps", "search", "서울역"], ["use-calendar", "집"], ["trash", "~/.ssh/id_rsa"]]
     var differing: [String] = []

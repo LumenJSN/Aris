@@ -14,7 +14,7 @@ func runQAFinalTests() {
     runQAFinalPanelRuleTests()
     runQAFinalReviewTests()
     runQAFinalReviewLowTests()
-    MainActor.assumeIsolated { qaFinalPanelPressHarness() }
+    MainActor.assumeIsolated { keyPanelHarness("BUG-22") { qaFinalPanelPressHarness() } }
 }
 
 private func finalSource(_ path: String) -> String {

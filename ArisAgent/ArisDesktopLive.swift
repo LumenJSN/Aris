@@ -27,6 +27,15 @@ struct ArisDesktopLiveApps: ArisDesktopApps {
 
     func secondsSinceKeyDown() -> Double { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown) }
 
+    /// The input that tells the owner is at the Mac: keys, clicks, scrolls, the pointer moving (mouse or trackpad).
+    static let ownerEvents: [CGEventType] = [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel,
+                                             .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+
+    func secondsSinceOwnerInput(owner: String) -> Double {
+        let last = Self.ownerEvents.map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }
+        return ArisOwnerActivity.secondsSinceOwner(lastEvents: last, ownSpans: ArisOwnInput.shared.recent(for: owner))
+    }
+
     func identity(pid: Int32) -> ArisCardTarget? {
         guard let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier, let started = ArisProcessStart.of(pid: pid) else { return nil }
         return ArisCardTarget(pid: pid, bundle: bundle, started: started)
@@ -182,6 +191,12 @@ struct ArisDesktopLiveApps: ArisDesktopApps {
 
     var secureInput: Bool { IsSecureEventInputEnabled() }
 
+    /// The process that turned secure input on, as the login session says (kCGSSessionSecureInputPID); nil when it doesn't.
+    func secureInputOwner() -> Int32? {
+        guard let session = CGSessionCopyCurrentDictionary() as? [String: Any], let pid = session["kCGSSessionSecureInputPID"] as? NSNumber else { return nil }
+        return pid.int32Value > 0 ? pid.int32Value : nil
+    }
+
     /// The folder a Finder window shows: its window (by its window id) through Accessibility, its document URL.
     func shownPath(_ target: ArisDesktopTarget, window: Int?) -> String? {
         guard target.pid > 0, let window else { return nil }
@@ -321,7 +336,9 @@ struct ArisDesktopLivePointer: ArisDesktopPointer {
 
     /// The pointer back where it was (no click), and the app that was in front back in front.
     func restore(_ state: ArisDesktopPointerState) {
-        if let location = state.location { CGWarpMouseCursorPosition(location) }
+        // Putting the pointer back is Aris's own input, never the owner's: the turn that does it notes it as its own
+        // (ArisDesktopSession.putPointerBack).
+        if let location = state.location { _ = CGWarpMouseCursorPosition(location) }
         if let pid = state.frontmost, pid != ArisFrontLive.frontPid() {
             NSRunningApplication(processIdentifier: pid)?.activate()
         }
@@ -357,5 +374,5 @@ extension ArisDesktopEngine {
                                           windows: ArisDesktopLiveWindows(), pointer: ArisDesktopLivePointer(),
                                           vision: ArisDesktopLiveVision(environment: ArisAgentRunner.environment()), reader: ArisDesktopLiveText(),
                                           identity: ArisDesktopLiveIdentity.current, tools: ArisAgentRunner.toolsPath,
-                                          computerEngine: { ArisComputerEngineChoice.current })
+                                          computerEngine: { ArisComputerEngineChoice.current }, lock: .shared, pausePolicy: .live)
 }

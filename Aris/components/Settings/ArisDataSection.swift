@@ -164,7 +164,7 @@ struct ArisDataSheet: View {
         if let done = model.uninstallDone {
             if kept { Text("–").font(.system(size: 13)).foregroundStyle(palette.faint) }
             else if index < done && model.failedRows.contains(id) {
-                Image(systemName: "exclamationmark.circle.fill").font(.system(size: 14)).foregroundStyle(palette.red)
+                ArisLineIcon("exclamationmark.circle.fill", size: 17).foregroundStyle(palette.red)
             }
             else if index < done { ArisLandingCheck() }
             else { Color.clear.frame(width: 16, height: 16) }

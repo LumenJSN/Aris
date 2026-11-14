@@ -18,3 +18,10 @@ THIRD_PARTY_LICENSES. In particular:
 - AsyncXPCConnection, Copyright (c) 2023, Chime (BSD-3-Clause).
 - Defaults and KeyboardShortcuts, Copyright (c) Sindre Sorhus (MIT); SkyLightWindow, Copyright (c) 2025 Lakr Aream
   (MIT); MacroVisionKit, Copyright (c) 2024 github.com/theboringhumane (MIT).
+- gbrain, Copyright (c) 2026 Garry Tan (MIT), whose memory design the memory code follows (ArisAgent/ArisMemory*.swift).
+- OpenMausBot, Copyright 2026 Milind Soni and OpenMausBot contributors, licensed under the Apache License, Version 2.0:
+  two word lists, converted to Swift, in ArisAgent/ArisSavedStepsWords.swift. Its NOTICE: "OpenMausBot was relicensed
+  from the MIT License to the Apache License, Version 2.0, with the consent of all contributors whose copyright was
+  incorporated before the transition."
+- Lucide, Copyright (c) 2026 Lucide Icons and Contributors (ISC; some icons derived from Feather, Copyright (c)
+  2013-present Cole Bemis, MIT): the Settings window's line icons (Aris/components/Settings/ArisLineIconData.swift).

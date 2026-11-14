@@ -1,5 +1,5 @@
-// The settings window as the owner picked it from settings-mock.html (qa/design-1111/PICKS.md): one card a section, the
-// preview only where it shows something, one sentence a row, 14 pages, the folded notch groups, one menu, and the
+// The settings window as the owner picked it from settings-mock.html (qa/design-1111/PICKS.md): one card a section, no
+// notch preview (removed 2026-11-12), one sentence a row, 14 pages, the folded notch groups, one menu, and the
 // fixes 10–20. Pure parts only; the pictures are checked with tests/settings-render.
 import CoreGraphics
 import Foundation
@@ -16,26 +16,13 @@ private func s2LayoutTests() {
         ArisSettingItem(id: "x.clear", icon: .symbol("trash"), title: "배운 제안 지우기", control: .buttons([ArisSettingButton(title: "지우기", action: .clearName, kind: .danger)])),
     ]
     let section = ArisSettingSection(id: "x", heading: "알림", rows: added)
-    check(ArisSettingsLayout.blocks(section) == [.group(added)], "2-B: rows added through the old components land in the section's one card, with no case of their own")
+    // Settings 1:1 (2026-11-13) replaced pick 2-B's one card per section with the measured one card per row.
+    check(ArisSettingsLayout.blocks(section) == added.map { .group([$0]) }, "2-B → 1:1: rows added through the old components each take a card of their own, with no case of their own")
     for page in ArisSettingsPage.allCases {
         let sections = ArisSettingsBuilder.sections(page, ArisSettingsSnapshot())
-        check(sections.allSatisfy { ArisSettingsLayout.blocks($0).count <= 1 }, "2-B: every section of \(page.rawValue) is at most one card")
+        check(sections.allSatisfy { ArisSettingsLayout.blocks($0).count == ($0.grouped || $0.fold != nil ? min(1, $0.rows.count) : $0.rows.count) },
+              "1:1: every section of \(page.rawValue) is one card per row, a list one card")
     }
-}
-
-private func s2StageTests() {
-    func plan(_ page: ArisSettingsPage, _ change: (inout ArisNotchPreviewInput) -> Void = { _ in }) -> ArisNotchPreviewPlan {
-        var input = ArisNotchPreviewInput()
-        input.page = page
-        change(&input)
-        return ArisNotchPreviewPlan.make(input)
-    }
-    check([ArisSettingsPage.aris, .voice, .notch, .control].allSatisfy { plan($0).shown }, "1-A: 대화, 목소리 · 언어, 노치 and 컴퓨터 제어 keep the preview")
-    check(plan(.ai) { $0.aiWho = ["Claude", "Whisper", "Mac"] }.shown && !plan(.ai).shown, "1-A: AI 서비스 shows who does each job, once it knows")
-    check(plan(.skills) { $0.skillsOn = true; $0.skillTitles = ["회의록"] }.shown && !plan(.skills).shown && !plan(.skills) { $0.skillsOn = true }.shown,
-          "1-A: 스킬 has a preview only when there is a skill to show in it")
-    check([ArisSettingsPage.memory, .dictation, .todo, .features, .general, .keys, .about].allSatisfy { !plan($0).shown },
-          "1-A: the pages that only list settings start at their title")
 }
 
 /// How many sentences a line has: its full stops, question marks and 요-endings before a space count once each.
@@ -83,8 +70,9 @@ private func s2SidebarTests() {
     check(ArisSettingsPage.allCases.count == 14 && ArisSettingsGroup.allCases.map(\.rawValue) == ["아리스", "도구", "화면 · 앱"],
           "6-B: 14 pages in three groups named in Korean")
     check(ArisSettingsGroup.allCases.flatMap(\.pages) == ArisSettingsPage.allCases, "6-B: the sidebar lists every page once, in the pages' order")
-    check(ArisSidebarMetrics.height() <= ArisSidebarMetrics.windowSize.height,
-          "6-B: every page is visible at the window's default height with no scrolling (needs \(ArisSidebarMetrics.height()) of \(ArisSidebarMetrics.windowSize.height))")
+    // The measured 44-pt items (settings 1:1, 2026-11-13) make the list taller than the window: it scrolls and fades.
+    check(ArisSidebarMetrics.height() > ArisSidebarMetrics.windowSize.height && ArisSidebarMetrics.fade == 44,
+          "6-B: at the measured item height the list is taller than the window (\(ArisSidebarMetrics.height()) of \(ArisSidebarMetrics.windowSize.height)), so it scrolls with a fade")
     check(ArisSettingsPage.named("calendar") == .todo && ArisSettingsPage.named("look") == .general && ArisSettingsPage.named("todo") == .todo
           && ArisSettingsPage.named("nope") == nil, "6-B: a link that names a page that was merged opens the page that took its rows")
 
@@ -329,6 +317,5 @@ func runSettings2Tests() {
     s2FoldTests()
     s2SidebarTests()
     s2LayoutTests()
-    s2StageTests()
     s2CopyTests()
 }

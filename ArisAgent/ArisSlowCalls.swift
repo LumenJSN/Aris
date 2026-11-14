@@ -23,14 +23,26 @@ final class ArisSlowCalls: @unchecked Sendable {
     /// After a card's limit, how long the work the user's yes started may still take before the turn stops waiting for it.
     static let workAfterAnswer: TimeInterval = 60
 
+    /// How long a desktop call whose card waits for the owner is still collected (a job's card waits ten minutes,
+    /// ArisAgentRunner.mcpTaskWait, then the work its yes lets run): the API brain used to give up at 130 s while the
+    /// card waited in 확인 대기, look again and click again (eighth VM pass: two cards for one action).
+    static let ownerWait: TimeInterval = 600 + workAfterAnswer
+    /// What a waiting line says when its call waits for the owner's answer on a card.
+    static let ownerMarker = "Waiting for the owner's answer"
+
     private final class Call {
         let owner: String
+        /// Whether the call waits on the owner's card right now (nil: never asked).
+        let onOwner: () -> Bool
         let at = Date()
         var outcome: ArisMCPOutcome?
         /// Its turn ended first: whatever it comes to is never handed on.
         var ended = false
         let finished = DispatchSemaphore(value: 0)
-        init(owner: String) { self.owner = owner }
+        init(owner: String, onOwner: @escaping () -> Bool) {
+            self.owner = owner
+            self.onOwner = onOwner
+        }
     }
 
     private let lock = NSLock()
@@ -38,10 +50,11 @@ final class ArisSlowCalls: @unchecked Sendable {
 
     /// Starts `work`; `reply` gets its outcome if it comes within `slice`, else the waiting line with the call's id.
     /// `kind` is the aris-tools command the brain collects with ("desktop" or "mcp").
-    func run(owner: String, kind: String, slice: TimeInterval = ArisSlowCalls.slice,
+    /// `waitingOnOwner`: whether the call waits on the owner's card now; its waiting line then says so.
+    func run(owner: String, kind: String, slice: TimeInterval = ArisSlowCalls.slice, waitingOnOwner: @escaping () -> Bool = { false },
              work: (@escaping (ArisMCPOutcome) -> Void) -> Void, reply: @escaping (ArisMCPOutcome) -> Void) {
         let id = Self.newID()
-        let call = Call(owner: owner)
+        let call = Call(owner: owner, onOwner: waitingOnOwner)
         lock.withLock {
             forgetOld()
             calls[id] = call
@@ -133,7 +146,7 @@ final class ArisSlowCalls: @unchecked Sendable {
                 if ended { return reply(.failed(Self.endedLine)) }
                 return reply(outcome ?? .failed("no answer"))
             }
-            reply(ArisMCPOutcome(status: Self.waitingStatus, output: Self.waitingLine(id: id, kind: kind)))
+            reply(ArisMCPOutcome(status: Self.waitingStatus, output: call.onOwner() ? Self.ownerWaitingLine(id: id, kind: kind) : Self.waitingLine(id: id, kind: kind)))
         }
     }
 
@@ -143,6 +156,14 @@ final class ArisSlowCalls: @unchecked Sendable {
         "Still under way (Aris may be asking the user on a card, which can take up to two minutes): nothing is known " +
             "yet. Run the same aris-tools with `\(kind) wait \(id)` now, and again each time it says this, until it gives " +
             "the result. Don't answer the user, and don't end your turn, before it does."
+    }
+
+    /// The waiting line of a call whose card waits for the owner (it may be parked in 확인 대기 for minutes): never a
+    /// reason to look again or try again (eighth VM pass: the retry's card, then the user's yes to the first met a newer look).
+    static func ownerWaitingLine(id: String, kind: String) -> String {
+        ownerMarker + " on this action's card (it may wait in 확인 대기 until they look): do not retry it, and don't look at " +
+            "or act in that app again meanwhile (a second try is neither asked nor done). Run the same aris-tools with `\(kind) wait \(id)` " +
+            "now, and again each time it says this, until it gives the result. Don't answer the user, and don't end your turn, before it does."
     }
 
     /// Ids are 16 lowercase hex digits.
