@@ -54,6 +54,12 @@ systems get a plain dark notch. Macs without a notch work too.
    [Releases](https://github.com/LumenJSN/Aris/releases/latest)) and open it.
 2. Drag **Aris** onto **Applications**, then open it from there.
 
+Or with [Homebrew](https://brew.sh), which also clears the download quarantine flag for you:
+
+```sh
+brew install --cask lumenjsn/tap/aris
+```
+
 Aris is ad-hoc signed and **not notarized** (the project has no Developer ID), so the first launch is refused
 ("Apple could not verify Aris"). Allow it once per download, in one of these ways:
 
