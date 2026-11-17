@@ -100,9 +100,8 @@ private func memoryReviewTests() {
           "memory gate: reading memory asks once outside text or the screen came in, and hands-free")
     check(!ArisSealedTools.allows(["memory"]) && ArisClaudeDriver.ungatedRefused.contains("memory") && !ArisEscalation.approvableTools.contains("remember"),
           "memory gate: the sealed and ungated brains never read memory, and nobody but the user approves a memory write")
-    // I5: a wake turn over other sound is hands-free.
-    check(ArisConversation.wakeTurnIsHandsFree(otherAudio: true) && !ArisConversation.wakeTurnIsHandsFree(otherAudio: false),
-          "memory gate: a wake turn while another app plays is hands-free")
+    // I5 (a wake turn over other sound was hands-free) is gone since 2026-11-15: no turn is hands-free, and over real
+    // playback only a strong voice print wakes Aris (handsfree-wake-tests.swift).
     // I9: forget by substring, several asked first.
     _ = store.remember(candidate("엄마 생신은 3월 5일", .person, subject: "엄마"), source: .said, turnAt: Date())
     _ = store.remember(candidate("커피는 아이스 아메리카노", .preference), source: .said, turnAt: Date())

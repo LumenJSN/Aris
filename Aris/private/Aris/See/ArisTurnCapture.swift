@@ -12,6 +12,8 @@
 //  The PNG stays in memory until the turn hands it out; a finished, cancelled or replaced turn drops it, and a shot
 //  nobody collects is dropped after 30 s. Each turn has its own generation: a late wait from an earlier turn gets
 //  nothing and never touches the next turn's capture.
+//  Look first (2026-11-14): words that name a showing app's words, or another screen, take the displays the plan
+//  (ArisScreenNeed.Want) names instead, up to three, each image labelled with which display it is (ArisDisplayPick).
 //
 
 import Foundation
@@ -22,15 +24,19 @@ final class ArisTurnCapture {
         let png: Data
         let ms: Int
         let retried: Bool
+        /// Which display this is, for the brain ("화면 1/2 (오른쪽) · Aside 창이 있는 화면"); nil for the one plain shot.
+        var title: String? = nil
     }
 
-    /// What a turn sends: the image, what "이거" most likely means, and numbers for the turn log.
+    /// What a turn sends: the images (the first is the display the turn is most likely about), what "이거" most likely
+    /// means, and numbers for the turn log.
     struct Taken: Equatable {
-        let image: ArisTurnImage
+        let images: [ArisTurnImage]
         let focus: ArisReferenceFocus
         let bytes: Int
         let ms: Int
         let retried: Bool
+        var image: ArisTurnImage { images[0] }
     }
 
     struct Dependencies {
@@ -44,12 +50,16 @@ final class ArisTurnCapture {
         var waitAtSend: Duration = ArisCaptureRules.waitAtSend
         /// A shot nobody collected is dropped after this (as the gesture's pending result).
         var keepFor: Duration = .milliseconds(Int(ArisGestureConstants.Session.collectMaxAgeMs))
+        /// The apps with a window showing, front to back (for "어사이드가 뭐라고 했어").
+        var visibleApps: @MainActor () -> [String] = { [] }
+        /// The displays a plan names, each shot labelled; nil: every turn takes the one plain shot.
+        var screens: (@MainActor (ArisScreenNeed.Want) async -> [Shot])? = nil
     }
 
     private let deps: Dependencies
     private var generation = 0
     private var notchShowedAnswer = false
-    private var shooting: Task<Shot?, Never>?
+    private var shooting: Task<[Shot]?, Never>?
     private var expiry: Task<Void, Never>?
     /// The turn's circled shots and drawing references (P1.9), held under the same generation and expiry.
     private var gesture: (images: [ArisTurnImage], turn: Int)?
@@ -77,14 +87,19 @@ final class ArisTurnCapture {
         guard !ArisAgentCopy.overLimit(words) else { return false }
         guard shooting == nil else { return true }
         let drew = gesture.map { $0.turn == generation } ?? false
-        guard ArisScreenNeed.captures(words: words, setting: deps.enabled(), drew: drew) else { return false }
+        guard deps.enabled(), !drew else { return false }
+        // The words decide (ArisScreenNeed.captures, with the setting and the drawing checked above).
+        guard let want = ArisScreenNeed.want(words, apps: deps.visibleApps()) else { return false }
         guard deps.permission() else {
             if let line = deps.nextNotice() { deps.notify(line) }
             return false
         }
         attempted = true
-        let shoot = deps.shoot
-        shooting = Task { @MainActor in await shoot() }
+        let shoot = deps.shoot, screens = want.plain ? nil : deps.screens
+        shooting = Task { @MainActor () -> [Shot]? in
+            if let screens { return await screens(want) }
+            return await shoot().map { [$0] }
+        }
         armExpiry()
         return true
     }
@@ -94,14 +109,18 @@ final class ArisTurnCapture {
     func image() async -> Taken? {
         guard let task = shooting else { return nil }
         let turn = generation
-        let shot = await ArisTaskRace.value(of: task, within: deps.waitAtSend)
+        let shots = await ArisTaskRace.value(of: task, within: deps.waitAtSend) ?? []
         guard turn == generation else { return nil } // a newer turn began: its capture isn't ours to take or clear
         let focus = ArisReferenceFocus.of(hasShots: false, notchShowsAnswer: notchShowedAnswer)
         clear()
-        guard let shot else { return nil }
-        let image = ArisTurnImage(kind: .cursor, name: "cursor-screen.png", format: .png, data: shot.png,
-                                  badge: nil, app: nil, title: nil)
-        return Taken(image: image, focus: focus, bytes: shot.png.count, ms: shot.ms, retried: shot.retried)
+        let kept = Array(shots.prefix(ArisDisplayPick.maxDisplays))
+        guard !kept.isEmpty else { return nil }
+        let images = kept.enumerated().map { index, shot in
+            ArisTurnImage(kind: .cursor, name: ArisDisplayPick.imageName(index + 1), format: .png, data: shot.png,
+                          badge: nil, app: nil, title: shot.title)
+        }
+        return Taken(images: images, focus: focus, bytes: kept.reduce(0) { $0 + $1.png.count }, ms: kept.map(\.ms).max() ?? 0,
+                     retried: kept.contains(where: \.retried))
     }
 
     /// Whether this turn's screenshot is there, waiting at most `waitAtSend` for it. Nothing is taken: the ask still
@@ -109,8 +128,8 @@ final class ArisTurnCapture {
     func inHand() async -> Bool {
         guard let task = shooting else { return false }
         let turn = generation
-        let shot = await ArisTaskRace.value(of: task, within: deps.waitAtSend)
-        return turn == generation && shot != nil
+        let shots = await ArisTaskRace.value(of: task, within: deps.waitAtSend)
+        return turn == generation && !(shots ?? []).isEmpty
     }
 
     /// The turn's circled shots arrived (collected at the end of listening): they replace the screenshot.

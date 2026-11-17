@@ -106,7 +106,7 @@ extension ArisDesktopEngine {
     /// The window the step works in, looked at again (nothing recorded, nothing typed): its keyboard focus is in a
     /// password or secret field. False when it can't be looked at (the step's own checks run again anyway).
     func focusIsSecret(_ request: ArisDesktopRequest, target: ArisDesktopTarget, turn: ArisDesktopTurn) -> Bool {
-        guard case .success(let binary) = installer.ready() else { return false }
+        guard case .success(let binary) = engineBinary() else { return false }
         let session = ArisDesktopSession(engine: self, binary: binary, target: target, turn: turn)
         let id = request.ref.flatMap { turn.ledger.window(ofSnapshot: $0.snapshot) } ?? request.window
         guard case .success(let window) = session.pinned(id, title: request.title), case .success(let (look, _)) = session.look(window, record: false) else { return false }

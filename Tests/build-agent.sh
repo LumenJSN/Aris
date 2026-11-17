@@ -23,7 +23,7 @@ fi
 BUILD_INFO=("$SRC/Shared/ArisBuildInfo.swift" "$STAMP")
 swiftc -O "${TARGET[@]}" -o "$OUT/aris-agent" "$SRC"/ArisAgent/*.swift \
   "$SRC/Aris/private/Claude/HTTPRequestParser.swift" "$SRC/Aris/private/Claude/ClaudeHookToken.swift" "$SRC/Shared/ArisXPCTrust.swift" \
-  "$SRC/Aris/private/Aris/ArisBrain.swift" "$SRC/Aris/private/Aris/ArisAgentReply.swift" "$SRC/Aris/private/Aris/ArisFix.swift" "$SRC/Aris/private/Aris/ArisActionGrant.swift" \
+  "$SRC/Aris/private/Aris/ArisBrain.swift" "$SRC/Aris/private/Aris/ArisThinking.swift" "$SRC/Aris/private/Aris/ArisAgentReply.swift" "$SRC/Aris/private/Aris/ArisFix.swift" "$SRC/Aris/private/Aris/ArisActionGrant.swift" \
   "$SRC/Aris/private/Aris/ArisNumbers.swift" "$SRC/ArisTools/ArisWindowGrid.swift" "$SRC/ArisTools/ArisProtectedPlaces.swift" "$SRC/ArisTools/ArisUndoArguments.swift" "$SRC/Aris/private/Aris/ArisTodos.swift" \
   "$SRC/Aris/private/Aris/ArisUsage.swift" \
   "$SRC/Aris/private/Aris/Team/ArisTeammate.swift" "$SRC/Aris/private/Aris/Team/ArisTeammateScope.swift" "$SRC/Aris/private/Aris/Team/ArisClaudeLaunch.swift" "$SRC/Aris/private/Aris/Team/ArisTerminal.swift" "$SRC/Aris/private/Aris/Team/ArisQuietLaunch.swift" "$SRC/Aris/private/Aris/Team/ArisJob.swift" \

@@ -215,7 +215,9 @@ private func deskTarget(_ name: String, bundle: String, pid: Int32, never: Bool 
 private let deskBench = deskTarget("Aris Testbench", bundle: "dev.example.aris-bench.testbench", pid: 4242)
 private let deskBenchChat = deskTarget("Aris Testbench", bundle: "dev.example.aris-bench.testbench", pid: 4242, sending: true)
 private let deskKakao = deskTarget("카카오톡", bundle: "com.kakao.KakaoTalkMac", pid: 3001, sending: true)
-private let deskKeychain = deskTarget("키체인 접근", bundle: "com.apple.keychainaccess", pid: 3002, never: true)
+private let deskInstaller = deskTarget("설치 프로그램", bundle: "com.apple.installer", pid: 3002, never: true)
+/// Keychain Access, an ordinary app since the owner's 2026-11-16 ruling ("막지마").
+private let deskKeychain = deskTarget("키체인 접근", bundle: "com.apple.keychainaccess", pid: 3004)
 private let deskSafari = deskTarget("Safari", bundle: "com.apple.Safari", pid: 3003, browser: true)
 private let mainWindow = ArisDesktopWindow(id: 9189, frame: CGRect(x: 80, y: 329, width: 1040, height: 720))
 private let alertWindow = ArisDesktopWindow(id: 9302, frame: CGRect(x: 470, y: 619, width: 260, height: 139))
@@ -260,7 +262,7 @@ private final class DesktopRig {
         if installed { _ = installer.ready() }
         try? FileManager.default.createDirectory(at: installer.stateFolder.appendingPathComponent("replies"), withIntermediateDirectories: true)
         try? FileManager.default.copyItem(at: peekabooFixtures.appendingPathComponent("canvas.png"), to: installer.stateFolder.appendingPathComponent("canvas.png"))
-        for app in [deskBench, deskKakao, deskKeychain, deskSafari] { apps.apps[app.name.lowercased()] = app }
+        for app in [deskBench, deskKakao, deskInstaller, deskKeychain, deskSafari] { apps.apps[app.name.lowercased()] = app }
         apps.apps["dev.example.aris-bench.testbench"] = deskBench
         windows.byPid[4242] = [mainWindow]
         windows.byPid[3001] = [ArisDesktopWindow(id: 9189, frame: mainWindow.frame)]
@@ -491,13 +493,14 @@ private func runDesktopParityTests() {
               "desktop prompts: every brain is taught see → act → check the answer, and no other computer use")
         check(prompt.contains("desktop batch") || prompt.contains("desktop_batch"), "desktop prompts: every brain is taught to put the steps it knows in one call")
     }
-    // The engine seam: Peekaboo on every brain unless the user picked Codex and has it; Codex's own path stays whole.
-    check(ArisComputerEngine.named(nil) == .peekaboo && ArisComputerEngine.named("claude") == .peekaboo && ArisComputerEngine.named("codex") == .codex
+    // The engine seam: Aris's own on every brain unless the user picked Peekaboo, or Codex and has it (desktop-bg);
+    // Codex's own path stays whole.
+    check(ArisComputerEngine.named(nil) == .aris && ArisComputerEngine.named("claude") == .aris && ArisComputerEngine.named("codex") == .codex
           && ArisComputerEngine.effective(picked: .codex, codexInstalled: true) == .codex
-          && ArisComputerEngine.effective(picked: .codex, codexInstalled: false) == .peekaboo
+          && ArisComputerEngine.effective(picked: .codex, codexInstalled: false) == .aris
           && ArisComputerEngine.effective(picked: .peekaboo, codexInstalled: true) == .peekaboo,
-          "desktop engine: Peekaboo is the default; Codex only when installed and picked; an unknown word is the default")
-    check(ArisComputerEngineChoice.set("codex") && !ArisComputerEngineChoice.set("codex") && ArisComputerEngineChoice.set("peekaboo") && !ArisComputerEngineChoice.set("nonsense"),
+          "desktop engine: Aris's own is the default; Codex only when installed and picked; an unknown word is the default")
+    check(ArisComputerEngineChoice.set("codex") && !ArisComputerEngineChoice.set("codex") && ArisComputerEngineChoice.set("aris") && !ArisComputerEngineChoice.set("nonsense"),
           "desktop engine: a change is told once, so Codex's processes set for the old one go")
     let picked = ArisAgentPrompt.system(tools: tools, gated: true, computerEngine: .codex), free = ArisAgentPrompt.system(tools: tools, gated: true)
     check(picked.contains("computer use, when you have it") && !picked.contains("desktop see") && free.contains("desktop see") && !free.contains("pressKey"),
@@ -533,9 +536,22 @@ private func runDesktopGateTests() {
     check(ArisDesktopGate.decide(ArisDesktopRequest(verb: .dialogFile, app: "TextEdit", path: "/tmp"), target: deskBench, context: clean, remembered: true, secureInput: false) == .ask(remember: false)
           && ArisDesktopGate.decide(ArisDesktopRequest(verb: .clickAt, app: "TextEdit", target: "Launch"), target: deskBench, context: clean, remembered: true, secureInput: false) == .ask(remember: false),
           "desktop gate: a file panel brought forward and a look-and-click always ask, never remembered")
-    for app in [deskKeychain, deskTarget("1Password", bundle: "com.1password.1password", pid: 7, never: true), deskTarget("Aris", bundle: "com.lumenjsn.aris", pid: 8, never: true)] {
+    for app in [deskInstaller, deskTarget("Aris", bundle: "com.lumenjsn.aris", pid: 8, never: true)] {
         check(ArisDesktopGate.decide(read, target: app, context: clean, remembered: true, secureInput: false) == .refuse(ArisDesktopGate.neverRefusal),
               "desktop never-list: \(app.name) is never read or touched")
+    }
+    // The user 2026-11-16: Keychain Access, password apps and System Information get the gate and cards any app gets.
+    let vaults = [deskKeychain, deskTarget("1Password", bundle: "com.1password.1password", pid: 7), deskTarget("암호", bundle: "com.apple.Passwords", pid: 10),
+                  deskTarget("시스템 정보", bundle: "com.apple.SystemProfiler", pid: 11)]
+    for app in vaults {
+        check(!ArisRiskPolicy.computerUseIsNever([app.name, app.bundle])
+              && ArisDesktopGate.decide(read, target: app, context: clean, remembered: false, secureInput: false) == .run
+              && ArisDesktopGate.decide(read, target: app, context: ArisDesktopContext(screen: true), remembered: false, secureInput: false) == .judge
+              && ArisDesktopGate.decide(act, target: app, context: clean, remembered: false, secureInput: false) == .ask(remember: true)
+              && ArisDesktopGate.decide(act, target: app, context: clean, remembered: true, secureInput: false) == .run
+              && ArisDesktopGate.decide(ArisDesktopRequest(verb: .type, ref: act.ref, text: "x"), target: app, context: clean, remembered: true, secureInput: true)
+              == .refuse(ArisDesktopGate.secureRefusal),
+              "desktop gate: \(app.name) is an ordinary app (a read runs, an action shows the card, a password field still stops typing)")
     }
     if case .refuse = ArisDesktopGate.decide(read, target: deskSafari, context: clean, remembered: true, secureInput: false) {} else { check(false, "desktop gate: a browser goes to Aside") }
     check(ArisDesktopGate.decide(ArisDesktopRequest(verb: .type, ref: act.ref, text: "x"), target: deskBench, context: clean, remembered: true, secureInput: true) == .refuse(ArisDesktopGate.secureRefusal)
@@ -789,10 +805,10 @@ private func runDesktopActionTests() {
     let stranger = FakeDesktopTurn(brain: .api)
     let count = rig.calls.count
     check(rig.run(["click", "@s8f3k2:e5"], turn: stranger).output == ArisDesktopEngine.notOursLine
-          && rig.run(["see", "--app", "키체인 접근"], turn: stranger).output == ArisDesktopGate.neverRefusal
+          && rig.run(["see", "--app", "설치 프로그램"], turn: stranger).output == ArisDesktopGate.neverRefusal
           && rig.run(["see", "--app", "Safari"], turn: stranger).output.contains("Aside")
           && rig.run(["see", "--app", "Nope"], turn: stranger).output == ArisDesktopGate.unknownRefusal && rig.calls.count == count,
-          "desktop actions (never-list): a ref Aris didn't make, Keychain, a browser, an unknown app: nothing runs")
+          "desktop actions (never-list): a ref Aris didn't make, the installer, a browser, an unknown app: nothing runs")
     let capped = FakeDesktopTurn(brain: .claude)
     capped.steps = ArisDesktopEngine.maxSteps
     check(rig.run(["see", "--app", "Aris Testbench"], turn: capped).output == ArisDesktopEngine.stepsLine(job: false) && rig.calls.count == count
@@ -1342,9 +1358,11 @@ private func runDesktopGateReviewTests() {
     // I7: more apps never worked in, more sending apps.
     check(!ArisRiskPolicy.computerUseIsNever(["System Settings"]) && !ArisRiskPolicy.computerUseIsNever(["com.apple.systempreferences"])
           && ArisRiskPolicy.isSystemSettings(["시스템 설정"]), "desktop never-list (the user, 2026-11-07): System Settings is an ordinary app")
-    for name in ["SecurityAgent", "coreautha", "Installer", "com.apple.installer", "Dashlane", "Keychain Access", "1Password",
-                 "LastPass", "NordPass", "Proton Pass", "Peekaboo", "boo.peekaboo.mac"] {
+    for name in ["SecurityAgent", "coreautha", "Installer", "com.apple.installer", "Peekaboo", "boo.peekaboo.mac"] {
         check(ArisRiskPolicy.computerUseIsNever([name]), "desktop never-list (I7): \(name)")
+    }
+    for name in ["Dashlane", "Keychain Access", "1Password", "LastPass", "NordPass", "Proton Pass", "System Information"] {
+        check(!ArisRiskPolicy.computerUseIsNever([name]), "desktop never-list (the user, 2026-11-16): \(name) is an ordinary app")
     }
     for name in ["Thunderbird", "Messenger", "Beeper", "Skype", "Viber", "Mattermost", "Webex", "Spark Desktop"] {
         check(ArisRiskPolicy.isSendingApp(bundle: nil, name: name), "desktop sending apps (I7): \(name)")
@@ -2118,7 +2136,7 @@ private func runBatchGateTests() {
     func acted(_ rig: DesktopRig) -> Bool { rig.calls.contains { !$0.hasPrefix("see") } }
 
     // The never-list, browsers, the panes and places only a single call can tell: refused whole, nothing done.
-    for (target, line) in [(deskKeychain, ArisDesktopGate.neverRefusal), (deskSafari, ArisRiskPolicy.browserRefusal)] {
+    for (target, line) in [(deskInstaller, ArisDesktopGate.neverRefusal), (deskSafari, ArisRiskPolicy.browserRefusal)] {
         let rig = DesktopRig(), turn = FakeDesktopTurn(brain: .claude)
         rig.apps.apps["aris testbench"] = target
         let out = batch(rig, turn, "press return")

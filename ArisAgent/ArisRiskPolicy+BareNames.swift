@@ -20,7 +20,7 @@ extension ArisRiskPolicy {
 
     /// The words of an aris-tools file command (after the program) that name a file or a folder; nil for any other
     /// command. A rename's second word is the new name, never a path; `open` reads all its words as one path; a
-    /// conversion that aris-tools wouldn't read, or whose files the owner picked themselves (--finder, --shelf), names none.
+    /// conversion that aris-tools wouldn't read, or whose files the owner picked themselves (--finder, --shelf) or Aris just made (--made), names none.
     static func filePaths(_ arguments: [String]) -> [String]? {
         guard let tool = arguments.first else { return nil }
         let rest = Array(arguments.dropFirst())

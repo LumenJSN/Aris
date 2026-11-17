@@ -147,7 +147,8 @@ final class ClaudeStore: ObservableObject {
             lastMessage: Self.message(after: event, from: previous?.lastMessage),
             terminal: event.terminal ?? previous?.terminal,
             contextPercent: event.name == "SessionStart" ? nil : previous?.contextPercent,
-            agent: event.agent
+            agent: event.agent,
+            lastHook: ClaudeSessionsRoute.hookName(event)
         )
         let fresh = sessions.filter { now.timeIntervalSince($0.value.lastEvent) < Self.staleAfter }
         sessions = fresh.merging([session.id: session]) { _, new in new }

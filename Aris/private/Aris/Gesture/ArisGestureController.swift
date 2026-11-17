@@ -4,7 +4,7 @@
 //
 //  Runs one drawing session on screen: the session reducer (P1.6), the 8 ms pointer pump, the mouse monitors, the
 //  front-app observer, one ink overlay per drawn display (at most 3) and the hint chip. It turns reducer effects into
-//  ink: an accepted loop seals (the owner's pick B), a private window or the 9th circle re-inks red with its capsule.
+//  ink: an accepted loop seals (the owner's pick B), the 9th circle re-inks red with its capsule.
 //
 //  Entry points (wired from ArisController in ArisController+Gesture.swift):
 //  - `keyDown()` when ⌥⇧ starts a turn (ArisGestureKey), `held()` 200 ms later, `tap()` for a release under the
@@ -202,8 +202,6 @@ final class ArisGestureController {
         case .proceed(let id):
             seal(id)
             proceed(id)
-        case .refusePrivate(let gesture, let id):
-            refuse(gesture, id: id)
         case .keepShot(let badge, let id):
             pending[id] = nil
             capturer.keep(captureId: id, badge: badge)
@@ -242,7 +240,7 @@ final class ArisGestureController {
         }
     }
 
-    /// The window may be captured: the loop seals now, never before, so a private window never flashes blue.
+    /// The window is picked: the loop seals now, when the capture goes on.
     private func seal(_ id: Int) {
         guard let p = pending[id], let view = surfaces[p.screen.id]?.overlay.view else { return }
         view.clearTrail()
@@ -255,17 +253,6 @@ final class ArisGestureController {
                                                 screen: p.screen, hit: p.hit, inkAfterMs: session.inkBoundaryMs,
                                                 strokes: surfaces[p.screen.id]?.strokes ?? [], handsFree: handsFree)
         capturer.capture(request) { [weak self] ok in self?.send(.captureDone(captureId: id, ok: ok)) }
-    }
-
-    /// A private (or unresolved) window: the red loop and the refusal capsule (no seal was drawn). No app name or
-    /// window title is logged.
-    private func refuse(_ gesture: ArisGesture?, id: Int) {
-        let p = pending.removeValue(forKey: id)
-        capturer.drop(captureId: id, reason: "private") // forget its detection too
-        log.notice("gesture refused: private window")
-        guard let gesture, let p, let view = surfaces[p.screen.id]?.overlay.view else { return }
-        view.showReject(points: gesture.points, closed: gesture.kind == .circle,
-                        bbox: gesture.bbox, text: ArisGestureChrome.refusalText(for: p.hit), icon: .lock)
     }
 
     // MARK: - Session plumbing

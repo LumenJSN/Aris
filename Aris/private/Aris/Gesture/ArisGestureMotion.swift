@@ -78,7 +78,7 @@ enum ArisGestureMotion {
         return sealPeak * k * k
     }
 
-    // MARK: - Reject (8/8 and private windows)
+    // MARK: - Reject (8/8)
 
     /// The reject shake: 380 ms, cubic-bezier(0.36,0.07,0.19,0.97) per keyframe. A shake is on-screen
     /// movement, so it eases in and out (emil-design-eng: "moving on screen → ease-in-out").

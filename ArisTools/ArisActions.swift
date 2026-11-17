@@ -12,11 +12,11 @@
 import Foundation
 
 enum ArisActions {
-    /// Apps keys and text are never typed into: a terminal would run them, a vault would take them.
+    /// Apps keys and text are never typed into: a terminal would run them. Password managers and Keychain Access are
+    /// typed into like any app (the owner, 2026-11-16).
     static let untypableBundleIDs: Set<String> = [
         "com.apple.terminal", "com.googlecode.iterm2", "dev.warp.warp-stable", "dev.warp.warp", "com.mitchellh.ghostty",
         "net.kovidgoyal.kitty", "org.alacritty", "io.alacritty", "com.github.wez.wezterm", "co.zeit.hyper",
-        "com.apple.keychainaccess", "com.apple.passwords", "com.1password.1password", "com.agilebits.onepassword7",
     ]
 
     /// Whether typing into the app with this bundle id is allowed (never for an unknown app).

@@ -2,9 +2,10 @@
 //  ArisNoticeRoute.swift
 //  Aris
 //
-//  Which card each of Aris's own moments makes. These moments used to be a line in the notch (a job's result, a
-//  timer, a problem with its button under it); now each is a card under the notch, with the same words and, for a
-//  problem, the same fix on its blue button.
+//  Which notice each moment makes. Aris's own used to be a line in the notch (a job's result, a timer, a problem with
+//  its button under it); now each is a notice on the pill under the notch, with the same words and, for a problem, the
+//  same fix on its main button. A deadline's alert (24 h and 3 h before) and a Claude Code session's done, error or
+//  limit notice are notices on the same pill, with the words they had and what a click on them did.
 //  Confirm cards (send, write, delete) are not news: they stay in the notch. Foundation only (tested).
 //
 
@@ -15,6 +16,38 @@ enum ArisNoticeRoute {
     static let helperKey = "helper"
     /// How long a timer's card may wait to be shown: as long as its line could (ArisTimerNews, ten minutes).
     static let timerShowsWithin = TimeInterval(ArisTimerNews.showsWithin.components.seconds)
+
+    /// The deadline alert's key: one at a time, as ArisTodoModel keeps one alert at a time.
+    static let deadlineKey = "deadline"
+    /// A deadline's alert goes by itself after 8 s up, as the alert under the notch did.
+    static let deadlineShowsFor: TimeInterval = 8
+    /// A Claude Code notice's key: a newer one takes the place of the one up.
+    static let claudeKey = "claude"
+    /// A Claude Code notice goes by itself after 6 s up, as the notch it opened did (ClaudeStore's peek).
+    static let claudeShowsFor: TimeInterval = 6
+
+    /// A deadline coming up (ArisDueAlert: 24 h before, blue; 3 h before, red): the time left as its title ("23시간
+    /// 남았어요"), the course and that it isn't handed in as its subtitle, what and when as its body ("PS3 · 내일"). A click
+    /// opens its page and dismisses it (열기 when it has one); it waits no longer than the deadline.
+    static func deadline(_ due: ArisDue, _ alert: ArisDueAlert, now: Date = Date(), english: Bool) -> ArisNotice {
+        let left = ArisTodoWords.left(minutes: max(1, Int(due.at.timeIntervalSince(now) / 60)), english: english)
+        let tag = ArisTodoWords.alertTag(due, shortCourse: ArisDue.shortCourse(due.course), english: english)
+        let body = "\(due.title) · \(ArisNoticeWords.dueWhen(due.at, now: now, english: english))"
+        let opens = due.url.flatMap(URL.init(string:))?.scheme == "https"
+        let actions = opens ? [ArisNoticeAction(title: ArisNoticeWords.open(english: english), primary: true, role: .openDue(due))] : []
+        return ArisNotice(key: deadlineKey, kind: .reminder, source: .deadline(alert), title: left, body: body, subtitle: tag, actions: actions,
+                          posted: now, showsWithin: max(0, due.at.timeIntervalSince(now)), showsFor: deadlineShowsFor, tap: .openDue(due))
+    }
+
+    /// A Claude Code session's done, error or limit notice: its tag's words as the title ("my-app · 끝났어요"), its last
+    /// message (or a plain line) as the body. A click brings that session's terminal forward and dismisses it.
+    static func claude(_ peek: ClaudePeek, english: Bool) -> ArisNotice {
+        let focus = peek.sessionId.map { ArisNoticeAction.Role.focusClaude(sessionId: $0) }
+        let actions = focus.map { [ArisNoticeAction(title: ArisNoticeWords.openTerminal(english: english), primary: true, role: $0)] } ?? []
+        let kind: ArisNoticeKind = peek.kind == .done ? .done : .problem
+        return ArisNotice(key: claudeKey, kind: kind, source: .claude, title: ClaudeNoticeLabel.text(for: peek, english: english),
+                          body: plain(ClaudeNoticeLabel.body(for: peek, english: english)), actions: actions, showsFor: claudeShowsFor, tap: focus)
+    }
 
     /// A handed-out job finished: its answer, and 보기 for the whole of it.
     static func jobDone(title: String, shown: String, job: UUID, english: Bool) -> ArisNotice {

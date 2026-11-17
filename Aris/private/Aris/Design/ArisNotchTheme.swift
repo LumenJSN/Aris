@@ -42,7 +42,7 @@ enum ArisNotchTheme: String, CaseIterable, Equatable {
     static func stored(glass: String?, voice: String?) -> ArisNotchTheme? {
         switch ArisVoiceLook.resolve(voice) {
         case .surfaceLight: return .lightBottom
-        case .siri, .siriFrost: return nil
+        case .dusk, .duskFrost: return nil
         case .aris: break
         }
         return allCases.first { $0 != .lightBottom && ArisGlassLook(preference: $0.glassValue) == ArisGlassLook(preference: glass) }

@@ -39,15 +39,13 @@ enum ArisClaudeJobWords {
         ("터미널을 열지 못했어요: ", "Couldn't open the terminal: "),
     ]
 
-    /// The one line with words on both sides of its value.
-    private static let notAFolder = (lead: "Claude Code를 열 폴더가 아니에요: ", tail: " (없는 폴더이거나, 시스템 폴더나 Aris가 지키는 폴더예요)")
+    /// Said when the job's folder is no place Claude Code opens in (missing, the system's, ~/Library, one Aris protects):
+    /// one plain sentence that says what to do, never the raw path with a parenthetical (the owner, 2026-11-14).
+    static let notAFolder = "그 폴더에서는 Claude Code를 열 수 없으니 다른 프로젝트 폴더를 같이 말해 주세요."
 
     static func english(_ korean: String) -> String {
+        if korean == notAFolder { return "Claude Code can't open in that folder, so name another project folder with the request." }
         if let known = lines[korean] { return known }
-        if korean.hasPrefix(notAFolder.lead), korean.hasSuffix(notAFolder.tail) {
-            let folder = korean.dropFirst(notAFolder.lead.count).dropLast(notAFolder.tail.count)
-            return "That isn't a folder Claude Code can open in: \(folder) (it doesn't exist, or it is a system folder or one Aris protects)"
-        }
         if let lead = leads.first(where: { korean.hasPrefix($0.korean) }) { return lead.english + korean.dropFirst(lead.korean.count) }
         return korean
     }

@@ -17,9 +17,9 @@ enum ArisInsertRefusal {
     /// What `needs` says for it: the word the look uses in its own `needs` list.
     static let accessibility = "accessibility"
 
-    /// Apps ⌘V never goes into: password apps and Aris itself.
-    static let refusedApps: Set<String> = ["com.apple.keychainaccess", "com.apple.passwords", "com.1password.1password",
-                                           "com.agilebits.onepassword7", "com.lumenjsn.aris"]
+    /// Apps ⌘V never goes into: Aris itself. Password managers and Keychain Access take a paste like any app (the owner,
+    /// 2026-11-16); a password field still never does (secure input).
+    static let refusedApps: Set<String> = ["com.lumenjsn.aris"]
     /// Said when Accessibility can't tell which app has the keyboard at this moment.
     static let noKeyboardApp = "no app has the keyboard right now (Accessibility couldn't tell which), so nothing was typed"
 
@@ -30,7 +30,7 @@ enum ArisInsertRefusal {
         guard trusted else { return needsAccessibility }
         guard !secureInput else { return "a password field has the keyboard" }
         guard let front else { return noKeyboardApp }
-        if let id = front.bundleId?.lowercased(), refusedApps.contains(id) || ArisCaptureRules.isPrivate(id) { return "won't type into \(front.name)" }
+        if let id = front.bundleId?.lowercased(), refusedApps.contains(id) { return "won't type into \(front.name)" }
         return nil
     }
 

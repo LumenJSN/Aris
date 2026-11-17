@@ -12,9 +12,10 @@ import Foundation
 
 /// How much a request asks of the AI (Jev decides): a quick answer, real work (several steps, research,
 /// writing), or critical work (sending, deleting, money, automating several apps) that gets the strongest
-/// setup and asks before anything that acts.
+/// setup and asks before anything that acts. `deep` is never sent by the app: aris-agent runs a turn that has to look
+/// things up that way (ArisThinking), with the strongest model thinking hardest; it is no more careful than work.
 enum ArisTier: String, Sendable {
-    case quick, work, critical
+    case quick, work, critical, deep
 
     static func named(_ raw: String?) -> ArisTier {
         raw.flatMap(ArisTier.init(rawValue:)) ?? .quick
@@ -108,29 +109,45 @@ enum ArisBrain: String, CaseIterable, Sendable {
     }
 }
 
-/// Who works other apps' windows, the user's pick (the owner: compare them, then leave it to the user). Peekaboo is free and
-/// the default on every brain (`aris-tools desktop`). Codex's own computer use (cua_repl, its per-step cards and judge)
-/// needs Codex installed and the user's pick. Another engine (Claude's) gets a case here.
+/// Who works other apps' windows, the user's pick. Aris's own engine is the default on every brain (`aris-tools desktop`:
+/// app-targeted input in the background, ArisNativeRunner; the owner, 2026-11-16: "Aris should be better than Claude's and
+/// Codex's computer use"). Peekaboo (free, downloaded on first use) and Codex's own computer use (cua_repl, its per-step
+/// cards and judge; needs Codex installed) stay as picks the user can make.
 enum ArisComputerEngine: String, CaseIterable {
-    case peekaboo, codex
+    case aris, peekaboo, codex
 
     /// The app's stored pick (Defaults' key, sent with every question).
     static let preferenceKey = "arisComputerEngine"
 
-    static func named(_ raw: String?) -> ArisComputerEngine { raw.flatMap(ArisComputerEngine.init(rawValue:)) ?? .peekaboo }
+    static func named(_ raw: String?) -> ArisComputerEngine { raw.flatMap(ArisComputerEngine.init(rawValue:)) ?? .aris }
 
-    /// What really runs: the pick when it can run here, else the free default.
+    /// What really runs: the pick when it can run here, else Aris's own.
     static func effective(picked: ArisComputerEngine, codexInstalled: Bool) -> ArisComputerEngine {
-        picked == .codex && codexInstalled ? .codex : .peekaboo
+        switch picked {
+        case .codex: return codexInstalled ? .codex : .aris
+        case .peekaboo: return .peekaboo
+        case .aris: return .aris
+        }
     }
+
+    /// Whether `aris-tools desktop` runs on Peekaboo (downloaded first) rather than Aris's own engine.
+    var usesPeekaboo: Bool { self == .peekaboo }
 
     var title: String {
         switch self {
+        case .aris: return "Aris (기본)"
         case .peekaboo: return "Peekaboo (무료)"
         case .codex: return "GPT (Codex)"
         }
     }
 
-    /// The name on an English Mac (“Peekaboo (free)”, as the settings window calls it).
-    func title(english: Bool) -> String { english && self == .peekaboo ? "Peekaboo (free)" : title }
+    /// The name on an English Mac (“Aris (default)”, as the settings window calls it).
+    func title(english: Bool) -> String {
+        guard english else { return title }
+        switch self {
+        case .aris: return "Aris (default)"
+        case .peekaboo: return "Peekaboo (free)"
+        case .codex: return title
+        }
+    }
 }

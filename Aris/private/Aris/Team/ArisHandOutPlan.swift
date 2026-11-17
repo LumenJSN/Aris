@@ -130,8 +130,9 @@ enum ArisHandOutPlan {
         if single {
             // The model's app hint stays: it only picks the window Aris's figure perches on (ArisAppHint, exact names).
             let hinted = ArisJobSpec(title: title, prompt: turn.words, assignee: .clone, cwd: nil, appHint: specs.first?.appHint)
-            // Hands-free: the agent runs it gated (Codex) or on the restricted Claude (ArisHandsFree.profile).
-            return [ArisJobPlan(spec: hinted, brain: turn.brain, provenance: ArisProvenance(handsFree: turn.handsFree),
+            // Hands-free: the agent runs it gated (Codex) or on the restricted Claude (ArisHandsFree.profile). The brain
+            // its block named ("그냥 클로드 시켜" that reached the model): the user's own words chose it, in a clean turn only.
+            return [ArisJobPlan(spec: hinted, brain: specs.first?.brain ?? turn.brain, provenance: ArisProvenance(handsFree: turn.handsFree),
                                 request: turn.words, cleanContext: false, turn: nil)]
         }
         // One job for one of the user's own teammates (not Claude Code, which opens in a terminal): the user's words as said, like

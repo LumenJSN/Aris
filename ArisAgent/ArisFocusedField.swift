@@ -3,8 +3,8 @@
 //  aris-agent
 //
 //  The text field that has the keyboard in the front app, read through Accessibility for dictation's caret context
-//  and its edit watch. Never a password field (AXSecureTextField, or secure input on), never a password app, never a
-//  terminal, never Aris itself. Every call has a 0.25 s messaging timeout, so a hung app can't hold the agent.
+//  and its edit watch. Never a password field (AXSecureTextField, or secure input on), never a terminal, never Aris
+//  itself. Every call has a 0.25 s messaging timeout, so a hung app can't hold the agent.
 //
 
 import AppKit
@@ -26,7 +26,6 @@ struct ArisFocusedField {
         guard AXIsProcessTrusted() else { return "no Accessibility" }
         guard !IsSecureEventInputEnabled() else { return "secure input" }
         let id = front?.bundleId
-        if ArisCaptureRules.isPrivate(id) { return "password app" }
         if ArisWritingStyles.isTerminal(id) { return "terminal" }
         if id?.lowercased().hasPrefix("com.lumenjsn.aris") == true { return "Aris" }
         return nil

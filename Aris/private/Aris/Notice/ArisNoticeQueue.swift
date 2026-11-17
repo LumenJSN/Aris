@@ -2,10 +2,11 @@
 //  ArisNoticeQueue.swift
 //  Aris
 //
-//  The cards waiting and the cards up, as values. A card waits until the moment is right (ArisNoticeGate) and then goes
-//  on top of the stack; it stays until it is closed, acted on or replaced (no timer takes it away: measured, the only
-//  timer there is a watchdog). A card with a key replaces the one with the same key, waiting or up, in its place.
-//  Clicking a stack of two or more opens it; closing down to one card closes it again. Foundation only (tested).
+//  The notices waiting and the notices up, as values. A notice waits until the moment is right (ArisNoticeGate) and then
+//  goes on top; only the newest up is drawn (one pill at a time), the ones under it come back as it goes. It stays until
+//  it is closed, acted on or replaced; only a notice with its own showsFor (a deadline, a Claude Code notice) goes by
+//  itself (ArisNoticeCenter). A notice with a key replaces the one with the same key, waiting or up, in its place.
+//  Foundation only (tested).
 //
 
 import Foundation
@@ -13,10 +14,8 @@ import Foundation
 struct ArisNoticeQueue: Equatable {
     /// Waiting to be shown, oldest first.
     private(set) var pending: [ArisNotice] = []
-    /// On screen, newest first: the first is the front card.
+    /// Up, newest first: the first is the one drawn.
     private(set) var shown: [ArisNotice] = []
-    /// The stack is opened into a list.
-    private(set) var expanded = false
 
     var front: ArisNotice? { shown.first }
 
@@ -61,7 +60,6 @@ struct ArisNoticeQueue: Equatable {
         var next = self
         next.shown.removeAll { $0.id == id }
         next.pending.removeAll { $0.id == id }
-        if next.shown.count < 2 { next.expanded = false }
         return next
     }
 
@@ -70,21 +68,6 @@ struct ArisNoticeQueue: Equatable {
         var next = self
         next.shown.removeAll { $0.key == key }
         next.pending.removeAll { $0.key == key }
-        if next.shown.count < 2 { next.expanded = false }
-        return next
-    }
-
-    /// A click on a stack of two or more opens it.
-    func expanding() -> ArisNoticeQueue {
-        guard shown.count > 1 else { return self }
-        var next = self
-        next.expanded = true
-        return next
-    }
-
-    func collapsing() -> ArisNoticeQueue {
-        var next = self
-        next.expanded = false
         return next
     }
 
@@ -108,13 +91,27 @@ enum ArisNoticeGate {
         var pause = true
         /// The first-run setup is on screen.
         var onboarding = false
-        /// The notch is open (hovered or showing something): a card never comes up under it.
+        /// The notch is open (hovered or showing something): a notice never comes up under it.
         var notchOpen = false
+        /// An Aris turn, or a conversation listening between turns.
+        var turn = false
+        /// A dictation runs, or its pill still shows what came of it (the copied words, its error line).
+        var dictating = false
     }
 
-    static func mayShow(_ moment: Moment) -> Bool { moment.pause && !moment.onboarding && !moment.notchOpen }
+    /// The dictation pill shows a dictation or what came of it (not its idle bar or its hover).
+    static func dictationBusy(_ phase: ArisDictationPillPhase) -> Bool {
+        switch phase {
+        case .hidden, .idle, .hover: false
+        case .recording, .transcribing, .recovered, .error: true
+        }
+    }
 
-    /// The cards already up step aside (fade out, stay in the stack) while the notch is open or the setup shows, so
-    /// nothing ever covers the notch; they come back as they were.
-    static func stepsAside(_ moment: Moment) -> Bool { moment.notchOpen || moment.onboarding }
+    /// A notice comes up only at a pause, with the notch closed, no setup, no turn and no dictation: those take
+    /// priority, and the notice waits in line for them.
+    static func mayShow(_ moment: Moment) -> Bool { moment.pause && !stepsAside(moment) }
+
+    /// The notice already up steps aside (fades out, stays up) while the notch is open, the setup shows, a turn or a
+    /// dictation runs, so nothing ever covers them; it comes back as it was.
+    static func stepsAside(_ moment: Moment) -> Bool { moment.notchOpen || moment.onboarding || moment.turn || moment.dictating }
 }

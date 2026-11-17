@@ -2,60 +2,41 @@
 //  ArisNotice.swift
 //  Aris
 //
-//  One piece of news on a card of its own under the notch (the owner's pick B, 2026-11-12): a job or a teammate finished,
-//  a schedule's result, a timer that ran out, a problem with the one thing that fixes it. What it says, which kind it
-//  is (its tile), and what its buttons do. Values only, so the tests build every card; ArisNoticeCenter shows them.
-//  Foundation only (tested).
+//  One piece of news on the pill under the notch (the owner's pick D, 2026-11-16): a job or a teammate finished, a
+//  schedule's result, a timer that ran out, a problem with the one thing that fixes it, a deadline coming up, a Claude
+//  Code session done. What it says, whose it is (its mark), what its buttons and a click on it do, and how long it
+//  stays. Values only, so the tests build every one; ArisNoticeCenter shows them. Foundation only (tested).
 //
 
 import Foundation
 
-/// What a card is about: its tile's colours and its glyph.
+/// What a piece of Aris's own news is about. On the notice pill a teammate's question (incoming) wears the mail mark;
+/// the rest are Aris's own and wear its star (ArisNoticeMark).
 enum ArisNoticeKind: String, CaseIterable, Sendable {
-    /// A timer or anything else that was due now: orange bell.
+    /// A timer or anything else that was due now.
     case reminder
-    /// Someone has something for the user (a teammate's question): blue, a letter.
+    /// Someone has something for the user (a teammate's question).
     case incoming
-    /// Work finished: green check.
+    /// Work finished.
     case done
-    /// Something went wrong or needs him: red warning.
+    /// Something went wrong or needs him.
     case problem
-    /// Aris's own word about itself: dark.
+    /// Aris's own word about itself.
     case system
-
-    /// The tile's measured gradient: its top, at 55 %, and its bottom (sRGB, 0xRRGGBB).
-    var tile: ArisNoticeTile {
-        switch self {
-        case .reminder: ArisNoticeTile(top: 0xFFB84D, mid: 0xF28C00, deep: 0xE07800)
-        case .incoming: ArisNoticeTile(top: 0x58ABFF, mid: 0x2478F2, deep: 0x1B5FD6)
-        case .done: ArisNoticeTile(top: 0x58DD7C, mid: 0x2EBD54, deep: 0x23A047)
-        case .problem: ArisNoticeTile(top: 0xFF7A70, mid: 0xF0453A, deep: 0xD3352C)
-        case .system: ArisNoticeTile(top: 0x2C2C31, mid: 0x1D1D21, deep: 0x121215)
-        }
-    }
-
-    /// The white glyph on the tile (an SF Symbol, drawn by the system).
-    var glyph: String {
-        switch self {
-        case .reminder: "bell.fill"
-        case .incoming: "envelope.fill"
-        case .done: "checkmark.circle.fill"
-        case .problem: "exclamationmark.triangle.fill"
-        case .system: "sparkle"
-        }
-    }
 }
 
-/// A tile's three stops.
-struct ArisNoticeTile: Equatable, Sendable {
-    let top: UInt32
-    let mid: UInt32
-    let deep: UInt32
+/// Whose news it is: Aris's own (its kind says what), a Claude Code session's, or a deadline coming up (24 h or 3 h
+/// before, ArisDueAlert).
+enum ArisNoticeSource: Equatable, Sendable {
+    case aris
+    case claude
+    case deadline(ArisDueAlert)
+}
 
-    /// 0...1 sRGB components of one stop.
-    static func components(_ hex: UInt32) -> (red: Double, green: Double, blue: Double) {
-        (Double((hex >> 16) & 0xFF) / 255, Double((hex >> 8) & 0xFF) / 255, Double(hex & 0xFF) / 255)
-    }
+/// The mark at the pill's left: Aris's star, Claude Code's ghost, the mail glyph, or a deadline's calendar in its colour.
+enum ArisNoticeMark: Equatable, Sendable {
+    case star, ghost, mail
+    case deadline(ArisDueAlert)
 }
 
 /// A button on a card. What it does is named, never a closure, so a card can be compared and tested.
@@ -73,10 +54,14 @@ struct ArisNoticeAction: Equatable, Sendable {
         case openAnswer(question: String, text: String)
         /// A job reported as not done, handed out again (ArisJobVerdict).
         case retryJob(UUID)
+        /// A deadline's own page (ArisTodoModel.open); its alert is dismissed.
+        case openDue(ArisDue)
+        /// A Claude Code session's terminal brought forward (TerminalFocus); its notice is dismissed.
+        case focusClaude(sessionId: String)
     }
 
     let title: String
-    /// The blue one (the card's main button); the others are grey.
+    /// The main button (the last, at the right edge); the others are quieter.
     let primary: Bool
     let role: Role
 }
@@ -86,6 +71,7 @@ struct ArisNotice: Equatable, Identifiable, Sendable {
     /// One card per key: a newer one with the same key takes the place of the one up (the helper's state).
     var key: String?
     var kind: ArisNoticeKind
+    var source: ArisNoticeSource
     var title: String
     /// The text under the title (for an incoming one, its snippet).
     var body: String
@@ -96,18 +82,28 @@ struct ArisNotice: Equatable, Identifiable, Sendable {
     /// A card that waited longer than this to be shown is dropped (its 기록 entry keeps it): a timer's line long after
     /// it rang would only confuse. Nil: it waits for as long as it takes.
     var showsWithin: TimeInterval?
+    /// Once up, it goes by itself after this long (a deadline's alert, a Claude Code notice), held while the pointer is
+    /// on it. Nil: it stays until it is closed or acted on.
+    var showsFor: TimeInterval?
+    /// What a click on its body does (a deadline opens, a Claude Code notice brings its terminal forward). Nil: nothing,
+    /// as a card's body did nothing.
+    var tap: ArisNoticeAction.Role?
 
-    init(id: UUID = UUID(), key: String? = nil, kind: ArisNoticeKind, title: String, body: String, subtitle: String? = nil,
-         actions: [ArisNoticeAction] = [], posted: Date = Date(), showsWithin: TimeInterval? = nil) {
+    init(id: UUID = UUID(), key: String? = nil, kind: ArisNoticeKind, source: ArisNoticeSource = .aris, title: String, body: String,
+         subtitle: String? = nil, actions: [ArisNoticeAction] = [], posted: Date = Date(), showsWithin: TimeInterval? = nil,
+         showsFor: TimeInterval? = nil, tap: ArisNoticeAction.Role? = nil) {
         self.id = id
         self.key = key
         self.kind = kind
+        self.source = source
         self.title = title
         self.body = body
         self.subtitle = subtitle
         self.actions = actions
         self.posted = posted
         self.showsWithin = showsWithin
+        self.showsFor = showsFor
+        self.tap = tap
     }
 
     /// Whether it waited too long to be shown at `now`.
@@ -116,6 +112,15 @@ struct ArisNotice: Equatable, Identifiable, Sendable {
         return now.timeIntervalSince(posted) > showsWithin
     }
 
-    /// The buttons as drawn: the grey ones first, the blue one last (at the right edge).
+    /// The buttons as drawn: the quieter ones first, the main one last (at the right edge).
     var orderedActions: [ArisNoticeAction] { actions.filter { !$0.primary } + actions.filter(\.primary) }
+
+    /// Its mark on the pill.
+    var mark: ArisNoticeMark {
+        switch source {
+        case .claude: .ghost
+        case .deadline(let alert): .deadline(alert)
+        case .aris: kind == .incoming ? .mail : .star
+        }
+    }
 }

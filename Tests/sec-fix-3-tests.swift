@@ -44,7 +44,8 @@ private func secFix3Tab() {
           "sec3 M1 (ruled 11-11): aris-tools tab reads an incognito window's tab like a normal one")
 }
 
-/// L1: `screen --pid` is the helper's alone, a pid that isn't running fails, and --around reads no private window.
+/// L1: `screen --pid` is the helper's alone and a pid that isn't running fails; --around reads whatever is in the
+/// rectangle (a password manager's window too since the owner's 2026-11-16 ruling).
 private func secFix3Screen() {
     typealias S = ArisScreenTarget
     let helper = [S.helperKey: "1"]
@@ -61,19 +62,10 @@ private func secFix3Screen() {
           && S.named(flagged: true, value: nil, around: false, environment: helper, runs: runs) == .refused(S.pidUsage),
           "sec3 L1: a --pid that names no running app fails; it no longer reads whatever is in front")
     check(S.named(flagged: true, value: "4321", around: true, environment: helper, runs: runs) == .front,
-          "sec3 L1: --around ignores --pid: the private check stays on the app in front")
+          "sec3 L1: --around ignores --pid: a part of the screen takes no pid")
     check(S.named(flagged: false, value: nil, around: false, environment: [:], runs: runs) == .front
           && S.named(flagged: false, value: nil, around: true, environment: [:], runs: runs) == .front,
           "sec3 L1: a plain `screen` and `screen --around` read as before")
-    let isPrivate: (String?) -> Bool = ArisCaptureRules.isPrivate
-    let vault = S.Window(bundleId: "com.1password.1password", frame: CGRect(x: 100, y: 100, width: 400, height: 300))
-    let finder = S.Window(bundleId: "com.apple.finder", frame: CGRect(x: 0, y: 0, width: 1_000, height: 800))
-    check(S.coversPrivate(CGRect(x: 0, y: 0, width: 2_000, height: 2_000), windows: [finder, vault], isPrivate: isPrivate)
-          && S.coversPrivate(CGRect(x: 450, y: 350, width: 640, height: 240), windows: [finder, vault], isPrivate: isPrivate),
-          "sec3 L1: --around reads nothing while a password manager's window is anywhere in the rectangle, whichever app is in front")
-    check(!S.coversPrivate(CGRect(x: 600, y: 500, width: 640, height: 240), windows: [finder, vault], isPrivate: isPrivate)
-          && !S.coversPrivate(CGRect(x: 0, y: 0, width: 2_000, height: 2_000), windows: [finder, S.Window(bundleId: nil, frame: finder.frame)], isPrivate: isPrivate),
-          "sec3 L1: a rectangle no private window touches is read as before")
     // The gates: the reviewer's three commands, and the flag wherever it stands.
     for words in ["screen --pid 4321", "screen --pid 4321 --image", "screen --pid 4321 --around 0,0,2000,2000", "screen --image --pid 4321", "screen --pid"] {
         let command = "\(s3Tools) \(words)"
@@ -100,9 +92,9 @@ private func secFix3Screen() {
     check(look.contains("environment.merging(ArisLookTarget.screenEnvironment(pid: pid)) { $1 }"),
           "sec3 L1: wiring: the look's `screen --pid` runs with the helper's mark")
     check(tool.contains("ArisScreenTarget.named(flagged: flagged, value: value, around: around, environment: ProcessInfo.processInfo.environment,")
-          && tool.contains("ArisScreenTarget.coversPrivate(part, windows: onScreenWindows(), isPrivate: ArisCaptureRules.isPrivate)")
-          && tool.range(of: "ArisScreenTarget.coversPrivate(part")!.lowerBound < tool.range(of: #"["-x", "-R", parts.map(String.init)"#)!.lowerBound,
-          "sec3 L1: wiring: the tool asks the rule who it reads, and checks the rectangle before it captures")
+          && tool.contains(#"["-x", "-R", parts.map(String.init)"#) && !tool.contains("coversPrivate") && !tool.contains("ArisCaptureRules.isPrivate")
+          && !look.contains("privateWindow(in:") && !look.contains("isPrivateApp"),
+          "sec3 L1: wiring: the tool asks the rule who it reads; --around and the look's pointer read a password manager's window like any (the user 2026-11-16)")
 }
 
 /// L4: an undo mints the to-do grant only when it is a to-do's undo, and an unused one goes when the tool returns.
@@ -400,8 +392,8 @@ private func secFix3VM4() {
           && !N.pointerAway(free: false, measured: true, onNotch: false) && N.pointerAway(free: true, measured: false, onNotch: true),
           "vm4 bug 1: the pointer counts as away only when nothing holds the notch and it is not found on it; unmeasured, the hover's own word stands")
     let behaviour = s3Source("Aris/private/Notch/ArisNotchRoot+Behaviour.swift")
-    let reading = behaviour.range(of: "ArisNotch.readingTime(for: controller.session.reply)"), free = behaviour.range(of: "ArisNotch.pointerAway(free: mayCloseAutomatically,")
-    check(reading != nil && free != nil && reading!.upperBound < free!.lowerBound && behaviour.contains("switch ArisNotch.ending(openedNotch: opened, isOpen: isOpen).whenFree(pointerAway: away) {"),
+    let reading = behaviour.range(of: "ArisNotch.endWait(handedOff: handedOff, dictation: controller.endedDictation, reply: controller.session.reply)"), free = behaviour.range(of: "ArisNotch.pointerAway(free: mayCloseAutomatically,")
+    check(reading != nil && free != nil && reading!.upperBound < free!.lowerBound && behaviour.contains("switch ArisNotch.ending(openedNotch: opened, isOpen: isOpen, handedOff: handedOff).whenFree(pointerAway: away) {"),
           "vm4 bug 1: wiring: decided at the turn's end, after the answer's reading time and the card's wait")
 
     // Bug 2: no "still going" line while a card waits, and none taken for a step that was declined.

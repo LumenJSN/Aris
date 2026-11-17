@@ -4,7 +4,7 @@
 //
 //  `desktop <verb> …`: computer use in another app (Peekaboo, through the agent). aris-tools holds no rule: it hands
 //  the words to the agent (POST /desktop-tool) with its turn's credential, and the agent's desktop engine reads them
-//  again, gates the call (reads judged on a careful turn, actions on the user's card, never in password stores, Keychain or
+//  again, gates the call (reads judged on a careful turn, actions on the user's card, never in the installer or
 //  Aris) and runs it. A type, set-value or dialog input takes its text on stdin only (`--stdin`), so the text is never in
 //  the brain's shell line or aris-tools' argv; the agent hands it to Peekaboo itself.
 //

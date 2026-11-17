@@ -49,6 +49,9 @@ final class ArisWakeDetector: @unchecked Sendable {
     /// In a conversation: the user's voice on each hop, between turns or over Aris (ArisBargeIn), and what Aris plays now.
     private var voiceWatch: ArisBargeIn?
     private var playbackLevel: (@Sendable () -> Float)?
+    /// The sample the voice watch was armed at: a turn's audio never starts before it (ArisEchoGuard.turnStart), so
+    /// Aris's own tail from before listening began never reaches the recognizer.
+    private var armedAt: Int?
     /// The room as the last watch learned it, for the next one.
     private var roomFloor: Float = 0.005
 
@@ -106,6 +109,12 @@ final class ArisWakeDetector: @unchecked Sendable {
     /// Where the last candidate phrase starts (from just before it): the recognizer that checks it is fed from here.
     var candidateSample: Int? { queue.sync { core.candidateStartSample } }
 
+    /// Everything still held in memory and the sample it starts at: 하루 소리 모으기 takes its few seconds from it
+    /// (ArisWakeCollectLive), and nothing else reads it.
+    func held() -> (start: Int, samples: [Float]) {
+        queue.sync { (core.oldestSample, core.audio(from: core.oldestSample)) }
+    }
+
     /// The last candidate phrase from its start, up to `seconds` long (16 kHz), for Whisper to check.
     func candidateAudio(seconds: Double) -> [Float] {
         queue.sync { core.candidateAudio(seconds: seconds) }
@@ -122,6 +131,7 @@ final class ArisWakeDetector: @unchecked Sendable {
         queue.async {
             self.voiceWatch = mode.map { ArisBargeIn(mode: $0, floor: self.roomFloor) }
             self.playbackLevel = playback
+            self.armedAt = mode == nil ? nil : self.core.received
         }
     }
 
@@ -161,9 +171,10 @@ final class ArisWakeDetector: @unchecked Sendable {
         roomFloor = watching.floor
         voiceWatch = sure ? nil : watching
         guard sure else { return }
-        let lookback = watching.lookback
-        // The detector's buffer holds far more than the lookback; forward(to:from:) keeps it inside what is held.
-        let from = max(0, reached - Int(ArisVoicePrint.sampleRate * lookback))
+        // The detector's buffer holds far more than the lookback; forward(to:from:) keeps it inside what is held. Never
+        // before the watch was armed: that audio may be Aris's own tail.
+        let from = ArisEchoGuard.turnStart(reached: reached, lookback: Int(ArisVoicePrint.sampleRate * watching.lookback), armedAt: armedAt)
+        let lookback = Double(reached - from) / ArisVoicePrint.sampleRate
         DispatchQueue.main.async { self.onVoiceStart?(from, lookback) }
     }
 }

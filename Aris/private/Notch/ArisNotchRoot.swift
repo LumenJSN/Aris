@@ -3,8 +3,8 @@
 //  Aris
 //
 //  One display's notch, closed or open: what the closed band shows (first match wins: the Now Playing notice, Aris's
-//  star band, a due alert, a timer, Claude, music), the open pages under the user's header, the glass surface clipped to
-//  the notch outline, and the star, agent and model layers above it. Behaviour (hover, gestures, drops, Aris and
+//  star band, a timer, Claude, music), what hangs under it (the notice pill, else the jobs' pill), the open pages under
+//  The user's header, the glass surface clipped to the notch outline, and the star, agent and model layers above it. Behaviour (hover, gestures, drops, Aris and
 //  Claude rules) is in ArisNotchRoot+Behaviour.swift. While the first-run guide holds the notch, its onboarding state
 //  (ArisOnboardingNotch) draws instead.
 //
@@ -20,12 +20,13 @@ struct ArisNotchRoot: View {
     @ObservedObject var music = ArisNowPlaying.shared
     @ObservedObject var aris = ArisNotchState.shared
     @ObservedObject var claude = ClaudeStore.shared
-    @ObservedObject var todo = ArisTodoModel.shared
+    /// The notice pill (Aris's news, deadlines, Claude Code's notices) hangs under this notch when it shows here.
+    @ObservedObject var notices = ArisNoticeCenter.shared
     @ObservedObject var timer = ArisTimerModel.shared
     @ObservedObject var fullscreen = ArisFullscreenWatch.shared
     @ObservedObject var sharing = SharingStateManager.shared
-    /// Re-draws the notch when the hidden look changes (ArisSiriLookGate).
-    @ObservedObject var siriLook = ArisSiriLookGate.shared
+    /// Re-draws the notch when the hidden look changes (ArisDuskLookGate).
+    @ObservedObject var duskLook = ArisDuskLookGate.shared
 
     @Default(.enableGestures) var gesturesOn
     @Default(.closeGestureEnabled) var closeGestureOn
@@ -55,7 +56,6 @@ struct ArisNotchRoot: View {
     @State var mediaNudge: CGFloat = 0
     @State var mediaFired = false
     @State var openedForApproval = false
-    @State var openedForNotice = false
     /// The notch opened for a card that came when no turn was on (it closes again once the card is answered).
     @State var openedForCard = false
     @State var arisOpenedNotch: Bool?
@@ -112,14 +112,13 @@ struct ArisNotchRoot: View {
 
     /// A turn, or a conversation listening between turns (the same band, calm).
     var arisTurn: Bool { (aris.isActive || aris.conversing) && closed && !hidden }
-    var dueAlert: Bool { closed && !hidden && todo.alert != nil }
     var arisTasks: Bool { closed && !hidden && (aris.hasUnfinishedTask || aris.taskJustFinished) }
     var timerShowing: Bool { closed && !hidden && timer.isRunning }
     var claudeShowing: Bool {
         closed && !hidden && ArisNotchDecisions.claudeShowing(live: claude.isLive, sessions: claude.hasSessions, liveActivity: navigation.musicLiveActivityEnabled,
                                                               playing: music.isPlaying, idle: music.isPlayerIdle)
     }
-    var ours: Bool { arisTurn || dueAlert || arisTasks || timerShowing || claudeShowing }
+    var ours: Bool { arisTurn || arisTasks || timerShowing || claudeShowing }
     var parked: Bool { closed && !hidden && !aris.isActive && aris.hasReply && !ours && !musicShowing }
     var fullscreenHere: Bool { displayUUID.flatMap { fullscreen.fullscreenStatus[$0] } ?? false }
     var characterHome: Bool {
@@ -127,14 +126,27 @@ struct ArisNotchRoot: View {
                                busy: ours || parked || musicShowing || noticeActive || musicPeekHere, filesWaiting: !givenFiles.files.isEmpty) && starMayRest
     }
     var starMode: ArisStarBand.Mode? {
-        ArisStarBand.mode(turn: arisTurn, dueAlert: dueAlert, timer: timerShowing, tasks: arisTasks, claude: claudeShowing,
+        ArisStarBand.mode(turn: arisTurn, timer: timerShowing, tasks: arisTasks, claude: claudeShowing,
                           music: musicShowing, parked: parked, home: characterHome)
     }
-    var pillCanShow: Bool { closed && !hidden && !dueAlert && !musicPeekHere && !noticeActive }
+    /// Who has the room under the closed notch: the notice pill on its display, else the jobs' pill (ArisNoticePillRules).
+    var underNotchOwner: ArisNoticePillRules.UnderNotch {
+        ArisNoticePillRules.underNotch(closed: closed, hidden: hidden, musicPeek: musicPeekHere, nowPlaying: noticeActive,
+                                       noticeUp: notices.queue.front != nil && !notices.aside,
+                                       noticeHere: notices.screenID != nil && notices.screenID == displayUUID)
+    }
+    var noticePillHere: Bool { underNotchOwner == .notice }
+    /// The notice pill's place on this display: the notch closed here and nothing else keeping the room for its moment.
+    var noticeSlotHere: Bool {
+        closed && !musicPeekHere && !noticeActive && notices.screenID != nil && notices.screenID == displayUUID
+    }
+    var pillCanShow: Bool { underNotchOwner == .jobs }
     var pillHasLine: Bool { pillCanShow && (aris.hasUnfinishedTask || aris.taskJustFinished) }
+    /// A pill owns the room under the notch: the agent's chip, the speech model's card and the day's end keep away.
+    var underNotchTaken: Bool { pillHasLine || noticePillHere }
 
     var closedKind: ArisNotchDecisions.Closed {
-        ArisNotchDecisions.closedContent(.init(notice: closed && noticeActive, starMode: starMode, dueAlert: dueAlert, timer: timerShowing,
+        ArisNotchDecisions.closedContent(.init(notice: closed && noticeActive, starMode: starMode, timer: timerShowing,
                                                claude: claudeShowing, music: musicShowing && closed && !hidden))
     }
 
@@ -150,11 +162,6 @@ struct ArisNotchRoot: View {
     }
 
     var grows: Bool { isOpen && [.claude, .home, .aris, .shelf].contains(navigation.currentView) }
-    var claudeNotice: ClaudePeek? {
-        // Only on a display that opened for the notice, and never over waiting approval cards.
-        guard openedForNotice, claude.approvals.isEmpty, let peek = claude.currentPeek, navigation.currentView == .claude else { return nil }
-        return peek
-    }
 
     // MARK: - Body
 
@@ -199,10 +206,10 @@ struct ArisNotchRoot: View {
                 GeometryReader { proxy in
                     let band = seats.band.map { proxy[$0] }
                     ZStack(alignment: .top) {
-                        ArisAgentLayer(seat: band, mode: starMode, bandHeight: hangHeight, ear: ear, pillShown: pillHasLine)
-                        ArisModelLayer(seat: band, mode: starMode, closed: closed, bandHeight: hangHeight, pillShown: pillHasLine,
+                        ArisAgentLayer(seat: band, mode: starMode, bandHeight: hangHeight, ear: ear, pillShown: underNotchTaken)
+                        ArisModelLayer(seat: band, mode: starMode, closed: closed, bandHeight: hangHeight, pillShown: underNotchTaken,
                                        busy: vm.dropInteraction.dragNear || vm.dropInteraction.anyDropZoneTargeting)
-                        ArisDayEndLayer(mode: starMode, closed: closed && !hidden, bandHeight: hangHeight, pillShown: pillHasLine,
+                        ArisDayEndLayer(mode: starMode, closed: closed && !hidden, bandHeight: hangHeight, pillShown: underNotchTaken,
                                         busy: vm.dropInteraction.dragNear || vm.dropInteraction.anyDropZoneTargeting)
                         if closedKind == .timer {
                             // The timer's own control, on its ear and above the notch's hover (as the dozing star's
@@ -223,36 +230,37 @@ struct ArisNotchRoot: View {
         (vm.screenUUID.flatMap { NSScreen.screen(withUUID: $0) } ?? NSScreen.main)?.safeAreaInsets.top ?? 0
     }
 
-    /// The siri look's full-black top: the open notch's own band (the lock, the buttons and the mark stand in it),
+    /// The dusk look's full-black top: the open notch's own band (the lock, the buttons and the mark stand in it),
     /// the closed notch's height otherwise. Whatever the display makes them: nothing is assumed.
-    private var siriBand: CGFloat { isOpen ? vm.openBandHeight : displayedHeight }
+    private var duskBand: CGFloat { isOpen ? vm.openBandHeight : displayedHeight }
 
     /// The notch content on its glass, clipped to the outline.
     private var surfaced: some View {
         let open = isOpen
-        // The look is read here, as the notch opens or closes and as a voice state begins (ArisSiriLookGate).
-        ArisSiriLookGate.refresh(open: open, state: aris.isActive ? "\(aris.phase)" : "idle")
-        let siri = ArisSiriLookNow.surfaceOn
+        // The look is read here, as the notch opens or closes and as a voice state begins (ArisDuskLookGate).
+        ArisDuskLookGate.refresh(open: open, state: aris.isActive ? "\(aris.phase)" : "idle")
+        let dusk = ArisDuskLookNow.surfaceOn
         return content
-            // What the siri look's scrim needs of the surface the content stands on (ArisSiriLookScrim).
-            .environment(\.arisSiriLookSurface, ArisSiriLookSurfaceInfo(
-                height: open ? (drawnHeight > 0 ? drawnHeight : contentHeight) : 0, band: siriBand,
-                base: ArisSiriLookSurface<NotchShape>.baseShare(frosted: ArisSiriLookNow.look == .siriFrost)))
-            .coordinateSpace(name: ArisSiriLookScrim.space)
+            // What the dusk look's scrim needs of the surface the content stands on (ArisDuskLookScrim).
+            .environment(\.arisDuskLookSurface, ArisDuskLookSurfaceInfo(
+                height: open ? (drawnHeight > 0 ? drawnHeight : contentHeight) : 0, band: duskBand,
+                base: ArisDuskLookSurface<NotchShape>.baseShare(frosted: ArisDuskLookNow.look == .duskFrost)))
+            .coordinateSpace(name: ArisDuskLookScrim.space)
             .padding(.horizontal, open ? cornerRadiusInsets.opened.top + ArisGlass.inset : cornerRadiusInsets.closed.bottom)
             .padding(.bottom, open ? ArisGlass.bottomInset : 0)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeightChanged($0) }
             .frame(height: open && drawnHeight > 0 ? drawnHeight : nil, alignment: .top)
             .clipShape(shape)
-            // The hidden "siri" look (arisVoiceLook) brings its own surface (ArisSiriLookSurface) and the notch's
+            // The hidden "dusk" look (arisVoiceLook) brings its own surface (ArisDuskLookSurface) and the notch's
             // own glass is then not in the tree at all; with the preference unset this is the glass alone, as ever.
-            .background(siri ? nil : ArisGlassSurface(shape: shape, open: open, hidden: hidden, safeTop: glassSafeTop,
+            .background(dusk ? nil : ArisGlassSurface(shape: shape, open: open, hidden: hidden, safeTop: glassSafeTop,
                                                       glassBody: (inset: cornerRadiusInsets.opened.top, corner: cornerRadiusInsets.opened.bottom)))
-            .background(siri ? ArisSiriLookSurface(shape: shape, open: open, band: siriBand,
-                                                   frosted: ArisSiriLookNow.look == .siriFrost) : nil)
+            .background(dusk ? ArisDuskLookSurface(shape: shape, open: open, band: duskBand,
+                                                   frosted: ArisDuskLookNow.look == .duskFrost) : nil)
             .overlay {
                 if aris.isActive && aris.phase == .listening && !hidden {
-                    ArisListeningRim(shape: shape).transition(.opacity.animation(.easeOut(duration: 0.2)))
+                    // After the wake word: one lap only, until the user talks (ArisQuietWake); the same rim goes on as the notch opens.
+                    ArisListeningRim(shape: shape, once: aris.wakeLapRunning).transition(.opacity.animation(.easeOut(duration: 0.2)))
                 } else if aris.conversing && !hidden {
                     // Paused for another app's sound: the same still rim, dimmer (no blink).
                     ArisListeningRim(shape: shape, calm: true)
@@ -274,9 +282,9 @@ struct ArisNotchRoot: View {
             // open notch's left edge); the curve on the whole root fixed that but animated every layer above the
             // surface each frame, and the open stuttered.
             .frame(maxWidth: .infinity, alignment: .top)
-            // The siri look's own springs: nearer the content than the curve below, so they replace it only while
+            // The dusk look's own springs: nearer the content than the curve below, so they replace it only while
             // the look is on; with the look off this changes nothing.
-            .transaction(value: vm.notchState) { if ArisSiriLookNow.on { $0.animation = ArisSiriLookMotion.surface(open: open) } }
+            .transaction(value: vm.notchState) { if ArisDuskLookNow.on { $0.animation = ArisDuskLookMotion.surface(open: open) } }
             .animation(open ? StandardAnimations.open : StandardAnimations.close, value: vm.notchState)
             // A closed band giving way to another: the size transition, 340 ms (0.45, 0, 0.55, 1).
             .animation(ArisGlass.resize, value: closedKind)
@@ -302,7 +310,7 @@ struct ArisNotchRoot: View {
         }
         .fixedSize(horizontal: standardPeekHere, vertical: standardPeekHere)
         .modifier(ArisGrowFrame(open: isOpen, grows: grows,
-                                minHeight: navigation.currentView == .claude && claudeNotice == nil ? openNotchSize.height : 0,
+                                minHeight: navigation.currentView == .claude ? openNotchSize.height : 0,
                                 maxHeight: [.home, .aris].contains(navigation.currentView) ? arisSurfaceMax(screenUUID: vm.screenUUID) : openNotchMaxHeight))
     }
 
@@ -311,7 +319,7 @@ struct ArisNotchRoot: View {
         if closed {
             closedTop
         } else {
-            ArisNotchHeader(showingNotice: claudeNotice != nil)
+            ArisNotchHeader()
                 .frame(height: vm.openBandHeight)
                 .opacity(ArisNotchDecisions.gestureOpacity(progress: gestureProgress))
         }
@@ -327,8 +335,6 @@ struct ArisNotchRoot: View {
                 navigation.currentView = .aris
                 withAnimation(StandardAnimations.interactive) { _ = vm.open() }
             }
-        case .dueAlert:
-            if let alert = todo.alert { ArisDueAlertView(due: alert.due, kind: alert.kind, height: displayedHeight, notchWidth: notchWidth) }
         case .timer:
             ArisTimerEar(height: displayedHeight, notchWidth: notchWidth)
         case .claude:
@@ -359,28 +365,25 @@ struct ArisNotchRoot: View {
                     .frame(width: ArisGlass.contentWidth, height: ArisShelfTileLayout.stripHeight)
                     .padding(.top, 2)
             case .claude:
-                if let peek = claudeNotice {
-                    ClaudeNoticeView(peek: peek).transition(.opacity)
-                } else {
-                    ClaudeTabView().frame(width: ArisGlass.claudeWidth)
-                }
+                ClaudeTabView().frame(width: ArisGlass.claudeWidth)
             }
         }
-        // The siri look: black behind the content column where Siri's fill is too thin for Aris's white text.
-        .background(ArisSiriLookScrim())
+        // The dusk look: black behind the content column where the system assistant's fill is too thin for Aris's white text.
+        .background(ArisDuskLookScrim())
         .opacity(ArisNotchDecisions.gestureOpacity(progress: gestureProgress))
         .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: -4)).animation(StandardAnimations.open),
                                 removal: .opacity.combined(with: .offset(y: -4)).animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.18))))
         .allowsHitTesting(isOpen)
     }
 
-    /// The status pill 6 points under the band.
-    @ViewBuilder
+    /// The pill 6 points under the band: a notice when one shows on this display, else the jobs' status. The notice's
+    /// place stays while the notch is closed here, so a notice that goes leaves on its own motion (ArisNoticePillHost).
     private var underNotch: some View {
-        if pillCanShow {
-            ArisStatusPill()
-                .padding(.top, hangHeight + 6)
+        ZStack(alignment: .top) {
+            if underNotchOwner == .jobs { ArisStatusPill() }
+            if noticeSlotHere { ArisNoticePillHost() }
         }
+        .padding(.top, hangHeight + ArisNoticePillLayout.belowNotch)
     }
 
     /// An almost transparent strip under a closed notch that widens the hover area down to the menu bar's bottom.
@@ -401,8 +404,8 @@ struct ArisNotchRoot: View {
         if drawnHeight == 0 || Date() < openingUntil {
             withAnimation(StandardAnimations.open) { drawnHeight = height }
         } else if height != drawnHeight {
-            if ArisSiriLookNow.on {
-                withAnimation(ArisSiriLookMotion.resize(taller: height > drawnHeight)) { drawnHeight = height }
+            if ArisDuskLookNow.on {
+                withAnimation(ArisDuskLookMotion.resize(taller: height > drawnHeight)) { drawnHeight = height }
             } else {
                 withAnimation(ArisGlass.resize) { drawnHeight = height }
             }

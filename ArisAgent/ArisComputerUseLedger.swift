@@ -38,7 +38,7 @@ struct ArisDesktopTarget: Equatable {
     /// Installed in the usual places, registered once and signed (ArisAppIdentity.url(ofBundle:)): only then may a yes
     /// for it be remembered.
     let known: Bool
-    /// Never computer use there (ArisRiskPolicy.computerUseIsNever: password stores, Keychain, terminals, Aris itself).
+    /// Never computer use there (ArisRiskPolicy.computerUseIsNever: the installer, sign-in prompts, Aris itself).
     let never: Bool
     /// A web browser: websites are Aside's.
     let browser: Bool
@@ -49,6 +49,11 @@ struct ArisDesktopTarget: Equatable {
     /// Apple's own signed app as this bundle (ArisAppIdentity.isAppleSigned), checked only for the safe typing apps: a
     /// type of the user's words runs at once only there (QA follow-up to BUG-15).
     var appleSigned = false
+    /// A terminal, code editor, code runner or AI app (ArisRiskPolicy.isCodeRunner): text typed there and Return or Enter
+    /// always go to the user's card with the exact text (ArisDesktopGate).
+    var codeRunner = false
+    /// A terminal itself: every field is a command line.
+    var terminal = false
 
     /// What the per-app memory is keyed by: the bundle id of a known app, under this engine's own name (Peekaboo's
     /// desktop controller), nothing otherwise. Each engine keeps its own yeses, so a yes for Codex's own computer use

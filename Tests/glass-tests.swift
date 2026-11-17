@@ -1,5 +1,5 @@
-// Tests for two rulings of 2026-11-11. One: a private (incognito) browser window is read like any other, and the list
-// of apps Aris never reads is the password managers and nothing more. Two: the open notch stays readable over a white
+// Tests for two rulings of 2026-11-11. One: a private (incognito) browser window is read like any other (and since
+// The owner's ruling of 2026-11-16 the password managers are read like any app too: only Aris's own windows are left out). Two: the open notch stays readable over a white
 // window: the black over its glass is full to 53 % and .5 at the rim, and never thinner than a floor behind
 // the content, so every text style reaches its contrast over pure white; with Reduce Transparency there is no glass.
 // Called from main.swift; uses its check(). Nothing is drawn on screen: only the rules, the numbers and the sources.
@@ -26,13 +26,23 @@ private func glassPrivateWindowTests() {
           && T.choose(named: "com.google.Chrome", front: nil, running: ["com.apple.Safari"], browsers: known) == .refused(T.notRunning("com.google.Chrome"))
           && screen.contains(#"option("--app", in: &args)"#),
           "private windows: tab --app still reads exactly the named browser and fails plainly when it isn't running")
-    // The list of apps never read is the password managers, exactly as it was: no browser, bank or authenticator.
+    // The user 2026-11-16 ("막지마"): no never-read list is left; the eleven password managers are captured like a browser.
     let managers: Set<String> = ["com.apple.keychainaccess", "com.apple.passwords", "com.1password.1password", "com.agilebits.onepassword7",
                                  "com.bitwarden.desktop", "com.dashlane.dashlane", "com.dashlane.dashlanephonefinal", "com.lastpass.lastpass",
                                  "me.proton.pass.electron", "in.sinew.enpass-desktop", "org.keepassxc.keepassxc"]
-    check(ArisCaptureRules.privateBundleIds == managers, "private windows: the never-read list is the same eleven password managers")
-    check(known.allSatisfy { !ArisCaptureRules.isPrivate($0) } && ArisCaptureRules.isPrivate("com.1password.1password"),
-          "private windows: no browser is on the never-read list; a password manager still is")
+    let rules = glassSource("Aris/private/Aris/See/ArisCaptureRules.swift")
+    check(!rules.isEmpty && !rules.contains("privateBundleIds") && !rules.contains("func isPrivate"),
+          "private windows: the capture rules keep no list of apps never read")
+    check((Set(known).union(managers)).allSatisfy { !ArisCaptureRules.excludes(bundleId: $0, pid: 77, ownPid: 900, ownBundleId: "com.lumenjsn.aris") }
+          && ArisCaptureRules.excludes(bundleId: "com.lumenjsn.aris", pid: 77, ownPid: 900, ownBundleId: "com.lumenjsn.aris"),
+          "private windows: no browser and no password manager is left out of a frame; Aris's own windows still are")
+    let builder = glassSource("Aris/components/Settings/ArisSettingsBuilder.swift"), features = glassSource("Aris/components/Settings/ArisFeatureCatalog.swift")
+    let strings = glassSource("Aris/components/Settings/Settings.xcstrings")
+    check(!builder.isEmpty && !features.isEmpty && !strings.isEmpty
+          && [builder, features, strings].allSatisfy { !$0.contains("암호 앱") && !$0.contains("Password apps") && !$0.contains("password apps") }
+          && builder.contains("다른 질문에는 화면을 찍지 않고, Aris 창은 언제나 빼요.") && features.contains(#"value: "Aris 창""#)
+          && strings.contains("and Aris's own windows are always left out.") && strings.contains(#""value": "Aris's windows""#),
+          "private windows: settings say only Aris's windows are left out, in Korean and English")
 }
 
 // MARK: - The open notch over a bright window

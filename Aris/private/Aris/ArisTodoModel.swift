@@ -27,11 +27,10 @@ final class ArisTodoModel: ObservableObject {
     @Published var chipRequest: String?
     /// A row to tick (the preview's way of pressing its ring).
     @Published var completeRequest: String?
-    /// The deadline alert showing under the closed notch.
+    /// The deadline alert, from when it is due until its notice on the pill under the notch goes (ArisNoticeRoute.deadline).
     @Published private(set) var alert: (due: ArisDue, kind: ArisDueAlert)?
 
     private static let checkEvery: Duration = .seconds(300)
-    private static let alertShowsFor: Duration = .seconds(8)
     private static let shownKey = "arisDueAlertsShown"
     private static let importedKey = "arisTodosImportedToReminders"
     private var watching: Task<Void, Never>?
@@ -278,9 +277,13 @@ final class ArisTodoModel: ObservableObject {
         UserDefaults.standard.set(Array(shown.intersection(current)), forKey: Self.shownKey)
         alert = (next, kind)
         log.notice("deadline alert: \(kind.rawValue, privacy: .public)")
+        // On the notice pill under the notch, in line with Aris's other news: it waits for a turn, a dictation or the
+        // open notch to finish, stays 8 s once up (ArisNoticeRoute.deadlineShowsFor) and dismisses the alert as it goes
+        // (ArisNoticeCenter.close); never shown (it waited past the deadline): the alert is over too.
+        let notice = ArisNoticeRoute.deadline(next, kind, now: now, english: ArisUIWords.english)
         Task {
-            try? await Task.sleep(for: Self.alertShowsFor)
-            if alert?.due.id == next.id { alert = nil }
+            let up = await ArisController.shared.notify(notice)
+            if !up, alert?.due.id == next.id { alert = nil }
         }
     }
 }

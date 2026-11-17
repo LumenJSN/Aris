@@ -7,7 +7,7 @@
 //  with links when there are URLs, a trailing space in terminals), so the moment the app asks for the text is the
 //  paste-confirmed signal (2 s). Read: the user's clipboard comes back 500 ms later; not read: the words stay a minute so
 //  he can ⌘V them himself. Never presses Enter, and never types while a password field has the keyboard (secure input)
-//  or into a password app. A read paste of dictation starts the edit watch (ArisEditWatch), never in a terminal.
+//  or into Aris itself. A read paste of dictation starts the edit watch (ArisEditWatch), never in a terminal.
 //  Runs on the main queue without holding it (ArisPasteSession): the pasteboard asks for promised data only through
 //  the main run loop, which main.swift runs.
 //

@@ -94,8 +94,11 @@ private func firstFire(_ watch: inout ArisBargeIn, mic: [Float], playback: [Floa
 
 private func bargeInTests() {
     typealias B = ArisBargeIn
-    check(B.mode(headphones: true, speakersAllowed: false) == .headphones && B.mode(headphones: false, speakersAllowed: true) == .speakers
-          && B.mode(headphones: false, speakersAllowed: false) == nil, "barge-in: headphones always; speakers unless turned off")
+    check(B.mode(headphones: true, speakersAllowed: false, echoCancelled: false) == .headphones
+          && B.mode(headphones: false, speakersAllowed: true, echoCancelled: true) == .speakers
+          && B.mode(headphones: false, speakersAllowed: false, echoCancelled: true) == nil
+          && B.mode(headphones: false, speakersAllowed: true, echoCancelled: false) == nil,
+          "barge-in: headphones always; speakers only with an echo canceller and the setting (2026-11-16)")
 
     // Headphones: ~150 ms of voice stops Aris (well inside 200 ms), a click or a cough doesn't.
     var phones = B(mode: .headphones)
@@ -427,9 +430,9 @@ private func spokenAnswerTests() {
     for notYes in ["네 그런데 내일은", "응 그거 말고", "okay so what's next", "좋아하는 노래 틀어줘", "예약해 줘", "yesterday", "해 줘 그리고 메일도", "네, 다른 사람한테 보내"] {
         check(R.parse(notYes) != true, "yes/no: \"\(notYes)\" isn't a yes (I2)")
     }
-    // In a conversation a spoken yes isn't taken; a spoken no still declines (C1).
-    check(R.voiceYes(inConversation: false, handsFree: false) && !R.voiceYes(inConversation: true, handsFree: false)
-          && !R.voiceYes(inConversation: false, handsFree: true), "yes/no: a spoken yes counts only outside a conversation and never for a hands-free card (N3a)")
+    // Since 2026-11-15 a spoken yes counts on every card, in a conversation too (the owner: answered by voice); a no still declines.
+    check(R.voiceYes(inConversation: false, handsFree: false) && R.voiceYes(inConversation: true, handsFree: false)
+          && R.voiceYes(inConversation: true, handsFree: true), "yes/no: a spoken yes counts in and out of a conversation")
     check(R.spoken("네", voiceYes: false) == nil && R.spoken("네", voiceYes: true) == true
           && R.spoken("아니", voiceYes: false) == false && R.spoken("취소", voiceYes: false) == false,
           "yes/no: without a spoken yes only a click or Y says yes; a spoken no still works")

@@ -2,7 +2,8 @@
 //  ArisTurnImage.swift
 //  Aris (also built into aris-agent)
 //
-//  An image that travels with one turn: the screenshot of the display under the pointer, a window the user circled
+//  An image that travels with one turn: the screenshot of the display under the pointer (or of up to three displays:
+//  the one holding the app the user named, the others when they says another screen; ArisDisplayPick), a window the user circled
 //  (numbered 1–8), or the whole screen with what he drew. The app sends them in POST /ask as "images"; the agent
 //  checks every one here before any brain sees it (neither Codex nor Claude refuses bad bytes, P1.0). Any problem
 //  refuses the whole turn, so nothing is half used. Images live in memory only. Pure, so the tests run it.
@@ -27,7 +28,7 @@ enum ArisTurnImageError: Error, Equatable {
     case dimensions
     /// A gesture shot without a unique badge in 1…8, or a badge on another kind.
     case badge
-    /// Over 1 cursor, 8 gesture or 3 drawing images.
+    /// Over 3 cursor (one per display), 8 gesture or 3 drawing images.
     case counts
     /// The cursor shot with gesture shots or a drawing (a gesture turn has no cursor shot).
     case mixed
@@ -37,7 +38,8 @@ struct ArisTurnImage: Equatable {
     enum Kind: String { case cursor, gesture, drawing }
 
     let kind: Kind
-    /// Aris's own file name for it (never the sender's): cursor-screen.png, gesture-screenshot-N.jpg, drawing-reference-K.jpg.
+    /// Aris's own file name for it (never the sender's): cursor-screen.png (screen-N.png for another display),
+    /// gesture-screenshot-N.jpg, drawing-reference-K.jpg.
     let name: String
     let format: ArisImageFormat
     let data: Data
@@ -49,7 +51,8 @@ struct ArisTurnImage: Equatable {
 
     static let maxBytesEach = 6 * 1_048_576
     static let maxLongEdge = 3_072
-    static let maxCursor = 1, maxGesture = 8, maxDrawing = 3
+    /// One cursor image per display, at most three (ArisDisplayPick.maxDisplays).
+    static let maxCursor = 3, maxGesture = 8, maxDrawing = 3
     static let maxApp = 40, maxTitle = 120
     /// The longest base64 that can decode to `maxBytesEach`: anything longer is refused before decoding.
     static let maxBase64 = (maxBytesEach + 2) / 3 * 4
@@ -96,10 +99,11 @@ struct ArisTurnImage: Equatable {
 
         var images: [ArisTurnImage] = []
         var badges: Set<Int> = []
-        var drawings = 0
+        var drawings = 0, cursors = 0
         for (kind, entry) in entries {
             if kind == .drawing { drawings += 1 }
-            switch image(kind, entry, drawing: drawings) {
+            if kind == .cursor { cursors += 1 }
+            switch image(kind, entry, drawing: kind == .cursor ? cursors : drawings) {
             case .failure(let error): return .failure(error)
             case .success(let image):
                 if let badge = image.badge {
@@ -111,6 +115,7 @@ struct ArisTurnImage: Equatable {
         return .success(images)
     }
 
+    /// `drawing`: the image's number among those of its kind (drawings and displays are numbered in order).
     private static func image(_ kind: Kind, _ entry: [String: Any], drawing: Int) -> Result<ArisTurnImage, ArisTurnImageError> {
         guard let mime = entry["mime"] as? String, let encoded = entry["data"] as? String else { return .failure(.shape) }
         guard let format = ArisImageFormat(rawValue: mime) else { return .failure(.mime) }
@@ -142,7 +147,7 @@ struct ArisTurnImage: Equatable {
     private static func name(_ kind: Kind, format: ArisImageFormat, badge: Int?, drawing: Int) -> String {
         let ext = format == .png ? "png" : "jpg"
         switch kind {
-        case .cursor: return "cursor-screen.\(ext)"
+        case .cursor: return drawing <= 1 ? "cursor-screen.\(ext)" : "screen-\(drawing).\(ext)"
         case .gesture: return "gesture-screenshot-\(badge ?? 0).\(ext)"
         case .drawing: return "drawing-reference-\(drawing).\(ext)"
         }

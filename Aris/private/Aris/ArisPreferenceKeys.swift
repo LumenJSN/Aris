@@ -12,8 +12,8 @@ import Foundation
 extension Defaults.Keys {
     /// What answers while nothing is stored; a new install is given one that is set up here (ArisBrainSetup).
     static let arisBrain = Key<String>("arisBrain", default: ArisBrain.codex.rawValue)
-    /// Who works other apps' windows (ArisComputerEngine): Peekaboo unless the user picks Codex's.
-    static let arisComputerEngine = Key<String>(ArisComputerEngine.preferenceKey, default: ArisComputerEngine.peekaboo.rawValue)
+    /// Who works other apps' windows (ArisComputerEngine): Aris's own unless the user picks Peekaboo or Codex's.
+    static let arisComputerEngine = Key<String>(ArisComputerEngine.preferenceKey, default: ArisComputerEngine.aris.rawValue)
     /// Off on a new install (the guide asks); an install from before keeps it on (ArisFirstRun pins it at launch).
     static let arisWakeWord = Key<Bool>("arisWakeWord", default: false)
     static let arisCircleGesture = Key<Bool>("arisCircleGesture", default: true)

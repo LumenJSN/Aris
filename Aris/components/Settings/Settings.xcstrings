@@ -2361,6 +2361,16 @@
         }
       }
     },
+    "Aris (기본)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aris (default)"
+          }
+        }
+      }
+    },
     "Peekaboo (무료)": {
       "localizations": {
         "en": {
@@ -2371,12 +2381,12 @@
         }
       }
     },
-    "Peekaboo는 무료이고 어느 AI로 답하든 돼요. GPT는 Codex가 있어야 하고, 없으면 Peekaboo로 해요.": {
+    "Aris는 앱을 뒤에서 다뤄서 지금 보던 창과 포인터가 그대로예요. 어느 AI로 답하든 돼요. Peekaboo는 따로 내려받고, GPT는 Codex가 있어야 하고 없으면 Aris로 해요.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Peekaboo is free and works whichever AI answers. GPT needs Codex; without it, Peekaboo is used."
+            "value": "Aris works apps in the background, so the window you were using and your pointer stay put. It works with any AI. Peekaboo is downloaded separately; GPT needs Codex, and without it Aris is used."
           }
         }
       }
@@ -2791,12 +2801,12 @@
         }
       }
     },
-    "다른 질문에는 화면을 찍지 않고, 암호 앱과 Aris 창은 언제나 빼요. 동그라미는 화면 기록 권한이 있어야 돼요.": {
+    "다른 질문에는 화면을 찍지 않고, Aris 창은 언제나 빼요. 동그라미는 화면 기록 권한이 있어야 돼요.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No other question captures the screen, and password apps and Aris's own windows are always left out. The circle needs the screen recording permission."
+            "value": "No other question captures the screen, and Aris's own windows are always left out. The circle needs the screen recording permission."
           }
         }
       }
@@ -13101,12 +13111,12 @@
         }
       }
     },
-    "암호 앱과 Aris 창": {
+    "Aris 창": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Password apps and Aris's windows"
+            "value": "Aris's windows"
           }
         }
       }

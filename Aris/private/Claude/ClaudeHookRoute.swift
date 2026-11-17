@@ -29,7 +29,7 @@ enum HookAction {
 enum ClaudeHookRoute {
     static let hookPath = "/hook"
     static let statusPath = "/status"
-    static let slowPaths: Set = ["/aris/todos", "/aris/events"]
+    static let slowPaths: Set = ["/aris/todos", "/aris/events", "/aris/sessions"]
 
     static func decide(_ request: HTTPRequest, token: String?, port: Int = 23350) -> HookAction {
         guard let token, request.hasToken(token) else {

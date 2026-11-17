@@ -115,11 +115,12 @@ extension ArisCharacterLook {
 enum ArisStarBand {
     enum Mode: Equatable { case turn, tasks, parked, home }
 
-    /// What holds the band, in ContentView's order: the turn first; a due alert or a timer before the jobs; Claude or
-    /// music before a parked answer and the resting star. Nil: something else draws the closed notch.
-    static func mode(turn: Bool, dueAlert: Bool, timer: Bool, tasks: Bool, claude: Bool, music: Bool, parked: Bool, home: Bool) -> Mode? {
+    /// What holds the band, in ContentView's order: the turn first; a timer before the jobs; Claude or music before a
+    /// parked answer and the resting star. Nil: something else draws the closed notch. (A deadline's alert is a notice on
+    /// the pill under the notch now, never the band.)
+    static func mode(turn: Bool, timer: Bool, tasks: Bool, claude: Bool, music: Bool, parked: Bool, home: Bool) -> Mode? {
         if turn { return .turn }
-        if dueAlert || timer { return nil }
+        if timer { return nil }
         if tasks { return .tasks }
         if claude || music { return nil }
         if parked { return .parked }

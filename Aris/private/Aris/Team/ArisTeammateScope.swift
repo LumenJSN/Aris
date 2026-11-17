@@ -81,6 +81,12 @@ enum ArisTeammateScope: String, CaseIterable, Codable, Sendable {
             return [.apps]
         case "messages", "mail":
             return [.mail]
+        case "devin":
+            // The user's Devin sessions, read only (another app's records).
+            return [.apps]
+        case "session":
+            // A prompt typed into one of the user's Claude Code sessions (after their card): another app, and a send.
+            return [.apps, .send]
         case "message":
             return [.send]
         case "mcp":

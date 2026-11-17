@@ -39,10 +39,27 @@ enum ArisTeammateLauncher {
     /// option or an input shortcut, whatever the brief starts with.
     static let header = "Aris가 맡긴 작업:\n\n"
 
-    /// What `claude` gets as its one argument (the prompt file's whole text): the fixed line, then the brief exactly as
-    /// it was written. Whatever the brief starts with ("-p", "!cmd", "/x", "#1", "@file"), the argument starts with
-    /// the header (ArisTeammateGate.isSafePrompt is asked about this, not about the brief alone).
-    static func argument(for brief: String) -> String { header + brief }
+    /// The fixed line, then the brief exactly as it was written. Whatever the brief starts with ("-p", "!cmd", "/x",
+    /// "#1", "@file"), this starts with the header (ArisTeammateGate.isSafePrompt is asked about this, not about the
+    /// brief alone).
+    static func body(for brief: String) -> String { header + brief }
+
+    /// What every job keeps working toward (the owner, 2026-11-15: Claude Code's `/goal`, so a job goes on until it is done):
+    /// after each turn Claude Code's evaluator checks it against the conversation, and the job's last message, whose
+    /// first line Aris says when it ends (ArisTeammateWords.finished), is a one-line summary.
+    static let goalCondition = "the request below is answered with evidence (files read, commands run, sources) or the change is verified, "
+        + "or stop after 15 turns and summarise what was found. The final message starts with a one-sentence summary of the result."
+    /// The first message's own line: `/goal` takes everything after it as the condition (up to `goalLimit` characters)
+    /// and starts the first turn with it, the brief included.
+    static let goalLine = "/goal " + goalCondition + "\n\n"
+    static let goalLimit = 4_000
+
+    /// What `claude` gets as its one argument (the prompt file's whole text): `/goal` with its condition, then `body`;
+    /// a brief too long for a goal's condition goes as `body` alone, as before.
+    static func argument(for brief: String) -> String {
+        let goal = goalLine + body(for: brief)
+        return goal.count - "/goal ".count <= goalLimit ? goal : body(for: brief)
+    }
 
     /// Writes `argument(for: text)` to a new cc-<id>.txt in `folder` (made 0700): 0600, never over a file or link already there.
     static func writePrompt(_ text: String, in folder: URL, id: UUID) throws -> URL {

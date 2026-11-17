@@ -18,18 +18,14 @@ enum ArisNotchHeaderLayout {
     /// Shelf, Claude and settings (the music page went with the full player).
     static let placeCount = 3
 
-    /// Only the sessions list takes the wider 540 page. Claude's done notice reads like an Aris answer on the 416
-    /// page, so its header stays 416 too (a 540 header left the notice hugging the left of a too-wide notch).
-    static func usesSessionsWidth(claudePage: Bool, showingNotice: Bool) -> Bool {
-        claudePage && !showingNotice
-    }
+    /// Only the sessions list takes the wider 540 page (Claude Code's done notice is on the notice pill under the
+    /// notch now, never this page).
+    static func usesSessionsWidth(claudePage: Bool) -> Bool { claudePage }
 
     /// One character on screen (ArisStarBand: one band, one star, whatever holds it). The closed band gives itself to
     /// Claude and its ghost when Claude holds it (mode nil), so the open sessions page, whose ghost leads its column,
-    /// holds the open band the same way: the band's star steps aside there. The 416 notice has no ghost: the star stays.
-    static func showsStar(claudePage: Bool, showingNotice: Bool) -> Bool {
-        !usesSessionsWidth(claudePage: claudePage, showingNotice: showingNotice)
-    }
+    /// holds the open band the same way: the band's star steps aside there.
+    static func showsStar(claudePage: Bool) -> Bool { !usesSessionsWidth(claudePage: claudePage) }
 
     /// The band's mark (N7): where the star steps aside, a turn's voice bars and working dots still show (`voiceOrWork`:
     /// the glyph isn't the resting star); only the resting star hides.

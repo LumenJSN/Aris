@@ -4,7 +4,7 @@
 //
 //  What the user is looking at, so "이거 요약해줘" works: the selected text, the clipboard,
 //  the browser's front tab (and its text), Finder's selection, and the front window's text
-//  (a screenshot read with Vision). Password managers are never read.
+//  (a screenshot read with Vision). Password managers are read like any app (the owner, 2026-11-16).
 //
 
 import AppKit
@@ -106,15 +106,10 @@ func screenText(_ args: [String]) {
     case .refused(let why): fail(why)
     }
     guard let app = named ?? ArisFrontLive.frontPid().flatMap({ NSRunningApplication(processIdentifier: $0) }) else { fail("no app in front") }
-    // Apps whose windows are never captured or read: the one list shared with Aris (`ArisCaptureRules`).
-    guard !ArisCaptureRules.isPrivate(app.bundleIdentifier) else { fail("\(app.localizedName ?? "That app") is private; I don't read it") }
     var words = args
     if let region = option("--around", in: &words) {
         let parts = region.split(separator: ",").compactMap { Int($0) }
         guard parts.count == 4, parts[2] > 0, parts[3] > 0, parts[2] <= 2_000, parts[3] <= 2_000 else { fail("usage: screen --around x,y,w,h") }
-        // A private app's window anywhere in that part of the screen: nothing is captured (the look's own rule).
-        let part = CGRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3])
-        guard !ArisScreenTarget.coversPrivate(part, windows: onScreenWindows(), isPrivate: ArisCaptureRules.isPrivate) else { fail(ArisScreenTarget.privateThere) }
         let folder = arisFolder.appendingPathComponent("work")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let file = folder.appendingPathComponent("pointer.png")

@@ -96,6 +96,16 @@ enum ArisMicDevices {
         }
     }
 
+    /// 호출어 녹음's AirPods group (the user asked for that microphone on purpose, for the seconds of a take): the engine on
+    /// the first headset's microphone; nil when no headset with a microphone is connected.
+    static func pinHeadset(_ engine: AVAudioEngine) -> (id: UInt32, transport: ArisAudioDevice.Transport)? {
+        guard let headset = all().first(where: { $0.hasInput && $0.transport == .bluetooth }), let unit = engine.inputNode.audioUnit else { return nil }
+        var device = headset.id
+        guard AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &device, UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr else { return nil }
+        log.notice("\(ArisMicWords.opened(.setup, transport: .bluetooth, id: headset.id), privacy: .public)")
+        return (headset.id, .bluetooth)
+    }
+
     static func noteClosed(_ use: ArisMicUse, transport: ArisAudioDevice.Transport?) {
         log.notice("\(ArisMicWords.closed(use, transport: transport), privacy: .public)")
     }

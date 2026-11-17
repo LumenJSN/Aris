@@ -72,6 +72,14 @@ final class ArisSpeaker {
     private var route = ArisVoiceRoute.engine
     /// The own output couldn't be set up or started in this run: the engine's is used from then on.
     private var ownOutputFailed = false
+    /// What Aris said lately (ArisEchoGuard.verdict: a turn that is its own words heard back is never answered).
+    private(set) var echo = ArisEchoMemory()
+    /// Aris's voice is being played now; when it last stopped (the speaker's end, before the output's latency and the
+    /// room's tail, which ArisEchoGuard.tail adds).
+    private(set) var isPlaying = false
+    private(set) var stoppedAt: ContinuousClock.Instant?
+    /// What Aris said within ArisEchoMemory.lasts.
+    var recentlySaid: [String] { echo.recent(at: ProcessInfo.processInfo.systemUptime) }
     init() {
         engine.attach(player)
         outputWatch = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine,
@@ -100,6 +108,7 @@ final class ArisSpeaker {
         guard ArisQuiet.voiceMayPlay(muted: ArisQuietGate.muted, preview: preview) else { return }
         let spoken = ArisSpeech.spokenPart(of: text)
         guard !spoken.isEmpty else { return }
+        echo = echo.starting(spoken, at: ProcessInfo.processInfo.systemUptime)
         if let key = Self.cloudKey() {
             let mine = generation
             if await speakWithElevenLabs(spoken, key: key) { return }
@@ -140,6 +149,7 @@ final class ArisSpeaker {
             return
         }
         let mine = generation
+        let sentences = remembering(sentences)
         // No key (or ElevenLabs resting): the system voice, each sentence as it arrives (audit voice-imp-1: it used
         // to wait for the whole answer, silent for as long as the AI worked), and never after a stop (audit voice-3:
         // stopped or overtaken while the answer was still being written, it then read the abandoned answer aloud).
@@ -229,6 +239,20 @@ final class ArisSpeaker {
         await speakWithSystemVoice(cloudSentences.joined(separator: " "))
     }
 
+    /// The answer's sentences, each remembered as said (one utterance) as it passes on to the voice.
+    private func remembering(_ source: AsyncStream<String>) -> AsyncStream<String> {
+        echo = echo.starting("", at: ProcessInfo.processInfo.systemUptime)
+        let (passed, next) = AsyncStream.makeStream(of: String.self)
+        Task { @MainActor [weak self] in
+            for await sentence in source {
+                if let self { self.echo = self.echo.adding(sentence, at: ProcessInfo.processInfo.systemUptime) }
+                next.yield(sentence)
+            }
+            next.finish()
+        }
+        return passed
+    }
+
     /// Someone started talking over Aris: 10 dB down at once.
     func duck() {
         restoring?.cancel()
@@ -271,6 +295,9 @@ final class ArisSpeaker {
         player.stop()
         onLevel?(0)
         meter.set(0)
+        // Cut off: what was already in the output still plays out (its tail is waited for as after any end).
+        if isPlaying { stoppedAt = .now }
+        isPlaying = false
         resume()
     }
 
@@ -344,6 +371,7 @@ final class ArisSpeaker {
         idleStop = nil
         if duckedAt == nil { player.volume = 1 }
         progress.start(generation)
+        isPlaying = true
     }
 
     /// Schedules one buffer of the speak() `voice` (a generation); an empty buffer means the voice has sent
@@ -426,6 +454,8 @@ final class ArisSpeaker {
         finished = nil
         onLevel?(0)
         meter.set(0)
+        if isPlaying { stoppedAt = .now }
+        isPlaying = false
         continuation.resume()
         stopEngineSoon()
     }

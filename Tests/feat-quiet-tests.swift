@@ -221,7 +221,7 @@ private func quietWiringTests() {
           "wiring: the controller's one speak() asks the gate before any voice plays")
     check(controller.contains("speaking = silentSpeech || !ArisQuietGate.maySpeak(heard: session.heard)"),
           "wiring: an answer still being written is only read aloud when the gate allows it")
-    check(controller.contains("if lastVoiceAt != nil, ArisQuietLive.shared.heardUser() { Self.heardSound?.play() }"),
+    check(controller.contains("voiceHeard: lastVoiceAt != nil), ArisQuietLive.shared.heardUser() { Self.heardSound?.play() }"),
           "wiring: the heard-you tick asks, and a muted Aris shows its one-time note there")
     check(controller.contains("if let muted = await mutedReading(heard: heard, korean: korean) { return muted }"),
           "wiring: 읽어줘 while muted says it cannot read aloud, never that it read")

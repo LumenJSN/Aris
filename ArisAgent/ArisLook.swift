@@ -4,7 +4,8 @@
 //
 //  What the user means by "이거": the front app and window, the selected text (and whether it can be
 //  replaced), else the browser's front tab, else the front window's text (aris-tools screen, Vision).
-//  Gathered here because the notch app is sandboxed. Password apps are never read.
+//  Gathered here because the notch app is sandboxed. Password managers and Keychain Access are read like any app
+//  (the owner, 2026-11-16); a password field's value never is.
 //  A look asks macOS for nothing (VM bug 2): it reads other apps' elements only while aris-agent already has
 //  Accessibility, and captures only while it may already record the screen. What it did without is in `needs`, and the
 //  lines for the AI are apart from the context (`unread`, `unselected`), for the app to use or leave out: the app knows
@@ -69,9 +70,6 @@ struct ArisLook {
             return ArisLook(app: "?", window: nil, selection: nil, editable: false, tab: nil, screen: nil)
         }
         let id = front.bundleId?.lowercased() ?? ""
-        guard !isPrivateApp(id) else {
-            return ArisLook(app: front.name, window: nil, selection: nil, editable: false, tab: nil, screen: nil)
-        }
         // Asked without a prompt, and as macOS has them now: a switch turned on while the agent runs counts at once.
         let trusted = AXIsProcessTrusted()
         let allowed = ArisScreenAccess.allowed(tools: tools, environment: environment)
@@ -147,9 +145,6 @@ struct ArisLook {
         var lines: [String] = []
         var found: AXUIElement?
         if trusted, AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(mouse.x), Float(mouse.y), &found) == .success, let found {
-            // The front app may be fine while the pointer is over a password manager's window.
-            var owner: pid_t = 0
-            if AXUIElementGetPid(found, &owner) == .success, isPrivate(pid: owner) { return nil }
             var element: AXUIElement? = found
             for _ in 0..<3 {
                 guard let current = element else { break }
@@ -164,30 +159,10 @@ struct ArisLook {
             }
         }
         let x = Int(mouse.x - around.width / 2), y = Int(mouse.y - around.height / 2)
-        let capture = CGRect(x: CGFloat(x), y: CGFloat(y), width: around.width, height: around.height)
-        if privateWindow(in: capture) { return lines.isEmpty ? nil : lines.joined(separator: "\n") }
         if records, let text = tool(tools, ["screen", "--around", "\(x),\(y),\(Int(around.width)),\(Int(around.height))"], environment) {
             lines.append("Text around the pointer:\n\(text)")
         }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
-    }
-
-    /// Password apps are never read (the one list shared with screen capture, `ArisCaptureRules`).
-    static func isPrivateApp(_ bundleId: String?) -> Bool { ArisCaptureRules.isPrivate(bundleId) }
-
-    private static func isPrivate(pid: pid_t) -> Bool {
-        isPrivateApp(ArisFrontLive.bundleId(pid))
-    }
-
-    /// Whether any on-screen window of a private app overlaps this rect (top-left screen coordinates).
-    private static func privateWindow(in rect: CGRect) -> Bool {
-        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-        return windows.contains { window in
-            guard let pid = window[kCGWindowOwnerPID as String] as? pid_t, isPrivate(pid: pid),
-                  let bounds = window[kCGWindowBounds as String] as? NSDictionary,
-                  let frame = CGRect(dictionaryRepresentation: bounds) else { return false }
-            return frame.intersects(rect)
-        }
     }
 
     /// The value as an element, when it is one (an app can answer with anything; a wrong cast would crash the agent).

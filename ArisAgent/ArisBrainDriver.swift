@@ -361,6 +361,8 @@ final class ArisClaudeDriver: ArisBrainDriver {
         if rest.first == "routine" { return false }
         // Aside: the agent marks this thread itself, before Aside runs.
         if rest.first == "aside" { return false }
+        // A session's list or a prompt sent: the agent answers in fixed words (its folders and states are Aris's own hooks').
+        if rest.first == "session" { return false }
         // A message: the agent decides and sends it, and says back only fixed words (ArisMessageGate.reported).
         if ArisTurnGate.isAgentMessage(rest) { return false }
         // A write handed to the agent (ArisHandOff), which answers it in fixed words; when it fails, the agent marks
@@ -474,7 +476,8 @@ final class ArisClaudeDriver: ArisBrainDriver {
     private func common(settings: String = #"{"disableAllHooks":true}"#) -> [String] {
         ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
          "--include-partial-messages", "--no-session-persistence",
-         "--model", model, "--effort", "low",
+         // Sonnet at medium for a normal turn, Opus at high for one that looks things up (ArisThinking).
+         "--model", model, "--effort", ArisThinking.claudeEffort(model: model),
          "--permission-mode", "dontAsk", "--permission-prompts", "none",
          "--setting-sources", "", "--settings", settings,
          // No MCP servers or claude.ai connectors: their tool lists made every request seconds slower (and the

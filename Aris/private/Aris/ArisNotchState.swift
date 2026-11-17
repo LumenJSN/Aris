@@ -30,6 +30,8 @@ final class ArisNotchState: ObservableObject {
     var cardWaiting: Bool { current.hasQuestion }
     var conversing: Bool { current.conversing }
     var listeningPaused: Bool { current.listeningPaused }
+    var wakeLapRunning: Bool { current.wakeLapRunning }
+    var wakeHeard: Bool { current.wakeHeard }
 
     private init() {
         let aris = ArisController.shared
@@ -45,6 +47,7 @@ final class ArisNotchState: ObservableObject {
             aris.$taskJustFinished.map { _ in () }.eraseToAnyPublisher(),
             aris.$inConversation.map { _ in () }.eraseToAnyPublisher(),
             aris.$pausedForOtherAudio.map { _ in () }.eraseToAnyPublisher(),
+            aris.$wakeLap.map { _ in () }.eraseToAnyPublisher(),
             ArisTeamModel.shared.$made.map { _ in () }.eraseToAnyPublisher(),
             // The dictation pill's switch: the notch shows dictation again when it is turned off.
             Defaults.publisher(.arisDictationPill, options: []).map { _ in () }.eraseToAnyPublisher(),
@@ -67,6 +70,7 @@ final class ArisNotchState: ObservableObject {
                           dictationCopied: aris.dictation == .typed && ArisDictationState.shared.copied,
                           cardWaiting: ArisTeamModel.shared.made != nil,
                           dictationQuiet: ArisDictationPillRules.notchQuiet(pillOn: ArisDictationPillGate.on, dictating: aris.dictation != nil,
-                                                                            endedDictation: aris.endedDictation, idle: aris.session.phase == .idle))
+                                                                            endedDictation: aris.endedDictation, idle: aris.session.phase == .idle),
+                          wakeLap: aris.wakeLap)
     }
 }

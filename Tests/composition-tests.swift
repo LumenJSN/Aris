@@ -4,12 +4,11 @@ import CoreGraphics
 func runCompositionTests() {
     typealias D = ArisNotchDecisions
     // 1. Closed content, first match wins.
-    check(D.closedContent(.init(notice: true, starMode: .turn, dueAlert: true, timer: true, claude: true, music: true)) == .notice, "closed: the notice wins")
-    check(D.closedContent(.init(starMode: .tasks, dueAlert: true, claude: true, music: true)) == .star(.tasks), "closed: then the star band")
-    check(D.closedContent(.init(dueAlert: true, timer: true, claude: true, music: true)) == .dueAlert
-          && D.closedContent(.init(timer: true, claude: true, music: true)) == .timer
+    check(D.closedContent(.init(notice: true, starMode: .turn, timer: true, claude: true, music: true)) == .notice, "closed: the notice wins")
+    check(D.closedContent(.init(starMode: .tasks, timer: true, claude: true, music: true)) == .star(.tasks), "closed: then the star band")
+    check(D.closedContent(.init(timer: true, claude: true, music: true)) == .timer
           && D.closedContent(.init(claude: true, music: true)) == .claude && D.closedContent(.init(music: true)) == .music
-          && D.closedContent(.init()) == .empty, "closed: due alert, timer, Claude, music, nothing")
+          && D.closedContent(.init()) == .empty, "closed: timer, Claude, music, nothing (a deadline's alert is on the notice pill, never the band)")
     check(D.musicShowing(liveActivity: true, playing: false, idle: false, expansionShown: false, expansionIsMusic: false)
           && !D.musicShowing(liveActivity: true, playing: false, idle: true, expansionShown: false, expansionIsMusic: false)
           && !D.musicShowing(liveActivity: false, playing: true, idle: false, expansionShown: false, expansionIsMusic: false)

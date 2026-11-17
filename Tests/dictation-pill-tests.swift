@@ -79,11 +79,7 @@ private func pillSizeTests() {
         (.transcribing(.done), CGSize(width: 30, height: 30), "typed hold 30 × 30"),
     ]
     for (phase, size, name) in sizes { check(R.size(phase) == size, "pill size: \(name)") }
-    check(R.size(.recovered(String(repeating: "a", count: 41))) == CGSize(width: 282, height: 92), "pill size: recovered under 42 → 282 × 92")
-    check(R.size(.recovered(String(repeating: "a", count: 42))) == CGSize(width: 326, height: 110), "pill size: recovered 42 → 326 × 110")
-    check(R.size(.recovered(String(repeating: "a", count: 89))) == CGSize(width: 326, height: 110), "pill size: recovered 89 → 326 × 110")
-    check(R.size(.recovered(String(repeating: "a", count: 90))) == CGSize(width: 364, height: 130), "pill size: recovered 90 → 364 × 130")
-    check(R.size(.recovered(String(repeating: "😀", count: 21))) == CGSize(width: 326, height: 110), "pill size: recovered counts UTF-16 as measured (21 emoji = 42)")
+    recoveredCardTests()
     check(R.radius == 24 && R.showDuration == 0.15 && R.hiddenScale == 0.8 && R.sizeDuration == 0.15, "pill: radius 24, show/hide 0.15 s from 0.8, sizes 0.15 s")
     check(R.windowSize == CGSize(width: 540, height: 700) && R.parkAfter == .seconds(12), "pill: window at most 540 × 700, parked after 12 s")
     check(R.gradientBorder(.idle) && R.gradientBorder(.recording(handsFree: false)) && !R.gradientBorder(.error("x")),
@@ -269,4 +265,83 @@ private func pillWiringTests() {
         let text = pillSource("Aris/private/Aris/Dictation/\(file).swift").lowercased()
         check(!text.isEmpty && !text.contains("voice" + "os"), "pill: \(file) says 'measured', never the reference app's name")
     }
+}
+
+// MARK: - The recovered words' card (pick B: fitted to its words)
+
+private func recoveredCardTests() {
+    typealias C = ArisDictationPillRecoveredLayout
+    typealias R = ArisDictationPillRules
+    let short = "인성이식 되는... 안녕."
+    let medium = "내일 오후 세 시에 디자인 리뷰 있으니까 슬라이드 미리 보내 줘."
+    let long = "오늘 회의 정리예요. 출시 날짜는 다음 달 둘째 주로 미뤄요. 온보딩은 권한 세 가지만 먼저 묻기로 했어요. 알림 카드는 노치 아래에 띄우고, 받아쓰기 알약은 화면 아래 가운데에 둬요."
+    let veryLong = String(repeating: long + " ", count: 2)
+
+    check(C.minContentWidth == 220 && C.maxContentWidth == 340 && C.radius == 18, "recovered card: content 220 to 340 wide, radius 18")
+    check(C.paddingTop == 11 && C.paddingTrailing == 10 && C.paddingBottom == 13 && C.paddingLeading == 16 && C.gap == 6,
+          "recovered card: padding 11 10 13 16, 6 between header and words")
+    check(C.closeSize == 22 && C.checkSize == 12 && C.headerFontSize == 12 && C.keyMinWidth == 22 && C.keyHeight == 18
+          && C.keyPadding == 4 && C.keyRadius == 5 && C.keyFontSize == 11, "recovered card: 22 ✕, 12 check, 12 / 500 header, ⌘V key ≥ 22 × 18, 0 4, r5, 11 / 600")
+    check(C.bodyFontSize == 14 && abs(C.lineHeight - 20.3) < 0.001 && C.maxLines == 4 && C.fadeMax == 16 && C.bodyRadius == 8 && C.bodyOutset == 6,
+          "recovered card: words 14 / 500 ×1.45, at most 4 lines (81), 16 fade, hover r8 6 past the words")
+    check(C.growDuration == 0.3 && C.startSize == CGSize(width: 80, height: 30) && C.startRadius == 15 && C.contentFade == 0.16
+          && C.contentDelay == 0.11 && C.leaveDuration == 0.16 && C.leaveScale == 0.96,
+          "recovered card: grows from 80 × 30 r15 in 300 ms, contents in 160 ms after 110 ms, leaves in 160 ms to .96")
+
+    // Fitted to the words: no fixed boxes.
+    for (name, text) in [("short", short), ("medium", medium), ("long", long), ("very long", veryLong), ("one word", "네"),
+                         ("English", "Can you tidy up two drafts and send them over before the design review at three tomorrow?")] {
+        for english in [false, true] {
+            let fit = C.fit(text, english: english, again: false)
+            let w = fit.size.width - C.paddingLeading - C.paddingTrailing
+            check(w >= 220 && w <= 340, "recovered card: \(name) content width \(Int(w)) within 220…340 (\(english ? "en" : "ko"))")
+            check(fit.size.width >= C.headerWidth(english: english, again: false) + 26 || w == 340,
+                  "recovered card: \(name) as wide as its header (\(english ? "en" : "ko"))")
+            // No copy button: the card is exactly header + 6 + the words' box, inside its padding.
+            let words = CGFloat(min(fit.lines, 4)) * C.lineHeight + 4
+            check(abs(fit.size.height - (11 + 22 + 6 + words + 13)) < 0.001, "recovered card: \(name) height is header + words, nothing else (\(english ? "en" : "ko"))")
+            check(R.size(.recovered(text), english: english) == fit.size, "recovered card: the pill's size is the card's (\(name))")
+        }
+    }
+    let one = C.fit(short, english: false, again: false)
+    check(one.lines == 1 && abs(one.size.height - (56 + 20.3)) < 0.001, "recovered card: the owner's words → one line, 76.3 tall")
+    check(one.size.width < 300, "recovered card: short words make a narrow card (\(Int(one.size.width)))")
+    let longFit = C.fit(long, english: false, again: false)
+    check(longFit.size.width == 366 && longFit.lines == 3 && !longFit.scrolls, "recovered card: long words → 340 wide, 3 lines, no scroll")
+    let veryFit = C.fit(veryLong, english: false, again: false)
+    check(veryFit.scrolls && abs(veryFit.bodyHeight - (4 * 20.3 + 4)) < 0.001 && abs(veryFit.size.height - (56 + 81.2)) < 0.001,
+          "recovered card: past 4 lines it scrolls at 81 (the card stops growing)")
+    check(C.fit("", english: false, again: false).size.height >= 76, "recovered card: never shorter than one line")
+
+    // Hangul wraps at spaces (keep-all), never inside a word.
+    let broken = C.lines(long, width: 340)
+    check(broken.count == 3 && broken.dropLast().allSatisfy { $0.hasSuffix(" ") }, "recovered card: Korean lines break after a space")
+    let words = Set(long.split(separator: " ").map(String.init))
+    for line in broken {
+        let pieces = line.split(separator: " ").map(String.init)
+        check(pieces.allSatisfy(words.contains), "recovered card: no Korean word cut across lines (\(line.prefix(8))…)")
+    }
+    check(C.lines(String(repeating: "가", count: 60), width: 220).count > 1, "recovered card: a word longer than the line still wraps")
+
+    // The label swap after a click (the card stays; nothing closes it).
+    check(C.label(english: false, again: false) == "복사해 뒀어요" && C.label(english: false, again: true) == "다시 복사했어요",
+          "recovered card: 복사해 뒀어요 → 다시 복사했어요 after a click")
+    check(C.label(english: true, again: false) == "Copied" && C.label(english: true, again: true) == "Copied again"
+          && C.tail(english: true) == "to paste" && C.tail(english: false) == "로 붙여 넣기" && C.key == "⌘V",
+          "recovered card: English header Copied · ⌘V to paste / Copied again")
+    check(C.againLinger == .milliseconds(1200), "recovered card: the swapped label holds 1.2 s")
+    check(C.headerWidth(english: false, again: true) > C.headerWidth(english: false, again: false), "recovered card: the longer label widens the header")
+    check(C.size(short, english: false, again: true).width >= C.size(short, english: false, again: false).width,
+          "recovered card: the card refits to the longer label")
+
+    // The bottom fade: only while there is more below, at most 16.
+    check(C.fade(offset: 0, visible: 85, content: 60) == 0, "recovered card: words that fit don't fade")
+    check(C.fade(offset: 0, visible: 85, content: 200) == 16, "recovered card: more below → 16")
+    check(C.fade(offset: 105, visible: 85, content: 200) == 10, "recovered card: near the end the fade shrinks to what is left")
+    check(C.fade(offset: 115, visible: 85, content: 200) == 0, "recovered card: at the end, no fade")
+
+    // Where it stands and what takes the pointer: the card's own rect, centred where the pill stands.
+    let rect = R.pillRect(longFit.size)
+    check(rect.minY == R.bottomPadding && abs(rect.midX - R.windowSize.width / 2) < 0.001 && rect.size == longFit.size,
+          "recovered card: centred, its bottom where the pill's is, the pointer area the card")
 }

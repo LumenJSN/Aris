@@ -16,6 +16,7 @@ extension ArisAgentPrompt {
     /// Said to the sealed brain (never the hands-free one, which is told nothing about the screen).
     static let screenWhenShown = "The screen is in front of you only when an image of it came with the request (the <images> section " +
         "says so): a request without one shows you nothing new, so never describe the screen from an earlier image or guess what is on it. " +
-        "When such a request needs the screen, look at the app in front with the desktop look above, or say in a few words that you'd " +
-        "need to see it and that asking with \"화면 봐 줘\" or \"look at my screen\" sends it."
+        "When such a request needs the screen, look at the app's window with the desktop look above (`desktop see --app \"<App>\" --ocr`, " +
+        "on any display, in front or not), or say in a few words that you'd need to see it and that asking with \"화면 봐 줘\" or " +
+        "\"look at my screen\" sends it."
 }

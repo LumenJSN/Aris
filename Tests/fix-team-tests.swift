@@ -363,12 +363,13 @@ private func teammateFolderTests() {
     check(F.isMissing(nil) && F.isMissing("") && F.isMissing("  ") && !F.isMissing("~/proj"), "imp-2: no folder, or only spaces, is a missing folder")
     check(F.proposed([session("/Users/x/old", 900), session("/Users/x/proj/", 30), session("/Users/x/codex", 5, agent: "codex")], home: home) == "/Users/x/proj",
           "imp-2: the most recently active Claude Code session's folder is proposed")
-    check(F.proposed([session("/Users/x", 5), session("/tmp/work", 6), session("/Users/x/Library/Application Support/a", 7), session("/Users/xy/proj", 8)], home: home) == nil
-          && F.proposed([], home: home) == nil,
-          "imp-2: never the home folder itself, ~/Library or a folder outside home; with no session nothing is proposed")
+    // ask-claude: the home folder itself is proposed too, and with no session to go by it is the one (ask-claude-tests).
+    check(F.proposed([session("/tmp/work", 6), session("/Users/x/Library/Application Support/a", 7), session("/Users/xy/proj", 8)], home: home) == home
+          && F.proposed([], home: home) == home,
+          "imp-2: never ~/Library or a folder outside home; with no session to go by, the home folder")
     for korean in [true, false] {
-        check(F.proposingStep("/Users/x/proj", home: home, korean: korean).contains("~/proj") && F.noFolder(korean: korean).contains("~/Projects"),
-              "imp-2: the row names the proposed folder, and with none the line says how to name one (\(korean ? "ko" : "en"))")
+        check(F.proposingStep("/Users/x/proj", home: home, korean: korean).contains("~/proj"),
+              "imp-2: the row names the proposed folder (\(korean ? "ko" : "en"))")
     }
 }
 

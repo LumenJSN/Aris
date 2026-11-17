@@ -15,15 +15,7 @@ private let wedgeToken = String(repeating: "beef", count: 16)
 private func wedgeNow() -> Double { Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000 }
 
 private func wedgeFreePort() -> UInt16 {
-    let fd = socket(AF_INET, SOCK_STREAM, 0)
-    defer { close(fd) }
-    var address = sockaddr_in()
-    address.sin_family = sa_family_t(AF_INET)
-    address.sin_addr.s_addr = inet_addr("127.0.0.1")
-    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-    _ = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, length) } }
-    _ = withUnsafeMutablePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) } }
-    return UInt16(bigEndian: address.sin_port)
+    loopbackFreePort()
 }
 
 /// One request as Claude Code's http hook sends it, on a new connection: the status, the body and the milliseconds

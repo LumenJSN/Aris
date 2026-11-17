@@ -31,7 +31,7 @@ enum ArisMutedMark {
         case .star(.turn), .star(.parked): return earTaken ? .besideMark : .ear
         case .star(.tasks): return earTaken ? nil : .ear
         case .empty: return hasNotch ? nil : .strip
-        case .notice, .dueAlert, .timer, .claude, .music: return nil
+        case .notice, .timer, .claude, .music: return nil
         }
     }
 }

@@ -12,7 +12,10 @@ func runQAWakeTests() {
     check(A.blocker(A.State(idle: false)) == .busy && A.blocker(A.State(training: true)) == .training
           && A.blocker(A.State(listenerOpen: true)) == .listenerOpen && A.blocker(A.State(screenAway: true)) == .screenAway
           && A.blocker(A.State(permissionOK: false)) == .permission, "BUG-38: every guard has its reason")
-    check(A.blocker(A.State(conversationOpen: true, otherAudio: true)) == .otherAudio && A.blocker(A.State(otherAudio: true)) == nil,
+    // false-wake: another app playing pauses only the conversation's listening for any voice (the name still works,
+    // ArisWakeArm.listensForName); another app recording closes the microphone.
+    check(A.blocker(A.State(conversationOpen: true, otherAudio: true, micInUse: true)) == .otherAudio && A.blocker(A.State(otherAudio: true)) == nil
+          && A.blocker(A.State(conversationOpen: true, otherAudio: true)) == nil,
           "BUG-38: other audio holds only listening between turns")
     var log = A.Log()
     check(log.line(for: .screenAway) == "wake word not armed: the screen is locked or asleep" && log.line(for: .screenAway) == nil,

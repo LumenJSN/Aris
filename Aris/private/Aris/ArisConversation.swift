@@ -26,14 +26,14 @@ struct ArisConversation: Equatable {
     enum EndReason: String, Equatable {
         case donePhrase = "end phrase", escape = "esc", key = "talk key", silence, screenAway = "screen away"
         case dismissed = "닫기", tapped = "tap", dictation
+        /// The wake word opened it and nobody talked (ArisWakeDoubt): it closes as if it never opened.
+        case falseWake = "false wake"
+        /// Its own voice came back as turns (ArisEchoLoop): it stops listening rather than answer itself.
+        case echo
     }
 
     static let defaultSilenceSeconds = 30
 
-    /// A turn the wake word started while another app played sound (a video, a call, music) counts as hands-free: the
-    /// "아리스" may have come from it, so the turn acts only as far as anyone's words may (ArisHandsFree: no vouch, no
-    /// standing permission, no memory in or out).
-    static func wakeTurnIsHandsFree(otherAudio: Bool) -> Bool { otherAudio }
     /// However the conversation goes, it ends this long after it opened (security review C1: what the microphone
     /// hears without a key or the name has the user's say for a bounded time).
     static let longestSeconds: Double = 600

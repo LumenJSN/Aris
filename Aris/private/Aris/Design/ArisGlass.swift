@@ -52,6 +52,34 @@ enum ArisGlass {
     static let sliverVisibility = Animation.timingCurve(0.4, 0, 0.2, 1, duration: 0.18)
 }
 
+/// The notice pill under the notch (the owner's pick D, 2026-11-16; sizes and timing: ArisNoticePillLayout). Its body is the
+/// dictation pill's own (ArisDictationPillShell: 22,22,27 → 12,12,15 at .96, the diagonal highlight ring) under the
+/// recovered card's shadow (.38); a deadline wears the alert's colours, the orb's glow a day before and red three hours
+/// before; a teammate's question the unread blue.
+enum ArisNoticePillLook {
+    static var shadow: Color { ArisDictationPillRecoveredTokens.dark.shadow }
+    static let shadowRadius: CGFloat = 10
+    static let shadowY: CGFloat = 6
+    static let title = ArisGlass.text
+    static var body: Color { .white.opacity(ArisNoticePillLayout.bodyOpacity) }
+    static var time: Color { .white.opacity(ArisNoticePillLayout.timeOpacity) }
+    static var cardText: Color { .white.opacity(ArisNoticePillLayout.cardTextOpacity) }
+    /// The deadline alert's red, three hours before.
+    static let dueRed = Color(red: 1, green: 0.27, blue: 0.23)
+
+    static func dueTint(_ alert: ArisDueAlert) -> Color { alert == .hoursBefore ? dueRed : ArisOrb.glow }
+
+    /// A round mark's fill and ring under its glyph (the calendar .2, the mail .22; the ring .35 at half a point).
+    static let calendarFill = 0.2
+    static let mailFill = 0.22
+    static let markRing = 0.35
+    static let markRingWidth: CGFloat = 0.5
+    static var mail: Color { ArisSideStyle.unreadBlue }
+    static let mailGlyph = Color(.sRGB, red: 170 / 255, green: 200 / 255, blue: 1, opacity: 1)
+    /// The card's quieter button and the ✕.
+    static var secondaryFill: Color { .white.opacity(ArisNoticePillLayout.closeFill) }
+}
+
 /// The glass behind the notch. `open` and `hidden` are the notch's state; which glass and which black is the look's
 /// (ArisGlassLook, a hidden preference read each time the notch opens; unset, the shipped one).
 struct ArisGlassSurface: View {

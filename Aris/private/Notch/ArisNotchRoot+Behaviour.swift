@@ -4,7 +4,7 @@
 //
 //  How one display's notch reacts: hover (open after the minimum hover time, close 350 ms after the pointer
 //  leaves — never while an Aris turn holds the notch, BUGS-notch N1), taps, the right-click menu, swipes, drops, and
-//  The user's Aris and Claude rules (approvals, notices, hot keys, a turn opening and putting back the notch).
+//  The user's Aris and Claude rules (approvals, hot keys, a turn opening and putting back the notch).
 //
 
 import AppKit
@@ -249,22 +249,6 @@ extension ArisNotchRoot {
         if closed { open() }
     }
 
-    func noticeChanged(_ id: String?) {
-        guard id != nil else {
-            guard openedForNotice else { return }
-            openedForNotice = false
-            if !approvalsPending && ApprovalAutoClose.shouldClose(isOpen: isOpen, hovering: hovering, openedForApproval: false,
-                                                                  showingClaude: navigation.currentView == .claude) {
-                vm.close()
-            }
-            return
-        }
-        guard pointerIsHere, !approvalsPending, !aris.isActive, closed, !hidden else { return }
-        openedForNotice = true
-        navigation.currentView = .claude
-        open()
-    }
-
     /// A past turn was pressed in the 기록 tab (ArisController.resume): the notch on the pointer's display opens on
     /// it without taking the keyboard.
     func historyRestored() {
@@ -292,7 +276,7 @@ extension ArisNotchRoot {
 
     var turnNeedsPanel: Bool {
         ArisNotchDecisions.turnNeedsPanel(training: aris.isTraining, dictating: aris.isDictating, phase: aris.phase,
-                                          dictationCopied: aris.dictationCopied)
+                                          dictationCopied: aris.dictationCopied, wakeHeard: aris.wakeHeard)
     }
 
     func arisActiveChanged(_ active: Bool) {
@@ -311,8 +295,10 @@ extension ArisNotchRoot {
         endTask?.cancel()
         endTask = Task { @MainActor in
             let controller = ArisController.shared
-            let wait: Duration = controller.endedDictation ? .zero : ArisNotch.readingTime(for: controller.session.reply)
-            try? await Task.sleep(for: wait)
+            // A hand-off ("작업할게요", "맡았어요"): the line was said, the notch goes now and the jobs' pill under it says
+            // how the work goes (the owner, 2026-11-16: it stayed open).
+            let handedOff = controller.handedOff
+            try? await Task.sleep(for: ArisNotch.endWait(handedOff: handedOff, dictation: controller.endedDictation, reply: controller.session.reply))
             await ArisWidgetModel.shared.holdWhileShown()
             // The receipt under the answer keeps its five seconds (ArisReceiptModel).
             await ArisReceiptModel.shared.holdWhileShown()
@@ -322,7 +308,7 @@ extension ArisNotchRoot {
                 try? await Task.sleep(for: .milliseconds(300))
             }
             let started = ContinuousClock.now
-            while hovering, ContinuousClock.now - started < ArisNotch.longestHover, !Task.isCancelled {
+            while ArisNotch.waitsForHover(handedOff: handedOff), hovering, ContinuousClock.now - started < ArisNotch.longestHover, !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(300))
             }
             guard !Task.isCancelled, !aris.isActive else { return }
@@ -331,7 +317,7 @@ extension ArisNotchRoot {
             // Nothing holds the notch now: with the pointer off it, it closes whoever opened it (ArisNotch.Ending.whenFree).
             let away = ArisNotch.pointerAway(free: mayCloseAutomatically, measured: surfaceFrame.width > 0 && windowFrame != nil,
                                              onNotch: pointerOnNotch(slack: ArisNotchPointer.slack))
-            switch ArisNotch.ending(openedNotch: opened, isOpen: isOpen).whenFree(pointerAway: away) {
+            switch ArisNotch.ending(openedNotch: opened, isOpen: isOpen, handedOff: handedOff).whenFree(pointerAway: away) {
             case .close: vm.close()
             case .restoreTab: navigation.currentView = pageBeforeAris ?? .home
             case .stay: break
@@ -379,7 +365,6 @@ extension ArisNotchRoot {
             return
         }
         openedForApproval = false
-        openedForNotice = false
         guard arisOpenedNotch != true else { return }
         let page = navigation.currentView
         if page == .shelf || (page == .claude && !approvalsPending) { navigation.currentView = .home }
@@ -397,7 +382,6 @@ struct ArisNotchBehaviour: ViewModifier {
                 let first = approvals.first.map { "\($0.id)" }
                 DispatchQueue.main.async { root.approvalsChanged(first) }
             }
-            .onChange(of: root.claude.transientPeek?.id) { _, id in root.noticeChanged(id) }
             .onReceive(NotificationCenter.default.publisher(for: .clipboardHotKey)) { _ in root.clipboardHotKey() }
             .onReceive(NotificationCenter.default.publisher(for: .arisHistoryRestored)) { _ in root.historyRestored() }
             .onReceive(NotificationCenter.default.publisher(for: .claudeAnswerHotKey)) { _ in root.claudeAnswerHotKey() }
@@ -408,6 +392,8 @@ struct ArisNotchBehaviour: ViewModifier {
             // turn already active, and a plain onChange would never open the notch for it (bug hunt 2026-11-08).
             .onChange(of: root.aris.isActive, initial: true) { _, active in root.arisActiveChanged(active) }
             .onChange(of: root.aris.phase) { root.arisPhaseChanged() }
+            // The user talking in the wake word's quiet lap: the notch opens on the open curve, the rim's light going on.
+            .onChange(of: root.aris.wakeHeard) { root.arisPhaseChanged() }
             .onChange(of: root.aris.cardWaiting, initial: true) { _, waiting in root.cardWaitingChanged(waiting) }
             .onChange(of: root.vm.notchState) { _, state in root.notchStateChanged(state) }
             .onChange(of: root.vm.dropInteraction.anyDropZoneTargeting) { _, active in root.dropTargetingChanged(active) }

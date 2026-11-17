@@ -24,6 +24,8 @@ enum ArisLocalReadPolicy {
         // `read`: one file's text (a path, or the files on the shelf or selected in Finder: ArisFileText).
         "files": ["find", "read"],
         "obsidian": ["search"],
+        // The user's Devin sessions, read only from Devin's own records (ArisDevinRead): what they were asked and answered.
+        "devin": ["sessions"],
     ]
 
     /// The commands whose output is outside text, whatever their verb (a wrong verb taints too: fail closed).
@@ -43,12 +45,14 @@ enum ArisLocalReadPolicy {
     static let storeFragments = ["/library/messages", "/library/mail", "/group containers/group.com.apple.notes",
                                  "/library/containers/com.apple.mail", "/library/application support/addressbook",
                                  // Peekaboo's snapshot store: other apps' windows, element by element (I12).
-                                 "/.peekaboo"]
+                                 "/.peekaboo",
+                                 // Devin's records and its sign-in (only `devin sessions` reads them, masked: ArisDevinRead).
+                                 "/.local/share/devin"]
 
     /// The same stores as folders under the home folder, for the brains' Read and read_file denies (I4): only
     /// aris-tools reads them, through its redaction and limits.
     static let storeFolders = ["Library/Messages", "Library/Mail", "Library/Group Containers/group.com.apple.notes",
-                               "Library/Containers/com.apple.mail", ".peekaboo"]
+                               "Library/Containers/com.apple.mail", ".peekaboo", ".local/share/devin"]
 
     /// Whether aris-agent (and so every command its AIs run) has Full Disk Access, for the settings and onboarding
     /// row: the system TCC database (no one's content) is opened and closed at once, nothing read. Never prompts.

@@ -36,6 +36,8 @@ struct ArisLiveSettings: View {
     @ObservedObject private var importer = ArisMemoryImportModel.shared
     @ObservedObject private var skills = ArisSkillsModel.shared
     @ObservedObject private var dropModel = ArisDropModel.shared
+    /// 호출어 녹음 and 하루 소리 모으기 (ArisWakeRecordRows).
+    @ObservedObject private var wakeRecord = ArisWakeRecordLive.shared
     /// AI 서비스 (design D) draws from its own state (ArisAIServicesLive).
     @ObservedObject private var aiServices = ArisAIServicesLive.shared.model
 
@@ -248,6 +250,7 @@ struct ArisLiveSettings: View {
         var s = ArisSettingsSnapshot()
         s.wakeWord = wakeWord
         s.hasVoiceModel = aris.hasWakeModel
+        s.wakeRecord = wakeRecord.summary
         s.busy = aris.isActive
         s.talkCaps = Self.caps(.talkToAris)
         s.minutes = minutes
@@ -269,6 +272,8 @@ struct ArisLiveSettings: View {
         s.voiceName = voiceName
         s.speed = speed
         s.listenEngine = ArisHearingShown.line()
+        // 부르기's note says where the wake check hears: Apple's servers on the older engine without an on-device model.
+        ArisWakeHonesty.serverHearing = ArisHearingShown.wakeCheckOnServer()
         s.words = words
         s.learned = learned
         s.brainPolish = brainPolish
@@ -371,6 +376,8 @@ struct ArisLiveSettings: View {
             await calendar.loadIfAuthorized()
         case .about: await ArisDataModel.shared.reload()
         case .memory: await memory.reload()
+        // 호출어 녹음's counts and whether 하루 소리 모으기's day is over.
+        case .aris: wakeRecord.refresh()
         case .features: await more.pageOpened()
         case .ai:
             await services.reload()
@@ -420,6 +427,9 @@ struct ArisLiveSettings: View {
         case .quietStart: quietHours = ArisQuietSpan.setting(start: text, current: quietHours)
         case .quietEnd: quietHours = ArisQuietSpan.setting(end: text, current: quietHours)
         case .claudeRing: claudeRing = ClaudeRingMode(stored: text).rawValue
+        case .wakeCollect:
+            wakeRecord.setCollecting(on ?? !wakeRecord.summary.collecting)
+            if on == false { overlay.show(ArisWakeRecordRows.collectOffToast) }
         case .teammateTerminal: teammateTerminal = ArisTerminalMemory.pinned(text) ?? ArisTerminal.automatic
         case .brain: brain = text
         case .computerEngine: computerEngine = text
@@ -588,6 +598,13 @@ struct ArisLiveSettings: View {
         case .learnWord(let text): changeLearned("accept", text, done: "‘\(text)’ 단어장에 넣었어요")
         case .dismissWord(let text): changeLearned("dismiss", text, done: "‘\(text)’ 다시 묻지 않을게요")
         case .forgetWord(let text): changeLearned("remove", text, done: "‘\(text)’ 지웠어요")
+        case .recordWakeCalls: overlay.sheet = .wakeRecord
+        case .clearWakeRecordings:
+            Task {
+                guard await wakeRecord.clearPressed() else { return }
+                overlay.show(ArisWakeRecordRows.clearedToast)
+            }
+        case .keepWakeRecordings: wakeRecord.cancelClear()
         }
     }
 
@@ -737,6 +754,8 @@ struct ArisLiveSettings: View {
             }
         case .featureDetail:
             featureSheet(overlay.feature)
+        case .wakeRecord:
+            ArisWakeRecordSheet(model: .shared) { overlay.sheet = nil }
         default:
             ArisDataSheet(kind: sheet, model: .shared)
         }

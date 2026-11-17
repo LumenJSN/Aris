@@ -522,6 +522,8 @@ final class ArisAPIHelper: @unchecked Sendable {
             let limit: TimeInterval = argv.first == "aside" ? asideWait : argv.first == "mcp" || argv.first == "desktop" ? 130 : argv.first == "skill" ? 130 + ArisSkillScript.timeout + 10 : argv.first == "note" ? 40
                 // A message: the send, then Messages' history watched for it, and one more try as a text (ArisMessageGate.sendLimit).
                 : argv.first == "message" ? ArisMessageGate.sendLimit
+                // A prompt into a Claude Code session: the user's card, then the checks and the typing (ArisSessionSend).
+                : argv.first == "session" ? ArisSessionSend.cardWait + 60
                 : ArisConvertWords.isLong(argv) ? ArisConvertWords.mediaLimit + 15 : 30
             // A conversion ends before this wait does (its own deadline, or this one less a margin).
             var environment = scrubbed(ProcessInfo.processInfo.environment)

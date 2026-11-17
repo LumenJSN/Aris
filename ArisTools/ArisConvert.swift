@@ -155,7 +155,8 @@ enum ArisConvert {
         var pages = 500
         /// All the new files of one call together.
         var outputBytes: Int64 = 2 << 30
-        /// The pictures of one merge together, from their headers before any is drawn.
+        /// The pictures of one merge together, from their headers before any is drawn: more are drawn smaller to fit
+        /// (every page keeps its size), never refused for being many.
         var mergePixels = 400_000_000
         static let standard = Limits()
     }
@@ -163,12 +164,14 @@ enum ArisConvert {
     /// Why a selector can't be used now, or nil: never in a background job (no one picked anything for it), and
     /// `--finder` only when Finder was in front as the user asked (else the selection may be an old one).
     /// The record must be this question's: kept as the user asked it, just before `turnStarted` (the turn's own credential
-    /// file, new each turn), or for a relayed line just now.
+    /// file, new each turn), or for a relayed line just now. `--made`: what a conversion made since this turn began
+    /// (`made`), or for a relayed line just now.
     static func selectorRefusal(_ selector: ArisConvertWords.Selector, environment: [String: String], state: ArisShelfFiles.State?,
-                                turnStarted: Date? = nil, now: Date = Date()) -> String? {
+                                made: ArisMadeFiles.State? = nil, turnStarted: Date? = nil, now: Date = Date()) -> String? {
         if environment[ArisConvertWords.taskKey] == "1" {
-            return "a background job can't use --finder or --shelf (nobody picked files for it): name the files' paths"
+            return "a background job can't use --finder, --shelf or --made (nobody picked files for it): name the files' paths"
         }
+        if selector == .made { return madeRefusal(made, turnStarted: turnStarted, now: now) }
         let start = turnStarted ?? now
         if let state, state.at > start.addingTimeInterval(5) || start.timeIntervalSince(state.at) > freshFor {
             return "what Aris knows of the shelf and Finder is from an earlier question: ask which files (or for a path)"
@@ -176,6 +179,26 @@ enum ArisConvert {
         guard selector == .finder else { return nil }
         return state?.front == "com.apple.finder" ? nil
             : "Finder wasn't in front when the user asked, so its selection may be an old one: ask which files (or for a path)"
+    }
+
+    /// `--made`: a conversion of this question must have made files (since `turnStarted`, else within freshFor).
+    private static func madeRefusal(_ made: ArisMadeFiles.State?, turnStarted: Date?, now: Date) -> String? {
+        let fresh = made.map { made in
+            turnStarted.map { made.at >= $0.addingTimeInterval(-1) } ?? (now.timeIntervalSince(made.at) <= freshFor)
+        } ?? false
+        guard let made, fresh, !made.made.isEmpty else {
+            return "no conversion in this question has made files yet, so --made picks nothing: convert or compress first (or name the files)"
+        }
+        return nil
+    }
+
+    /// The Finder selection in Finder's own name order (IMG_4101, IMG_4102 … IMG_4140; "2" before "10"), whatever order
+    /// Finder hands it over in: a merge's pages, and what a conversion makes, follow it.
+    static func finderOrder(_ paths: [String]) -> [String] {
+        paths.enumerated().sorted { a, b in
+            let order = (a.element as NSString).lastPathComponent.localizedStandardCompare((b.element as NSString).lastPathComponent)
+            return order == .orderedSame ? a.offset < b.offset : order == .orderedAscending
+        }.map(\.element)
     }
 
     /// Every file checked: a path inside the home folder, outside the protected places (links followed, the file's
@@ -270,5 +293,49 @@ enum ArisConvert {
         if options.maxSide != nil, options.percent != nil { throw ArisConvertError("give --max or --percent, not both") }
         options.pages = call.options["--pages"]
         return options
+    }
+}
+
+/// The files the last conversion made (`--made`), in the order they were made (the sources' order): kept by aris-tools
+/// itself in `~/.config/aris/aris/made.json` (0600, Aris's 0700 folder) when a conversion makes something, so "make
+/// these smaller and put them in one PDF" merges the smaller copies, never the originals, and no name reaches a brain.
+/// Absolute paths without control characters only, at most ArisConvertWords.mostPicked; stale after 30 minutes.
+enum ArisMadeFiles {
+    struct State: Equatable {
+        let made: [String]
+        let at: Date
+    }
+
+    static func file(home: String) -> URL {
+        URL(fileURLWithPath: home).appendingPathComponent(".config/aris/aris/made.json")
+    }
+
+    static func usable(_ paths: [String]) -> [String] {
+        Array(paths.filter { $0.hasPrefix("/") && $0.count <= 1_024 && !$0.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) }
+            .prefix(ArisConvertWords.mostPicked))
+    }
+
+    /// Replaced whole (written beside it, then renamed over it); best effort. Nothing made: nothing is kept.
+    static func save(_ paths: [String], home: String, now: Date = Date()) {
+        let made = usable(paths)
+        guard !made.isEmpty else { return }
+        let target = file(home: home), folder = target.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        guard let data = try? JSONSerialization.data(withJSONObject: ["made": made, "at": now.timeIntervalSince1970] as [String: Any]) else { return }
+        let temporary = folder.appendingPathComponent(".made-\(UUID().uuidString).tmp")
+        guard FileManager.default.createFile(atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600]) else { return }
+        if rename(temporary.path, target.path) != 0 { try? FileManager.default.removeItem(at: temporary) }
+    }
+
+    /// What was kept, unless it is stale (or not the user's own regular file).
+    static func state(home: String, now: Date = Date()) -> State? {
+        let target = file(home: home)
+        guard let values = try? target.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey]), values.isSymbolicLink != true,
+              values.isRegularFile == true, let data = try? Data(contentsOf: target),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let at = (object["at"] as? NSNumber)?.doubleValue else { return nil }
+        let date = Date(timeIntervalSince1970: at)
+        guard now.timeIntervalSince(date) < ArisShelfFiles.staleAfter, date.timeIntervalSince(now) < 60 else { return nil }
+        return State(made: usable(object["made"] as? [String] ?? []), at: date)
     }
 }

@@ -90,6 +90,8 @@
 //    POST /routine-tool {"turn", "words"}  ->  {"status", "output"}: aris-tools routine (the user's routines; ArisRoutineRoutes)
 //    POST /routine-step {"id", "local", "ok"?, "reply"?}  ->  {}: the app's answer for a routine's step offered to it (ArisRoutineHandBack)
 //    POST /aside-tool {"turn", "brief"}  ->  {"status", "output"}: aris-tools aside (website work for Aside), the same checks
+//    POST /session-tool {"turn", "words"}  ->  {"status", "output"}: aris-tools session (a prompt typed into one of the user's own
+//                Claude Code sessions after his card, ArisSessionSend), the same checks
 //    POST /desktop-tool {"turn", "words", "text"?}  ->  {"status", "output"}: aris-tools desktop (computer use), the same checks
 //                (its runner's ARIS_MCP_TURN and its process tree; ArisMCPCaller), through the one gate (ArisMCPPolicy)
 //    POST /arrange {"app": "Microsoft Excel", "count": 4}  ->  {} or {"error": "..."} (500): that many new
@@ -239,7 +241,7 @@ func ask(_ requested: ArisBrain, tier: ArisTier, prompt: String, request: String
     ArisWhyDesk.shared.asking(brain, instead: requested, on: ObjectIdentifier(connection))
     // Claude, agy and the API brain each have a sealed process of their own (agy's: no tools at all, ArisAgyRelay).
     let sealable = brain == .claude || brain == .antigravity || brain == .api
-    let runner = ArisAgentRunner.shared(brain: brain, model: brain.model(tier: tier), sealed: sealed && sealable,
+    let runner = ArisAgentRunner.shared(brain: brain, model: ArisThinking.model(brain, tier: tier), sealed: sealed && sealable,
                                         handsFree: handsFree && sealed && sealable)
     // What this turn's handed-off calls do (a Claude's writes, judged by the agent: ArisActionGate) is noted from here.
     ArisHandOffLedger.shared.startTurn(runner, underWay: runner.mcpTurn)
@@ -392,6 +394,8 @@ func relay(_ commands: [[String]], request: String, tier: ArisTier, handsFree: B
             }
             // Website work: the one Aside gate and its card, as on every brain (ArisAsideTool).
             if ArisAgyRelay.isAside(words) { return ArisAsideTool.relayed(words, turn: serviceTurn, critical: tier == .critical) }
+            // A prompt into one of the user's Claude Code sessions: the same card and checks as on every brain (ArisSessionSend).
+            if ArisSessionCall.isSession(words) { return ArisSessionRoutes.relayed(words, turn: serviceTurn) }
             if ArisAgyRelay.isSkill(words) {
                 return ArisSkillTool.relayed(words, turn: serviceTurn, skills: .live) { title in queue.async { stream(.skill(title), on: connection) } }
             }
@@ -589,8 +593,9 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
         // the screen is screenSeen (R1 = B: the user's own words still go as judged). Either restricts the turn (no fallback,
         // shortcut, vouch, teammates or dispatch). `request` is what the user actually said.
         // Outside text: model-written text, any caller but the app itself (it never shares the user's thread clean), and a
-        // context carrying a background job's result (done or failed: an untrusted job wrote it).
-        let flagged = object["untrusted"] as? Bool == true || peerFailure != nil || ArisImageRouting.carriesJobResults(context)
+        // context carrying a background job's result (done or failed: an untrusted job wrote it), or what a Claude Code
+        // session said (ClaudeSessionsContext: Claude Code wrote it from what it read).
+        let flagged = object["untrusted"] as? Bool == true || peerFailure != nil || ArisImageRouting.carriesJobResults(context) || ArisImageRouting.carriesSessionText(context)
         let untrusted = ArisImageRouting.untrusted(screenText: screen != nil, flagged: flagged, images: images, screenConversation: sawScreen)
         let outsideTextBefore = ArisImageRouting.taint(screenText: screen != nil, flagged: flagged, screenConversation: sawScreen) == .outsideText
         let request = (object["request"] as? String).map { String($0.prefix(maxText + maxAttachedText)) } ?? text
@@ -674,7 +679,13 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
                                                        screenText: screen != nil, attached: ArisMemoryText.ownWords(request) != request),
             teammate: jobTeammate?.id ?? "", job: object["task"] as? Bool == true ? ArisWorkDesk.taskLabel((object["title"] as? String).map { String($0.prefix(80)) } ?? "Aris") : ArisWorkDesk.conversationJob,
             offered: worked.picked.names, firstSteps: worked.picked.firstSteps), on: ObjectIdentifier(connection))
-        let noteBlock = [knowhow, mateBlock ?? ArisTeamPrompt.noteRule(teammate: false), mateBlock == nil ? ArisTeamPrompt.teamTruth : nil, ownNote, worked.block]
+        // Look first: whom a vague question about the user's own work goes to now (Claude Code, else another ready AI, else
+        // Aris digs itself); only on a turn that may hand work out.
+        let isTask = object["task"] as? Bool == true
+        let reach = dispatch.teammates && !isTask && !handsFree
+            ? ArisThinking.reachLine(handTo: ArisThinking.handOffBrain { ArisSealedOneShot.available($0) && brainHealth.isAvailable($0) })
+            : nil
+        let noteBlock = [knowhow, mateBlock ?? ArisTeamPrompt.noteRule(teammate: false), mateBlock == nil ? ArisTeamPrompt.teamTruth : nil, ownNote, worked.block, reach]
             .compactMap { $0 }.joined(separator: "\n")
         let prompt = ArisAgentStream.prompt(request: text, context: context, memory: memory, screen: screen,
                                             teammates: dispatch.teammates ? teammatesBlock(for: text) : nil,
@@ -682,12 +693,17 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
                                             skills: ArisSkillPrompt.block(ArisSkills.live.listings(), tools: route.brain == .api ? ArisAPICatalog.generic : ArisAgentRunner.toolsPath),
                                             notes: noteBlock, memoryNonce: recalled.nonce)
         let brain = route.brain
-        let tier = ArisTier.named(object["tier"] as? String)
-        let model = brain.model(tier: tier)
+        // A turn that has to look things up thinks hardest (ArisThinking): Opus at high, Codex at high.
+        let looksUp = ArisThinking.looksUp(ArisMemoryText.ownWords(request), task: isTask, images: !images.isEmpty, screenText: screen != nil,
+                                           handsFree: handsFree)
+        let tier = ArisThinking.tier(ArisTier.named(object["tier"] as? String), looksUp: looksUp)
+        let model = ArisThinking.model(brain, tier: tier)
         let key = ArisShortcuts.key(for: text)
         if fresh { ArisAgentRunner.startNewConversation() }
         if !ArisRoutineTurn.isStep(connection) {
             startStream(connection)
+            // The short "알아볼게요" before the slow work starts: the app says it at once on this status.
+            if looksUp, !isTask { stream(.status(ArisThinking.lookingStatus), on: connection) }
             ArisFixTurns.shared.began(connection, task: object["task"] as? Bool == true, toldUnread: ArisScreenRead.saysPermissionOff(object["screen"] as? String))
         }
         // The app dispatches this turn's jobs only when it may (a screen turn: untrusted, launches ask), never otherwise.
@@ -1004,6 +1020,8 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         ArisMessageRoutes.action(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
     case "/aside-tool":
         ArisAsideRoutes.tool(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
+    case "/session-tool":
+        ArisSessionRoutes.tool(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
     case "/routine-tool":
         ArisRoutineRoutes.tool(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
     case "/routine-step":
@@ -1137,8 +1155,9 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         }
     case "/warm":
         let brain = brainHealth.brain(for: ArisBrain.named(object["brain"] as? String))
-        for tier in [ArisTier.quick, .work] { ArisAgentRunner.shared(brain: brain, model: brain.model(tier: tier)).warm() }
-        ArisAgentRunner.warmTask(brain: brain, model: brain.model(tier: .work))
+        // The normal turn's runner (one for Claude: Sonnet for both tiers); a look-up turn's Opus starts on its first use.
+        for model in Set([ArisTier.quick, .work].map { ArisThinking.model(brain, tier: $0) }) { ArisAgentRunner.shared(brain: brain, model: model).warm() }
+        ArisAgentRunner.warmTask(brain: brain, model: ArisThinking.model(brain, tier: .deep))
         respond(connection, "200 OK", Data("{}".utf8))
     case "/stop":
         guard isAppItself(object, on: connection, question: "stop") else { return }

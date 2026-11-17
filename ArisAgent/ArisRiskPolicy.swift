@@ -40,7 +40,7 @@ enum ArisRiskPolicy {
         case .mcp(let server, let tool): return server == computerUseRepl ? .confirm : mcpTool(tool)
         // Every app can run code or send from its menus, and computer use reads the screen: always asked. Websites are
         // Aside's: never computer use in a browser.
-        case .computerUse(let app): return computerUseIsNever([app]) || isBrowser(name: app) ? .never : .confirm
+        case .computerUse(let app): return computerUseIsNeverForOthers([app]) || isBrowser(name: app) ? .never : .confirm
         // Only a plain lookup runs without a card (security review H1): anything else, acting or unclear, asks.
         case .browserTask(let task): return critical || !isLookup(task) ? .confirm : .auto
         }
@@ -340,44 +340,64 @@ enum ArisRiskPolicy {
     /// Anything not named in a list here, including tools added later, asks first.
     /// (`note` isn't one: a note can carry outside text, so it is asked on its card with its title and first lines, QA retest.)
     private static let smallLocalTools: Set<String> = ["remember", "forget", "remind", "event", "use-calendar", "calendar", "clipboard", "todo", "board", "open"]
-    /// Apps computer use never works in, by name and by bundle id (lowercased): terminals (commands go through the shell
-    /// gate), password stores and the Mac's system profile.
+    /// Apps computer use never works in, by name and by bundle id (lowercased): the installer, Aris itself and
+    /// Peekaboo's own app. Terminals, code editors, code runners and AI apps are ordinary apps (the owner, 2026-11-16): their
+    /// typing and Return go to his card every time (codeRunnerApps). Password managers, Keychain Access and System
+    /// Information are ordinary apps too (the owner, 2026-11-16: "막지마", nothing shows there until they presses reveal and
+    /// gives his fingerprint): the same gate and cards as any app.
     private static let neverComputerUse: Set<String> = Set([
-        "Terminal", "iTerm", "iTerm2", "Warp", "Ghostty", "kitty", "Alacritty", "WezTerm", "Hyper",
         // Aris itself: its cards are the user's to answer, its settings hold the services and keys (security review I5).
         "Aris", "아리스", "com.lumenjsn.aris",
-        "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "com.mitchellh.ghostty", "net.kovidgoyal.kitty",
-        "org.alacritty", "com.github.wez.wezterm", "co.zeit.hyper",
-        "Keychain Access", "Passwords", "1Password", "1Password 7", "Bitwarden", "KeePassXC", "Enpass", "System Information",
-        "com.apple.keychainaccess", "com.apple.Passwords", "com.1password.1password", "com.agilebits.onepassword7",
-        "com.bitwarden.desktop", "org.keepassxc.keepassxc", "in.sinew.Enpass-Desktop", "com.apple.SystemProfiler",
-        "터미널", "키체인 접근", "암호", "시스템 정보",
-        // Apps that run code: scripts, workflows, shortcuts, IDEs.
+        // The installer (security review I7). System Settings is an ordinary app (the owner: "위험한 것도 아닌데"); only its
+        // permission, account and profile panes are off limits (blocksSettingsPane).
+        "Installer", "설치 프로그램", "com.apple.installer",
+        // Peekaboo's own app: computer use's runtime is the agent's alone (I11).
+        "Peekaboo", "boo.peekaboo.mac", "boo.peekaboo.mac.debug",
+    ].map { $0.lowercased() } + authPrompts)
+
+    /// Terminals, code editors, apps that run code and AI or automation apps (lowercased names and bundle ids): ordinary
+    /// apps for clicks and reads, but text typed into them and Return or Enter pressed there always go to the user's card
+    /// with the exact text, never remembered (ArisDesktopGate.codeRunnerTyping).
+    static let codeRunnerApps: Set<String> = Set([
+        "Terminal", "iTerm", "iTerm2", "Warp", "Ghostty", "kitty", "Alacritty", "WezTerm", "Hyper", "Tabby", "터미널",
+        "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "dev.warp.Warp-Preview", "com.mitchellh.ghostty", "net.kovidgoyal.kitty",
+        "org.alacritty", "io.alacritty", "com.github.wez.wezterm", "co.zeit.hyper", "org.tabby",
         "Script Editor", "스크립트 편집기", "Automator", "Shortcuts", "단축어", "Script Debugger", "Xcode", "Visual Studio Code",
-        "Visual Studio Code - Insiders", "Cursor", "Zed", "Windsurf", "IntelliJ IDEA", "IntelliJ IDEA CE", "PyCharm", "PyCharm CE",
+        "Visual Studio Code - Insiders", "Cursor", "Zed", "Windsurf", "Devin", "IntelliJ IDEA", "IntelliJ IDEA CE", "PyCharm", "PyCharm CE",
         "WebStorm", "GoLand", "CLion", "Rider", "Android Studio", "Sublime Text", "Nova", "BBEdit",
         "com.apple.ScriptEditor2", "com.apple.Automator", "com.apple.shortcuts", "com.latenightsw.ScriptDebugger8", "com.apple.dt.Xcode",
         "com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.todesktop.230313mzl4w4u92", "dev.zed.Zed", "com.exafunction.windsurf",
         "com.jetbrains.intellij", "com.jetbrains.intellij.ce", "com.jetbrains.pycharm", "com.jetbrains.pycharm.ce", "com.jetbrains.WebStorm",
         "com.jetbrains.goland", "com.jetbrains.CLion", "com.jetbrains.rider", "com.google.android.studio", "com.sublimetext.4",
         "com.panic.Nova", "com.barebones.bbedit",
-        // More apps that run code or are agents themselves.
-        "Antigravity", "Claude", "IDLE", "Python Launcher", "Wing Pro", "Wing Personal", "Wing 101", "ChatGPT", "Codex", "Raycast", "Alfred",
-        "Keyboard Maestro", "Hammerspoon", "BetterTouchTool", "Docker", "Docker Desktop", "RStudio", "Fleet", "Positron",
-        "com.google.antigravity-ide", "com.google.antigravity", "com.anthropic.claudefordesktop", "org.python.IDLE", "org.python.PythonLauncher",
-        "com.wingware.wingpro", "com.wingware.wingpersonal", "com.wingware.wing101", "com.openai.chat", "com.openai.codex", "com.raycast.macos",
-        "com.runningwithcrayons.Alfred", "com.stairways.keyboardmaestro.editor", "com.stairways.keyboardmaestro.engine",
+        "Antigravity", "Antigravity IDE", "Claude", "OpenCode", "IDLE", "Python Launcher", "Wing Pro", "Wing Personal", "Wing 101", "ChatGPT", "Codex",
+        "Raycast", "Alfred", "Keyboard Maestro", "Hammerspoon", "BetterTouchTool", "Docker", "Docker Desktop", "RStudio", "Fleet", "Positron",
+        "com.google.antigravity-ide", "com.google.antigravity", "com.anthropic.claudefordesktop", "ai.opencode.desktop", "org.python.IDLE",
+        "org.python.PythonLauncher", "com.wingware.wingpro", "com.wingware.wingpersonal", "com.wingware.wing101", "com.openai.chat", "com.openai.codex",
+        "com.raycast.macos", "com.runningwithcrayons.Alfred", "com.stairways.keyboardmaestro.editor", "com.stairways.keyboardmaestro.engine",
         "org.hammerspoon.Hammerspoon", "com.hegenberg.BetterTouchTool", "com.docker.docker", "com.rstudio.desktop", "org.rstudio.RStudio",
         "com.jetbrains.fleet", "com.posit.positron",
-        // The installer (security review I7). System Settings is an ordinary app (the owner: "위험한 것도 아닌데"); only its
-        // permission, account and profile panes are off limits (blocksSettingsPane).
-        "Installer", "설치 프로그램", "com.apple.installer",
-        // More password stores.
-        "Dashlane", "LastPass", "NordPass", "Proton Pass", "com.dashlane.Dashlane", "com.dashlane.dashlanephonefinal", "com.lastpass.LastPass",
-        "com.lastpass.lastpassmacdesktop", "com.nordsec.nordpass", "com.nordpass.macos.NordPass", "me.proton.pass.electron", "ch.protonmail.pass",
-        // Peekaboo's own app: computer use's runtime is the agent's alone (I11).
-        "Peekaboo", "boo.peekaboo.mac", "boo.peekaboo.mac.debug",
-    ].map { $0.lowercased() } + authPrompts)
+    ].map { $0.lowercased() })
+
+    /// The pure terminals among them: every field there is a command line.
+    static let terminalApps: Set<String> = Set([
+        "Terminal", "iTerm", "iTerm2", "Warp", "Ghostty", "kitty", "Alacritty", "WezTerm", "Hyper", "Tabby", "터미널",
+        "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "dev.warp.Warp-Preview", "com.mitchellh.ghostty", "net.kovidgoyal.kitty",
+        "org.alacritty", "io.alacritty", "com.github.wez.wezterm", "co.zeit.hyper", "org.tabby",
+    ].map { $0.lowercased() })
+
+    /// Another engine's computer use (Codex's own cua_repl, the fallback): it has no card for typing into a terminal, so
+    /// terminals, code editors, code runners and AI apps stay off limits there.
+    static func computerUseIsNeverForOthers(_ identifiers: [String?]) -> Bool { computerUseIsNever(identifiers) || isCodeRunner(identifiers) }
+
+    /// Whether any of an app's names or bundle ids is a terminal, code runner, code editor or AI app.
+    static func isCodeRunner(_ identifiers: [String?]) -> Bool {
+        identifiers.compactMap { $0?.trimmingCharacters(in: .whitespaces).lowercased() }.contains(where: codeRunnerApps.contains)
+    }
+
+    static func isTerminalApp(_ identifiers: [String?]) -> Bool {
+        identifiers.compactMap { $0?.trimmingCharacters(in: .whitespaces).lowercased() }.contains(where: terminalApps.contains)
+    }
 
     /// The processes that put up sign-in, password and permission prompts (lowercased names and bundle ids): never
     /// worked in, and while one shows a window (at any level) no app action runs (I7).
@@ -516,7 +536,7 @@ enum ArisRiskPolicy {
     /// Whether the user's earlier yes for an app may cover this computer-use step: a known step, in an app resolved to its
     /// bundle id that doesn't send, with no word for deleting, sending or paying in its name or any of its values.
     static func computerUseStepIsPlain(bundle: String?, name: String, tool: String, arguments: [String: Any]) -> Bool {
-        guard let bundle, !computerUseIsNever([bundle, name]), plainComputerUseSteps.contains(tool), !sendingBundles.contains(bundle),
+        guard let bundle, !computerUseIsNeverForOthers([bundle, name]), plainComputerUseSteps.contains(tool), !sendingBundles.contains(bundle),
               !sendingApps.contains(name.lowercased()) else { return false }
         let text = ([tool] + texts(in: arguments)).joined(separator: " ").lowercased()
         return !mentionsRiskyStep(text)
@@ -557,6 +577,10 @@ enum ArisRiskPolicy {
         // Website work for Aside: aris-tools hands the brief to the agent, whose one gate (ArisAside.risk, Codex's rule)
         // asks the user when it should, for every brain alike.
         if tool == "aside" { return .auto }
+        // A prompt into one of the user's Claude Code sessions: aris-tools hands the words to the agent, which always asks
+        // The user on their card with the exact text and the session, then checks the session and its tab before typing
+        // (ArisSessionSend), for every brain alike; asking here too would ask twice. Listing them only reads.
+        if tool == "session" { return .auto }
         // What later turns read back as the user's memory: at once only when it is exactly the span the user said this turn
         // ("…기억해", "remember …"); any other wording (the brain's own, or several memories with --all) asks him.
         if tool == "remember" || tool == "forget" {

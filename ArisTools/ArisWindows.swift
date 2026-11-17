@@ -201,7 +201,7 @@ func press(_ chord: ArisKeyChord) {
 }
 
 /// Brings `name` to the front for keys or typing, or stops: it must be exactly that app (not one whose name merely
-/// contains it), not a terminal or password app, and really in front, so nothing lands anywhere else.
+/// contains it), not a terminal, and really in front, so nothing lands anywhere else.
 @discardableResult
 func typingTarget(_ name: String) -> NSRunningApplication {
     // The name is resolved once (an alias, another spacing), and that same answer says whether the app found is the one.

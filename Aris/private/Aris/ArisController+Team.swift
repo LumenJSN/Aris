@@ -101,6 +101,8 @@ extension ArisController {
             jobRuns[job.id] = ArisJobRun(tier: tier, plan: plan, browser: browser, task: nil)
         }
         log.notice("dispatching \(created.count, privacy: .public) jobs")
+        // Dispatched in a turn: the turn handed its work off, and its end closes the notch onto the jobs' pill.
+        if session.phase != .idle, !created.isEmpty { handedOff = true }
         // What is under way is kept on disk, so a quit or a crash can say what it cut off (ArisJobLedger).
         ArisJobLedger.note(jobs)
         for id in jobQueue.admit(created.map(\.0.id)) { start(id) }

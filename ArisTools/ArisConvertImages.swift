@@ -44,6 +44,30 @@ enum ArisConvertImages {
         return image
     }
 
+    /// The picture's size as it is meant to be seen (its header's, turned for EXIF orientations 5 to 8); nothing decoded.
+    static func uprightSize(_ url: URL) -> (Int, Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        return (5...8).contains(orientation) ? (height, width) : (width, height)
+    }
+
+    /// No transparency to keep (JPEG can hold it as it is).
+    static func isOpaque(_ image: CGImage) -> Bool {
+        [.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
+    }
+
+    /// The same picture backed by JPEG data at `quality`, so a PDF it is drawn into keeps it as JPEG (Quartz embeds a
+    /// JPEG-backed image as it is); nil when it can't be made.
+    static func jpegBacked(_ image: CGImage, quality: Double) -> CGImage? {
+        let data = NSMutableData()
+        guard let writer = CGImageDestinationCreateWithData(data as CFMutableData, "public.jpeg" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(writer, image, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
+        guard CGImageDestinationFinalize(writer), let provider = CGDataProvider(data: data as CFData) else { return nil }
+        return CGImage(jpegDataProviderSource: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
+
     static func context(width: Int, height: Int, opaque: Bool = false) -> CGContext? {
         guard width > 0, height > 0, width <= largestSide, height <= largestSide, let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
         return CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,

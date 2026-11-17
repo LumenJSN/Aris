@@ -17,13 +17,12 @@ enum ArisNotchDecisions {
 
     /// What the closed notch shows, first match wins.
     enum Closed: Equatable {
-        case notice, star(ArisStarBand.Mode), dueAlert, timer, claude, music, empty
+        case notice, star(ArisStarBand.Mode), timer, claude, music, empty
     }
 
     struct ClosedInputs {
         var notice = false
         var starMode: ArisStarBand.Mode?
-        var dueAlert = false
         var timer = false
         var claude = false
         var music = false
@@ -32,7 +31,6 @@ enum ArisNotchDecisions {
     static func closedContent(_ i: ClosedInputs) -> Closed {
         if i.notice { return .notice }
         if let mode = i.starMode { return .star(mode) }
-        if i.dueAlert { return .dueAlert }
         if i.timer { return .timer }
         if i.claude { return .claude }
         if i.music { return .music }
@@ -59,8 +57,12 @@ enum ArisNotchDecisions {
 
     /// An Aris turn opens the notch: training the wake word, a turn past listening that isn't dictation, or dictation
     /// that had nowhere to type and was copied (ArisDictationCopy).
-    static func turnNeedsPanel(training: Bool, dictating: Bool, phase: ArisSession.Phase, dictationCopied: Bool = false) -> Bool {
+    /// `wakeHeard`: a wake-word turn heard the user start talking in its quiet lap (ArisQuietWake): it opens while it
+    /// still listens. Any other listening (a key press, a tap, the lap itself) keeps the closed band.
+    static func turnNeedsPanel(training: Bool, dictating: Bool, phase: ArisSession.Phase, dictationCopied: Bool = false,
+                               wakeHeard: Bool = false) -> Bool {
         training || (dictating && dictationCopied) || (!dictating && phase != .listening && phase != .idle)
+            || (!dictating && wakeHeard && phase == .listening)
     }
 
     /// A card waiting for the user opens this display's notch, wherever the pointer is (QA retest on 8e236bff: with the

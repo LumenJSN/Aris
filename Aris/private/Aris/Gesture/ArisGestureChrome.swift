@@ -5,9 +5,8 @@
 //  The words and the two small pieces of chrome around the ink, drawn with CoreGraphics and CoreText into images:
 //  - the hint chip ArisUIWords.text("동그라미로 가리키세요", "Circle what you mean") with Aris's star (the owner's
 //    pick B);
-//  - the red reject capsule: "8/8" with an image glyph when the 8-shot limit is hit, or
-//    ArisUIWords.text("암호 앱은 찍지 않아요", "Password apps are never captured") with a lock when the circled
-//    window is a password app's.
+//  - the red reject capsule: "8/8" with an image glyph when the 8-shot limit is hit. Every window is circled like any other, a password manager's or one whose owner can't be resolved
+//    (the owner, 2026-11-16).
 //  Nothing numbered is ever drawn on screen: shot numbers live only in the image and the transcript (the owner,
 //  2026-11-03). Pure, so the tests run it.
 //
@@ -20,17 +19,10 @@ enum ArisGestureChrome {
     // MARK: - Words (Aris's own, Korean first)
 
     static let hintText = ArisUIWords.text("동그라미로 가리키세요", "Circle what you mean")
-    static let privateRefusalText = ArisUIWords.text("암호 앱은 찍지 않아요", "Password apps are never captured")
-    /// A window whose owner can't be resolved is refused too (fail closed), without claiming it's a password app.
-    static let unknownRefusalText = ArisUIWords.text("이 창은 찍지 않아요", "This window is never captured")
 
     static func limitText(shots: Int, max: Int) -> String { "\(shots)/\(max)" }
 
-    static func refusalText(for hit: ArisWindowHit?) -> String {
-        ArisCaptureRules.isPrivate(hit?.bundleId) ? privateRefusalText : unknownRefusalText
-    }
-
-    enum Icon: Equatable { case lock, image }
+    enum Icon: Equatable { case image }
 
     // MARK: - Type
 
@@ -251,12 +243,6 @@ enum ArisGestureChrome {
     private static func drawGlyph(_ ctx: CGContext, _ icon: Icon, in rect: CGRect) {
         let path = CGMutablePath()
         switch icon {
-        case .lock:
-            path.addRoundedRect(in: CGRect(x: 5, y: 11, width: 14, height: 9), cornerWidth: 2, cornerHeight: 2)
-            path.move(to: CGPoint(x: 8, y: 11))
-            path.addLine(to: CGPoint(x: 8, y: 8))
-            path.addArc(center: CGPoint(x: 12, y: 8), radius: 4, startAngle: .pi, endAngle: 0, clockwise: false)
-            path.addLine(to: CGPoint(x: 16, y: 11))
         case .image:
             path.addRoundedRect(in: CGRect(x: 3, y: 4, width: 18, height: 16), cornerWidth: 3, cornerHeight: 3)
             path.addEllipse(in: CGRect(x: 7, y: 8, width: 4, height: 4))

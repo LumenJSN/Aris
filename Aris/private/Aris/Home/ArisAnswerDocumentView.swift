@@ -74,8 +74,8 @@ private struct ArisAnswerPieceView: View, Equatable {
 
     @State private var risen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Re-draws this view when the hidden look changes (ArisSiriLookGate).
-    @ObservedObject private var siriLook = ArisSiriLookGate.shared
+    /// Re-draws this view when the hidden look changes (ArisDuskLookGate).
+    @ObservedObject private var duskLook = ArisDuskLookGate.shared
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.piece == rhs.piece && lhs.joins == rhs.joins && lhs.reveals == rhs.reveals }
 
@@ -95,16 +95,16 @@ private struct ArisAnswerPieceView: View, Equatable {
             }
     }
 
-    private var siri: Bool { ArisSiriLookNow.on }
+    private var dusk: Bool { ArisDuskLookNow.on }
 
     @ViewBuilder private var content: some View {
         switch piece {
         case .lead(let words):
-            // The siri look: Siri's answer is one size and weight throughout, 15 regular on an 18-point line.
-            ArisReaderBody.text(words, size: siri ? CGFloat(ArisSiriLook.Answer.fontSize) : 16, weight: siri ? 400 : 600,
-                                color: .white.opacity(siri ? ArisSiriLook.Answer.ink : 0.95))
-                .tracking(siri ? 0 : -0.16)
-                .lineBox(siri ? CGFloat(ArisSiriLook.Answer.fontSize) : 16, siri ? ArisSiriLook.Answer.lineHeight / ArisSiriLook.Answer.fontSize : 1.5)
+            // The dusk look: the system assistant's answer is one size and weight throughout, 15 regular on an 18-point line.
+            ArisReaderBody.text(words, size: dusk ? CGFloat(ArisDuskLook.Answer.fontSize) : 16, weight: dusk ? 400 : 600,
+                                color: .white.opacity(dusk ? ArisDuskLook.Answer.ink : 0.95))
+                .tracking(dusk ? 0 : -0.16)
+                .lineBox(dusk ? CGFloat(ArisDuskLook.Answer.fontSize) : 16, dusk ? ArisDuskLook.Answer.lineHeight / ArisDuskLook.Answer.fontSize : 1.5)
                 .fixedSize(horizontal: false, vertical: true)
         case .block(let block):
             ArisAnswerBlockView(block: block)
@@ -115,8 +115,8 @@ private struct ArisAnswerPieceView: View, Equatable {
 /// A block of the answer below the lead.
 private struct ArisAnswerBlockView: View {
     let block: ArisBoardContent.Block
-    /// Re-draws this view when the hidden look changes (ArisSiriLookGate).
-    @ObservedObject private var siriLook = ArisSiriLookGate.shared
+    /// Re-draws this view when the hidden look changes (ArisDuskLookGate).
+    @ObservedObject private var duskLook = ArisDuskLookGate.shared
 
     var body: some View {
         switch block {

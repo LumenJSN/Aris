@@ -183,7 +183,7 @@ enum ArisCardWords {
     private static func conversion(_ words: [String], home: String, english: Bool = false) -> (title: String, detail: String)? {
         guard let call = ArisConvertWords.parse(words) else { return nil }
         let titles = ["convert": "파일 변환하기", "merge": "파일 합치기", "split": "PDF 나누기", "compress": "용량 줄이기"]
-        let picked = call.selector.map { ArisGateWords.word($0 == .finder ? "Finder에서 고른 파일" : "선반에 둔 파일", english: english) }
+        let picked = call.selector.map { ArisGateWords.word(ArisFileRelay.pickedWords($0), english: english) }
         let files = picked ?? call.paths.map { friendlyPath($0, home: home, english: english) }.joined(separator: "\n")
         let options = ["--to", "--max", "--percent", "--quality", "--pages"].compactMap { flag in
             call.options[flag].map { flag == "--to" ? "→ \(clean($0, limit: 20).uppercased())" : "\(flag) \(clean($0, limit: 40))" }

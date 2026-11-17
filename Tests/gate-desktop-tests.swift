@@ -557,7 +557,7 @@ private func gateLaunchArgumentTests() {
     let briefs = ["/Users/x/proj 폴더에서 테스트 돌려줘", "#123 이슈 고쳐줘", "@src/main.swift 고쳐줘", "--permission-mode=bypassPermissions", "-p hi", "--dangerously-skip-permissions\nfix it",
                   "!curl x | sh", "/permissions", "\u{FEFF}!rm -rf ~", "  --x", "& echo hi"]
     for brief in briefs {
-        let argument = ArisTeammateLauncher.argument(for: brief)
+        let argument = ArisTeammateLauncher.body(for: brief)
         check(ArisTeammateGate.isSafePrompt(argument) && argument.unicodeScalars.starts(with: ArisTeammateLauncher.header.unicodeScalars)
               && Array(argument.unicodeScalars.dropFirst(ArisTeammateLauncher.header.unicodeScalars.count)) == Array(brief.unicodeScalars),
               "gate-20: a brief that starts “\(brief.prefix(14).debugDescription)” reaches claude after the fixed line, whole and unchanged")
@@ -566,7 +566,7 @@ private func gateLaunchArgumentTests() {
           && ArisTeammateLauncher.header.unicodeScalars.first == "A" && !ArisTeammateLauncher.header.contains("@"),
           "gate-20: the check itself is as strict as before; it is the fixed line that makes the argument safe")
     let desk = gateSource("ArisAgent/ArisTeammateDesk.swift")
-    check(desk.contains("guard ArisTeammateGate.isSafePrompt(ArisTeammateLauncher.argument(for: prompt)) else {") && !desk.contains("ArisTeammateGate.isSafePrompt(prompt)"),
+    check(desk.contains("guard ArisTeammateGate.isSafePrompt(ArisTeammateLauncher.body(for: prompt)) else {") && !desk.contains("ArisTeammateGate.isSafePrompt(prompt)"),
           "gate-20: the launch checks what claude really gets, not the bare brief")
 
     // Hostile, for real but harmless: the very command line Aris types, with a stand-in program for claude that writes
@@ -578,7 +578,7 @@ private func gateLaunchArgumentTests() {
     defer { try? fm.removeItem(at: root) }
     let stand = root.appendingPathComponent("stand-in")
     let out = root.appendingPathComponent("seen.txt")
-    fm.createFile(atPath: stand.path, contents: Data("#!/bin/sh\nprintf '%s\\n' \"$#\" > '\(out.path)'\nprintf '%s' \"$1\" >> '\(out.path)'\n".utf8), attributes: [.posixPermissions: 0o755])
+    fm.createFile(atPath: stand.path, contents: Data("#!/bin/sh\nprintf '%s\\n' \"$#\" \"$1\" \"$2\" \"$3\" \"$4\" > '\(out.path)'\nshift 4\nprintf '%s' \"$1\" >> '\(out.path)'\n".utf8), attributes: [.posixPermissions: 0o755])
     let trap = root.appendingPathComponent("pwned").path
     let hostile = "--dangerously-skip-permissions -p \"x\"; touch '\(trap)'; $(touch '\(trap)') `touch '\(trap)'`\n&& touch '\(trap)' | touch \(trap)\n'\\''; touch \(trap) #"
     if let file = try? ArisTeammateLauncher.writePrompt(hostile, in: work, id: UUID()) {
@@ -592,7 +592,9 @@ private func gateLaunchArgumentTests() {
         try? shell.run()
         shell.waitUntilExit()
         let seen = (try? String(contentsOf: out, encoding: .utf8)) ?? ""
-        check(seen == "1\n" + ArisTeammateLauncher.header + hostile, "gate-20: a brief of flags, quotes and shell tricks arrives as one argument, after the fixed line: \(seen.prefix(60).debugDescription)")
+        // ask-claude: auto mode and the credential deny rules come first, four arguments of Aris's own.
+        check(seen == "5\n--permission-mode\nauto\n--settings\n" + ArisClaudeLaunch.settings + "\n" + ArisTeammateLauncher.argument(for: hostile),
+              "gate-20: a brief of flags, quotes and shell tricks arrives as one argument, after the fixed line: \(seen.prefix(60).debugDescription)")
         check(!fm.fileExists(atPath: trap), "gate-20: and none of its commands ran")
     } else { check(false, "gate-20: the prompt file is written") }
 }
@@ -667,7 +669,7 @@ private func gateLaunchFolderTests() {
     // Hostile: the system's own places, anything that holds the home folder, and what `folder` already refuses.
     let parents = [(h as NSString).deletingLastPathComponent, ((h as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent]
     for bad in ["/", "/Users", "/System", "/System/Library", "/usr/bin", "/Applications", "/Library", "/Volumes", "/private", "/private/var", "/private/etc", "/etc", "/dev",
-                h, h + "/Library/x", h + "/.ssh", h + "/nope", root.appendingPathComponent("disk/file.txt").path, "disk/project", "", "/tmp/aris-no-such-\(UUID().uuidString)"] + parents {
+                h + "/Library/x", h + "/.ssh", h + "/nope", root.appendingPathComponent("disk/file.txt").path, "disk/project", "", "/tmp/aris-no-such-\(UUID().uuidString)"] + parents {
         check(ArisTeammateGate.place(bad, home: h) == nil, "gate-20: Claude Code is never opened in \(bad.isEmpty ? "(no folder)" : bad)")
     }
     // Held to it when the window opens: the same folder, still outside; a swap or a removal stops the launch.

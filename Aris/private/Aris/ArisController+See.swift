@@ -10,6 +10,8 @@
 //  A turn with an image is outside content: the agent marks it untrusted and the conversation `sawScreen`, so its
 //  answer never dispatches (the app's own gate, `screen == nil && !untrustedTurn`, is unchanged). A turn without one
 //  is the user's own words alone, and the brain they chose answers it unsealed.
+//  Look first (2026-11-14): words about an app that is showing ("어사이드가 뭐라고 했어") shoot the display holding it,
+//  and "다른 화면" his other displays as well (at most three, ArisDisplayPick), each image labelled with which it is.
 //
 
 import AppKit
@@ -27,7 +29,14 @@ extension ArisTurnCapture.Dependencies {
              enabled: { Defaults[.arisSeesScreen] },
              permission: { CGPreflightScreenCaptureAccess() },
              nextNotice: { ArisScreenPermissionNotice.next() },
-             notify: { ArisGesturePermissionChip.shared.showNearPointer($0) })
+             notify: { ArisGesturePermissionChip.shared.showNearPointer($0) },
+             // Look first: the app the user named is shot on whichever display holds it, the others when they says so.
+             visibleApps: { ArisScreenCapture.visibleApps() },
+             screens: { want in
+                 await ArisScreenCapture.shared.displayShots(for: want).map {
+                     ArisTurnCapture.Shot(png: $0.png, ms: $0.ms, retried: $0.retried, title: $0.title)
+                 }
+             })
     }
 }
 
@@ -73,7 +82,7 @@ extension ArisController {
             capture.cancel()
             taken = nil
         }
-        let images = ArisCaptureTiming.images(cursor: taken?.image, gesture: gestureImages)
+        let images = ArisCaptureTiming.images(cursors: taken?.images ?? [], gesture: gestureImages)
         if attempted || taken != nil {
             stats?.captured(source: "cursorDisplay", ok: taken != nil, bytes: taken?.bytes ?? 0, ms: taken?.ms ?? 0,
                             retried: taken?.retried ?? false)

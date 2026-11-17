@@ -35,7 +35,10 @@ enum ArisRefusalWords {
         case .computerUse:
             return why.contains("browser") ? "computer use is never used in a web browser (website work goes to Aside)"
                 : why.contains("System Settings") ? "that System Settings pane (privacy, users, passwords) is the user's to change"
-                : "computer use is never used in that app (terminals, code editors, password stores, AI and automation apps)"
+                : "computer use is never used in that app (the installer, sign-in and permission prompts, Aris itself). "
+                    + "Terminals and code editors are ordinary apps for `desktop` (typing and Return there go to the user's card); a Claude Code "
+                    + "session is reached with the session tool (`session send`, `session list`), Devin's sessions with `devin sessions`, and never "
+                    + "through Aside (it sees only websites)"
         case .mcp:
             return why.isEmpty || why.contains("never-list") ? "that tool is one Aris never runs" : why
         case .shell, .fileChange, .browserTask:

@@ -5,7 +5,7 @@
 //  One picked window, captured on its own with ScreenCaptureKit (`desktopIndependentWindow`): only that window's
 //  pixels, nothing over it (Aris's wash included), no cursor, no shadow, within a 2560 px long edge. Never under
 //  secure input (checked before and after), only with the grant (nothing here asks for it), and never a window of
-//  Aris, a private app or an owner with no bundle id (checked again here, whatever the click said). In memory only.
+//  Aris (checked again here, whatever the click said). In memory only.
 //
 
 import AppKit

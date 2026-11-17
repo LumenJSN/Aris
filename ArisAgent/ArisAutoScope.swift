@@ -27,7 +27,7 @@ struct ArisAutoKind: Equatable {
     let verb: String
     /// The flags it takes, each with one value.
     let flags: Set<String>
-    /// The flags it takes with no value (a conversion's --finder and --shelf).
+    /// The flags it takes with no value (a conversion's --finder, --shelf and --made).
     var bare: Set<String> = []
     /// Each plain word is a file of its own (a conversion); otherwise the plain words are one text.
     var files = false
@@ -59,7 +59,7 @@ enum ArisAutoScope {
         ArisAutoKind(words: ["event"], tool: "event", verb: "add", flags: ["--start", "--minutes", "--calendar"]),
         ArisAutoKind(words: ["schedule", "remove"], tool: "schedule", verb: "remove", flags: []),
     ] + ArisConvertWords.verbs.sorted().map {
-        ArisAutoKind(words: [$0], tool: $0, verb: $0, flags: ArisConvertWords.flags($0), bare: ["--finder", "--shelf"], files: true)
+        ArisAutoKind(words: [$0], tool: $0, verb: $0, flags: ArisConvertWords.flags($0), bare: Set(ArisConvertWords.Selector.allCases.map(\.rawValue)), files: true)
     }
 
     /// The call's words after the program, when the action is exactly one aris-tools call read word by word; nil for

@@ -18,8 +18,20 @@ extension HookConsumer {
     /// card: Claude Code asks in its own terminal.
     static let live = HookConsumer.feeding({ ClaudeStore.shared }, cardPossible: { !ArisQuietGate.screenIsAway() },
                                            slow: { path, object, reply in
-                                               path == "/aris/todos" ? todos(object, reply) : events(object, reply)
+                                               switch path {
+                                               case "/aris/todos": todos(object, reply)
+                                               case ClaudeSessionsRoute.path: sessions(object, reply)
+                                               default: events(object, reply)
+                                               }
                                            })
+
+    /// aris-agent's look at the user's Claude Code sessions before it sends a prompt into one, and its note that it did
+    /// (ClaudeSessionsRoute): a read of what the hooks heard, and a watch for the session's next Stop.
+    private static func sessions(_ object: [String: Any], _ reply: @escaping (HookReply) -> Void) {
+        Task { @MainActor in
+            reply(.ok(ClaudeSessionsRoute.answer(object, store: ClaudeStore.shared, watch: .shared)))
+        }
+    }
 
     /// aris-tools' `todo`: Apple Reminders live in the app.
     private static func todos(_ object: [String: Any], _ reply: @escaping (HookReply) -> Void) {

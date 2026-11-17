@@ -8,7 +8,7 @@
 //  click used for picking never reaches the app below; it exists only while picking is armed.
 //  It draws the owner's ①B: a picked window gets a .13 yellow wash with a 2 pt ink E ring, swept in once from the left
 //  (340 ms) and then still; a let-go wash fades (180 ms); the window under the pointer gets a faint 1.5 pt ring.
-//  The red refusal (a private window, or the 9th shot) is the circle's: ArisInkView's loop and capsule.
+//  The red refusal (the 9th shot) is the circle's: ArisInkView's loop and capsule.
 //  Core Graphics in `draw(_:)`, redrawn by the display link only while something moves; headless for the renders.
 //
 

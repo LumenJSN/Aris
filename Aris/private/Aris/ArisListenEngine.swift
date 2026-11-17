@@ -76,7 +76,7 @@ enum ArisListenEngineWords {
         english ? "This Mac's speech recognition doesn't have \(locale)." : "이 Mac의 음성 인식에는 \(locale)이 없어요."
     }
 
-    /// macOS's own Dictation (or Siri) is off: the older engine can't recognise anything then (its tasks end at once
+    /// macOS's own Dictation is off: the older engine can't recognise anything then (its tasks end at once
     /// with kLSRErrorDomain 201), on the Mac or on Apple's servers.
     static func dictationOff(english: Bool) -> String {
         english ? "To listen on this Mac, Aris needs macOS Dictation: turn it on in System Settings › Keyboard › Dictation."
@@ -95,7 +95,7 @@ enum ArisListenEngineWords {
         domain == "kLSRErrorDomain" && code == 201 ? dictationOff(english: english) : nil
     }
 
-    /// The recogniser is there but can't listen now (server recognition without a network, Siri and Dictation off).
+    /// The recogniser is there but can't listen now (server recognition without a network, Dictation off).
     static func unavailable(english: Bool) -> String {
         english ? "Speech recognition isn't available right now. Check the network, or turn on Dictation in System Settings › Keyboard."
             : "지금은 음성 인식을 쓸 수 없어요. 네트워크를 확인하거나 시스템 설정 › 키보드에서 받아쓰기를 켜 주세요."

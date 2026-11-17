@@ -16,7 +16,7 @@
 //
 //  Notes for the wiring:
 //  - P1.8 must build gesture frames with the same exclude filter as the per-turn shot (plan D1/D4): Aris's own
-//    windows and private apps' windows are never in a frame. `.refusePrivate` only covers a circle *on* such a window.
+//    windows are never in a frame; every other window is circled, whoever owns it (the owner, 2026-11-16).
 //  - With the gesture setting off (`arisCircleGesture`) or no Screen Recording grant, the controller creates no
 //    overlay and takes no capture at all; it never starts a session. `gesturesEnabled` is only a backstop.
 //
@@ -125,7 +125,7 @@ struct ArisGestureSession {
         case buttonDown
         case buttonUp
         case gesture(ArisGesture, display: UInt32, at: Double)
-        /// The hit-test's pick for a capture (Aris only, plan D4): a private app's window is refused.
+        /// The hit-test's pick for a capture (Aris only, plan D4); nil: no window there (the desktop).
         case windowPicked(captureId: Int, hit: ArisWindowHit?)
         case captureDone(captureId: Int, ok: Bool)
     }
@@ -137,10 +137,6 @@ struct ArisGestureSession {
         case startCapture(ArisGesture, display: UInt32, revision: Int, badge: Int, captureId: Int)
         /// The circled window may be captured: go on to the crop.
         case proceed(captureId: Int)
-        /// A private app's window (or one whose owner is unknown): no capture; re-ink the loop red with the refusal
-        /// capsule (the owner's pick B: "암호 앱은 찍지 않아요", ArisGestureChrome.refusalText). Plan D4. The gesture is nil
-        /// when the capture is no longer in flight (nothing left to re-ink).
-        case refusePrivate(ArisGesture?, captureId: Int)
         /// Store the shot under this badge.
         case keepShot(badge: Int, captureId: Int)
         /// Discard the capture's image: "failed" (no image) or "finalized" (it landed after release).
@@ -170,14 +166,6 @@ struct ArisGestureSession {
     }
 
     static let maxShots = C.maxShots
-
-    /// Whether the circled window may not be captured: a private app's window, or one whose owner can't be resolved
-    /// (fail closed: an unknown app could be a password app). No window at all (empty desktop) is fine.
-    static func refuses(_ hit: ArisWindowHit?) -> Bool {
-        guard let hit else { return false }
-        guard let id = hit.bundleId, !id.isEmpty else { return true }
-        return ArisCaptureRules.isPrivate(id)
-    }
 
     /// Whether a display's clean frame must be re-taken before a crop: marked stale (front app changed, hands-free
     /// click), or older than 4000 ms held / 1500 ms hands-free.
@@ -251,14 +239,8 @@ struct ArisGestureSession {
             return []
         case .gesture(let g, let display, let at):
             return gesture(g, display: display, at: at)
-        case .windowPicked(let id, let hit):
-            let current = inFlight?.id == id ? inFlight : nil
-            // Fail closed: a private window is refused whatever state the session is in.
-            if Self.refuses(hit) {
-                if current != nil { inFlight = nil }
-                return [.refusePrivate(current?.gesture, captureId: id)]
-            }
-            return current == nil ? [] : [.proceed(captureId: id)]
+        case .windowPicked(let id, _):
+            return inFlight?.id == id ? [.proceed(captureId: id)] : []
         case .captureDone(let id, let ok):
             guard let shot = inFlight, shot.id == id else { return [] }
             inFlight = nil

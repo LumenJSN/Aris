@@ -24,8 +24,9 @@ private func followupSource(_ path: String) -> String {
 private func followupTeamMadeTests() {
     typealias A = ArisTeamMadeAnswer
     check(A.makes(yes: true, typed: false, inConversation: false, handsFree: false), "M2: a spoken yes after the talk key makes the teammate")
-    check(!A.makes(yes: true, typed: false, inConversation: true, handsFree: false), "M2: a spoken yes in an open conversation doesn't (click or Y)")
-    check(!A.makes(yes: true, typed: false, inConversation: false, handsFree: true), "M2: a hands-free spoken yes doesn't")
+    // Since 2026-11-15 a spoken yes counts in a conversation too (the owner: cards answered by voice); no turn is hands-free.
+    check(A.makes(yes: true, typed: false, inConversation: true, handsFree: false), "M2: a spoken yes in an open conversation makes it")
+    check(A.makes(yes: true, typed: false, inConversation: false, handsFree: true), "M2: a spoken yes makes it whatever the old hands-free flag")
     check(A.makes(yes: true, typed: true, inConversation: true, handsFree: false), "M2: a typed yes is the user's own, in a conversation too")
     check(!A.makes(yes: false, typed: true, inConversation: false, handsFree: false), "M2: a no never makes it")
     check(A.makes(yes: true, typed: false, inConversation: false, handsFree: false) == ArisConfirmReply.voiceYes(inConversation: false, handsFree: false)

@@ -210,15 +210,11 @@ private func fix11JobVerdictTests() {
 // MARK: - 6. The small ones
 
 private func fix11NoticeTests() {
-    check(ArisNoticeFill.of(glassMaterial: true, reduceTransparency: false, layer: true) == .solid
-          && ArisNoticeFill.of(glassMaterial: true, reduceTransparency: false, layer: false) == .glass
-          && ArisNoticeFill.of(glassMaterial: true, reduceTransparency: true, layer: false) == .solid
-          && ArisNoticeFill.of(glassMaterial: false, reduceTransparency: false, layer: true) == .gradient,
-          "fix-11 cards: a peeking layer is never a glass view (it drew black in Light): the appearance's solid colour")
-    let surface = fix11Source("Aris/private/Aris/Notice/ArisNoticeSurface.swift")
-    check(surface.contains("ArisNoticeFill.of(glassMaterial: material == .glass, reduceTransparency: reduceTransparency, layer: layer)")
-          && surface.contains("case .solid:\n                shape.fill(palette.solid)"),
-          "fix-11 cards: the surface draws what ArisNoticeFill says")
+    // The glass cards and their peeking layers went with the notice pill (the owner's pick D, 2026-11-16): one pill, no
+    // layers, in the dictation pill's dark body in either appearance.
+    check(fix11Source("Aris/private/Aris/Notice/ArisNoticeSurface.swift").isEmpty
+          && fix11Source("Aris/private/Aris/Notice/ArisNoticePillView.swift").contains("ArisDictationPillShell("),
+          "fix-11 cards: no glass layer is drawn under another any more (the pill has none)")
 }
 
 private func fix11SettingsTests() {

@@ -3,7 +3,8 @@
 //  Aris (also built into aris-agent and aris-tools)
 //
 //  When Aris may look at the screen and what is never in a frame: no capture under secure input or with the
-//  setting off; Aris's own windows and password apps (and their helpers) are always left out.
+//  setting off; Aris's own windows are always left out. Password managers, Keychain Access and System Information are
+//  in the frame like any other app's windows (the owner, 2026-11-16: nothing shows in them until they reveals it).
 //  Pure, so the tests run it.
 //
 
@@ -11,14 +12,6 @@ import CoreGraphics
 import Foundation
 
 enum ArisCaptureRules {
-    /// Apps whose windows are never captured or read (lowercased; compare with `isPrivate`).
-    static let privateBundleIds: Set<String> = [
-        "com.apple.keychainaccess", "com.apple.passwords", "com.1password.1password", "com.agilebits.onepassword7",
-        // Lowercased, as isPrivate compares them.
-        "com.bitwarden.desktop", "com.dashlane.dashlane", "com.dashlane.dashlanephonefinal", "com.lastpass.lastpass",
-        "me.proton.pass.electron", "in.sinew.enpass-desktop", "org.keepassxc.keepassxc",
-    ]
-
     /// A turn waits at most this long for its screenshot at send, then goes without it.
     static let waitAtSend: Duration = .seconds(3)
     /// A null or blank first capture (a cold start) is tried once more after this.
@@ -28,33 +21,21 @@ enum ArisCaptureRules {
     static let streamErrorDomain = "com.apple.ScreenCaptureKit.SCStreamErrorDomain"
     static let userDeclinedCode = -3801
 
-    /// One of the private apps, or a helper inside one (its id plus ".…").
-    static func isPrivate(_ bundleId: String?) -> Bool {
-        guard let id = bundleId?.lowercased(), !id.isEmpty else { return false }
-        return privateBundleIds.contains(id) || privateBundleIds.contains { id.hasPrefix($0 + ".") }
-    }
-
-    /// Why this turn takes no screenshot, or nil to capture. Whatever app is in front (Aris or a private app),
-    /// the capture goes ahead: those windows are filtered out of the frame (`excludes`).
+    /// Why this turn takes no screenshot, or nil to capture. Whatever app is in front (Aris too), the capture goes
+    /// ahead: Aris's windows are filtered out of the frame (`excludes`).
     static func skip(secureInput: Bool, setting: Bool) -> String? {
         if !setting { return "setting off" }
         if secureInput { return "secure input" }
         return nil
     }
 
-    /// Whether an app's windows are left out of every frame: Aris itself (by pid or bundle id) and the private apps.
+    /// Whether an app's windows are left out of every frame: Aris itself (by pid or bundle id).
     static func excludes(bundleId: String?, pid: Int32, ownPid: Int32, ownBundleId: String) -> Bool {
         if pid == ownPid { return true }
         if let bundleId, bundleId.caseInsensitiveCompare(ownBundleId) == .orderedSame { return true }
-        return isPrivate(bundleId)
+        return false
     }
 
-    /// Whether the CGWindowList fallback composes a window: never one whose owner can't be resolved to a bundle id
-    /// (it could be a private app's helper that hides its bundle), nor Aris's or a private app's.
-    static func fallbackKeeps(bundleId: String?, pid: Int32, ownPid: Int32, ownBundleId: String) -> Bool {
-        guard let bundleId else { return false }
-        return !excludes(bundleId: bundleId, pid: pid, ownPid: ownPid, ownBundleId: ownBundleId)
-    }
 
     /// How long to wait before trying again, or nil to stop: one retry, only when the first attempt got nothing,
     /// and never after the user declined the permission (asking again can't change that).

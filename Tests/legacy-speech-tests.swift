@@ -183,7 +183,8 @@ private func legacyPrerequisiteTests() {
     check(!legacySource("Aris/private/Aris/Dictation/ArisDictationPillCenter.swift").contains("#available(macOS 26"),
           "pill: dictation's pill shows on macOS 14 and 15 too")
     // What is macOS 26's own keeps its check (the notch glass, the polish model).
-    check(legacySource("Aris/private/Aris/Notice/ArisNoticeCenter.swift").contains("#available(macOS 26.0, *)")
+    check(legacySource("Aris/private/Aris/Design/ArisGlass.swift").contains("#available(macOS 26.0, *)")
+          && !legacySource("Aris/private/Aris/Notice/ArisNoticeCenter.swift").contains("#available(macOS 26")
           && legacySource("Aris/private/Aris/ArisDictationPolish.swift").contains("#available(macOS 26.0, *)"),
           "prerequisites: macOS 26's own glass and polish keep their checks")
 }

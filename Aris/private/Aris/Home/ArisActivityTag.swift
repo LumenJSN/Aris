@@ -42,8 +42,8 @@ struct ArisActivityTag: View {
     /// The press under way has ended (acted on or logged): one that goes without ending is logged as taken away.
     @State private var pressEnded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Re-draws this view when the hidden look changes (ArisSiriLookGate).
-    @ObservedObject private var siriLook = ArisSiriLookGate.shared
+    /// Re-draws this view when the hidden look changes (ArisDuskLookGate).
+    @ObservedObject private var duskLook = ArisDuskLookGate.shared
 
     /// Fills: running, breathing up to, done.
     static let fill = 0.08
@@ -72,8 +72,8 @@ struct ArisActivityTag: View {
     private static let failedTint = Color(red: 1, green: 0.45, blue: 0.4)
 
     private var settled: Bool { done || failed }
-    /// Running, Aris's own task, in the siri look: drawn as Siri's capsule (its glass, its dots, no breathing or sweep).
-    private var siriWorking: Bool { ArisSiriLookNow.on && !settled && look == nil }
+    /// Running, Aris's own task, in the dusk look: drawn as the system assistant's capsule (its glass, its dots, no breathing or sweep).
+    private var duskWorking: Bool { ArisDuskLookNow.on && !settled && look == nil }
     private var pressable: Bool { stop != nil && !settled }
     /// The stop square shows in the face's place.
     private var offersStop: Bool { pressable && (hovering || previewHover) }
@@ -86,9 +86,9 @@ struct ArisActivityTag: View {
     var body: some View {
         HStack(spacing: Self.gap) {
             ZStack {
-                if siriWorking {
-                    // The siri look: Siri's ring of dots is the work's mark (its small capsule with moving dots and a word).
-                    ArisSiriLookDots(size: 11).frame(width: 14, height: 14).opacity(offersStop ? 0 : 1)
+                if duskWorking {
+                    // The dusk look: the system assistant's ring of dots is the work's mark (its small capsule with moving dots and a word).
+                    ArisDuskLookDots(size: 11).frame(width: 14, height: 14).opacity(offersStop ? 0 : 1)
                 } else {
                     ArisCharacterView(look: look ?? .star, state: settled ? "default" : "working", size: 14, isAris: look == nil)
                         .opacity(offersStop ? 0 : settled ? 0.72 : 1)
@@ -128,10 +128,10 @@ struct ArisActivityTag: View {
         .padding(.trailing, 11)
         .frame(height: Self.height)
         .background {
-            Capsule().fill(.white.opacity(settled ? Self.doneFill : siriWorking ? 0 : Self.fill))
+            Capsule().fill(.white.opacity(settled ? Self.doneFill : duskWorking ? 0 : Self.fill))
                 .overlay {
-                    if siriWorking {
-                        ArisSiriLookGlass(shape: Capsule())
+                    if duskWorking {
+                        ArisDuskLookGlass(shape: Capsule())
                     } else if !settled {
                         ArisTagBreath()
                         ArisTagSheen()

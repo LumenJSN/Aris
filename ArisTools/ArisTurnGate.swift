@@ -95,6 +95,8 @@ enum ArisTurnGate {
         if first == "routine" { return true }
         // Website work for Aside: the agent's one gate knows this conversation read outside text (then the user's card).
         if first == "aside" { return true }
+        // A prompt into one of the user's Claude Code sessions: the agent asks them on their card every time (ArisSessionSend).
+        if first == "session" { return true }
         return first == "board"
     }
 
@@ -160,7 +162,7 @@ enum ArisTurnGate {
             if rest.first == "mail", !ArisLocalReadPolicy.isRead(rest), !ArisHandOff.names(rest) { return .deny("Refused: mail is read only here.") }
             // A service call runs alone, and the agent's gate marks the conversation itself before the service is reached
             // (so it judges the call by the taint as it was: M8).
-            if rest.first == "mcp" || rest.first == "skill" || rest.first == "aside" || rest.first == "routine" {
+            if rest.first == "mcp" || rest.first == "skill" || rest.first == "aside" || rest.first == "routine" || rest.first == "session" {
                 guard pieces.count == 1 else { return .deny(unreadable) }
                 continue
             }
@@ -405,8 +407,13 @@ enum ArisMessagePass {
 /// file is built into both aris-tools and aris-agent. Pure: words in, a reading out.
 enum ArisConvertWords {
     static let verbs: Set<String> = ["convert", "merge", "split", "compress"]
-    /// At most this many files in one call.
+    /// At most this many files named in one call.
     static let mostFiles = 50
+    /// At most this many files aris-tools picks itself for one call (a selector: a trip's photos selected in Finder,
+    /// the copies a conversion just made); the shelf keeps at most mostFiles.
+    static let mostPicked = 200
+    /// More named files than this make a call the long kind (forty photos may take longer than quickLimit).
+    static let manyFiles = 10
     /// A video or sound job (or one a selector picks) may take this long before aris-tools stops it (nothing is left
     /// behind); any other this long. Each caller waits a little longer (the runner, the API helper, agy's relay).
     static let mediaLimit: TimeInterval = 180
@@ -426,7 +433,7 @@ enum ArisConvertWords {
     }
 
     static func deadline(_ call: Call) -> Date {
-        now().addingTimeInterval(call.selector != nil || isMedia(call) ? mediaLimit : quickLimit)
+        now().addingTimeInterval(isLong(call) ? mediaLimit : quickLimit)
     }
 
     private static func now() -> Date { Date() }
@@ -434,8 +441,9 @@ enum ArisConvertWords {
     static let videoTypes: Set<String> = ["mov", "mp4", "m4v"]
     static let audioTypes: Set<String> = ["m4a", "mp3", "wav", "aiff", "aif", "caf", "aac"]
 
-    /// Files aris-tools picks itself (and never names back to the brain): the Finder selection, or the notch shelf.
-    enum Selector: String, Equatable { case finder = "--finder", shelf = "--shelf" }
+    /// Files aris-tools picks itself (and never names back to the brain): the Finder selection, the notch shelf, or the
+    /// files the last conversion of this question made (ArisMadeFiles: "make these smaller and put them in one PDF").
+    enum Selector: String, Equatable, CaseIterable { case finder = "--finder", shelf = "--shelf", made = "--made" }
 
     struct Call: Equatable {
         let verb: String
@@ -491,10 +499,15 @@ enum ArisConvertWords {
         return Call(verb: verb, paths: paths, options: options)
     }
 
-    /// A call that may take minutes: a video or sound file in it or made, or files aris-tools picks (they may be).
+    /// A call that may take minutes: a video or sound file in it or made, files aris-tools picks (they may be), or
+    /// more than manyFiles files.
     static func isLong(_ words: [String]) -> Bool {
         guard let call = parse(words) else { return false }
-        return call.selector != nil || isMedia(call)
+        return isLong(call)
+    }
+
+    static func isLong(_ call: Call) -> Bool {
+        call.selector != nil || isMedia(call) || call.paths.count > manyFiles
     }
 
     /// A video or sound file named in it, or made by it.

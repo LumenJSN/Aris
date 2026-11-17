@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/LumenJSN/Aris/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/release-v1.2.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=dark" /><img alt="latest release" src="https://shieldcn.dev/badge/release-v1.2.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=light" /></picture></a>
+  <a href="https://github.com/LumenJSN/Aris/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/release-v1.2.1.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=dark" /><img alt="latest release" src="https://shieldcn.dev/badge/release-v1.2.1.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=light" /></picture></a>
   <a href="https://arismac.app"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/website-arismac.app.svg?logo=lu:Globe&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="Website: arismac.app" src="https://shieldcn.dev/badge/website-arismac.app.svg?logo=lu:Globe&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture></a>
   <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/macOS-14%2B_Apple_silicon.svg?logo=apple&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="macOS 14+ on Apple silicon" src="https://shieldcn.dev/badge/macOS-14%2B_Apple_silicon.svg?logo=apple&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Swift-5.svg?logo=swift&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="Swift" src="https://shieldcn.dev/badge/Swift-5.svg?logo=swift&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture>
@@ -113,14 +113,18 @@ A build from source has no onboarding sounds (they are not in the repository, se
 - **Your choice of brain**: Claude Code (recommended), Codex, Antigravity, an API key or a local model. Every feature
   works on every brain.
 - **Works on your Mac**: Messages, Mail, Notes, Calendar, Reminders, Contacts, Finder and files (convert, merge,
-  shrink, move, undo), music, timers, weather, stocks, maps and currency. Other apps' windows can be read and
-  operated through [Peekaboo](https://github.com/openclaw/Peekaboo), downloaded on first use.
+  shrink, move, undo), music, timers, weather, stocks, maps and currency. Any other app can be read and operated
+  by Aris's own computer-use engine, in the background where the app allows it (an app that needs the front gets a
+  brief turn there, then your front app comes back); [Peekaboo](https://github.com/openclaw/Peekaboo), downloaded on
+  first use, is an option.
 - **Sees what you point at**: ask about the screen, circle something with the gesture, or pick windows to ask about.
 - **Dictation** into any app, with a learned dictionary and your own writing style, shown in a small pill at the
   bottom of the screen while the notch stays quiet. Talking and dictation work on macOS 14 and later (on 14 and 15
   with Apple's older speech engine; see [Install](#install)).
-- **Hands-free conversation**, with on-device end-of-turn detection and barge-in.
+- **Hands-free conversation**, with on-device end-of-turn detection and barge-in with headphones (over the
+  speakers, say its name or press the shortcut to stop it).
 - **Teammates**: background workers (a clone of Aris, Claude Code in a terminal) that take a job and report back.
+  Aris can also send a prompt into one of your running Claude Code sessions, after a confirm card.
 - **Skills** in the open Agent Skills format (`SKILL.md` plus optional `scripts/`, `references/`, `assets/`), so
   skills made for Claude Code or Codex work unchanged on every brain. They are off until you turn them on, each is
   checked by a static scan ([SkillSpector](https://github.com/NVIDIA/skillspector)) and a review by your AI first, and
@@ -138,7 +142,7 @@ Security (the helper and tools inside the app count as the app).
 | Microphone | hears you while you hold the talk key, in a hands-free conversation, and for its name if the wake word is on |
 | Speech Recognition | turns speech into text on the Mac (on macOS 14 and 15, through Apple's servers for a language without an on-device model; an on-device Whisper model is an option) |
 | Accessibility | finds and presses buttons and fields in other apps, types for you, reads the selection and the focused window |
-| Screen Recording | sees the screen only when you point, circle or pick a window; password apps and Aris's own windows are always left out |
+| Screen Recording | sees the screen only when you point, circle or pick a window; Aris's own windows are always left out |
 | Full Disk Access (optional) | reads Messages, Mail and Notes; never writes there |
 | Desktop, Documents, Downloads | moves, converts and restores your files when you ask |
 | Calendars, Reminders, Contacts | shows and edits events and to-dos, finds the person you name |

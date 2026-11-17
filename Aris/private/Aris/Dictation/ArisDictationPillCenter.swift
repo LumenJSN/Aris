@@ -172,6 +172,7 @@ final class ArisDictationPillCenter: ObservableObject {
         shown.recordingSeconds = recordingSeconds
         shown.dictation = dictationCount
         shown.english = ArisUIWords.english
+        shown.light = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua
         let key = ArisDictationKey.Choice.current.name(english: shown.english)
         shown.hint = ArisDictationPillWords.hint(english: shown.english, key: key)
         // The copied words stay up while the pointer is on them (as the notch's card did).
@@ -273,12 +274,11 @@ final class ArisDictationPillCenter: ObservableObject {
         monitors = []
     }
 
-    /// The panel takes the pointer only on the pill (with the recovered words' corner close).
+    /// The panel takes the pointer only on the pill.
     private func updatePointer() {
         guard let panel, panel.isVisible else { return }
         let phase = display.phase
-        var rect = ArisDictationPillRules.pillRect(ArisDictationPillRules.size(phase)).offsetBy(dx: panel.frame.minX, dy: panel.frame.minY)
-        if case .recovered = phase { rect = rect.insetBy(dx: -6, dy: -6) }
+        let rect = ArisDictationPillRules.pillRect(display.size).offsetBy(dx: panel.frame.minX, dy: panel.frame.minY)
         let on = phase.shown && rect.contains(NSEvent.mouseLocation)
         if panel.ignoresMouseEvents == on { panel.ignoresMouseEvents = !on }
         if on != hovered {
@@ -298,13 +298,14 @@ final class ArisDictationPillCenter: ObservableObject {
             closeRecovered: { [weak self] in self?.closeRecovered() })
     }
 
+    /// Copies the words again; the card's label says so for 1.2 s and the card stays.
     private func copyAgain() {
         let state = ArisDictationState.shared
         guard let text = state.lastText, state.copy(text) else { return }
         display.copiedAgain = true
         copyFeedbackTask?.cancel()
         copyFeedbackTask = Task { [weak self] in
-            try? await Task.sleep(for: ArisDictationCopy.feedback)
+            try? await Task.sleep(for: ArisDictationPillRecoveredLayout.againLinger)
             guard !Task.isCancelled else { return }
             self?.display.copiedAgain = false
         }

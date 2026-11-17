@@ -8,9 +8,9 @@
 //  over it. The recognizer, Scribe, Whisper and Smart Turn start only once there is voice. Esc, ⌥Space between turns,
 //  an end phrase, the silence setting, or the screen going away ends it, and then the wake word is back.
 //  Aris's own news (a job is done, a job asks) waits its turn and for a pause (announce).
-//  A turn started by voice is hands-free (security review C1): the agent gives it no vouch, standing permission,
-//  remembered yes or request coverage (ArisHandsFree), its jobs follow ArisHandOutPlan, and a question asked in a
-//  conversation takes a click or Y for a yes. While another app plays or records, listening between turns pauses.
+//  A turn started by voice was hands-free (security review C1) until 2026-11-15; now it goes through the risk gate and
+//  its cards as any turn does, and a card is answered by voice too. While another app plays or records, listening
+//  between turns pauses.
 //
 
 import AppKit
@@ -39,6 +39,7 @@ extension ArisController {
         let wasOpen = conversation.isOpen
         conversation = conversation.opened(at: Self.uptime)
         guard !wasOpen else { return }
+        echoLoop = ArisEchoLoop()
         log.notice("conversation open")
         watchEscape()
         watchSilence()
@@ -60,6 +61,9 @@ extension ArisController {
         conversation = conversation.closed()
         conversationWatch?.cancel()
         conversationWatch = nil
+        echoTailWatch?.cancel()
+        echoTailWatch = nil
+        echoLoop = ArisEchoLoop()
         escapeMonitors.forEach(NSEvent.removeMonitor)
         escapeMonitors = []
         pausedForOtherAudio = false
@@ -116,17 +120,23 @@ extension ArisController {
     }
 
     /// Pauses listening between turns while another app plays or records, and resumes once it stops.
+    /// While paused, the name still wakes Aris (ArisWakeArm.listensForName): the detector stays on for it.
     private func checkOtherAudio() {
-        let present = otherAudioPresent()
+        let apps = otherAudioApps()
+        let present = !apps.isEmpty
         guard present != pausedForOtherAudio else { return }
         pausedForOtherAudio = present
         if present {
-            log.notice("another app's audio: listening paused")
-            stopWaitingForWakeWord()
+            noteOtherAudio(apps)
         } else {
             log.notice("other audio stopped: listening again")
-            waitForWakeWord()
         }
+        waitForWakeWord()
+    }
+
+    /// Which apps paused listening, once per pause.
+    func noteOtherAudio(_ apps: [String]) {
+        log.notice("another app's audio: listening paused (\(apps.joined(separator: ", "), privacy: .public)); the name still wakes Aris")
     }
 
     /// Whether another app plays (audibly, by the output meter) or records right now. The meter runs (made off the main
@@ -134,7 +144,10 @@ extension ArisController {
     /// counts (ArisOtherAudio.isPresent), so a denied permission fails closed.
     /// `forConversation`: the check is for a conversation (open, or opening with this turn); only then may the meter
     /// run, since only closing one stops it.
-    func otherAudioPresent(forConversation: Bool = true) -> Bool {
+    func otherAudioPresent(forConversation: Bool = true) -> Bool { !otherAudioApps(forConversation: forConversation).isEmpty }
+
+    /// The apps that make otherAudioPresent true (ArisOtherAudio.culprits), by bundle id; empty: none.
+    func otherAudioApps(forConversation: Bool = true) -> [String] {
         let own = ProcessInfo.processInfo.processIdentifier
         let processes = ArisOtherAudio.processes()
         switch ArisOtherAudio.meterStep(processes, ownPid: own, forConversation: forConversation) {
@@ -144,8 +157,8 @@ extension ArisController {
         }
         let missing = ArisOtherAudio.permissionMissing(onlyZeros: outputMeter.onlyZeros, processes, ownPid: own)
         if missing != systemAudioMissing { systemAudioMissing = missing }
-        return ArisOtherAudio.isPresent(processes, ownPid: own, outputLevel: outputMeter.level,
-                                        pausedPlayers: ArisOtherAudio.pausedPlayers(nowPlaying: ArisNowPlaying.shared.isPlaying))
+        return ArisOtherAudio.culprits(processes, ownPid: own, outputLevel: outputMeter.level,
+                                       pausedPlayers: ArisOtherAudio.pausedPlayers(nowPlaying: ArisNowPlaying.shared.isPlaying))
     }
 
     /// A hands-free turn's local change (an undo, ticking a to-do) asks first on the card, yes by a click or Y only
@@ -176,8 +189,8 @@ extension ArisController {
     func updateVoiceWatch() {
         let mode = voiceWatchMode()
         detector?.watchVoice(mode, playback: speaker.meter.read)
-        // Paused for another app's sound between turns: the microphone closes too, until it stops.
-        if pausedForOtherAudio, conversation.isOpen, session.phase == .idle, detector != nil { stopWaitingForWakeWord() }
+        // Paused for another app's sound between turns: no voice watch, and the detector listens for the name instead.
+        if pausedForOtherAudio, conversation.isOpen, session.phase == .idle, listener == nil, wakeListener == nil { detector?.pause(false) }
     }
 
     private func voiceWatchMode() -> ArisBargeIn.Mode? {
@@ -185,21 +198,64 @@ extension ArisController {
         switch session.phase {
         case .idle where listener == nil && wakeListener == nil:
             // Checked now, before arming: another app's sound pauses listening between turns.
-            if otherAudioPresent() {
-                if !pausedForOtherAudio { pausedForOtherAudio = true }
+            let apps = otherAudioApps()
+            if !apps.isEmpty {
+                if !pausedForOtherAudio {
+                    pausedForOtherAudio = true
+                    noteOtherAudio(apps)
+                }
                 return nil
             }
+            // Not while Aris's own voice may still be in the room (the speaker's end plus the output's tail).
+            guard echoTailOver() else { return nil }
             return .between
         case .speaking where session.question == nil:
             // Over another app's sound the barge-in watch would hear it, not the user.
             if otherAudioPresent() { return nil }
-            let mode = ArisBargeIn.mode(headphones: ArisDucking.outputIsHeadphones(), speakersAllowed: Defaults[.arisBargeInOnSpeakers])
+            // On speakers only with an echo canceller (there is none): Aris's own voice must never stop it or become a turn.
+            let mode = ArisBargeIn.mode(headphones: ArisDucking.outputIsHeadphones(), speakersAllowed: Defaults[.arisBargeInOnSpeakers], echoCancelled: ArisBargeIn.echoCancellerOn)
             // After a ⌥Space turn the listener had the microphone: the detector opens now, for the barge-in.
             if mode != nil, detector == nil, !screenAway, listener == nil { startDetector(paused: true) }
             return mode
         default:
             return nil
         }
+    }
+
+    /// Whether Aris's own voice is out of the room: the speaker finished and the output's tail (ArisOutputLatency,
+    /// ArisEchoGuard.tail) has passed. Until then the watch is looked at again when the tail ends.
+    func echoTailOver() -> Bool {
+        let since = speaker.stoppedAt.map { (ContinuousClock.now - $0) / .seconds(1) }
+        let wait = ArisEchoGuard.waitBeforeListening(playing: speaker.isPlaying, sinceStopped: since, tail: ArisOutputLatency.tail())
+        guard wait > 0 else { return true }
+        echoTailWatch?.cancel()
+        echoTailWatch = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled, let self else { return }
+            self.echoTailWatch = nil
+            self.updateVoiceWatch()
+        }
+        return false
+    }
+
+    /// Aris's own voice may still reach the microphone: it plays, or stopped within the tail and a name's length.
+    var ownVoiceAudible: Bool {
+        let since = speaker.stoppedAt.map { (ContinuousClock.now - $0) / .seconds(1) }
+        return ArisEchoGuard.ownVoiceAudible(playing: speaker.isPlaying, sinceStopped: since,
+                                             window: ArisOutputLatency.tail() + ArisEchoGuard.candidateLength)
+    }
+
+    /// A heard turn was Aris's own words (ArisEchoGuard.verdict): nothing is routed or answered. In a conversation it
+    /// listens again (the answer still parked); two in a row, or a sentence of Aris's own, end the conversation
+    /// (ArisEchoLoop) so it can't loop. A wake turn closes quietly.
+    func echoHeard(_ verdict: ArisEchoGuard.Verdict) {
+        log.notice("heard Aris's own words (\(verdict == .ownWords ? "its sentence" : "echo", privacy: .public)): not a turn")
+        ArisTuningLog.append(["path": "echo", "verdict": verdict == .ownWords ? "own-words" : "echo",
+                              "headphones": ArisDucking.outputIsHeadphones()], to: "wake-log.jsonl")
+        if turnByWakeWord, !conversation.isOpen { return closeWakeTurnQuietly(.nothingSaid) }
+        echoLoop = echoLoop.after(verdict)
+        dropFalseStart()
+        if echoLoop.stops { closeConversation(.echo) }
     }
 
     /// The voice watch is sure the user is talking; the turn's audio starts at the detector's sample `from`, `lookback`
@@ -235,7 +291,11 @@ extension ArisController {
         let overSpeakers = session.phase == .speaking && !ArisDucking.outputIsHeadphones()
         arisWasSaying = overSpeakers ? session.reply : ""
         echoWords = overSpeakers ? ArisEchoTrim.words(in: lookback) : 0
-        turnHandsFree = true
+        // Not hands-free (2026-11-15): what it asks goes through the gate and its cards, answered by voice or a click.
+        turnHandsFree = false
+        turnByWakeWord = false
+        wakeDoubleCheck?.cancel()
+        endQuietLap()
         // The answer on screen stays parked if this turn comes to nothing.
         answerBeforeFollowUp = session.reply.isEmpty || session.question != nil ? nil : (session.heard, session.reply)
         detector.watchVoice(nil)

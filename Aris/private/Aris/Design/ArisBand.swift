@@ -12,18 +12,21 @@ import SwiftUI
 /// screen's top edge, ArisRimOutline), with a soft reflection gliding left to right along it, a long tail behind (the user's
 /// pick "A 유리 반사", 2026-11-02). Each pass runs from the left tip until its tail has left the right one (ArisRimSweep);
 /// only the last 4 points at each tip fade. A louder voice brightens it (the waveform's smoothing), and it draws
-/// at the display's rate.
+/// at the display's rate. After the wake word it makes exactly one lap (`once`, ArisQuietWake): heard in that lap, it
+/// simply goes on (the same rim, the same clock, along the opening notch's outline); not heard, it ends there.
 struct ArisListeningRim: View {
     let shape: NotchShape
     /// Between turns of a conversation: drawn still, as under Reduce Motion (no sweep, nothing redrawn each frame).
     var calm = false
+    /// The wake word's quiet lap: one pass, then no light (only the hairline) until the turn ends.
+    var once = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var voice = ArisRimVoice()
     @State private var geometry = ArisRimGeometry()
     /// When this rim appeared (it's inserted while listening), so every listen starts with a fresh pass.
     @State private var startedAt = Date()
 
-    private static let pad: CGFloat = 6
+    static let pad: CGFloat = 6
     /// sRGB white and sky (160, 214, 255).
     private static let white = (red: 1.0, green: 1.0, blue: 1.0)
     private static let sky = (red: 160 / 255.0, green: 214 / 255.0, blue: 1.0)
@@ -38,23 +41,34 @@ struct ArisListeningRim: View {
                 guard !rim.segments.isEmpty else { return }
                 let loud = voice.step(level: ArisController.shared.level)
                 let head = reduceMotion || calm ? rim.total / 2
-                    : ArisRimSweep.head(at: context.date.timeIntervalSince(startedAt), total: rim.total)
-                let lift = 0.75 + 0.6 * min(1, loud * 2.4)
-                for (style, gain, color) in Self.passes {
-                    for segment in rim.segments {
-                        let behind = head - segment.middle
-                        let glow = behind >= 0 ? exp(-behind / ArisRimSweep.tail) : exp(-(behind * behind) / 40)
-                        let alpha = segment.endFade * (0.09 + 0.85 * glow * lift) * gain
-                        guard alpha > 0.004 else { continue }
-                        canvas.stroke(segment.path, with: .color(.sRGB, red: color.red, green: color.green, blue: color.blue, opacity: alpha),
-                                      style: style)
-                    }
-                }
+                    : ArisRimSweep.head(at: context.date.timeIntervalSince(startedAt), total: rim.total, once: once)
+                Self.draw(in: &canvas, rim: rim, head: head, loud: loud)
             }
             .padding(-Self.pad)
         }
         .allowsHitTesting(false)
         .transition(.opacity)
+    }
+
+    /// The rim's three passes with the light's head at `head` along the U (nil: no light, the hairline only) and the
+    /// voice's smoothed loudness `loud`. The off-screen renders draw their stills with this same function.
+    static func draw(in canvas: inout GraphicsContext, rim: ArisRimGeometry.Rim, head: Double?, loud: Double) {
+        let lift = 0.75 + 0.6 * min(1, loud * 2.4)
+        for (style, gain, color) in passes {
+            for segment in rim.segments {
+                let glow: Double
+                if let head {
+                    let behind = head - segment.middle
+                    glow = behind >= 0 ? exp(-behind / ArisRimSweep.tail) : exp(-(behind * behind) / 40)
+                } else {
+                    glow = 0
+                }
+                let alpha = segment.endFade * (0.09 + 0.85 * glow * lift) * gain
+                guard alpha > 0.004 else { continue }
+                canvas.stroke(segment.path, with: .color(.sRGB, red: color.red, green: color.green, blue: color.blue, opacity: alpha),
+                              style: style)
+            }
+        }
     }
 }
 

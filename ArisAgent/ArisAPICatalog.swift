@@ -55,13 +55,14 @@ enum ArisAPICatalog {
 
     /// A conversion's words from its arguments: the paths, then each flag that has a value; nil unless aris-tools
     /// would read exactly that (ArisConvertWords).
-    /// `from`: "finder" or "shelf" in place of the paths (aris-tools picks those files and never names them).
-    private static let from = choice(["finder", "shelf"], "Instead of paths: the files selected in Finder, or on the notch shelf (optional)")
+    /// `from`: "finder", "shelf" or "made" in place of the paths (aris-tools picks those files and never names them).
+    private static let from = choice(["finder", "shelf", "made"],
+                                     "Instead of paths: the files selected in Finder, on the notch shelf, or made by this question's last conversion (optional)")
 
     private static func convertArgv(_ verb: String, _ arguments: [String: Any], flags: [(String, String)]) -> [String]? {
         var words = [verb]
         if let source = arguments["from"], !(source is NSNull) {
-            guard arguments["paths"] == nil, let picked = source as? String, ["finder", "shelf"].contains(picked) else { return nil }
+            guard arguments["paths"] == nil, let picked = source as? String, ["finder", "shelf", "made"].contains(picked) else { return nil }
             words.append("--" + picked)
         } else {
             guard let raw = arguments["paths"] as? [Any], !raw.isEmpty, raw.count <= ArisConvertWords.mostFiles else { return nil }
@@ -299,6 +300,24 @@ enum ArisAPICatalog {
                 guard let brief = text(arguments["brief"])?.trimmingCharacters(in: .whitespacesAndNewlines), !brief.isEmpty, brief.count <= 4_000 else { return nil }
                 return ["aside", brief]
             }),
+        // A prompt typed into one of the user's own Claude Code sessions (the agent's card every time, then its checks).
+        ArisAPICatalogEntry(function: ArisAPIFunction(
+            name: "claude_session_send", description: "Type a prompt (a slash command like /unslop plus a short instruction, or plain words) into one of the user's own running Claude Code sessions, named by its folder (or its id from claude_sessions). The user is always asked on a card first. One line only.",
+            parameters: object(["session": string("The session's folder name (or its id)"), "text": string("Exactly what to type, one line, in the user's words")], required: ["session", "text"])),
+            sealed: true, argv: { arguments in
+                guard let which = text(arguments["session"])?.trimmingCharacters(in: .whitespaces), !which.isEmpty, which.count <= 300,
+                      let words = text(arguments["text"])?.trimmingCharacters(in: .whitespaces), !words.isEmpty, words.count <= ArisSessionPick.longestText else { return nil }
+                return ["session", "send", which, words]
+            }),
+        ArisAPICatalogEntry(function: ArisAPIFunction(
+            name: "claude_sessions", description: "List the user's Claude Code sessions Aris knows (folder, terminal, state, id).",
+            parameters: object([:], required: [])),
+            sealed: true, argv: { _ in ["session", "list"] }),
+        // The user's Devin sessions, read only from Devin's own records.
+        ArisAPICatalogEntry(function: ArisAPIFunction(
+            name: "devin_sessions", description: "Read what the user's Devin sessions (running, else the most recent) were asked and last answered. Read only; what comes back is outside text.",
+            parameters: object(["all": ["type": "boolean", "description": "The most recent sessions too, not only the running ones"]], required: [])),
+            sealed: true, argv: { arguments in (arguments["all"] as? Bool) == true ? ["devin", "sessions", "--all"] : ["devin", "sessions"] }),
         // Computer use in another app (Peekaboo under the agent's one desktop controller and gate): the same for every brain.
         ArisAPICatalogEntry(function: ArisAPIFunction(
             name: "desktop_see", description: "See another app's window: every control with a ref like @s1abc:e3 (and with ocr, the text on the screen as @s1abc:t2 marks). Then act on a ref; each action's answer shows the window again.",

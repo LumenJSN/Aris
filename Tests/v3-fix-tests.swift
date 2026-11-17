@@ -311,8 +311,8 @@ private func v3LookTargetTests() {
     check(look.contains("ArisFrontNow.lookTarget(told: told") && look.contains("ArisLookTarget.screenArguments(pid: pid, window: windowId)") && !look.contains("AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute"),
           "vm3n bug 1 (look): wiring: the look's app, its window's words and its selection are all the target's")
     check(tool.contains("option(\"--pid\", in: &args)") && tool.contains("guard let app = named ?? ArisFrontLive.frontPid()")
-          && tool.contains("guard !ArisCaptureRules.isPrivate(app.bundleIdentifier)"),
-          "vm3n bug 1 (look): wiring: the tool reads the named app's window, and a private app is still never read")
+          && !tool.contains("ArisCaptureRules.isPrivate"),
+          "vm3n bug 1 (look): wiring: the tool reads the named app's window, a password app's like any (the user 2026-11-16)")
     check(v3Code("ArisAgent/main.swift").contains("aris: (object[\"pid\"] as? Int).flatMap { Int32(exactly: $0) },"), "vm3n bug 1 (look): wiring: the route says which process is Aris")
 }
 

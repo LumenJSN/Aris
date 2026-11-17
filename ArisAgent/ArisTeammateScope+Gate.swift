@@ -15,7 +15,7 @@ extension ArisTeammateScope {
                                    "finder", "note", "notes", "obsidian", "web", "weather", "stock", "currency", "maps", "canvas", "brief", "link", "tab", "aside",
                                    "desktop", "keys", "type", "screen", "selection", "clipboard", "shortcut", "shortcuts", "message",
                                    "messages", "mail", "mcp", "event", "calendars", "use-calendar", "calendar", "remind", "todo", "schedule",
-                                   "skill", "shelf"]
+                                   "skill", "shelf", "devin", "session"]
 
     /// Plain reading commands: files, or the terminal.
     private static let reading: Set<String> = ["ls", "cat", "head", "tail", "wc", "file", "stat", "find", "mdfind", "mdls", "grep", "rg",

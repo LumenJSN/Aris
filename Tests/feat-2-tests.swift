@@ -234,8 +234,10 @@ private func feat2MicWiringTests() {
     check(controller.contains("state.headsetOnly = micPlan == .pause(.headsetOnly)") && controller.contains("ArisMicWatch { [weak self] in self?.micDevicesChanged() }")
           && controller.contains("case .settingOff?, .otherAudio?, .headsetOnly?: return stopWaitingForWakeWord()"),
           "wiring: the wake word asks the plan each time it arms, closes its microphone when it must pause, and watches the devices")
+    // wake-net: 호출어 녹음's own microphone (ArisWakeRecorderMic), open only while its sheet records, pinned and
+    // logged through ArisMicDevices like the others.
     let engines = ["Aris/private/Aris/ArisWakeDetector.swift", "Aris/private/Aris/ArisListener.swift", "Aris/private/Aris/ArisSpeaker.swift",
-                   "Aris/private/Aris/Onboarding/ArisOnboardingAudio.swift"]
+                   "Aris/private/Aris/Onboarding/ArisOnboardingAudio.swift", "Aris/private/Aris/ArisWakeRecorderMic.swift"]
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("..").standardized
     var found: [String] = []
     for folder in ["Aris", "ArisAgent", "ArisTools", "ArisXPCHelper"] {
@@ -247,7 +249,7 @@ private func feat2MicWiringTests() {
             }
         }
     }
-    check(Set(found) == Set(engines), "wiring: no new audio engine or recorder has appeared outside the four known files (\(found.sorted()))")
+    check(Set(found) == Set(engines), "wiring: no new audio engine or recorder has appeared outside the five known files (\(found.sorted()))")
 }
 
 // MARK: - Quiet hours: any hours
@@ -484,13 +486,13 @@ private func feat2TerminalPlanTests() {
     // command at all (it is in the prompt file the shell reads).
     let hostile = "/Users/p/it's \"quoted\" $(rm -rf ~) `id` \\ ; & | proj"
     let command = ArisClaudeLaunch.command(promptFile: work + "/cc-0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9.txt", cwd: hostile, claude: "/Users/p/.local/bin/claude")
-    check(command == "cd '/Users/p/it'\\''s \"quoted\" $(rm -rf ~) `id` \\ ; & | proj' && '/Users/p/.local/bin/claude' \"$(cat '/Users/p/.config/aris/aris/work/cc-0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9.txt')\"",
+    check(command == "cd '/Users/p/it'\\''s \"quoted\" $(rm -rf ~) `id` \\ ; & | proj' && '/Users/p/.local/bin/claude' \(ArisClaudeLaunch.flags) \"$(cat '/Users/p/.config/aris/aris/work/cc-0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9.txt')\"",
           "launch: the command single-quotes the folder, the checked claude and the prompt file, as before")
     let plan = { (terminal: ArisTerminal) in L.plan(terminal, command: command, shell: "/bin/zsh", folder: work, warpFolder: warp, id: id) }
     check(plan(.terminal) == .script(ArisClaudeLaunch.script(command: command, host: .terminal)) && plan(.iTerm) == .script(ArisClaudeLaunch.script(command: command, host: .iTerm)),
           "launch: Terminal and iTerm2 are still opened by the same AppleScript")
     if case .script(let text) = plan(.terminal) {
-        check(text == "tell application id \"com.apple.Terminal\"\n    activate\n    do script \"cd '/Users/p/it'\\\\''s \\\"quoted\\\" $(rm -rf ~) `id` \\\\ ; & | proj' && '/Users/p/.local/bin/claude' \\\"$(cat '/Users/p/.config/aris/aris/work/cc-0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9.txt')\\\"\"\nend tell",
+        check(text == "tell application id \"com.apple.Terminal\"\n    activate\n    do script \"cd '/Users/p/it'\\\\''s \\\"quoted\\\" $(rm -rf ~) `id` \\\\ ; & | proj' && '/Users/p/.local/bin/claude' \(ArisClaudeLaunch.flags.replacingOccurrences(of: "\"", with: "\\\"")) \\\"$(cat '/Users/p/.config/aris/aris/work/cc-0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9.txt')\\\"\"\nend tell",
               "launch: Terminal's script, word for word, with a hostile folder escaped twice (shell, then AppleScript)")
     } else {
         check(false, "launch: Terminal's script, word for word, with a hostile folder escaped twice (shell, then AppleScript)")

@@ -63,6 +63,12 @@ enum ArisDesktopVerify {
         let wanted = text.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping
         let more = before.map { raw.components(separatedBy: wanted).count > $0.precomposedStringWithCanonicalMapping.components(separatedBy: wanted).count } ?? true
         if !wanted.isEmpty, raw.contains(wanted), more { return .done("“\(short(field.label))” now reads “\(short(shown))”") }
+        // A terminal wraps a long line at its edge: the text is found with the breaks and spaces taken out of both.
+        let squeezed = { (text: String) in text.filter { !$0.isWhitespace && !$0.isNewline } }
+        let tight = squeezed(wanted)
+        if tight.count >= 12, squeezed(raw).contains(tight), before.map({ squeezed(raw).components(separatedBy: tight).count > squeezed($0.precomposedStringWithCanonicalMapping).components(separatedBy: tight).count }) ?? true {
+            return .done("“\(short(field.label))” now reads “\(short(shown))”")
+        }
         return .notSeen("“\(short(field.label))” reads “\(short(shown))”")
     }
 

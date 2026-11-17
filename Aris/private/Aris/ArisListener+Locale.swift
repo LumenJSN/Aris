@@ -64,4 +64,11 @@ enum ArisHearingShown {
         return ArisListenEngineWords.settingsLine(engine: engine, place: place, osMajor: major,
                                                   forced: ArisListenEngine.forced(osMajor: major, forceLegacy: force))
     }
+
+    /// The wake word's check would hear through Apple's servers: the older engine, with no on-device model for the
+    /// language (ArisSFSpeechTasks.place). The analyzer engine is on this Mac only.
+    static func wakeCheckOnServer(defaults: UserDefaults = .standard) -> Bool {
+        let engine = ArisListenEngine.pick(osMajor: ArisListenEngine.osMajor, forceLegacy: defaults.bool(forKey: ArisListenEngine.forceLegacyKey))
+        return engine == .legacy && ArisSFSpeechTasks.place(ArisHearing.locale) == .server
+    }
 }

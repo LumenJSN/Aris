@@ -2,11 +2,11 @@
 //  ArisScreenCapture.swift
 //  Aris
 //
-//  Takes the screenshot Aris sends with a turn, and the frames gesture shots are cut from, with ScreenCaptureKit. The
-//  order: ScreenCaptureKit first, CGWindowList if it gives nothing, and one retry after 500 ms when a cold start
-//  gives a blank frame. Callers capture only with the grant (controller ruling 2026-11-03): nothing here asks macOS
-//  for it; only the guide's 허용하기 does (ArisPermissionGuide). Aris's own windows and password apps are never in a
-//  frame. Images stay in memory; only sizes, byte counts and timings are logged.
+//  Takes the screenshot Aris sends with a turn, and the frames gesture shots are cut from, with ScreenCaptureKit.
+//  The order: ScreenCaptureKit first, CGWindowList if it gives nothing, and one retry after
+//  500 ms when a cold start gives a blank frame. Callers capture only with the grant (controller ruling 2026-11-03):
+//  nothing here asks macOS for it; only the guide's 허용하기 does (ArisPermissionGuide). Aris's own windows are never in a frame.
+//  Images stay in memory; only sizes, byte counts and timings are logged.
 //
 //  Behind `ArisScreenCapturing` so the capture can move to aris-agent if the sandboxed app can't capture.
 //
@@ -27,13 +27,18 @@ struct ArisCaptured: Sendable {
     let display: CGDirectDisplayID
     let ms: Int
     let retried: Bool
+    /// Which display it is, for the brain (ArisDisplayPick.description); nil for the one plain shot.
+    var title: String? = nil
 }
 
 protocol ArisScreenCapturing: Sendable {
     /// The display under the cursor, cursor shown, as a budgeted PNG; nil when skipped or nothing came back.
     /// The "화면 같이 보기" setting is the caller's to check; secure input is checked here. Whatever app is in front,
-    /// Aris's own windows and the private apps' are filtered out of the frame.
+    /// Aris's own windows are filtered out of the frame.
     func cursorDisplayShot() async -> ArisCaptured?
+    /// The displays a screen turn's plan names (ArisDisplayPick: the named app's, the others when asked; at most three),
+    /// each a budgeted PNG with its label, in that order; empty when skipped or nothing came back.
+    func displayShots(for want: ArisScreenNeed.Want) async -> [ArisCaptured]
     /// One frame of a display within the budget (for gesture crops and the drawing reference); nil on failure.
     func frame(display: CGDirectDisplayID, budget: ArisImageBudget, showsCursor: Bool) async -> CGImage?
     /// Loads the shareable content once, so the first real capture is quicker.
@@ -75,6 +80,44 @@ actor ArisScreenCapture: ArisScreenCapturing {
         return nil
     }
 
+    func displayShots(for want: ArisScreenNeed.Want) async -> [ArisCaptured] {
+        let start = ContinuousClock.now
+        let (point, screens) = await MainActor.run { Self.pointerAndScreens() }
+        if let reason = ArisCaptureRules.skip(secureInput: IsSecureEventInputEnabled(), setting: true) {
+            log.info("display shots skipped: \(reason, privacy: .public)")
+            return []
+        }
+        let displays = screens.map { ArisDisplayPick.Display(id: $0.id, frame: $0.frame) }
+        let primaryHeight = screens.first(where: { $0.frame.origin == .zero })?.frame.height ?? screens.first?.frame.height ?? 0
+        let windows = Self.appWindows(ownPid: ownPid).map {
+            ArisDisplayPick.Window(app: $0.app, frame: ArisDisplayPick.cocoa(fromWindowBounds: $0.bounds, primaryHeight: primaryHeight))
+        }
+        let picks = ArisDisplayPick.pick(displays: displays, pointer: point, windows: windows, want: want)
+        let main = displays.first(where: { $0.frame.origin == .zero })?.frame ?? displays.first?.frame ?? .zero
+        var shots: [ArisCaptured] = []
+        for (index, pick) in picks.enumerated() {
+            guard !Task.isCancelled else { return [] }
+            var attempt = 0
+            while !Task.isCancelled {
+                let (frame, declined) = await grab(display: pick.id, budget: .cursor, showsCursor: true)
+                if let frame, let shot = ArisImageCodec.budgeted(frame, budget: .cursor, for: .cursor) {
+                    let title = ArisDisplayPick.description(role: pick.role, index: index + 1, count: picks.count,
+                                                            frame: displays.first { $0.id == pick.id }?.frame ?? .zero, main: main)
+                    shots.append(ArisCaptured(png: shot.data, pixels: shot.pixels, display: pick.id, ms: Self.milliseconds(since: start),
+                                              retried: attempt > 0, title: title))
+                    break
+                }
+                guard let delay = ArisCaptureRules.retryDelay(afterAttempt: attempt, gotImage: false, declined: declined) else { break }
+                try? await Task.sleep(for: delay)
+                attempt += 1
+            }
+        }
+        guard !Task.isCancelled else { return [] }
+        // Only numbers: never an app's name or a window's title.
+        log.info("display shots: \(shots.count) of \(picks.count) displays (\(screens.count) attached), \(shots.reduce(0) { $0 + $1.png.count }) B \(Self.milliseconds(since: start)) ms")
+        return shots
+    }
+
     func frame(display: CGDirectDisplayID, budget: ArisImageBudget, showsCursor: Bool) async -> CGImage? {
         await grab(display: display, budget: budget, showsCursor: showsCursor).image
     }
@@ -88,7 +131,7 @@ actor ArisScreenCapture: ArisScreenCapturing {
     /// The app's first real capture, taken by the setup once the Screen Recording card is on (ArisFirstCapture): macOS
     /// 26 asks a second time before an app captures the screen itself, and that prompt belongs in the setup. The main
     /// display at 64 pixels, no cursor, through ScreenCaptureKit only (the path a turn's screenshot takes, with Aris's
-    /// own windows and the private apps left out as always); the frame is dropped here and only what came of it goes
+    /// own windows left out as always); the frame is dropped here and only what came of it goes
     /// back. Never without the grant (macOS's own Screen Recording request is never raised) or under secure input.
     func firstCapture() async -> ArisFirstCapture.Outcome {
         guard CGPreflightScreenCaptureAccess(), !IsSecureEventInputEnabled() else { return .unknown }
@@ -115,8 +158,8 @@ actor ArisScreenCapture: ArisScreenCapturing {
 
     private func screenCaptureKit(display id: CGDirectDisplayID, budget: ArisImageBudget, showsCursor: Bool) async -> (image: CGImage?, declined: Bool) {
         do {
-            // Every app, not only those with on-screen windows, so a private app's window that appears mid-grab
-            // is still excluded.
+            // Every app, not only those with on-screen windows, so an Aris window that appears mid-grab is still
+            // excluded.
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
             guard let display = content.displays.first(where: { $0.displayID == id }) else { return (nil, false) }
             let excluded = content.applications.filter {
@@ -139,8 +182,7 @@ actor ArisScreenCapture: ArisScreenCapturing {
         }
     }
 
-    /// The display composed from every on-screen window except Aris's, the private apps' and any whose owner can't be
-    /// resolved (no cursor).
+    /// The display composed from every on-screen window except Aris's, whoever owns it (no cursor).
     private func windowList(display: CGDirectDisplayID, budget: ArisImageBudget) -> CGImage? {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else { return nil }
         var bundles: [pid_t: String?] = [:]
@@ -149,7 +191,7 @@ actor ArisScreenCapture: ArisScreenCapturing {
             guard let number = window[kCGWindowNumber as String] as? Int, number > 0,
                   let pid = window[kCGWindowOwnerPID as String] as? pid_t else { continue }
             if bundles[pid] == nil { bundles[pid] = .some(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier) }
-            guard ArisCaptureRules.fallbackKeeps(bundleId: bundles[pid] ?? nil, pid: pid, ownPid: ownPid, ownBundleId: ownBundleId) else { continue }
+            guard !ArisCaptureRules.excludes(bundleId: bundles[pid] ?? nil, pid: pid, ownPid: ownPid, ownBundleId: ownBundleId) else { continue }
             kept.append(UnsafeRawPointer(bitPattern: number))
         }
         let bounds = CGDisplayBounds(display)
@@ -168,6 +210,27 @@ actor ArisScreenCapture: ArisScreenCapturing {
     }
 
     // MARK: - Helpers
+
+    /// The apps' own windows on screen, front to back (layer 0, never Aris's), with their owner's name
+    /// and CGWindowList bounds. Window titles aren't read.
+    nonisolated static func appWindows(ownPid: pid_t = getpid()) -> [(app: String, bounds: CGRect)] {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [] }
+        return windows.compactMap { window in
+            guard (window[kCGWindowLayer as String] as? Int) == 0, let pid = window[kCGWindowOwnerPID as String] as? pid_t, pid != ownPid,
+                  let name = window[kCGWindowOwnerName as String] as? String, !name.isEmpty,
+                  let raw = window[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: raw as CFDictionary) else { return nil }
+            return (name, bounds)
+        }
+    }
+
+    /// The names of the apps with a window showing, front to back, each once (for "어사이드가 뭐라고 했어").
+    nonisolated static func visibleApps() -> [String] {
+        var seen: [String] = []
+        for window in appWindows() where !seen.contains(window.app) { seen.append(window.app) }
+        return seen
+    }
 
     @MainActor
     private static func pointerAndScreens() -> (CGPoint, [(id: CGDirectDisplayID, frame: CGRect)]) {

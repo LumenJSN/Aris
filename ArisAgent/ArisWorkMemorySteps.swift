@@ -110,7 +110,7 @@ enum ArisWorkSteps {
         "--pages": .flag, "--size": .flag, "--max": .flag, "--percent": .flag,
     ]
     /// Flags that take no value.
-    private static let bareFlags: Set<String> = ["--focus", "--json", "--today", "--finder", "--shelf", "--markdown", "--all", "--ko", "--en", "--text",
+    private static let bareFlags: Set<String> = ["--focus", "--json", "--today", "--finder", "--shelf", "--made", "--markdown", "--all", "--ko", "--en", "--text",
                                                  "--tainted", "--stats", "--stdin", "--daily", "--weekly"]
     private static let smallWord = #"^[A-Za-z0-9.:%x,+-]{1,16}$"#
     private static let programName = #"^[A-Za-z0-9._+-]{1,32}$"#

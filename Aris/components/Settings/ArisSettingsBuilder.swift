@@ -67,13 +67,13 @@ enum ArisSettingsBuilder {
                                desc: "이 시간 안에 물으면 같은 대화로 이어져요.",
                                control: .choice(.minutes, options([("2", "2분"), ("5", "5분"), ("15", "15분")]), selected: String(s.minutes))),
             ]),
+            ArisWakeRecordRows.section(s.wakeRecord, busy: s.busy),
             ArisSettingSection(id: "aris.talk", heading: "대화 모드", note: "“됐어”, “그만”, Esc로 끝나고, 말이 없으면 고른 시간 뒤에 끝나요. 다른 앱 소리를 확인하는 동안 메뉴 막대에 보라색 표시가 뜨지만, 크기만 재고 녹음하지 않아요.", rows: [
                 ArisSettingItem(id: "aris.silence", icon: .symbol("hand"), title: "계속 듣기",
                                desc: "답한 뒤에도 바로 다시 들어요.",
                                control: .choice(.silence, options([("0", "끄기"), ("15", "15초"), ("30", "30초"), ("60", "1분")]), selected: String(s.silence))),
-                ArisSettingItem(id: "aris.bargeIn", icon: .symbol("hand.raised"), title: "스피커로 들을 때도 끼어들기",
-                               desc: "스피커로 들을 때도 Aris보다 크게 말하면 멈추고 들어요.",
-                               control: .toggle(.bargeInSpeakers, s.bargeInSpeakers)),
+                // No "스피커로 들을 때도 끼어들기" (2026-11-16): without an echo canceller Aris's own voice through the speakers
+                // stopped it and came back as a turn (ArisBargeIn.echoCancellerOn). Headphones and "아리스" still stop it.
                 ArisSettingItem(id: "aris.systemAudio", icon: .symbol("speaker.wave.2.circle"),
                                title: s.systemAudioMissing ? "시스템 오디오 권한 필요" : "다른 앱 소리 확인",
                                desc: "다른 앱에서 소리가 나면 듣기를 잠깐 멈춰요.",
@@ -95,10 +95,10 @@ enum ArisSettingsBuilder {
         ]
     }
 
-    /// 부르기's small line: where the name is listened for, and while no voice is learned, that any voice wakes it.
+    /// 부르기's small line: where the name is listened for, while no voice is learned that any voice wakes it, and while
+    /// 하루 소리 모으기 is on what it keeps (ArisWakeHonesty).
     private static func callNote(_ s: ArisSettingsSnapshot) -> String {
-        s.hasVoiceModel ? ArisWakeHonesty.note
-            : ArisWakeHonesty.noteUntrained
+        ArisWakeHonesty.note(trained: s.hasVoiceModel, collecting: s.wakeRecord.collecting)
     }
 
     /// Claude Code's usage in the closed notch's ear (mockup claude-usage.html): what the ring shows on a plan
@@ -305,7 +305,7 @@ enum ArisSettingsBuilder {
                                grouped: true, rows: serviceRows + mcpRows),
             ArisSettingSection(id: "ai.more", rows: [
                 ArisSettingItem(id: "ai.computerEngine", icon: .symbol("macwindow"), title: "다른 앱을 다루는 방식",
-                               desc: "Peekaboo는 무료이고 어느 AI로 답하든 돼요. GPT는 Codex가 있어야 하고, 없으면 Peekaboo로 해요.",
+                               desc: "Aris는 앱을 뒤에서 다뤄서 지금 보던 창과 포인터가 그대로예요. 어느 AI로 답하든 돼요. Peekaboo는 따로 내려받고, GPT는 Codex가 있어야 하고 없으면 Aris로 해요.",
                                control: .menu(.computerEngine, s.computerEngines, selected: s.computerEngine)),
                 ArisSettingItem(id: "ai.teamBrain", icon: .symbol("person.2"), title: "팀원의 두뇌", desc: "팀원마다 따로 정해요. 어느 AI든 고를 수 있어요.",
                                control: .link(.go(.team, anchor: "team.detail"), value: "팀원")),
@@ -356,7 +356,7 @@ enum ArisSettingsBuilder {
         return [
             ArisSettingSection(id: "control.permissions", heading: "권한", note: s.permissions.allSatisfy(\.granted) ? nil : "허용하기를 누르면 시스템 설정이 열리고, Aris 아이콘을 목록으로 끌어다 놓으면 돼요.",
                                grouped: true, rows: permissionRows(s.permissions)),
-            ArisSettingSection(id: "control.seeing", heading: "화면 보기", note: "다른 질문에는 화면을 찍지 않고, 암호 앱과 Aris 창은 언제나 빼요. 동그라미는 화면 기록 권한이 있어야 돼요.", rows: [
+            ArisSettingSection(id: "control.seeing", heading: "화면 보기", note: "다른 질문에는 화면을 찍지 않고, Aris 창은 언제나 빼요. 동그라미는 화면 기록 권한이 있어야 돼요.", rows: [
                 ArisSettingItem(id: "control.sees", icon: .symbol("sparkles"), title: "질문할 때 화면 같이 보기",
                                desc: "화면을 가리켜 물을 때만 화면을 찍어 보내요.",
                                control: .toggle(.seesScreen, s.seesScreen)),

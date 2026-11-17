@@ -106,7 +106,7 @@ extension ArisController {
             screenAway = false
         }
         var state = ArisWakeArm.State(settingOn: Defaults[.arisWakeWord], conversationOpen: conversation.isOpen, idle: session.phase == .idle,
-                                      training: training != nil, listenerOpen: listener != nil, screenAway: screenAway,
+                                      training: training != nil || recordingCalls, listenerOpen: listener != nil, screenAway: screenAway,
                                       permissionOK: Self.permissionProblem() == nil,
                                       onboardingSeen: UserDefaults.standard.bool(forKey: ArisOnboarding.seenKey),
                                       speechReady: Self.wakeSpeechReady)
@@ -119,7 +119,13 @@ extension ArisController {
         ArisWakeRestLive.shared.fill(&state)
         // Another app plays or records (checked now, before anything is armed): a conversation doesn't listen between
         // turns until it stops (ArisOtherAudio).
-        if ArisWakeArm.blocker(state) == nil, conversation.isOpen, !pausedForOtherAudio, otherAudioPresent() { pausedForOtherAudio = true }
+        if ArisWakeArm.blocker(state) == nil, conversation.isOpen, !pausedForOtherAudio {
+            let apps = otherAudioApps()
+            if !apps.isEmpty {
+                pausedForOtherAudio = true
+                noteOtherAudio(apps)
+            }
+        }
         state.otherAudio = pausedForOtherAudio
         let blocker = ArisWakeArm.blocker(state)
         if let line = wakeArmLog.line(for: blocker) { log.notice("\(line, privacy: .public)") }
@@ -136,13 +142,16 @@ extension ArisController {
         case nil: break
         }
         // After a wake-word turn the detector is still on (it was the turn's microphone): just listen again.
+        // In a conversation it listens for any voice, not the name, unless another app's sound pauses that (then the
+        // name still wakes Aris: ArisWakeArm.listensForName).
+        let forName = ArisWakeArm.listensForName(conversationOpen: conversation.isOpen, otherAudio: pausedForOtherAudio)
         if let detector, !ArisMicPlan.mustReopen(openOn: detector.openDevice ?? micPlan.device, plan: micPlan) {
-            detector.pause(conversation.isOpen)
+            detector.pause(!forName)
             return updateVoiceWatch()
         }
         // The detector is on a device the plan no longer names (the devices changed under it): opened again.
         if detector != nil { stopWaitingForWakeWord() }
-        startDetector(paused: conversation.isOpen)
+        startDetector(paused: !forName)
         updateVoiceWatch()
         log.notice("\(self.conversation.isOpen ? "listening between turns" : "waiting for the wake word", privacy: .public) (\(self.hasWakeModel ? "trained" : "not trained", privacy: .public))")
     }
@@ -152,7 +161,7 @@ extension ArisController {
     /// device, started when a microphone it may use is back. A turn under way is left alone (its own microphone ends
     /// with it); the next wait chooses again.
     func micDevicesChanged() {
-        guard session.phase == .idle, training == nil, listener == nil, wakeListener == nil else { return }
+        guard session.phase == .idle, training == nil, !recordingCalls, listener == nil, wakeListener == nil else { return }
         waitForWakeWord()
     }
 
@@ -211,8 +220,18 @@ extension ArisController {
         let detector = ArisWakeDetector()
         detector.onCandidate = { [weak self, weak detector] score, sure in
             guard let self, let detector, self.detector === detector else { return }
-            // Between turns of a conversation any voice is a turn (voiceStarted); no name is checked.
-            guard !self.conversation.isOpen || self.session.phase == .speaking else { return }
+            // Between turns of a conversation any voice is a turn (voiceStarted); no name is checked, unless another
+            // app's sound pauses that listening (the name still works then).
+            guard ArisWakeArm.listensForName(conversationOpen: self.conversation.isOpen, otherAudio: self.pausedForOtherAudio)
+                    || self.session.phase == .speaking else { return }
+            // Over the speakers, "아리스" in Aris's own sentence (while it plays, or in its tail) is Aris's voice: it neither
+            // wakes nor stops it (ArisEchoGuard.ignoresName).
+            if ArisEchoGuard.ignoresName(headphones: ArisDucking.outputIsHeadphones(), ownVoiceAudible: self.ownVoiceAudible,
+                                         saidName: ArisEchoGuard.namesAris(self.speaker.recentlySaid.last ?? "")) {
+                return log.notice("wake: the name was Aris's own voice: ignored")
+            }
+            // 하루 소리 모으기, when on: the candidate's few seconds are kept while Aris waits (ArisWakeCollectLive).
+            if self.session.phase == .idle, !self.conversation.isOpen { ArisWakeCollectLive.shared.candidate(detector: detector, start: detector.candidateSample, score: score) }
             if self.session.phase == .speaking {
                 self.checkBargeIn(with: detector, score: score, sure: sure)
             } else {
@@ -224,7 +243,8 @@ extension ArisController {
             self.voiceStarted(from: sample, lookback: lookback)
         }
         detector.onVoice = { [weak self, weak detector] talking in
-            guard let self, self.detector === detector else { return }
+            guard let self, let detector, self.detector === detector else { return }
+            ArisWakeCollectLive.shared.voice(talking, detector: detector, waiting: self.session.phase == .idle && !self.conversation.isOpen && self.wakeListener == nil)
             self.heardVoice(talking)
             guard self.session.phase == .speaking else { return }
             // Talking over Aris turns it down at once (ChatGPT does the same); "아리스" still stops it.
@@ -268,7 +288,7 @@ extension ArisController {
     /// phrase, Aris's own voice included, would be a candidate).
     /// In a conversation the voice watch stops Aris too (updateVoiceWatch); "아리스" in your trained voice still does.
     func armBargeIn() {
-        guard !screenAway, training == nil else { return }
+        guard !screenAway, training == nil, !recordingCalls else { return }
         if conversation.isOpen { updateVoiceWatch() }
         // Not while the wake word rests (a call is on, the battery is being saved): the talk key still stops Aris.
         guard Defaults[.arisWakeWord], hasWakeModel, !ArisWakeRestLive.shared.keepsMicrophoneClosed else { return }
@@ -282,14 +302,17 @@ extension ArisController {
         // Its score against the voice print's threshold, so a check with the user's own voice is easy to read.
         let threshold = Self.loadWakeModel()?.threshold
         log.notice("barge-in: score \(score.map { String(format: "%.2f", $0) } ?? "none", privacy: .public) threshold \(threshold.map { String(format: "%.2f", Double($0)) } ?? "none", privacy: .public) sure \(sure, privacy: .public)")
-        guard sure else {
+        // Over the speakers even a sure match may be Aris's own voice: Whisper must hear the name first.
+        guard !ArisWakeDoubt.bargeInNeedsCheck(sure: sure, headphones: ArisDucking.outputIsHeadphones()) else {
             detector.pause(true)
             wakeWhisper?.cancel()
             wakeWhisper = Task {
                 let audio = await Self.wakeClip(from: detector)
-                let text = audio.isEmpty ? nil : (try? await ArisWhisper.shared.transcribe(audio)) ?? nil
+                let text = audio.isEmpty ? nil : (try? await ArisWhisper.shared.checkName(audio, language: Self.wakeCheckLanguage)) ?? nil
                 guard !Task.isCancelled, self.detector === detector, self.session.phase == .speaking else { return }
-                guard let text, ArisWakeWord.heard(text) else { return detector.pause(false) }
+                // Whisper not ready (not downloaded): a sure match stops Aris as it did before.
+                guard let text else { return sure ? self.interrupt(with: detector, score: score, path: "voice") : detector.pause(false) }
+                guard ArisWakeWord.heard(text) else { return detector.pause(false) }
                 self.interrupt(with: detector, score: score, path: "whisper")
             }
             return
@@ -299,12 +322,15 @@ extension ArisController {
 
     /// How long to wait for a likely "아리스" to have enough sound for Whisper (it fires as soon as the voice print
     /// matches, often under a second in).
-    static let wakeClipWait: Duration = .milliseconds(1200)
+    static let wakeClipWait: Duration = ArisWakeDoubt.clipWait
 
-    /// The candidate phrase for Whisper: at least ~1.2 s of it when it comes in time, padded with silence to the
-    /// length Whisper needs (it skips anything under a second).
+    /// The language Whisper checks a candidate in (ArisWakeDoubt.checkLanguage).
+    static var wakeCheckLanguage: String? { ArisWakeDoubt.checkLanguage(Defaults[.arisLanguages]) }
+
+    /// The candidate phrase for Whisper: the 1.5 s Whisper reads when it comes in time (ArisWakeDoubt.clipSeconds),
+    /// padded with silence to that length when it doesn't.
     static func wakeClip(from detector: ArisWakeDetector) async -> [Float] {
-        let enough = Int(ArisVoicePrint.sampleRate * 1.2)
+        let enough = ArisWakeDoubt.clipEnough(sampleRate: ArisVoicePrint.sampleRate)
         let deadline = ContinuousClock.now + wakeClipWait
         var audio = detector.candidateAudio(seconds: wakeWhisperSeconds)
         while audio.count < enough, ContinuousClock.now < deadline, !Task.isCancelled {
@@ -314,7 +340,7 @@ extension ArisController {
         return audio.isEmpty ? [] : ArisTranscript.paddedForWhisper(audio, sampleRate: ArisVoicePrint.sampleRate)
     }
 
-    /// "아리스" while Aris talks: it stops and listens to the new request, as Siri does. Music stays paused.
+    /// "아리스" while Aris talks: it stops and listens to the new request, as the system assistant does. Music stays paused.
     func interrupt(with detector: ArisWakeDetector, score: Float?, path: String) {
         guard session.phase == .speaking else { return }
         log.notice("interrupted (\(path, privacy: .public))")
@@ -326,29 +352,60 @@ extension ArisController {
         handsFree = false
         followingUp = false
         session = session.done()
-        checkWakeWord(with: detector, score: score, sure: true)
+        checkWakeWord(with: detector, score: score, sure: true, interrupting: true)
     }
 
     /// A likely "아리스". When the voice print is `sure` (as close as your own recordings), the notch opens
-    /// now, like Siri. Otherwise the recognizer hears the phrase from its start, and Whisper hears its first
+    /// now, like the system assistant. Otherwise the recognizer hears the phrase from its start, and Whisper hears its first
     /// second or so; either finding the name wakes Aris. (Voice prints alone can't tell a real call from
     /// other talk, and the recognizer rarely writes a lone short "아리스" down.)
-    func checkWakeWord(with detector: ArisWakeDetector, score: Float?, sure: Bool) {
+    /// The check reads the name after a filler, and a near spelling when the voice print is fairly close
+    /// (ArisWakeWord.verified, ArisWakeDoubt.nearAllowed). `interrupting`: a barge-in, already decided.
+    /// Over this Mac's own playback (thisMacPlays) only a strong voice print wakes Aris (ArisWakeStrict), with Whisper
+    /// as a veto; over music (ArisWakeMusic) or playback no text alone does, Whisper's or the recognizer's (both write
+    /// the name, or lyrics, down as readily as calls), and there is no near spelling or second chance.
+    func checkWakeWord(with detector: ArisWakeDetector, score: Float?, sure: Bool, interrupting: Bool = false) {
         guard wakeListener == nil, session.phase == .idle else { return }
         detector.pause(true)
+        wakeCandidate = (score, sure)
+        // A call repeated soon after a rejection reads a near spelling at any candidate score (the second chance).
+        let threshold = Self.loadWakeModel()?.threshold
+        let playing = !interrupting && thisMacPlays()
+        // Over real playback only a strong voice print is the user (ArisWakeStrict): anything weaker is turned away here,
+        // before anything listens, and the music is never touched.
+        guard ArisWakeStrict.admits(playing: playing, score: score, threshold: threshold) else {
+            let line = ArisWakeStrict.playbackLine(threshold: threshold).map { String(format: "%.2f", $0) } ?? "none"
+            log.notice("wake word: this Mac plays: the voice print \(score.map { String(format: "%.2f", $0) } ?? "none", privacy: .public) is past the playback line \(line, privacy: .public): turned away")
+            ArisTuningLog.append(["score": score.map(Double.init) ?? -1, "sure": sure, "path": "playback-weak", "whisper": "",
+                                  "playing": true, "line": ArisWakeStrict.playbackLine(threshold: threshold).map(Double.init) ?? -1], to: "wake-log.jsonl")
+            ArisWakeCollectLive.shared.outcome("playback-weak")
+            return detector.pause(false)
+        }
+        let again = !playing && ArisWakeDoubt.secondChance(lastRejectionAt: lastWakeRejection, now: Self.uptime)
+        let near = !sure && !playing && ArisWakeDoubt.nearAllowed(score: score, threshold: threshold, secondChance: again)
+        if again, !sure { log.notice("wake word: a second chance (a candidate was rejected moments ago)") }
+        // Music around a candidate that isn't sure, read while Whisper's clip comes in (a sure one's is read after
+        // opening: doubleCheckAfterOpening).
+        let music: Task<Bool, Never>? = sure ? nil : Task { await Self.musicAround(detector) }
         let listener = ArisListener()
         var whisperHeard: String?
+        var heardMusic = false
         let note = { (path: String) in
             // What a phrase that was not the name said is never written down (ArisWakeRest.kept): only that one was checked.
             ArisTuningLog.append(["score": score.map(Double.init) ?? -1, "sure": sure, "path": path,
-                                  "whisper": ArisWakeRest.kept(whisperHeard, path: path)], to: "wake-log.jsonl")
+                                  "whisper": ArisWakeRest.kept(whisperHeard, path: path), "music": heardMusic, "playing": playing], to: "wake-log.jsonl")
+            ArisWakeCollectLive.shared.outcome(path)
         }
         listener.onText = { [weak self, weak listener] text in
             guard let self, let listener else { return }
-            guard ArisWakeWord.heard(text) else { return log.debug("wake word: checking, heard \(text.count, privacy: .public) characters") }
-            guard self.wakeListener === listener else { return }
-            note("recognizer")
-            self.wake(listener, heard: text)
+            guard ArisWakeWord.verified(text, nearAllowed: near) else { return log.debug("wake word: checking, heard \(text.count, privacy: .public) characters") }
+            guard self.wakeListener === listener, !playing else { return }
+            Task {
+                heardMusic = await music?.value ?? false
+                guard !heardMusic, self.wakeListener === listener else { return }
+                note("recognizer")
+                self.wake(listener, heard: text)
+            }
         }
         // The speech engine can't hear (the older engine with macOS Dictation off): the check ends as one that
         // couldn't listen, and the microphone closes for a while (wakeListenFailed).
@@ -385,16 +442,27 @@ extension ArisController {
         if sure {
             log.notice("wake word: your voice")
             note("voice")
-            return wake(listener, heard: "", starting: started)
+            // Opened at once; a borderline score waits for its evidence (ArisWakeEvidence): Whisper checks the
+            // candidate meanwhile, and music around it is read (doubleCheckAfterOpening).
+            let doubtful = ArisWakeDoubt.opening(score: score, threshold: threshold, interrupting: interrupting) == .checkAfterOpening
+            let evidence = doubtful ? ArisWakeEvidence(nearAllowed: ArisWakeDoubt.nearAllowed(score: score, threshold: threshold), playing: playing,
+                                                        strongPrint: ArisWakeStrict.isStrong(score: score, threshold: threshold)) : nil
+            wake(listener, heard: "", starting: started, evidence: evidence)
+            return doubleCheckAfterOpening(detector: detector, score: score)
         }
         wakeWhisper = Task {
             let audio = await Self.wakeClip(from: detector)
             let start = ContinuousClock.now
-            let heard = audio.isEmpty ? nil : (try? await ArisWhisper.shared.transcribe(audio)) ?? nil
+            let heard = audio.isEmpty ? nil : (try? await ArisWhisper.shared.checkName(audio, language: Self.wakeCheckLanguage)) ?? nil
             log.notice("wake word: Whisper on \(Double(audio.count) / ArisVoicePrint.sampleRate, privacy: .public) s heard “\(heard ?? "(nothing)", privacy: .private)” in \(Int((ContinuousClock.now - start) / .milliseconds(1)), privacy: .public) ms")
+            heardMusic = await music?.value ?? false
             guard let text = heard, !Task.isCancelled, self.wakeListener === listener else { return }
             whisperHeard = text
-            guard ArisWakeWord.heard(text) else { return }
+            // Over music Whisper writes the name it was prompted with: its text alone never wakes Aris then (ArisWakeStrict).
+            guard ArisWakeStrict.textWakes(music: heardMusic, playing: playing) else {
+                return log.notice("wake word: over music or this Mac's playback, Whisper's text alone doesn't count")
+            }
+            guard ArisWakeWord.verified(text, nearAllowed: near) else { return }
             log.notice("wake word: Whisper heard it")
             note("whisper")
             self.wake(listener, heard: "", starting: started)
@@ -405,6 +473,7 @@ extension ArisController {
             guard self.wakeListener === listener else { return }
             log.notice("wake word: not 아리스 after all")
             note("rejected")
+            self.lastWakeRejection = Self.uptime
             self.wakeListener = nil
             _ = await listener.stop()
             self.detector?.pause(false)
@@ -415,6 +484,7 @@ extension ArisController {
         wakeRestart?.cancel()
         wakeCheck?.cancel()
         wakeWhisper?.cancel()
+        if let detector { ArisWakeCollectLive.shared.stopped(detector) }
         detector?.stop()
         detector = nil
         // Its gate can't say the user stopped talking any more.
@@ -423,6 +493,22 @@ extension ArisController {
         wakeListener = nil
         listener.onText = nil
         Task { _ = await listener.stop() }
+    }
+
+    // MARK: - 호출어 녹음
+
+    /// The recording sheet takes the microphone: the wake word's closes, and stays closed until `end`.
+    func beginRecordingCalls() -> Bool {
+        guard session.phase == .idle, training == nil, !recordingCalls else { return false }
+        recordingCalls = true
+        stopWaitingForWakeWord()
+        return true
+    }
+
+    func endRecordingCalls() {
+        guard recordingCalls else { return }
+        recordingCalls = false
+        waitForWakeWordSoon()
     }
 
     // MARK: - Training "아리스"
@@ -501,19 +587,20 @@ extension ArisController {
     }
 
     /// "아리스" heard: the waiting listener carries on as this turn's, hands-free.
-    func wake(_ listener: ArisListener, heard text: String, starting started: Task<Void, Never>? = nil) {
+    /// `evidence`: a borderline wake, which waits for its evidence before the notch opens or the request runs.
+    func wake(_ listener: ArisListener, heard text: String, starting started: Task<Void, Never>? = nil, evidence: ArisWakeEvidence? = nil) {
         guard session.phase == .idle, wakeListener === listener else { return }
-        // Read before Aris pauses anything: another app's sound means the name may have come from it.
-        let otherAudio = otherAudioPresent(forConversation: conversation.isOpen
-                                           || ArisConversation.enabled(silenceSeconds: Defaults[.arisConversationSilence]))
         wakeListener = nil
         wakeCheck?.cancel()
         wakeWhisper?.cancel()
+        wakeDoubleCheck?.cancel()
         log.notice("heard the wake word")
         // The 대화 이어가기 setting holds for a turn started by voice too: past it, a new conversation (QA BUG-49).
         if let lastTurnAt, ContinuousClock.now - lastTurnAt > Self.conversationLasts { endConversation() }
         turn?.cancel()
         speaker.stop()
+        // A turn that comes to nothing closes the conversation it opened (ArisController+FalseWake).
+        wakeOpenedConversation = !conversation.isOpen
         openConversation()
         listener.beginTurn()
         Self.listeningHaptic()
@@ -522,7 +609,7 @@ extension ArisController {
         seeTurnStarting()
         session = session.listening().hearing(text)
         listeningSince = .now
-        let saidMore = !text.isEmpty && !ArisWakeWord.isOnlyTheName(text)
+        let saidMore = !text.isEmpty && !ArisWakeWord.isOnlyTheCall(text)
         lastWordsAt = saidMore ? .now : nil
         lastVoiceAt = saidMore ? .now : nil
         voicePeak = 0
@@ -531,13 +618,23 @@ extension ArisController {
         voiceFloor = ArisTalkKey.startingFloor
         pauseScore = nil
         preparedWhisper = nil
-        pauseMusic()
+        // The music is paused once the wake is kept (its lap heard, ArisWakeStrict.pausesMusic), never before.
         scribeOnWords = false
-        turnHandsFree = ArisConversation.wakeTurnIsHandsFree(otherAudio: otherAudio)
+        // The user called it by name: never hands-free (2026-11-15; over playback only their strong voice print gets here).
+        turnHandsFree = false
+        turnByWakeWord = true
+        // The notch stays the closed band while the rim's light makes one lap: the user's voice in it opens the notch, a
+        // lap with no voice ends the turn quietly (ArisQuietWake, the owner's pick "C · 한 바퀴").
+        startQuietLap(saidMore: saidMore, evidence: evidence)
         arisWasSaying = ""
         follow(listener)
         self.listener = listener
-        startScribe(for: listener, replaying: listener.recordedSamples)
+        // A borderline wake's audio streams to Scribe only once it is kept (ArisController+WakeEvidence).
+        if evidence == nil {
+            startScribe(for: listener, replaying: listener.recordedSamples)
+        } else {
+            scribeAfterWakeEvidence = true
+        }
         starting = started
         // Woken before the recogniser ran (your voice was sure): the phrase it takes over from the detector lands in
         // the recording ahead of the turn, and Whisper's timing counts it once it's there (audit voice-2).

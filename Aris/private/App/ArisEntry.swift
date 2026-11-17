@@ -68,7 +68,7 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         self.windows = windows
         windows.prepareInitialWindows()
         windows.setupDragDetectors()
-        // Notification cards go under the notch, never while it is open (ArisNoticeCenter).
+        // The notice pill hangs under the notch, never while it is open (ArisNoticeCenter).
         ArisNoticeCenter.shared.attach(notchOpen: { [weak windows] in windows?.anyOpen ?? false },
                                        screen: { [weak windows] in windows?.noticeScreen }, changes: windows.openChanges)
         ArisSidePanels.shared.start()

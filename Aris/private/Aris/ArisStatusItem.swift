@@ -52,6 +52,12 @@ final class ArisStatusItem: NSObject, NSMenuDelegate {
         menu.addItem(ArisQuietMenu.item())
         // While the wake word rests, why (a line to read, not to choose).
         if let resting = ArisWakeRestLive.shared.words { menu.addItem(NSMenuItem(title: resting, action: nil, keyEquivalent: "")) }
+        // While 하루 소리 모으기 is on it says so here too, and choosing the line turns it off (ArisWakeCollect).
+        if ArisWakeRecordLive.shared.collecting {
+            let collecting = NSMenuItem(title: ArisWakeRecordRows.menuLine(english: ArisUIWords.english), action: #selector(stopCollecting), keyEquivalent: "")
+            collecting.target = self
+            menu.addItem(collecting)
+        }
         for (title, action, key) in [(ArisUIWords.text("설정…", "Settings…"), #selector(openSettings), ","), (ArisUIWords.text("Aris 다시 시작", "Restart Aris"), #selector(restart), ""),
                                      (ArisUIWords.text("Aris 종료", "Quit Aris"), #selector(quit), "q")] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
@@ -91,4 +97,6 @@ final class ArisStatusItem: NSObject, NSMenuDelegate {
     }
 
     @objc private func quit() { NSApplication.shared.terminate(nil) }
+
+    @objc private func stopCollecting() { ArisWakeRecordLive.shared.setCollecting(false) }
 }

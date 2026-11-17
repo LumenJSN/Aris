@@ -5,7 +5,8 @@
 //  The pill's pieces, drawn to the measured numbers: the shell (vertical gradient 22,22,27 → 12,12,15 at .96 over a
 //  behind-window blur, radius 24, the 1 px gradient ring or the solid .18 line), the level bars and the ring
 //  (ArisDictationPillMotion), the round 18 buttons (✕ and ↑ on white .15, .3 on hover; the hands-free lock on clear that
-//  turns into ↑ on hover), the hover hint popup (radius 10, the tooltip surface) and the recovered words' copy button.
+//  turns into ↑ on hover) and the hover hint popup (radius 10, the tooltip surface). The recovered words' card is
+//  ArisDictationPillRecoveredCard.
 //
 
 import AppKit
@@ -280,63 +281,5 @@ struct ArisDictationPillHint: View {
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.white.opacity(0.09), lineWidth: 0.8))
         .shadow(color: .black.opacity(0.28), radius: 9, y: 6)
         .allowsHitTesting(false)
-    }
-}
-
-// MARK: - Recovered words
-
-/// The copy button at the recovered words' bottom-right: 28 tall, 0 9, radius 8, 12 / 500.
-struct ArisDictationPillCopyButton: View {
-    let label: String
-    let copied: Bool
-    let action: () -> Void
-
-    @State private var hovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 12, height: 12)
-                Text(label).font(.system(size: 12, weight: .medium)).lineLimit(1)
-            }
-            .foregroundStyle(.white.opacity(0.9))
-            .padding(.horizontal, 9)
-            .frame(minHeight: 28)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(hovered ? Color(.sRGB, red: 56 / 255, green: 56 / 255, blue: 62 / 255, opacity: 0.96)
-                              : Color(.sRGB, red: 42 / 255, green: 42 / 255, blue: 47 / 255, opacity: 0.92)))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(hovered ? 0.18 : 0.1), lineWidth: 1))
-            .shadow(color: .black.opacity(0.32), radius: 4, y: 2)
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovered = $0 }
-        .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.15), value: hovered)
-    }
-}
-
-/// The corner close of the recovered words: a 24 circle out 6 past the top-right corner.
-struct ArisDictationPillCloseButton: View {
-    let label: String
-    let action: () -> Void
-
-    @State private var hovered = false
-
-    var body: some View {
-        Button(action: action) {
-            ZStack {
-                Circle().fill(hovered ? Color(.sRGB, red: 104 / 255, green: 104 / 255, blue: 110 / 255, opacity: 0.86)
-                                      : Color(.sRGB, red: 86 / 255, green: 86 / 255, blue: 92 / 255, opacity: 0.76))
-                Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 0.5)
-                ArisDictationPillGlyphs.cross.frame(width: 12, height: 12).opacity(0.9).scaleEffect(0.8)
-            }
-            .frame(width: 24, height: 24)
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-        .onHover { hovered = $0 }
     }
 }

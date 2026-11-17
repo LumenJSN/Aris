@@ -5,9 +5,10 @@
 //  `convert <file>… | --finder | --shelf [--to <format>] [--quality 1-100] [--max <px> | --percent <n>] [--pages 1-3,5]`,
 //  `merge <file>… | --finder | --shelf [--to pdf|mp4|mov|m4a]`, `split <pdf> | --finder | --shelf [--pages 1-3,5]` and
 //  `compress <file>… | --finder | --shelf [--quality 1-100] [--max <px>]` (ArisConvert). Named files: it prints the new
-//  files' paths. `--finder` (the Finder selection, read here) and `--shelf` (the notch shelf, as aris-agent keeps it:
-//  ArisShelfFiles): it never names a file, only counts and where the new ones went. Each is logged with an undo that
-//  moves what it made to the Trash.
+//  files' paths. `--finder` (the Finder selection, read here), `--shelf` (the notch shelf, as aris-agent keeps it:
+//  ArisShelfFiles) and `--made` (what the last conversion of this question made, kept here: ArisMadeFiles): it never
+//  names a file, only counts and where the new ones went. Each is logged with an undo that moves what it made to the
+//  Trash.
 //
 
 import Foundation
@@ -21,6 +22,7 @@ func convertCommand(_ verb: String, _ args: [String]) {
     let home = FileManager.default.homeDirectoryForCurrentUser.path
     let quiet = call.selector != nil
     if let selector = call.selector, let refusal = ArisConvert.selectorRefusal(selector, environment: environment, state: ArisShelfFiles.state(home: home),
+                                                                            made: ArisMadeFiles.state(home: home),
                                                                             turnStarted: turnStarted(environment)) { fail(refusal) }
     ArisConvert.sweepScratch()
     watchConvertSignals()
@@ -35,11 +37,14 @@ func convertCommand(_ verb: String, _ args: [String]) {
         let result = try ArisConvert.run(call, home: home, cwd: FileManager.default.currentDirectoryPath,
                                          deadline: ArisConvertWords.deadline([verb] + args, environment: environment), selection: selectedFiles, placed: interim)
         if let id = entry { ArisActivity.replace(id, summary: result.summary, undo: .trashMade(paths: result.made), file: ArisActivity.defaultFile) }
+        // What it made, for a next step on them (`--made`).
+        ArisMadeFiles.save(result.made, home: home)
         print(ArisConvert.report(result))
     } catch let partial as ArisConvert.Partial {
         if let id = entry {
             ArisActivity.replace(id, summary: "\(verb): \(partial.made.count)개 (중간에 멈춤)", undo: .trashMade(paths: partial.made.map(\.real)), file: ArisActivity.defaultFile)
         }
+        ArisMadeFiles.save(partial.made.map(\.real), home: home)
         print(quiet ? "\(partial.made.count)개는 만들었어요 (원본 옆에 저장)" : partial.made.map { "made \($0.shown)" }.joined(separator: "\n"))
         fail(partial.message)
     } catch {
@@ -69,21 +74,24 @@ func turnStarted(_ environment: [String: String]) -> Date? {
     return attributes[.modificationDate] as? Date
 }
 
-/// The files a selector stands for: Finder's selection (one POSIX path a line), or the shelf's as the agent kept them.
+/// The files a selector stands for: Finder's selection (one POSIX path a line), the shelf's as the agent kept them, or
+/// what the last conversion made.
 func selectedFiles(_ selector: ArisConvertWords.Selector) -> [String] {
     switch selector {
     case .finder:
         return appleScript(ArisActions.finderSelectionScript, app: "Finder").split(separator: "\n").map(String.init).filter { !$0.isEmpty }
     case .shelf:
         return ArisShelfFiles.load(home: FileManager.default.homeDirectoryForCurrentUser.path)
+    case .made:
+        return ArisMadeFiles.state(home: FileManager.default.homeDirectoryForCurrentUser.path)?.made ?? []
     }
 }
 
 func convertUsage(_ verb: String) -> String {
-    let source = "<file>… | --finder | --shelf"
+    let source = "<file>… | --finder | --shelf | --made"
     switch verb {
     case "merge": return "usage: merge \(source) [--to pdf|mp4|mov|m4a]"
-    case "split": return "usage: split <pdf> | --finder | --shelf [--pages 1-3,5]"
+    case "split": return "usage: split <pdf> | --finder | --shelf | --made [--pages 1-3,5]"
     case "compress": return "usage: compress \(source) [--quality 1-100] [--max <pixels>]"
     default: return "usage: convert \(source) [--to png|jpg|heic|tiff|gif|bmp|pdf|mp4|mov|m4a] [--quality 1-100] [--max <pixels> | --percent <n>] [--pages 1-3,5]"
     }

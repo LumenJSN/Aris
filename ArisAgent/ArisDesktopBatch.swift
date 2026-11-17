@@ -330,7 +330,7 @@ extension ArisDesktopCard {
 extension ArisDesktopEngine {
     /// What a sending app's card can hold the batch to; nil: it can't, so a step at a time.
     private func sendingBasis(_ steps: [ArisDesktopStep], target: ArisDesktopTarget, window: ArisDesktopWindow, turn: ArisDesktopTurn) -> (basis: ArisDesktopBasis, sends: String?)? {
-        guard access.trusted, case .success(let binary) = installer.ready() else { return nil }
+        guard access.trusted, case .success(let binary) = engineBinary() else { return nil }
         let session = ArisDesktopSession(engine: self, binary: binary, target: target, turn: turn)
         guard case .success(let (look, _)) = session.look(window, record: false) else { return nil }
         turn.ledger.discard(look.peekaboo)
@@ -566,7 +566,7 @@ extension ArisDesktopEngine {
             } else {
                 // The control in the newest look; the last step may still be bringing it up.
                 var found = look.map { ArisDesktopBatch.find(step, in: $0, ledger: turn.ledger) } ?? .missing
-                if case .missing = found, index > 0, let binary = try? installer.ready().get() {
+                if case .missing = found, index > 0, let binary = try? engineBinary().get() {
                     let session = ArisDesktopSession(engine: self, binary: binary, target: target, turn: turn)
                     for attempt in 0..<ArisDesktopBatch.settleLooks {
                         if attempt > 0 { Thread.sleep(forTimeInterval: ArisDesktopBatch.settleWait) }

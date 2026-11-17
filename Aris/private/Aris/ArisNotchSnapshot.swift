@@ -25,6 +25,10 @@ struct ArisNotchSnapshot: Equatable {
     let conversing: Bool
     /// That listening is paused while another app plays or records: the band shows it paused (still, dimmer).
     let listeningPaused: Bool
+    /// A wake-word turn listens in its quiet lap (ArisQuietWake): the closed band, the rim's light makes one lap.
+    let wakeLapRunning: Bool
+    /// A wake-word turn heard the user start talking in its lap: the notch opens while it still listens.
+    let wakeHeard: Bool
 
     /// As ArisController.isActive: a turn is on, or the wake word is being trained.
     var isActive: Bool { phase != .idle || isTraining }
@@ -39,7 +43,8 @@ struct ArisNotchSnapshot: Equatable {
     /// `dictationQuiet`: the dictation pill has this dictation (ArisDictationPillRules.notchQuiet), so the notch sees no
     /// turn at all: no listening band, no panel, no parked words (talking to Aris is never quiet).
     init(session: ArisSession, isTraining: Bool, isDictating: Bool, hasUnfinishedTask: Bool, taskJustFinished: Bool, inConversation: Bool = false,
-         pausedForOtherAudio: Bool = false, dictationCopied: Bool = false, cardWaiting: Bool = false, dictationQuiet: Bool = false) {
+         pausedForOtherAudio: Bool = false, dictationCopied: Bool = false, cardWaiting: Bool = false, dictationQuiet: Bool = false,
+         wakeLap: ArisQuietWake.State? = nil) {
         phase = dictationQuiet ? .idle : session.phase
         hasReply = !dictationQuiet && !session.reply.isEmpty
         self.isTraining = isTraining
@@ -52,5 +57,8 @@ struct ArisNotchSnapshot: Equatable {
         hasQuestion = session.question != nil || cardWaiting
         conversing = inConversation && session.phase == .idle
         listeningPaused = conversing && pausedForOtherAudio
+        let listening = phase == .listening
+        wakeLapRunning = listening && wakeLap == .waiting
+        wakeHeard = listening && wakeLap == .heard
     }
 }

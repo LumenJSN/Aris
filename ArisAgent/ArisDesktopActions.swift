@@ -219,7 +219,7 @@ extension ArisDesktopSession {
             let place = after.map { " It was done in the window named below (say that title when you tell the user)." + ArisWindowTitleMatch.windowField($0.title) } ?? ""
             lines.append("Done\(how.map { " (\($0))" } ?? ""): \(what).\(place)")
         case .notSeen(let what):
-            lines.append("Not confirmed: the window shows no sign of it (\(what)). Peekaboo said: \(why(envelope)). Don't repeat it blindly: look at the window below first.")
+            lines.append("Not confirmed: the window shows no sign of it (\(what)). the engine said: \(why(envelope)). Don't repeat it blindly: look at the window below first.")
         }
         if let after { lines.append("\n" + after.render()) } else { lines.append("(The window is gone now.)") }
         if case .done = check { return ArisDesktopResult(ok: true, text: lines.joined(separator: "\n")) }

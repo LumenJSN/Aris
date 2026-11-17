@@ -68,9 +68,16 @@ enum ArisWakeArm {
         if state.headsetOnly { return .headsetOnly }
         if !state.conversationOpen && state.micInUse { return .micInUse }
         if !state.conversationOpen && state.lowPower { return .lowPower }
-        if state.conversationOpen && state.otherAudio { return .otherAudio }
+        // Another app only playing pauses a conversation's listening for any voice, not the name (listensForName); one
+        // recording (a call) closes the microphone, as micInUse does outside a conversation.
+        if state.conversationOpen && state.otherAudio && state.micInUse { return .otherAudio }
         return nil
     }
+
+    /// The detector hands on candidates for the name: always outside a conversation, and in one while another app's
+    /// sound pauses its listening between turns (2026-11-14: the wake word was closed for 15–30 s after every turn, so
+    /// a real "아리스" then did nothing). The name is checked as when idle: voice print, then the recognizer or Whisper.
+    static func listensForName(conversationOpen: Bool, otherAudio: Bool) -> Bool { !conversationOpen || otherAudio }
 
     /// The waits while the speech model is still missing, and after a check that couldn't listen: half a minute, two
     /// minutes, ten.

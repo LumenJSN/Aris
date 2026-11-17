@@ -2,12 +2,14 @@
 //  ArisNoticeCenter.swift
 //  Aris
 //
-//  The live side of the notification cards: the queue (ArisNoticeQueue), the panel under the notch (ArisNoticePanel)
-//  on the notch's display, what each button does, and the pointer: the panel takes clicks only while the pointer is
-//  on a card, so everything around the cards stays the frontmost app's. The cards step aside while the notch is open
-//  or the setup shows and come back as they were. Nothing here decides when a card may come up: ArisController.notify
-//  waits for the moment (its turn among Aris's news, a pause) and asks `mayShow` for the rest. Nothing runs while no
-//  card is up: no timer, no pointer watch, the panel off screen.
+//  The live side of the notice pill: the queue (ArisNoticeQueue), the display it shows on (the notch's), what each
+//  button and a click on its body do, the pointer on it, and the clock of a notice that goes by itself. The pill is
+//  drawn by the notch of that display, 6 under it where the jobs' pill hangs (ArisNoticePillHost in ArisNotchRoot), so
+//  it has no window of its own. It steps aside while the notch is open, the setup shows, an Aris turn or a dictation
+//  runs, and comes back as it was. A deadline's alert (ArisTodoModel) and a Claude Code session's notice (ClaudeStore)
+//  come here as notices too, through ArisController.notify like Aris's own news, so all of them wait their turn and
+//  only one pill shows at a time. Nothing here decides when a waiting notice may come up: ArisController.notify waits
+//  for the moment (its turn among Aris's news, a pause) and asks `mayShow` for the rest.
 //
 
 import AppKit
@@ -23,62 +25,78 @@ final class ArisNoticeCenter: ObservableObject {
 
     @Published private(set) var queue = ArisNoticeQueue()
     @Published private(set) var hovered: UUID?
-    /// The cards step aside (faded out) while the notch is open or the setup shows.
+    /// The pill steps aside (faded out, still up) while the notch is open, the setup shows, a turn or a dictation runs.
     @Published private(set) var aside = false
-    @Published private(set) var material: ArisNoticeMaterial = .opaque
+    /// The display the pill shows on (its notch draws it).
+    @Published private(set) var screenID: String?
 
-    private var panel: ArisNoticePanel?
-    private var monitors: [Any] = []
     private var watches: Set<AnyCancellable> = []
-    /// How many fixes of a problem card were pressed (a line with several lists opens them one after another).
+    /// How many fixes of a problem notice were pressed (a line with several lists opens them one after another).
     private var fixPresses: [UUID: Int] = [:]
+    /// The front notice's own clock (its showsFor), while it runs.
+    private var clock: Task<Void, Never>?
+    private var lastClaudePeek: String?
     /// The notch, as the app's windows tell it (ArisEntry attaches them).
     private var notchOpen: () -> Bool = { false }
     private var notchScreen: () -> NSScreen? = { NSScreen.main }
 
     private init() {}
 
-    // MARK: - The notch and the setup
+    // MARK: - What it watches
 
-    /// The notch's windows: whether one is open, its display, and a signal each time either may have changed.
+    /// The notch's windows: whether one is open, its display, and a signal each time either may have changed. Also the
+    /// setup, an Aris turn, the dictation pill and Claude Code's notices.
     func attach(notchOpen: @escaping () -> Bool, screen: @escaping () -> NSScreen?, changes: AnyPublisher<Void, Never>) {
         self.notchOpen = notchOpen
         notchScreen = screen
         watches.removeAll()
-        changes.receive(on: DispatchQueue.main)
+        let moved: [AnyPublisher<Void, Never>] = [
+            changes,
+            ArisOnboardingGuide.shared.$phase.map { _ in () }.eraseToAnyPublisher(),
+            ArisNotchState.shared.$current.map { _ in () }.eraseToAnyPublisher(),
+            ArisDictationPillCenter.shared.$display.map { _ in () }.eraseToAnyPublisher(),
+            NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification).map { _ in () }.eraseToAnyPublisher(),
+        ]
+        // After the didSet (the publishers emit on willSet): the values read are the stored ones.
+        Publishers.MergeMany(moved).receive(on: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.notchMoved() } }
             .store(in: &watches)
-        ArisOnboardingGuide.shared.$phase.receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in MainActor.assumeIsolated { self?.notchMoved() } }
+        ClaudeStore.shared.$transientPeek.receive(on: DispatchQueue.main)
+            .sink { [weak self] peek in MainActor.assumeIsolated { self?.claudePeek(peek) } }
             .store(in: &watches)
-        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in MainActor.assumeIsolated { self?.placePanel() } }
-            .store(in: &watches)
+        notchMoved()
     }
 
     private var moment: ArisNoticeGate.Moment {
-        ArisNoticeGate.Moment(pause: true, onboarding: ArisOnboardingGuide.shared.showing, notchOpen: notchOpen())
+        let state = ArisNotchState.shared
+        return ArisNoticeGate.Moment(pause: true, onboarding: ArisOnboardingGuide.shared.showing, notchOpen: notchOpen(),
+                                     turn: state.isActive || state.conversing,
+                                     dictating: state.isDictating || ArisNoticeGate.dictationBusy(ArisDictationPillCenter.shared.display.phase))
     }
 
-    /// Whether a card may come up now, the pause aside (ArisController asks that itself).
+    /// Whether a notice may come up now, the pause aside (ArisController asks that itself).
     var mayShow: Bool { ArisNoticeGate.mayShow(moment) }
 
     private func notchMoved() {
         let stepAside = ArisNoticeGate.stepsAside(moment)
         if stepAside != aside { aside = stepAside }
-        if stepAside { hovered = nil }
-        updatePointer()
+        if stepAside, hovered != nil { hovered = nil }
+        let screen = (notchScreen() ?? NSScreen.main)?.displayUUID
+        if screen != screenID { screenID = screen }
+        runClock()
     }
 
     // MARK: - The queue
 
-    /// A new card waits for its moment; true when it replaced a card already up (it is up at once).
+    /// A new notice waits for its moment; true when it replaced one already up (it is up at once).
     @discardableResult
     func enqueue(_ notice: ArisNotice) -> Bool {
         let replacesShown = notice.key.map { key in queue.shown.contains { $0.key == key } } ?? false
         queue = queue.posting(notice)
-        if replacesShown { log.notice("card replaced: \(notice.kind.rawValue, privacy: .public)") }
+        if replacesShown {
+            log.notice("notice replaced: \(notice.kind.rawValue, privacy: .public)")
+            runClock()
+        }
         return replacesShown
     }
 
@@ -86,10 +104,10 @@ final class ArisNoticeCenter: ObservableObject {
 
     func dropExpired() { queue = queue.dropping(expiredAt: Date()) }
 
-    /// Its moment came: on top of the stack.
+    /// Its moment came: it is the one drawn.
     func present(_ id: UUID) {
         queue = queue.presenting(id)
-        showPanel()
+        notchMoved()
     }
 
     /// Never shown after all (its caller was cancelled).
@@ -98,7 +116,7 @@ final class ArisNoticeCenter: ObservableObject {
         queue = queue.closing(id)
     }
 
-    /// What `key` stood for is over: its card goes, waiting or up.
+    /// What `key` stood for is over: its notice goes, waiting or up.
     func withdraw(key: String) {
         let next = queue.withdrawing(key: key)
         guard next != queue else { return }
@@ -106,31 +124,36 @@ final class ArisNoticeCenter: ObservableObject {
         settle()
     }
 
-    // MARK: - What the cards ask
+    // MARK: - What the pill asks
 
     var handlers: ArisNoticeHandlers {
         ArisNoticeHandlers(close: { [weak self] in self?.close($0) }, act: { [weak self] in self?.act($0, $1) },
-                           expand: { [weak self] in self?.setExpanded(true) }, collapse: { [weak self] in self?.setExpanded(false) },
-                           hover: { [weak self] in self?.hover($0) })
+                           tap: { [weak self] in self?.tap($0) }, hover: { [weak self] in self?.hover($0) })
     }
 
     func close(_ id: UUID) {
+        let notice = queue.shown.first { $0.id == id } ?? queue.pending.first { $0.id == id }
         queue = queue.closing(id)
         fixPresses[id] = nil
         if hovered == id { hovered = nil }
+        // A deadline's alert is over once its notice goes (ArisTodoModel keeps one at a time).
+        if case .deadline = notice?.source { ArisTodoModel.shared.dismissAlert() }
         settle()
     }
 
-    private func setExpanded(_ on: Bool) {
-        queue = on ? queue.expanding() : queue.collapsing()
-        updatePointer()
-    }
-
     private func hover(_ id: UUID?) {
-        if hovered != id { hovered = id }
+        guard !aside || id == nil, hovered != id else { return }
+        hovered = id
+        runClock()
     }
 
-    /// A button: what it names, then the card goes (acted on), unless a problem's next fix is still to press.
+    /// A click on the body: what the notice names for it (a deadline opens, Claude Code's terminal comes forward).
+    private func tap(_ id: UUID) {
+        guard let role = queue.shown.first(where: { $0.id == id })?.tap else { return }
+        act(id, ArisNoticeAction(title: "", primary: true, role: role))
+    }
+
+    /// A button: what it names, then the notice goes (acted on), unless a problem's next fix is still to press.
     func act(_ id: UUID, _ action: ArisNoticeAction) {
         guard let notice = queue.shown.first(where: { $0.id == id }) else { return }
         let english = ArisUIWords.english
@@ -154,100 +177,72 @@ final class ArisNoticeCenter: ObservableObject {
             ArisBoard.shared.show(ArisReaderDocument.answer(text, question: question))
         case .retryJob(let job):
             ArisController.shared.retryNotDone(job)
+        case .openDue(let due):
+            ArisTodoModel.shared.open(due)
+        case .focusClaude(let sessionId):
+            let store = ClaudeStore.shared
+            if let session = store.sessions[sessionId] { TerminalFocus.focus(session, cwd: session.cwd) }
+            store.dismissPeek()
         }
         close(id)
     }
 
-    // MARK: - The panel
+    // MARK: - Claude Code's notices
 
-    private func showPanel() {
-        let panel = self.panel ?? makePanel()
-        refreshMaterial(panel)
-        placePanel()
-        if !panel.isVisible { panel.orderFrontRegardless() }
-        startPointerWatch()
-        notchMoved()
+    /// A session's done, error or limit notice becomes a notice on the pill (it no longer opens the notch).
+    private func claudePeek(_ peek: ClaudePeek?) {
+        guard let peek, peek.id != lastClaudePeek else { return }
+        lastClaudePeek = peek.id
+        let notice = ArisNoticeRoute.claude(peek, english: ArisUIWords.english)
+        Task { await ArisController.shared.notify(notice) }
     }
 
-    /// Nothing is up any more: the panel goes off screen and nothing watches the pointer.
+    // MARK: - The clock
+
+    /// Nothing is up any more: no clock, nothing hovered.
     private func settle() {
-        guard queue.shown.isEmpty else { return updatePointer() }
-        hovered = nil
-        stopPointerWatch()
-        panel?.ignoresMouseEvents = true
-        panel?.orderOut(nil)
+        if queue.shown.isEmpty { hovered = nil }
+        runClock()
     }
 
-    private func makePanel() -> ArisNoticePanel {
-        let panel = ArisNoticePanel()
-        let host = ArisNoticeHostingView(rootView: ArisNoticeHost(center: self))
-        host.frame = CGRect(origin: .zero, size: ArisNoticeLayout.windowSize)
-        panel.contentView = host
-        self.panel = panel
-        return panel
-    }
-
-    private func placePanel() {
-        guard let panel, let screen = notchScreen() ?? NSScreen.main else { return }
-        panel.place(on: screen)
-    }
-
-    /// Glass only on macOS 26 with every private part of the notch's glass taking and the panel's active look forced
-    /// (with Reduce Transparency it is drawn solid); otherwise the opaque card.
-    private func refreshMaterial(_ panel: ArisNoticePanel) {
-        var glassView = false
-        if #available(macOS 26.0, *) { glassView = true }
-        var chosen = ArisNoticeMaterial.choose(glassView: glassView, privateGlass: ArisGlassFallback.decide(ArisGlassHealth.shared.parts).privateGlass)
-        if chosen == .glass, !ArisGlassPrivate.forceActiveAppearance(panel, on: true) {
-            ArisGlassPrivate.forceActiveAppearance(panel, on: false)
-            ArisGlassHealth.shared.failed(\.activeAppearance)
-            chosen = .opaque
+    /// The front notice's own clock runs while it is seen and not under the pointer (ArisNoticePillRules.clockRuns); it
+    /// starts again from its whole showsFor each time it may run again.
+    private func runClock() {
+        clock?.cancel()
+        clock = nil
+        guard let front = queue.front, let seconds = front.showsFor,
+              ArisNoticePillRules.clockRuns(front, hovered: hovered, aside: aside) else { return }
+        clock = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self, self.queue.front?.id == front.id else { return }
+            self.close(front.id)
         }
-        if chosen != material {
-            material = chosen
-            log.notice("cards: \(chosen == .glass ? "glass" : "opaque", privacy: .public)")
-        }
-    }
-
-    // MARK: - The pointer
-
-    private func startPointerWatch() {
-        guard monitors.isEmpty else { return }
-        let moved: () -> Void = { [weak self] in self?.updatePointer() }
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: { _ in MainActor.assumeIsolated { moved() } }) {
-            monitors.append(global)
-        }
-        if let local = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: { event in
-            MainActor.assumeIsolated { moved() }
-            return event
-        }) {
-            monitors.append(local)
-        }
-    }
-
-    private func stopPointerWatch() {
-        monitors.forEach(NSEvent.removeMonitor)
-        monitors = []
-    }
-
-    /// The panel takes the pointer only on a card (with its close corner), a peeking layer or the "+N" row; while the
-    /// cards step aside it takes nothing.
-    private func updatePointer() {
-        guard let panel, panel.isVisible else { return }
-        let stack = ArisNoticeLayout.stack(queue.shown.map(ArisNoticeLayout.height), expanded: queue.expanded)
-        let point = panel.cardsPoint(NSEvent.mouseLocation)
-        let onCards = !aside && ArisNoticeLayout.hitRects(stack).contains { $0.contains(point) }
-        if panel.ignoresMouseEvents == onCards { panel.ignoresMouseEvents = !onCards }
-        if !onCards, hovered != nil { hovered = nil }
     }
 }
 
-/// The panel's view: the stack as the center has it.
-struct ArisNoticeHost: View {
-    @ObservedObject var center: ArisNoticeCenter
+/// The pill under the notch of the display it shows on: the front notice, or nothing while it steps aside. Aris's star
+/// takes the pill's seat (the one star hops down into it, ArisStarStage), Claude Code's ghost is drawn here.
+struct ArisNoticePillHost: View {
+    @ObservedObject var center = ArisNoticeCenter.shared
+    @ObservedObject private var team = ArisTeamModel.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ArisNoticeStackView(queue: center.queue, hovered: center.hovered, material: center.material, english: ArisUIWords.english,
-                            aside: center.aside, handlers: center.handlers)
+        ZStack(alignment: .top) {
+            if let notice = center.queue.front, !center.aside {
+                ArisNoticePillView(notice: notice, english: ArisUIWords.english, hovered: center.hovered == notice.id,
+                                   handlers: center.handlers) { mark in
+                    if mark == .ghost {
+                        ArisCharacterView(look: team.claudeLook, size: ArisNoticePillLayout.markSize, follows: false)
+                    } else {
+                        Color.clear.arisStarSeat(.pill)
+                    }
+                }
+                .id(notice.id)
+                .transition(ArisNoticePillView<EmptyView>.exit(reduceMotion: reduceMotion))
+            }
+        }
+        .animation(ArisNoticePillView<EmptyView>.ease(ArisNoticePillLayout.exit), value: center.queue.front?.id)
+        .animation(ArisNoticePillView<EmptyView>.ease(ArisNoticePillLayout.exit), value: center.aside)
     }
 }

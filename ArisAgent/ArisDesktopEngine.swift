@@ -368,8 +368,11 @@ final class ArisDesktopEngine {
     let reader: ArisDesktopTextReader
     let identity: ArisDesktopIdentity
     let tools: String
-    /// The computer-use engine in force (ArisComputerEngineChoice): Peekaboo unless the user picked Codex and has it.
+    /// The computer-use engine in force (ArisComputerEngineChoice): Aris's own unless the user picked Peekaboo or Codex.
     let computerEngine: () -> ArisComputerEngine
+    /// Aris's own engine (ArisNativeRunner), when this engine has it: it runs every call unless Peekaboo is picked. Nil
+    /// (an engine a test makes): `runner` runs them all.
+    let native: ArisNativeRunner?
     /// One owner of the keys and pointer at a time, across turns and jobs (ArisDesktopLock); nil: no lock (an engine a
     /// test makes for one turn at a time). The agent's engine has the shared one.
     var lock: ArisDesktopLock?
@@ -384,7 +387,8 @@ final class ArisDesktopEngine {
     init(installer: ArisDesktopInstaller, apps: ArisDesktopApps, runner: ArisDesktopRunning = ArisDesktopProcess(), access: ArisDesktopAccess,
          windows: ArisDesktopWindows, pointer: ArisDesktopPointer, vision: ArisDesktopVision, reader: ArisDesktopTextReader,
          identity: ArisDesktopIdentity, tools: String, computerEngine: @escaping () -> ArisComputerEngine = { .peekaboo },
-         lock: ArisDesktopLock? = nil, pausePolicy: ArisDesktopPause.Policy? = nil) {
+         lock: ArisDesktopLock? = nil, pausePolicy: ArisDesktopPause.Policy? = nil, native: ArisNativeRunner? = nil) {
+        self.native = native
         self.lock = lock
         self.pausePolicy = pausePolicy
         self.installer = installer
@@ -398,6 +402,15 @@ final class ArisDesktopEngine {
         self.identity = identity
         self.tools = tools
         self.computerEngine = computerEngine
+    }
+
+    /// Aris's own engine runs the calls (not Peekaboo): it has one and Peekaboo isn't the user's pick.
+    var usesNative: Bool { native != nil && !computerEngine().usesPeekaboo }
+
+    /// What a call runs with: Aris's own engine needs nothing downloaded (its "binary" is a name only); Peekaboo is
+    /// downloaded and checked first.
+    func engineBinary() -> Result<URL, ArisDesktopUsage> {
+        usesNative ? .success(URL(fileURLWithPath: "/aris-native-engine")) : installer.ready()
     }
 
     /// The Korean-speaking user's lines. The lists are named as this macOS shows them (ArisFix.Pane.title).
@@ -597,7 +610,7 @@ final class ArisDesktopEngine {
                                                                                                   + appWindows.compactMap(\.title)),
                                          pointsAtFrontDocument: request.verb == .dialogFile && !otherAppInFront && ArisDesktopGate.pointsAtDocument(turn.request))
         // A paste in a messaging app: the clipboard's text is read for the user's card and for nothing else.
-        if target.sending, ArisDesktopGate.pastes(request) { context.clipboard = apps.clipboardText() }
+        if target.sending || target.codeRunner, ArisDesktopGate.pastes(request) { context.clipboard = apps.clipboardText() }
         // The user's yes for this app in this conversation; or, in a saved-steps replay, their yes to an earlier card of the replay
         // for a step the live run did on the app's yes (ArisSavedStep.afterYes).
         let remembered = target.memoryKey.map { turn.ledger.allows($0, tainted: taint != .none) || turn.ledger.replayCovers($0) } ?? false
@@ -770,7 +783,7 @@ final class ArisDesktopEngine {
                                      window: request.ref == nil ? front?.id : nil)
         guard target.sending, request.verb != .app, request.verb != .window else { return .success(basis) }
         let maySend = ArisDesktopGate.isSend(request, element: element)
-        guard access.trusted, case .success(let binary) = installer.ready() else {
+        guard access.trusted, case .success(let binary) = engineBinary() else {
             return .failure(ArisDesktopUsage(text: maySend ? Self.unreadSendLine : Self.unreadLine))
         }
         let session = ArisDesktopSession(engine: self, binary: binary, target: target, turn: turn)

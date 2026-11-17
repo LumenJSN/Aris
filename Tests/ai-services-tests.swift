@@ -85,7 +85,7 @@ private func aiStoreTests() {
 
     check(ArisAIStore.plan(.think("claude")) == [.pref("arisBrain", .text("claude"))]
           && ArisAIStore.plan(.think("api:groq")) == [.activate("groq"), .pref("arisBrain", .text("api"))]
-          && ArisAIStore.plan(.think("api:")).isEmpty && ArisAIStore.plan(.think("siri")).isEmpty,
+          && ArisAIStore.plan(.think("api:")).isEmpty && ArisAIStore.plan(.think("nobody")).isEmpty,
           "ai store: choosing who thinks writes the brain (an API brain: its provider to aris-agent first), and nothing for a name that is no brain")
     check(ArisAIStore.plan(.hear("scribe")) == [.pref("arisHearEngine", .text("scribe")), .pref("arisCloudListening", .flag(true))]
           && ArisAIStore.plan(.hear("whisper")) == [.pref("arisHearEngine", .text("whisper")), .pref("arisCloudListening", .flag(false))]

@@ -67,7 +67,9 @@ private func qaFinal3OneCardTests() {
                    // Audit gate-2: a Claude's handed-off write, asked like its message (the same mcpAsk, the route waiting as long as the card).
                    "ArisAgent/ArisActionGate.swift",
                    // Auto mode (2026-11-11): the stopped card for such a write, asked through the same turn and the same mcpAsk.
-                   "ArisAgent/ArisAutoHandOff.swift"]
+                   "ArisAgent/ArisAutoHandOff.swift",
+                   // session-send: a prompt into one of the user's Claude Code sessions, always on their card (the same mcpAsk).
+                   "ArisAgent/ArisSessionSend.swift"]
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../ArisAgent")
     let all = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
     let found = Set(all.filter { $0.hasSuffix(".swift") }.filter { final3Source("ArisAgent/" + $0).contains("turn.ask(") }.map { "ArisAgent/" + $0 })
@@ -539,7 +541,7 @@ func runQAFinal3NoteAndCardHoldTests() {
         let body = String(behaviour[opener.upperBound..<next.lowerBound])
         check(!body.contains("makeKey") && !body.contains("activate") && !body.contains("KeyboardFocus.arm"), "card hold: opening the notch for a card never takes the keyboard from the user's app")
     } else { check(false, "card hold: opening the notch for a card never takes the keyboard from the user's app") }
-    if let wait = behaviour.range(of: "while ArisNotchDecisions.endWaitsForCard(cardWaiting: aris.cardWaiting, waited: Date().timeIntervalSince(held))"), let ending = behaviour.range(of: "switch ArisNotch.ending(openedNotch: opened, isOpen: isOpen)") {
+    if let wait = behaviour.range(of: "while ArisNotchDecisions.endWaitsForCard(cardWaiting: aris.cardWaiting, waited: Date().timeIntervalSince(held))"), let ending = behaviour.range(of: "switch ArisNotch.ending(openedNotch: opened, isOpen: isOpen, handedOff: handedOff)") {
         check(wait.lowerBound < ending.lowerBound && behaviour.contains("root.cardWaitingChanged(waiting)") && behaviour.contains("if pointerIsHere { Self.turnDisplay = displayUUID }"),
               "card hold: the turn-end collapse waits for the card; a card opens the notch")
     } else { check(false, "card hold: the turn-end collapse waits for the card; a card opens the notch") }

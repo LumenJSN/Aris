@@ -39,10 +39,26 @@ enum ArisNotch {
 
     /// A notch Aris opened always closes, even under the pointer: left open, it would
     /// show whatever tab another display's closing switched the shared tab to.
-    static func ending(openedNotch: Bool, isOpen: Bool) -> Ending {
+    /// After a hand-off (a job took the work: "작업할게요", "맡았어요") the notch closes whoever opened it: the jobs' pill
+    /// under the closed notch tells how the work goes (the owner, 2026-11-16).
+    static func ending(openedNotch: Bool, isOpen: Bool, handedOff: Bool = false) -> Ending {
         guard isOpen else { return .stay }
-        return openedNotch ? .close : .restoreTab
+        return openedNotch || handedOff ? .close : .restoreTab
     }
+
+    /// How long the turn's end leaves the answer up before the notch may go: its reading time, except after a hand-off
+    /// (the line was said, the pill takes over) and a dictation.
+    static func endWait(handedOff: Bool, dictation: Bool, reply: String) -> Duration {
+        handedOff || dictation ? .zero : readingTime(for: reply)
+    }
+
+    /// The pointer on the notch keeps the answer up a while (longestHover), but not after a hand-off.
+    static func waitsForHover(handedOff: Bool) -> Bool { !handedOff }
+
+    /// How long a turn stays in its answer after Aris stopped talking: none after a hand-off, so the notch goes as the
+    /// line ends.
+    static func linger(handedOff: Bool) -> Duration { handedOff ? .zero : lingerAfterAnswer }
+    static let lingerAfterAnswer: Duration = .seconds(1.5)
 
     /// Whether the end of a turn finds the pointer off a notch nothing holds any more. `free`: no turn, card, popover,
     /// share or drop holds it and no hover is known; `measured`: the notch's place on screen is known; `onNotch`: the

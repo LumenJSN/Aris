@@ -73,12 +73,17 @@ extension ArisConvert {
         }
     }
 
-    /// The files: as named, or what the selector stands for (as many as the verb takes).
+    /// The files: as named, or what the selector stands for (as many as the verb takes; Finder's in its name order).
     private static func picked(_ call: ArisConvertWords.Call, _ selection: (ArisConvertWords.Selector) throws -> [String]) throws -> [String] {
         guard let selector = call.selector else { return call.paths }
-        let paths = try selection(selector)
-        guard !paths.isEmpty else { throw ArisConvertError(selector == .finder ? "nothing is selected in Finder" : "the shelf has no files") }
-        guard paths.count <= ArisConvertWords.mostFiles else { throw ArisConvertError("that's more than \(ArisConvertWords.mostFiles) files") }
+        let given = try selection(selector)
+        let paths = selector == .finder ? finderOrder(given) : given
+        let none = ["--finder": "nothing is selected in Finder", "--shelf": "the shelf has no files",
+                    "--made": "no conversion in this question has made files yet"]
+        guard !paths.isEmpty else { throw ArisConvertError(none[selector.rawValue] ?? "no files") }
+        guard paths.count <= ArisConvertWords.mostPicked else {
+            throw ArisConvertError("\(paths.count) files are picked and one call takes at most \(ArisConvertWords.mostPicked): ask the user to pick fewer")
+        }
         if call.verb == "merge", paths.count < 2 { throw ArisConvertError("merge takes two or more files (\(paths.count) picked)") }
         if call.verb == "split", paths.count != 1 { throw ArisConvertError("split takes one PDF (\(paths.count) picked)") }
         return paths
@@ -183,8 +188,8 @@ extension ArisConvert {
         let first = (files[0].given as NSString).lastPathComponent
         let summary = quiet ? "변환: \(files.count)개 → \(kinds(made))"
             : "변환: \(first)\(files.count > 1 ? " 외 \(files.count - 1)개" : "") → \(made.count == 1 ? (made[0].real as NSString).lastPathComponent : "\(made.count)개")"
-        let line = made.count == files.count ? "\(files.count)개를 \(kinds(made))로 바꿨어요 (원본 옆에 저장)"
-            : "\(files.count)개를 \(kinds(made)) \(made.count)개로 바꿨어요 (원본 옆에 저장)"
+        let line = (made.count == files.count ? "\(files.count)개를 \(kinds(made))로 바꿨어요 (원본 옆에 저장)"
+            : "\(files.count)개를 \(kinds(made)) \(made.count)개로 바꿨어요 (원본 옆에 저장)") + madeHint(made.count)
         return ArisConvertResult(shown: quiet ? [] : made.map(\.shown), made: made.map(\.real), notSmaller: [], summary: summary,
                                  quietLine: quiet ? line : nil)
     }
@@ -218,7 +223,10 @@ extension ArisConvert {
         if kinds.allSatisfy(pageKinds.contains) {
             guard options.to == nil || options.to == "pdf" else { throw ArisConvertError("PDFs and pictures merge into one PDF: --to pdf") }
             ext = "pdf"
-            make = { try ArisConvertPDF.merge(sources, kinds: kinds, labels: labels, most: job.limits.pages, to: $0) }
+            // The pictures' pixels together, from their headers, before any is drawn: over the budget, each is drawn
+            // smaller on its page (the page keeps its size), never refused for being many.
+            let sides = pageSides(files, budget: job.limits.mergePixels)
+            make = { try ArisConvertPDF.merge(sources, kinds: kinds, labels: labels, most: job.limits.pages, maxSides: sides, to: $0) }
         } else if kinds.allSatisfy({ $0 == .video }) {
             let to = options.to ?? (ownFormat(first.real) == "mov" ? "mov" : "mp4")
             guard ["mp4", "mov", "m4a"].contains(to) else { throw ArisConvertError("videos merge into MP4, MOV or M4A (their sound)") }
@@ -231,14 +239,6 @@ extension ArisConvert {
             make = { try ArisConvertMedia.export(sources, labels: labels, to: $0, output: .sound, preset: nil, limit: job.remaining) }
         } else {
             throw ArisConvertError("can't merge \(describe(kinds)) together: merge one kind (PDFs and pictures into a PDF, videos into a video, sounds into a sound)")
-        }
-        // The pictures' pixels together, from their headers, before any is drawn.
-        let pixels = files.filter { $0.kind == .image }.reduce(0) { total, file in
-            let size = pixelSize(file.real) ?? (0, 0)
-            return total + size.0 * size.1
-        }
-        guard pixels <= job.limits.mergePixels else {
-            throw ArisConvertError("those pictures are over \(job.limits.mergePixels / 1_000_000) megapixels together, more than one merge takes")
         }
         // Files from one folder: the merge goes beside them. From several: Downloads, never a folder the order of the
         // files would pick (a shared or synced one).
@@ -253,6 +253,19 @@ extension ArisConvert {
                                      : "합침: \(name) 외 \(files.count - 1)개 → \((result.real as NSString).lastPathComponent)",
                                  quietLine: first.quiet ? "\(files.count)개를 \(ext.uppercased()) 하나로 합쳤어요 (\(whereTo))" : nil,
                                  note: together ? nil : "다운로드 폴더에 저장 (the files were in different folders)")
+    }
+
+    /// The longest side each picture of a merge is drawn at (nil: its own size; a PDF: nil): one scale for all of them
+    /// when their pixels together are over `budget`, so the total fits it.
+    static func pageSides(_ files: [Source], budget: Int) -> [Int?] {
+        let sizes = files.map { $0.kind == .image ? pixelSize($0.real) ?? (0, 0) : (0, 0) }
+        let total = sizes.reduce(0.0) { $0 + Double($1.0) * Double($1.1) }
+        guard total > Double(budget), budget > 0 else { return sizes.map { _ in nil } }
+        // A hair under, so each picture's rounded short side never takes the total over.
+        let scale = (Double(budget) / total).squareRoot() * 0.99
+        return zip(files, sizes).map { file, size in
+            file.kind == .image ? max(1, Int((Double(max(size.0, size.1)) * scale).rounded(.down))) : nil
+        }
     }
 
     /// The Downloads folder (made if it isn't there), checked like any other place.
@@ -340,12 +353,16 @@ extension ArisConvert {
         let made = job.made, quiet = files[0].quiet
         let first = (files[0].given as NSString).lastPathComponent
         let kept = notSmaller.isEmpty ? "" : made.isEmpty ? "\(notSmaller.count)개 모두 더 작아지지 않아 그대로 뒀어요" : " · \(notSmaller.count)개는 더 작아지지 않아 그대로 뒀어요"
-        let line = made.isEmpty ? kept : "\(made.count)개를 줄였어요 (원본 옆에 저장)" + kept
+        let line = made.isEmpty ? kept : "\(made.count)개를 줄였어요 (원본 옆에 저장)" + kept + madeHint(made.count)
         return ArisConvertResult(shown: quiet ? [] : made.map(\.shown), made: made.map(\.real), notSmaller: quiet ? [] : notSmaller,
                                  summary: quiet ? "압축: \(files.count)개 → \(made.count)개"
                                      : "압축: \(first)\(files.count > 1 ? " 외 \(files.count - 1)개" : "") → \(made.count)개",
                                  quietLine: quiet ? line : nil)
     }
+
+    /// Said after what a selector's conversion made, so the next step uses the new files, never the originals.
+    static let madeHintLine = "next step on these new files (e.g. merge them into one PDF): --made (from: \"made\") in place of the files"
+    private static func madeHint(_ count: Int) -> String { count > 0 ? "\n" + madeHintLine : "" }
 
     static func fileSize(_ path: String) -> Int64 {
         ((try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? NSNumber)?.int64Value ?? 0

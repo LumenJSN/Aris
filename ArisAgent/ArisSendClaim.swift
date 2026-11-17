@@ -42,7 +42,7 @@ enum ArisSendClaim {
 
     /// Aris's own commands that can send something or act in another app: a turn that ran one of these (and was not
     /// refused on its card) may have sent, so nothing is added.
-    static let maySend: Set<String> = ["message", "mail", "keys", "type", "shortcut", "mcp", "skill", "aside", "desktop"]
+    static let maySend: Set<String> = ["message", "mail", "keys", "type", "shortcut", "mcp", "skill", "aside", "desktop", "session"]
     /// `mail` reads with these: no send.
     static let mailReads: Set<String> = ["recent", "search"]
 

@@ -393,15 +393,7 @@ private func fix7HookHeadTests() {
 }
 
 private func f7FreePort() -> UInt16 {
-    let fd = socket(AF_INET, SOCK_STREAM, 0)
-    defer { close(fd) }
-    var address = sockaddr_in()
-    address.sin_family = sa_family_t(AF_INET)
-    address.sin_addr.s_addr = inet_addr("127.0.0.1")
-    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-    _ = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, length) } }
-    _ = withUnsafeMutablePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) } }
-    return UInt16(bigEndian: address.sin_port)
+    loopbackFreePort()
 }
 
 /// Sends `request` on a new connection and reads the status line of the answer: its status and how long it took.
@@ -441,11 +433,17 @@ private func fix7KeyboardTests() {
     let passwords = ArisFrontLive.App(pid: 502, bundleId: "com.1password.1password", name: "1Password", ordinary: true)
     check(ArisInsertRefusal.refusal(trusted: true, secureInput: false, front: nil) == ArisInsertRefusal.noKeyboardApp,
           "review-9 L4: when Accessibility gives no app with the keyboard, nothing is pasted")
+    let keychain = ArisFrontLive.App(pid: 503, bundleId: "com.apple.keychainaccess", name: "Keychain Access", ordinary: true)
+    let aris = ArisFrontLive.App(pid: 504, bundleId: "com.lumenjsn.aris", name: "Aris", ordinary: true)
     check(ArisInsertRefusal.refusal(trusted: true, secureInput: false, front: textEdit) == nil
-          && ArisInsertRefusal.refusal(trusted: true, secureInput: false, front: passwords) != nil
+          && ArisInsertRefusal.refusal(trusted: true, secureInput: false, front: passwords) == nil
+          && ArisInsertRefusal.refusal(trusted: true, secureInput: false, front: keychain) == nil
+          && ArisInsertRefusal.refusal(trusted: true, secureInput: false, front: aris) != nil
+          && ArisInsertRefusal.refusal(trusted: true, secureInput: true, front: passwords) != nil
           && ArisInsertRefusal.refusal(trusted: true, secureInput: true, front: textEdit) != nil
-          && ArisInsertRefusal.refusal(trusted: false, secureInput: false, front: textEdit) == ArisInsertRefusal.needsAccessibility,
-          "review-9 L4: the app Accessibility names still decides: TextEdit takes the paste, a password app, a password field or no Accessibility don't")
+          && ArisInsertRefusal.refusal(trusted: false, secureInput: false, front: textEdit) == ArisInsertRefusal.needsAccessibility
+          && ArisInsertRefusal.refusedApps == ["com.lumenjsn.aris"],
+          "review-9 L4: the app Accessibility names still decides: TextEdit, a password app and Keychain Access take the paste (the user 2026-11-16); Aris, a password field or no Accessibility don't")
     check(!ArisFrontNow.keysGo(focused: nil, target: 501) && !ArisFrontNow.keysGo(focused: 0, target: 501) && !ArisFrontNow.keysGo(focused: 777, target: 501)
           && ArisFrontNow.keysGo(focused: 501, target: 501),
           "review-9 L4: a key goes only to the app Accessibility says has the keyboard; no answer stops the keys, never the window order")

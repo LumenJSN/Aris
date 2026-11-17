@@ -210,7 +210,7 @@ private func builderTests() {
     check(ai.flatMap(\.rows).filter(\.indexed).map(\.id) == ["ai.brain", "ai.jev", "ai.hear", "ai.speak", "ai.mcp.composio", "ai.mcp.add", "ai.computerEngine", "ai.teamBrain"],
           "builder: AI 서비스 lists 생각, Jev, 듣기 and 말하기 for the search, then the connected services and the two rows it had")
     if case .menu(.computerEngine, let engines, let chosen) = ai.flatMap(\.rows).first(where: { $0.id == "ai.computerEngine" })?.control {
-        check(engines.map(\.id) == ["peekaboo", "codex"] && chosen == "peekaboo", "builder: the computer-use engine is a plain menu, Peekaboo by default")
+        check(engines.map(\.id) == ["aris", "peekaboo", "codex"] && chosen == "aris", "builder: the computer-use engine is a plain menu, Aris's own by default")
     } else { check(false, "builder: the computer-use engine has its row") }
     let link = ArisSettingsBuilder.sections(.aris, s).flatMap(\.rows).first { $0.id == "aris.brainLink" }
     check(link?.control == .link(.go(.ai, anchor: "ai.brain"), value: "Codex") && link?.indexed == false, "builder: 대화 keeps a row that goes to the brain, showing it")

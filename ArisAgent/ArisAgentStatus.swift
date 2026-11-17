@@ -22,12 +22,13 @@ enum ArisAgentStatus {
         "messages": "메시지 읽는 중", "mail": "메일 보는 중", "notes": "메모 찾는 중", "files": "파일 찾는 중",
         "obsidian": "Obsidian 찾는 중", "maps": "지도 여는 중", "stock": "주가 가져오는 중", "currency": ArisCurrencyRoute.status, "desktop": "앱 다루는 중",
         "aside": ArisAside.workingStatus, "convert": "파일 변환하는 중", "merge": "파일 합치는 중", "split": "PDF 나누는 중", "compress": "용량 줄이는 중",
+        "devin": "Devin 세션 읽는 중",
     ]
 
     private static let actionWords: [String: String] = [
         "folder new": "폴더 만드는 중", "event find": "일정 찾는 중", "event delete": "일정 지우는 중", "event change": "일정 바꾸는 중",
         "todo add": "할 일 추가 중", "todo done": "할 일 끝내는 중", "todo remove": "할 일 지우는 중", "schedule add": "예약 만드는 중",
-        "schedule remove": "예약 취소하는 중", "schedule list": "예약 보는 중", "clipboard set": "클립보드에 넣는 중",
+        "schedule remove": "예약 취소하는 중", "schedule list": "예약 보는 중", "session send": "세션에 보내는 중", "session list": "세션 보는 중", "clipboard set": "클립보드에 넣는 중",
         "routine list": "루틴 보는 중", "routine show": "루틴 보는 중", "routine add": "루틴 만드는 중", "routine remove": "루틴 지우는 중",
         "routine wait": "루틴 보는 중",
         "mail reply": "답장 준비 중",

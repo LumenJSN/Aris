@@ -110,7 +110,7 @@ final class ArisClipboardModel: ObservableObject {
         // Reading types on the pasteboard lists every item's (Maccy: some apps put the markers on a second item).
         let types = board.types?.map(\.rawValue) ?? []
         let front = NSWorkspace.shared.frontmostApplication
-        guard ArisClipboard.keeps(types: types, app: front?.bundleIdentifier) else { return }
+        guard ArisClipboard.keeps(types: types) else { return }
         // Some apps put two items on the pasteboard for one copy: their data is merged into one record.
         var contents: [ArisClipboard.Content] = []
         for entry in board.pasteboardItems ?? [] {
@@ -156,7 +156,7 @@ final class ArisClipboardModel: ObservableObject {
 
     private static func save(_ items: [ArisClipboard.Item]) {
         guard let file else { return }
-        let kept = items.filter { $0.size <= ArisClipboard.savedItemLimit && !ArisClipboard.looksSecret($0) }
+        let kept = items.filter { $0.size <= ArisClipboard.savedItemLimit }
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(kept).write(to: file, options: .atomic)

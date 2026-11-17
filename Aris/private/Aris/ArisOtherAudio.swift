@@ -36,8 +36,10 @@ enum ArisOtherAudio {
 
     /// Aris: the app (and its helpers), aris-agent and aris-tools.
     static let ownBundles = ["com.lumenjsn.aris", "com.lumenjsn.aris.aris-agent", "com.lumenjsn.aris.aris-tools"]
-    /// Left out only when there's no reading: Aside's browser and helpers keep an output stream open all the time.
-    static let alwaysOpen = ["at.studio.AsideBrowser", "at.studio.AsideUpdater"]
+    /// Left out only when there's no reading: Aside's browser and helpers keep an output stream open all the time, and
+    /// so does Discord's helper (2026-11-14: open in every look at the process list, idle or not; with the tap reading
+    /// only zeros it kept a conversation's listening, and with it the wake word, closed for 15–30 s after every turn).
+    static let alwaysOpen = ["at.studio.AsideBrowser", "at.studio.AsideUpdater", "com.hnc.Discord"]
     /// Output louder than this (RMS) is sound someone can hear.
     static let audible: Float = 0.003
 
@@ -56,10 +58,30 @@ enum ArisOtherAudio {
     /// `pausedPlayers`: music apps Aris knows are paused (Now Playing says nothing plays): with no reading, their open
     /// stream isn't sound (QA BUG-38: a paused Spotify keeps its output open, so listening between turns never began).
     static func isPresent(_ processes: [Process], ownPid: Int32, outputLevel: Float? = nil, pausedPlayers: [String] = []) -> Bool {
+        !culprits(processes, ownPid: ownPid, outputLevel: outputLevel, pausedPlayers: pausedPlayers).isEmpty
+    }
+
+    /// The apps that make another app's sound present (isPresent's rule), by bundle id or else "pid N", for the log:
+    /// those recording, then those playing (with a reading: every other app with output open, when it is audible).
+    static func culprits(_ processes: [Process], ownPid: Int32, outputLevel: Float? = nil, pausedPlayers: [String] = []) -> [String] {
+        let others = processes.filter { !isOwn($0, ownPid: ownPid) }
+        let name = { (process: Process) in process.bundle ?? "pid \(process.pid)" }
+        let recording = others.filter(\.input)
+        if !recording.isEmpty { return recording.map(name) }
+        if let outputLevel { return outputLevel > audible ? others.filter(\.output).map(name) : [] }
+        return others.filter { $0.output && !matches($0.bundle, alwaysOpen) && !matches($0.bundle, pausedPlayers) }.map(name)
+    }
+
+    /// This Mac itself plays or carries a call, for the wake word's strict rule (ArisWakeEvidence): Now Playing says
+    /// something plays, another app records (a call), or the output meter reads real sound. An open output stream
+    /// alone never counts, with no reading (Spotify paused, Discord's and Aside's always-open streams): it would turn
+    /// strict mode on and take near spellings away for nothing.
+    static func macPlays(nowPlaying: Bool, outputLevel: Float?, _ processes: [Process], ownPid: Int32) -> Bool {
+        if nowPlaying { return true }
         let others = processes.filter { !isOwn($0, ownPid: ownPid) }
         if others.contains(where: \.input) { return true }
-        if let outputLevel { return others.contains(where: \.output) && outputLevel > audible }
-        return others.contains { $0.output && !matches($0.bundle, alwaysOpen) && !matches($0.bundle, pausedPlayers) }
+        guard let outputLevel else { return false }
+        return outputLevel > audible && others.contains(where: \.output)
     }
 
     /// The music apps whose open output stream says nothing while Now Playing reports nothing playing.
@@ -153,13 +175,17 @@ struct ArisMeterReading: Equatable {
         return next
     }
 
-    /// The level now; nil until something but zeros came (unknown, so the open-stream rule applies).
-    func level(at now: Double) -> Float? {
-        guard measured, heardSound else { return nil }
-        return now - peakAt < Self.window ? peak : 0
+    /// The level now; nil until something but zeros came (unknown, so the open-stream rule applies). `tapProven`: a tap
+    /// has read real sound since launch, so the permission is there and zeros are silence (2026-11-14: a silent but
+    /// open stream read only zeros, and listening between turns stayed paused for the conversation's whole life).
+    func level(at now: Double, tapProven: Bool = false) -> Float? {
+        guard measured, heardSound || tapProven else { return nil }
+        return heardSound && now - peakAt < Self.window ? peak : 0
     }
 
-    func onlyZeros(at now: Double) -> Bool { measured && !heardSound && now - startedAt >= Self.zerosAreSuspect }
+    func onlyZeros(at now: Double, tapProven: Bool = false) -> Bool {
+        !tapProven && measured && !heardSound && now - startedAt >= Self.zerosAreSuspect
+    }
 }
 
 /// How loud every app but Aris is: a private Core Audio process tap read through a private aggregate device (nothing
@@ -180,11 +206,16 @@ final class ArisOutputMeter: @unchecked Sendable {
 
     private static var now: Double { ProcessInfo.processInfo.systemUptime }
 
+    /// A tap has read something but zeros since launch (any meter): the System Audio permission is there.
+    private static let provenLock = NSLock()
+    nonisolated(unsafe) private static var proven = false
+    static var tapProven: Bool { provenLock.withLock { proven } }
+
     /// The level now (ArisMeterReading.level); nil when not running or not known.
-    var level: Float? { lock.withLock { reading?.level(at: Self.now) } }
+    var level: Float? { lock.withLock { reading?.level(at: Self.now, tapProven: Self.tapProven) } }
 
     /// Only exact zeros since the tap started, for a while.
-    var onlyZeros: Bool { lock.withLock { reading?.onlyZeros(at: Self.now) ?? false } }
+    var onlyZeros: Bool { lock.withLock { reading?.onlyZeros(at: Self.now, tapProven: Self.tapProven) ?? false } }
 
     /// Wants the tap running, leaving out `objects` (Aris's). Returns at once; the tap is made on the meter's queue.
     func ensure(leavingOut objects: [AudioObjectID]) {
@@ -273,6 +304,7 @@ final class ArisOutputMeter: @unchecked Sendable {
             loudest = max(loudest, (sum / Float(count)).squareRoot())
         }
         let now = Self.now
+        if loudest > 0, !Self.tapProven { Self.provenLock.withLock { Self.proven = true } }
         lock.withLock { reading = reading?.reading(loudest, at: now) }
     }
 }

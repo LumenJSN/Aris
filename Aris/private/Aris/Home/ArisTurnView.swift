@@ -384,14 +384,14 @@ struct ArisPromptPill: View {
     @State private var lines = 1
     @State private var revealed = false
     @State private var hoveredShot: Int?
-    /// Re-draws this view when the hidden look changes (ArisSiriLookGate).
-    @ObservedObject private var siriLook = ArisSiriLookGate.shared
+    /// Re-draws this view when the hidden look changes (ArisDuskLookGate).
+    @ObservedObject private var duskLook = ArisDuskLookGate.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: ArisPromptDoneNote.gap) {
-            // The siri look: your words as Siri's bubble (ArisSiriLookBubble) while they are only shown; a request
+            // The dusk look: your words as the system assistant's bubble (ArisDuskLookBubble) while they are only shown; a request
             // being edited, and words that carry circled shots, are the card below, editor, chips and all.
-            if siriBubble {
+            if duskBubble {
                 bubble
             } else {
                 card
@@ -423,16 +423,16 @@ struct ArisPromptPill: View {
         withAnimation(ArisGlass.resize) { draft = nil }
     }
 
-    /// The siri look draws these words as the bubble: not while they are edited (the card has the editor), and not
+    /// The dusk look draws these words as the bubble: not while they are edited (the card has the editor), and not
     /// words with circled shots (the card draws their chips).
-    private var siriBubble: Bool {
-        ArisSiriLookNow.on && draft == nil && !previewEditing && (placeholder || ArisGestureMarkers.badges(in: text).isEmpty)
+    private var duskBubble: Bool {
+        ArisDuskLookNow.on && draft == nil && !previewEditing && (placeholder || ArisGestureMarkers.badges(in: text).isEmpty)
     }
 
-    /// Siri's bubble with the card's own pencil beside it while the pointer is on the row; the pencil, or a tap
+    /// The system assistant's bubble with the card's own pencil beside it while the pointer is on the row; the pencil, or a tap
     /// where the card's tap would edit, hands the words to the card's editor.
     private var bubble: some View {
-        ArisSiriLookBubble(text: text, quiet: placeholder) {
+        ArisDuskLookBubble(text: text, quiet: placeholder) {
             if hovering || previewHover, edit.isEditable {
                 ArisPromptPencil { draft = text }.transition(.opacity)
             }

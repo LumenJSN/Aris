@@ -46,10 +46,11 @@ enum ArisConvertPDF {
     }
 
     /// PDFs and pictures, in order, as one PDF. `labels`: what a failure calls each file.
-    /// `most`: pages in the merged PDF at most.
-    static func merge(_ sources: [URL], kinds: [ArisConvert.Kind], labels: [String], most: Int = mostPages, to url: URL) throws {
+    /// `most`: pages in the merged PDF at most. `maxSides`: the longest side each picture is drawn at (nil: its own).
+    static func merge(_ sources: [URL], kinds: [ArisConvert.Kind], labels: [String], most: Int = mostPages, maxSides: [Int?] = [],
+                      to url: URL) throws {
         let merged = PDFDocument()
-        for ((source, kind), label) in zip(zip(sources, kinds), labels) {
+        for (index, ((source, kind), label)) in zip(zip(sources, kinds), labels).enumerated() {
             do {
                 if kind == .pdf {
                     let document = try open(source)
@@ -62,7 +63,8 @@ enum ArisConvertPDF {
                     }
                 } else {
                     guard merged.pageCount < most else { throw ArisConvertError("that's more than \(most) pages in one PDF") }
-                    try autoreleasepool { merged.insert(try picturePage(source), at: merged.pageCount) }
+                    let side = index < maxSides.count ? maxSides[index] : nil
+                    try autoreleasepool { merged.insert(try picturePage(source, maxSide: side), at: merged.pageCount) }
                 }
             } catch let problem as ArisConvertError {
                 throw ArisConvertError("\(label): \(problem.message)", detail: problem.detail)
@@ -71,15 +73,23 @@ enum ArisConvertPDF {
         guard merged.write(to: url) else { throw ArisConvertError("couldn't write the merged PDF") }
     }
 
-    /// One picture as a PDF page, its size at its own pixels per inch.
-    private static func picturePage(_ source: URL) throws -> PDFPage {
-        let image = try ArisConvertImages.load(source)
+    /// The quality an opaque picture is kept at on its page (as JPEG, so forty photos make a PDF about their own size,
+    /// not ten times it).
+    static let pageQuality = 0.85
+
+    /// One picture as a PDF page, its size at its own pixels per inch, drawn at most `maxSide` on its longer side (the
+    /// page keeps the picture's own size). An opaque picture is kept as JPEG; one with transparency as it is.
+    private static func picturePage(_ source: URL, maxSide: Int? = nil) throws -> PDFPage {
+        let drawn = try ArisConvertImages.load(source, maxSide: maxSide)
+        // The page's size is the picture's own (turned upright), however small it is drawn.
+        let own = ArisConvertImages.uprightSize(source) ?? (drawn.width, drawn.height)
+        let image = ArisConvertImages.isOpaque(drawn) ? ArisConvertImages.jpegBacked(drawn, quality: pageQuality) ?? drawn : drawn
         let data = NSMutableData()
         guard let consumer = CGDataConsumer(data: data as CFMutableData), let pdf = CGContext(consumer: consumer, mediaBox: nil, nil) else {
             throw ArisConvertError("couldn't make a page of it")
         }
         let dpi = ArisConvertImages.dpi(source)
-        var box = CGRect(x: 0, y: 0, width: Double(image.width) * 72 / dpi, height: Double(image.height) * 72 / dpi)
+        var box = CGRect(x: 0, y: 0, width: Double(own.0) * 72 / dpi, height: Double(own.1) * 72 / dpi)
         pdf.beginPage(mediaBox: &box)
         pdf.draw(image, in: box)
         pdf.endPage()

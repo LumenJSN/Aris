@@ -50,14 +50,16 @@ struct ArisDesktopSession {
         // by this turn's own checks (another turn's are its own: ArisOwnInput).
         let acting = arguments.first != "see"
         let started = Date()
-        let (_, output) = engine.runner.run(binary, arguments, stateFolder: engine.installer.stateFolder, timeout: ArisDesktopEngine.runTimeout)
+        let (_, output) = engine.usesNative && engine.native != nil
+            ? engine.native!.run(arguments, context: ArisNativeContext(job: turn.isTask))
+            : engine.runner.run(binary, arguments, stateFolder: engine.installer.stateFolder, timeout: ArisDesktopEngine.runTimeout)
         if acting { ArisOwnInput.shared.note(from: started, to: Date(), owner: turn.desktopOwner) }
         return ArisDesktopEnvelope.parse(output)
     }
 
     /// Peekaboo's own words for a failure, redacted (they can name windows and paths).
     func why(_ envelope: ArisDesktopEnvelope?) -> String {
-        guard let envelope else { return "Peekaboo gave no answer (it may have timed out)" }
+        guard let envelope else { return "the engine gave no answer (it may have timed out)" }
         let text = [envelope.code, envelope.message].compactMap { $0 }.joined(separator: ": ")
         return ArisDesktopPrivacy.redact(String((text.isEmpty ? (envelope.state ?? "no result") : text).prefix(400)), engine.identity)
     }
@@ -139,7 +141,8 @@ struct ArisDesktopSession {
     /// A private folder for one screenshot, removed by the caller.
     func shotFolder() -> URL? {
         let folder = engine.installer.stateFolder.appendingPathComponent("look-\(UUID().uuidString.prefix(12))")
-        guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])) != nil else { return nil }
+        // The state folder itself may not exist yet (Aris's own engine downloads nothing): made with it.
+        guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])) != nil else { return nil }
         return folder
     }
 }
@@ -188,9 +191,9 @@ extension ArisDesktopEngine {
         // pass: a click ran with Gatekeeper's prompt on screen): refused before anything is done, so the step pauses for
         // it (ArisDesktopEngine+Lock) and runs again from its start once it is gone.
         if request.verb.kind == .action, windows.promptOnScreen() != nil { return .refused(.failed(ArisDesktopSession.promptLine)) }
-        if installer.state != .ready, !installer.isInstalled() { turn.quiet(ArisDesktopCopy.installing(english: english)) }
+        if !usesNative, installer.state != .ready, !installer.isInstalled() { turn.quiet(ArisDesktopCopy.installing(english: english)) }
         let binary: URL
-        switch installer.ready() {
+        switch engineBinary() {
         case .failure(let why): return .refused(.failed("Computer use isn't ready: \(why.text). Say so in a few words."))
         case .success(let found): binary = found
         }

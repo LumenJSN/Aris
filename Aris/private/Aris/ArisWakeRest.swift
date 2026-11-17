@@ -2,7 +2,7 @@
 //  ArisWakeRest.swift
 //  Aris
 //
-//  When the wake word does not listen at all. Siri's listener can wait without a microphone indicator because it is
+//  When the wake word does not listen at all. The system assistant's listener can wait without a microphone indicator because it is
 //  part of macOS; an app's cannot, so Aris at least knows when nobody can be calling it and closes its microphone for
 //  that time (the orange indicator goes away with it), and opens it again by itself when the reason ends:
 //  - the screen is locked or the display asleep (ArisController.watchScreen, as before);
@@ -64,7 +64,7 @@ enum ArisWakeRest {
     /// Low Power Mode counts only on battery: on the charger there is nothing to save.
     static func lowPowerRests(_ facts: Facts) -> Bool { facts.lowPowerMode && facts.onBattery }
 
-    /// macOS's own listeners, which may hold a microphone all day (“Siri야”, sound recognition): they are not a call.
+    /// macOS's own listeners, which may hold a microphone all day (the system's own wake phrase, sound recognition): they are not a call.
     static let systemListeners = ["com.apple.CoreSpeech", "com.apple.corespeechd", "com.apple.corespeechd_system", "com.apple.accessibility.heard"]
 
     /// The preference that turns the rest for another app's microphone off ("off"): for a Mac where some helper
@@ -204,32 +204,72 @@ enum ArisWakeRest {
     /// The symbol beside those words.
     static let symbol = "mic.slash"
 
-    /// What the wake word's tuning log keeps of Whisper's text for a check that went down `path`: the words only when
-    /// the name was heard; for a phrase that was not the name ("rejected") nothing of what was said.
+    /// What the wake word's tuning log keeps of Whisper's text for a check that went down `path`: what it wrote, for
+    /// accepted and rejected candidates alike (2026-11-14: real calls were rejected and the log couldn't say what
+    /// Whisper had heard). The log is the owner's own file (0600), on this Mac only; Whisper reads at most 1.8 s.
     static func kept(_ heard: String?, path: String) -> String {
-        path == "rejected" ? "" : heard ?? ""
+        heard ?? ""
     }
 }
 
 /// What turning the wake word on really means, in one sentence, wherever it is described.
 enum ArisWakeHonesty {
     /// Settings › Aris › 부르기: the row's description.
-    static let settingsLine = "말로 부르면 듣기 시작해요. 기다리는 동안에는 마이크가 켜져 있어서 macOS의 마이크 표시가 뜨고, 이름을 듣기 전에는 아무것도 보내거나 남기지 않으며, 화면이 잠기거나 다른 앱이 마이크를 쓰면 알아서 쉬어요."
-    static let settingsLineEnglish = "Say the name and Aris starts listening. While it waits the microphone is on and macOS shows its indicator; nothing is sent or kept before it hears the name, and it rests by itself when the screen is locked or another app is using the microphone."
+    /// Before the name only the wake log's text is kept (ArisWakeRest.kept: what Whisper wrote of each candidate, in
+    /// the app's own Application Support, 0600); sound only while 하루 소리 모으기 is on (ArisWakeCollect); nothing is
+    /// sent (a borderline wake streams to Scribe only once it is kept, ArisController+WakeEvidence).
+    static let settingsLine = "말로 부르면 듣기 시작해요. 기다리는 동안에는 마이크가 켜져 있어서 macOS의 마이크 표시가 뜨고, 이름을 듣기 전에는 호출어를 다듬으려고 알아들은 글자만 이 Mac에 남겨요. 소리는 하루 소리 모으기를 켠 동안에만 남기고, Mac 밖으로는 아무것도 보내지 않아요. 화면이 잠기거나 다른 앱이 마이크를 쓰면 알아서 쉬어요."
+    static let settingsLineEnglish = "Say the name and Aris starts listening. While it waits the microphone is on and macOS shows its indicator. Before it hears the name only the recognised text is kept on this Mac, to tune the wake word; sound is kept only while Collect a day of sound is on, and nothing is sent off the Mac. It rests by itself when the screen is locked or another app is using the microphone."
 
     /// Korean → English, for the settings pages' lookup (ArisSettingsCopyMore).
     /// Settings › 대화 › 부르기: the small line under the card (the row itself keeps one short sentence).
-    static let note = "“아리스”는 이 Mac 안에서만 알아듣고 듣기 전에는 아무것도 보내거나 남기지 않으며, 기다리는 동안 macOS의 마이크 표시가 뜨고 화면이 잠기거나 다른 앱이 마이크를 쓰면 알아서 쉬어요."
-    static let noteEnglish = "“Aris” is recognised on this Mac only and nothing is sent or kept before it is heard; while it waits macOS shows its microphone indicator, and it rests by itself when the screen is locked or another app is using the microphone."
+    static let note = "“아리스”는 이 Mac 안에서만 알아듣고 듣기 전에는 아무것도 보내지 않으며 호출어를 다듬으려고 알아들은 글자만 남기고(소리는 남기지 않아요), 기다리는 동안 macOS의 마이크 표시가 뜨고 화면이 잠기거나 다른 앱이 마이크를 쓰면 알아서 쉬어요."
+    static let noteEnglish = "“Aris” is recognised on this Mac only; before it is heard nothing is sent and only the recognised text is kept, to tune the wake word, never sound; while it waits macOS shows its microphone indicator, and it rests by itself when the screen is locked or another app is using the microphone."
     static let untrained = " 목소리를 익히기 전에는 “아리스”로 시작하는 말을 모두 확인해요."
     static let untrainedEnglish = " Until a voice is learned, everything that starts with “Aris” is checked."
     static let noteUntrained = note + untrained
+    /// While 하루 소리 모으기 is on (ArisWakeCollect) “nothing is kept” is not true: the line says what is kept, and where.
+    static let noteCollecting = "“아리스”는 이 Mac 안에서만 알아듣고 아무것도 보내지 않아요. 호출어를 다듬으려고 알아들은 글자를, 하루 소리 모으기가 켜져 있는 동안에는 말소리와 이름 후보 앞뒤 몇 초씩도 이 Mac의 Aris 폴더에만 남겨요. 기다리는 동안 macOS의 마이크 표시가 뜨고 화면이 잠기거나 다른 앱이 마이크를 쓰면 알아서 쉬어요."
+    static let noteCollectingEnglish = "“Aris” is recognised on this Mac only and nothing is sent anywhere. The recognised text is kept to tune the wake word and, while Collect a day of sound is on, a few seconds around speech and around possible calls too, in Aris's folder on this Mac only; while it waits macOS shows its microphone indicator, and it rests by itself when the screen is locked or another app is using the microphone."
+    static let noteCollectingUntrained = noteCollecting + untrained
+    /// The older speech engine with no on-device model for the language hears the wake check on Apple's servers
+    /// (ArisHearingShown.wakeCheckOnServer, set by the live settings): then a possible call's sound does leave the Mac.
+    nonisolated(unsafe) static var serverHearing = false
+    static let noteServer = "이 Mac에서는 예전 음성 엔진이 Apple 서버에서 알아들어서 이름 후보의 소리가 Apple로 가고, 호출어를 다듬으려고 알아들은 글자만 이 Mac에 남기며(소리는 남기지 않아요), 기다리는 동안 macOS의 마이크 표시가 뜨고 화면이 잠기거나 다른 앱이 마이크를 쓰면 알아서 쉬어요."
+    static let noteServerEnglish = "On this Mac the older speech engine recognises on Apple's servers, so a possible call's sound goes to Apple; only the recognised text is kept on this Mac, to tune the wake word, never sound; while it waits macOS shows its microphone indicator, and it rests by itself when the screen is locked or another app is using the microphone."
+    static let noteServerUntrained = noteServer + untrained
+    static let noteCollectingServer = "이 Mac에서는 예전 음성 엔진이 Apple 서버에서 알아들어서 이름 후보의 소리가 Apple로 가요. 호출어를 다듬으려고 알아들은 글자를, 하루 소리 모으기가 켜져 있는 동안에는 말소리와 이름 후보 앞뒤 몇 초씩도 이 Mac의 Aris 폴더에만 남겨요. 기다리는 동안 macOS의 마이크 표시가 뜨고 화면이 잠기거나 다른 앱이 마이크를 쓰면 알아서 쉬어요."
+    static let noteCollectingServerEnglish = "On this Mac the older speech engine recognises on Apple's servers, so a possible call's sound goes to Apple. The recognised text is kept to tune the wake word and, while Collect a day of sound is on, a few seconds around speech and around possible calls too, in Aris's folder on this Mac only; while it waits macOS shows its microphone indicator, and it rests by itself when the screen is locked or another app is using the microphone."
+    static let noteCollectingServerUntrained = noteCollectingServer + untrained
 
-    static let english: [String: String] = [settingsLine: settingsLineEnglish, note: noteEnglish, noteUntrained: noteEnglish + untrainedEnglish]
+    static let english: [String: String] = [settingsLine: settingsLineEnglish, note: noteEnglish, noteUntrained: noteEnglish + untrainedEnglish,
+                                            noteCollecting: noteCollectingEnglish, noteCollectingUntrained: noteCollectingEnglish + untrainedEnglish,
+                                            noteServer: noteServerEnglish, noteServerUntrained: noteServerEnglish + untrainedEnglish,
+                                            noteCollectingServer: noteCollectingServerEnglish,
+                                            noteCollectingServerUntrained: noteCollectingServerEnglish + untrainedEnglish]
 
-    /// The sentence alone (the notch, a tooltip, the first-run guide's page).
-    static func line(english: Bool) -> String {
-        english ? "While it waits the microphone is on and macOS shows its indicator; nothing is sent or kept before it hears the name, and it rests by itself when the screen is locked or another app is using the microphone."
-            : "기다리는 동안에는 마이크가 켜져 있어서 macOS의 마이크 표시가 뜨고, 이름을 듣기 전에는 아무것도 보내거나 남기지 않으며, 화면이 잠기거나 다른 앱이 마이크를 쓰면 알아서 쉬어요."
+    /// The small line under 부르기's card, true for the moment: trained or not, collecting or not, and whether the
+    /// wake check hears on Apple's servers (`server`, read now from serverHearing).
+    static func note(trained: Bool, collecting: Bool, server: Bool = serverHearing) -> String {
+        switch (trained, collecting, server) {
+        case (true, false, false): note
+        case (false, false, false): noteUntrained
+        case (true, true, false): noteCollecting
+        case (false, true, false): noteCollectingUntrained
+        case (true, false, true): noteServer
+        case (false, false, true): noteServerUntrained
+        case (true, true, true): noteCollectingServer
+        case (false, true, true): noteCollectingServerUntrained
+        }
+    }
+
+    /// The sentence alone (the notch, a tooltip, the first-run guide's page); `collecting`: 하루 소리 모으기 is on.
+    static func line(english: Bool, collecting: Bool = false) -> String {
+        if collecting {
+            return english ? "While it waits the microphone is on and macOS shows its indicator; nothing is sent, and the recognised text and, while Collect a day of sound is on, a few seconds around speech are kept on this Mac only. It rests by itself when the screen is locked or another app is using the microphone."
+                : "기다리는 동안에는 마이크가 켜져 있어서 macOS의 마이크 표시가 뜨고, 아무것도 보내지 않으며, 알아들은 글자와 하루 소리 모으기가 켜져 있는 동안의 말소리 앞뒤 몇 초씩을 이 Mac에만 남기고, 화면이 잠기거나 다른 앱이 마이크를 쓰면 알아서 쉬어요."
+        }
+        return english ? "While it waits the microphone is on and macOS shows its indicator; before it hears the name nothing is sent and only the recognised text is kept on this Mac, to tune the wake word, and it rests by itself when the screen is locked or another app is using the microphone."
+            : "기다리는 동안에는 마이크가 켜져 있어서 macOS의 마이크 표시가 뜨고, 이름을 듣기 전에는 아무것도 보내지 않고 호출어를 다듬으려고 알아들은 글자만 이 Mac에 남기며, 화면이 잠기거나 다른 앱이 마이크를 쓰면 알아서 쉬어요."
     }
 }

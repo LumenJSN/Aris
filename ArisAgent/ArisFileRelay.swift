@@ -49,11 +49,20 @@ enum ArisFileRelay {
         return work()
     }
 
+    /// What a card says for the files a selector picks (never their names).
+    static func pickedWords(_ selector: ArisConvertWords.Selector) -> String {
+        switch selector {
+        case .finder: "Finder에서 고른 파일"
+        case .shelf: "선반에 둔 파일"
+        case .made: "방금 만든 파일"
+        }
+    }
+
     /// The card for a conversion: the files and what they become.
     private static func convertCard(_ words: [String], shown: (String) -> String) -> ArisMCPCard? {
         guard let call = ArisConvertWords.parse(words) else { return nil }
         let titles = ["convert": "파일 변환하기", "merge": "파일 합치기", "split": "PDF 나누기", "compress": "용량 줄이기"]
-        let picked = call.selector.map { $0 == .finder ? "Finder에서 고른 파일" : "선반에 둔 파일" }
+        let picked = call.selector.map(pickedWords)
         let files = picked ?? call.paths.prefix(6).map(shown).joined(separator: "\n") + (call.paths.count > 6 ? "\n외 \(call.paths.count - 6)개" : "")
         let options = ["--to", "--max", "--percent", "--quality", "--pages"].compactMap { flag in
             call.options[flag].map { flag == "--to" ? "→ \(ArisDesktopCard.shown($0).uppercased())" : "\(flag) \(ArisDesktopCard.shown($0))" }

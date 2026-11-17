@@ -4,8 +4,8 @@
 //
 //  Runs window picking for one turn (the owner's ①B; rules in ArisWindowPick): while armed, a pick overlay on every
 //  display takes the clicks (nothing reaches the apps below), hit-tests the window under each one and toggles it.
-//  A pick captures that window alone at once (ArisWindowCapture); a let-go one drops its capture. A private window
-//  or the 9th shot gets the red refusal and nothing is captured. Disarmed, the overlays close and clicks pass through
+//  A pick captures that window alone at once (ArisWindowCapture); a let-go one drops its capture. The 9th shot gets
+//  the red refusal and nothing is captured. Disarmed, the overlays close and clicks pass through
 //  again. At the end of the turn the picks are parked (≤ 30 s) until the turn collects them as numbered shots.
 //  Idle cost is zero: nothing exists or runs between turns. Images stay in memory; no title or app name is logged.
 //
@@ -197,9 +197,6 @@ final class ArisWindowPicker {
             overlays.values.forEach { $0.view.removeWash(id: hit.id) }
             shots.removeValue(forKey: hit.id)?.cancel()
             log.notice("window pick: let go (\(self.state.picks.count, privacy: .public))")
-        case .refused(let hit):
-            log.notice("window pick refused: private window")
-            refuse(hit, click: quartz, text: ArisGestureChrome.refusalText(for: hit), icon: .lock)
         case .full(let hit):
             log.notice("window pick over the \(ArisWindowPick.maxShots, privacy: .public)-shot limit")
             let used = min(ArisWindowPick.maxShots, state.picks.count + otherShots())
@@ -217,7 +214,7 @@ final class ArisWindowPicker {
         guard t - lastHoverAt >= 50 else { return }
         lastHoverAt = t
         let hit = deps.windowAt(ArisWindowPickGeometry.quartz(cocoa, primaryHeight: deps.primaryHeight()))
-        let pickable = hit.flatMap { ArisGestureSession.refuses($0) || $0.bundleId == nil ? nil : $0 }
+        let pickable = hit
         for overlay in overlays.values {
             let rect = pickable.flatMap { overlay.local($0.frame) }
             overlay.view.setHover(id: rect == nil ? nil : pickable?.id, rect: rect)

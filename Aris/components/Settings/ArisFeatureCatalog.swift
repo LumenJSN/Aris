@@ -65,7 +65,7 @@ enum ArisFeature: String, CaseIterable, Identifiable, Sendable {
         query: "이 오류 뭐야?", answer: "파일 이름에 빈칸이 있어서 경로를 못 찾았어요. 따옴표로 감싸면 돼요.",
         about: "화면의 무언가를 동그라미로 감싸고 물으면 Aris가 그 부분을 보고 답해요. “이거 눌러 줘”처럼 시키면 앱을 대신 누르고 입력하고, 메일 보내기처럼 되돌리기 어려운 일은 하기 전에 물어봐요.",
         tries: ["“이 오류 뭐야?”", "“이 표를 메모에 정리해 줘”", "“설정에서 다크 모드 켜 줘”"],
-        facts: [.init(label: "보내는 것", value: "물을 때 찍은 화면 한 장"), .init(label: "빼는 것", value: "암호 앱과 Aris 창"),
+        facts: [.init(label: "보내는 것", value: "물을 때 찍은 화면 한 장"), .init(label: "빼는 것", value: "Aris 창"),
                 .init(label: "필요한 권한", value: "손쉬운 사용, 화면 기록, 마이크")])
 
     private static let skillsContent = ArisFeatureContent(

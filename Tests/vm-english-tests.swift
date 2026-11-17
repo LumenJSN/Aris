@@ -68,7 +68,7 @@ let vmEnglishFiles: [String] = [
     "ArisUIDates.swift",
     // The pill's line, dictation's hints, the small tooltips, an undo's notices and Claude Code's notices.
     "ArisPanel.swift", "ArisDictationState.swift", "ArisDictationKey.swift", "ArisActivity.swift", "ArisController+Undo.swift",
-    "../Claude/ClaudeNoticeLabel.swift", "../Claude/ClaudeNoticeView.swift",
+    "../Claude/ClaudeNoticeLabel.swift", "Notice/ArisNoticeWords.swift", "Notice/ArisNoticeRoute.swift",
     // The reader window and the circle gesture's hints.
     "ArisReaderView.swift", "ArisReaderDocument.swift", "Gesture/ArisGestureChrome.swift",
 ]

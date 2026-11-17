@@ -59,7 +59,7 @@ enum ArisGateWords {
             "Undoes the latest action (an event it made is removed from the calendar; a cancelled schedule comes back)",
         "셸이나 도구가 시작할 때 읽는 설정 파일이에요. 바뀌는 내용 전체를 확인해 주세요.":
             "A settings file your shell or tools read when they start. Please check the whole change.",
-        "Finder에서 고른 파일": "The files selected in Finder", "선반에 둔 파일": "The files on the shelf", "빈 메모": "Empty note", "새 폴더": "New folder",
+        "Finder에서 고른 파일": "The files selected in Finder", "선반에 둔 파일": "The files on the shelf", "방금 만든 파일": "The files Aris just made", "빈 메모": "Empty note", "새 폴더": "New folder",
         "Mac을 재시동해요. 저장하지 않은 작업은 잃을 수 있어요.": "Restarts the Mac. Unsaved work may be lost.",
         "Mac을 꺼요. 저장하지 않은 작업은 잃을 수 있어요.": "Shuts the Mac down. Unsaved work may be lost.",
         "지금 사용자에서 로그아웃해요. 저장하지 않은 작업은 잃을 수 있어요.": "Logs this user out. Unsaved work may be lost.",

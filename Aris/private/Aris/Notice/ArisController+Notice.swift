@@ -2,11 +2,12 @@
 //  ArisController+Notice.swift
 //  Aris
 //
-//  Aris's own news on a card under the notch (ArisNoticeCenter) instead of a line inside it. The card waits its turn
-//  among Aris's news and for a pause, as the line did (announce), and also for the notch to be closed and the setup
-//  gone; once the moment has held for 800 ms it comes up, and what used to be said is said once, when Aris may speak
-//  (mute and quiet hours keep it to the card). Afterwards the notch keeps the news as its parked answer, as it kept
-//  the line, so the closed notch's dot and the 기록 tab are where they were.
+//  Aris's own news on the notice pill under the notch (ArisNoticeCenter) instead of a line inside it; a deadline's
+//  alert and a Claude Code notice come the same way. A notice waits its turn among Aris's news and for a pause, as the
+//  line did (announce), and also for the notch to be closed, the setup gone and no turn or dictation running; once the
+//  moment has held for 800 ms it comes up, and what used to be said is said once, when Aris may speak (mute and quiet
+//  hours keep it to the pill). Afterwards the notch keeps the news as its parked answer, as it kept the line, so the
+//  closed notch's dot and the 기록 tab are where they were.
 //
 
 import Foundation

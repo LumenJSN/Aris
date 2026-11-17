@@ -4,7 +4,7 @@
 //
 //  The words around the caret in the field the user dictates into: 200 before and 100 after (the window-text
 //  context), for dictation polish only, as untrusted data. A selection, which the dictation will replace, is in
-//  neither. Read through ArisFocusedField, never in terminals, password fields or password apps.
+//  neither. Read through ArisFocusedField, never in terminals or password fields.
 //  Foundation only (tested).
 //
 

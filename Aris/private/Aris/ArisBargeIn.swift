@@ -55,9 +55,16 @@ struct ArisBargeIn: Equatable {
     /// Output quieter than this is silence: no echo to learn from.
     static let silentPlayback: Float = 0.002
 
-    /// Headphones or the Mac's speakers; nil when barge-in is off on speakers (the setting).
-    static func mode(headphones: Bool, speakersAllowed: Bool) -> Mode? {
-        headphones ? .headphones : speakersAllowed ? .speakers : nil
+    /// The wake detector has no echo canceller. Voice processing on its engine couldn't cancel Aris's voice (that
+    /// plays from the speaker's own engine) and would duck every other app's sound (the owner's rule: music never cuts out
+    /// unless Aris was really called), so it stays off; and without it, Aris's own voice through the speakers could
+    /// stop Aris and come back as a turn (2026-11-16).
+    static let echoCancellerOn = false
+
+    /// Headphones or the Mac's speakers; nil on speakers unless an echo canceller hears past Aris's own voice and the
+    /// setting allows it.
+    static func mode(headphones: Bool, speakersAllowed: Bool, echoCancelled: Bool) -> Mode? {
+        headphones ? .headphones : speakersAllowed && echoCancelled ? .speakers : nil
     }
 
     let mode: Mode

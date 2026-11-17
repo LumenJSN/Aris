@@ -2,7 +2,7 @@
 //  ArisVoicePrint.swift
 //  Aris
 //
-//  A trained "아리스", the way Siri's setup works: you say it a few times, the
+//  A trained "아리스", the way the system assistant's setup works: you say it a few times, the
 //  Mac keeps those as voice prints (MFCC frames), and live speech is compared to
 //  them with dynamic time warping. Comparing one short window when someone starts
 //  talking costs next to nothing, so the full recognizer only wakes for a likely

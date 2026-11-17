@@ -25,8 +25,7 @@ struct ArisWindowHit: Equatable {
     let frame: CGRect
     var samples: Int
     var hitCenter: Bool
-    /// The owning app's bundle id (nil only when the app can't be resolved), so a private app's window can be
-    /// refused (`ArisCaptureRules.isPrivate`). Required, so no caller forgets it.
+    /// The owning app's bundle id (nil when the app can't be resolved; such a window is circled and picked like any).
     let bundleId: String?
 }
 

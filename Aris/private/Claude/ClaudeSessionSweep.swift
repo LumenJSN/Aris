@@ -65,7 +65,7 @@ extension ClaudeSession {
     /// The same session in another state (its last event's time is kept).
     func with(state: ClaudeState) -> ClaudeSession {
         ClaudeSession(id: id, cwd: cwd, state: state, lastEvent: lastEvent, steps: steps, edit: edit, lastMessage: lastMessage,
-                      terminal: terminal, contextPercent: contextPercent, agent: agent)
+                      terminal: terminal, contextPercent: contextPercent, agent: agent, lastHook: lastHook)
     }
 }
 

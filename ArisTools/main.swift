@@ -25,8 +25,8 @@
 //    aris-tools message <name|number|email> <text>   (an iMessage; the risk gate asks first)
 //    aris-tools trash <path>…                        (to the Trash, never deleted)
 //    aris-tools move <from> <to>                     (inside ~, never overwrites; can be undone)
-//    aris-tools convert <file>…|--finder|--shelf [--to png|jpg|heic|pdf|mp4|mov|m4a…] [--quality N] [--max N | --percent N] [--pages 1-3,5]
-//    aris-tools merge <file>…|--finder|--shelf [--to pdf|mp4|mov|m4a] | split <pdf> [--pages 1-3,5] | compress <file>… [--quality N] [--max N]
+//    aris-tools convert <file>…|--finder|--shelf|--made [--to png|jpg|heic|pdf|mp4|mov|m4a…] [--quality N] [--max N | --percent N] [--pages 1-3,5]
+//    aris-tools merge <file>…|--finder|--shelf|--made [--to pdf|mp4|mov|m4a] | split <pdf> [--pages 1-3,5] | compress <file>… [--quality N] [--max N]
 //                                                     (new files next to the originals, never over anything; can be undone;
 //                                                      --finder/--shelf: aris-tools picks the files and never names them)
 //    aris-tools activity [--today] [--json]          (what Aris did) | undo [--id <uuid>]  (put the latest back)
@@ -387,6 +387,8 @@ case "desktop": desktop(Array(arguments.dropFirst()))
 case "skill": skill(Array(arguments.dropFirst()))
 case "routine": routine(Array(arguments.dropFirst()))
 case "aside": aside(Array(arguments.dropFirst()))
+case "session": session(Array(arguments.dropFirst()))
+case "devin": devinRead(Array(arguments.dropFirst()))
 case "messages": messagesRead(Array(arguments.dropFirst()))
 case "mail": mailRead(Array(arguments.dropFirst()))
 case "notes": notesRead(Array(arguments.dropFirst()))
@@ -397,5 +399,5 @@ case "stock": stock(Array(arguments.dropFirst()))
 case "currency": currency(Array(arguments.dropFirst()))
 case "web": web(Array(arguments.dropFirst()))
 default:
-    fail("usage: aris-tools weather | canvas | brief | todo | board | timer | find | open | remember | forget | memory | recall | window | music | volume | app | link | folder | shortcut | shortcuts | remind | event | calendars | use-calendar | calendar | note | selection | clipboard | tab | finder | screen | windows | tile | new | keys | type | message | trash | move | convert | merge | split | compress | activity | undo | schedule | messages | mail | notes | files | obsidian | maps | stock | currency | web | mcp | desktop | aside")
+    fail("usage: aris-tools weather | canvas | brief | todo | board | timer | find | open | remember | forget | memory | recall | window | music | volume | app | link | folder | shortcut | shortcuts | remind | event | calendars | use-calendar | calendar | note | selection | clipboard | tab | finder | screen | windows | tile | new | keys | type | message | trash | move | convert | merge | split | compress | activity | undo | schedule | messages | mail | notes | files | obsidian | maps | stock | currency | web | mcp | desktop | aside | session | devin")
 }

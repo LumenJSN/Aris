@@ -4,7 +4,7 @@
 //
 //  What the wake word does with the microphone's audio, without the microphone: ArisWakeDetector opens the device
 //  and hands every 16 kHz chunk here, so the same code runs in the app and from files in the tests and the bench.
-//  Two stages, the way Siri's listening is built:
+//  Two stages, the way the system assistant's listening is built:
 //  - Stage 1, always on, costs almost nothing: the loudness of each 10 ms (ArisVoiceGate). Nothing else looks at
 //    the audio while the room is quiet. When a sound starts after a quiet moment, its first half second gets one
 //    cheap look: is it a voice at all (ArisWakeVoice), and, when the user taught Aris their “아리스”, is it close to their

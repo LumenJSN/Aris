@@ -2,23 +2,33 @@
 //  ClaudeNoticeLabel.swift
 //  Aris
 //
-//  The words on Claude's done/error/limit tag (ClaudeNoticeView). The tag is one line that never wraps, so a long
-//  session name is cut in the middle to keep it inside the 416-point page: its start and its end both say which
-//  folder it is.
+//  The words of a Claude Code session's done/error/limit notice on the notice pill (ArisNoticeRoute.claude): its title
+//  is one line that never wraps, so a long session name is cut in the middle to keep it inside the pill: its start and
+//  its end both say which folder it is. Its body is the session's last message, or a plain line when it left none.
 //
 
 import Foundation
 
 enum ClaudeNoticeLabel {
-    /// A session name at most this wide (a Korean letter counts 2, ArisTeammateName.width). With " · 끝났어요", the orb
-    /// and the check, the tag stays under the page's 384-point text line at 11.5 points.
+    /// A session name at most this wide (a Korean letter counts 2, ArisTeammateName.width). With " · 끝났어요" the
+    /// title stays inside the pill's line.
     static let nameLimit = 32
 
-    static func text(for peek: ClaudePeek) -> String {
+    static func text(for peek: ClaudePeek, english: Bool = ArisUIWords.english) -> String {
         switch peek.kind {
-        case .done: return ArisUIWords.text("\(shortened(peek.detail)) · 끝났어요", "\(shortened(peek.detail)) · done")
-        case .error: return ArisUIWords.text("\(shortened(peek.detail)) · 오류가 났어요", "\(shortened(peek.detail)) · hit an error")
+        case .done: return ArisUIWords.text("\(shortened(peek.detail)) · 끝났어요", "\(shortened(peek.detail)) · done", english: english)
+        case .error: return ArisUIWords.text("\(shortened(peek.detail)) · 오류가 났어요", "\(shortened(peek.detail)) · hit an error", english: english)
         case .limit: return "Claude · \(peek.detail) \(peek.title)"
+        }
+    }
+
+    /// The session's last message, or what happened in a plain line.
+    static func body(for peek: ClaudePeek, english: Bool = ArisUIWords.english) -> String {
+        if let message = peek.message?.trimmingCharacters(in: .whitespacesAndNewlines), !message.isEmpty { return message }
+        switch peek.kind {
+        case .done: return ArisUIWords.text("작업을 마쳤어요.", "The job is done.", english: english)
+        case .error: return ArisUIWords.text("작업 중에 오류가 났어요.", "The job hit an error.", english: english)
+        case .limit: return ArisUIWords.text("한도가 얼마 안 남았어요.", "The limit is nearly used up.", english: english)
         }
     }
 

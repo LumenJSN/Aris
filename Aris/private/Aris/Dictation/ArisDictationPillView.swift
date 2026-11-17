@@ -24,11 +24,16 @@ struct ArisDictationPillDisplay: Equatable {
     var recordingSeconds = 0.0
     /// Changes per dictation, so the ring starts empty each time.
     var dictation = 0
-    /// The copy button just copied again.
-    var copiedAgain = false
     /// The hover hint: before the key, the key, after it.
     var hint = ArisDictationPillWords.hint(english: false)
     var english = false
+    /// The recovered words were just copied again (the card's label says so for 1.2 s).
+    var copiedAgain = false
+    /// The system is in light mode: the recovered words' card takes its light colours (the pill stays dark).
+    var light = false
+
+    /// What the pointer counts on: the pill, or the recovered words' card.
+    var size: CGSize { ArisDictationPillRules.size(phase, english: english, again: copiedAgain) }
 }
 
 /// What the pill's controls do.
@@ -50,16 +55,13 @@ enum ArisDictationPillWords {
     static func cancel(_ english: Bool) -> String { english ? "Cancel" : "취소" }
     static func finish(_ english: Bool) -> String { english ? "Finish and put it in" : "끝내고 넣기" }
     static func close(_ english: Bool) -> String { english ? "Close" : "닫기" }
-    /// The recovered words' button: they are already on the clipboard.
-    static func copied(_ english: Bool) -> String { english ? "Copied · paste with ⌘V" : "복사했어요 · ⌘V로 붙여 넣기" }
-    static func copyAgain(_ english: Bool) -> String { english ? "Copied again" : "다시 복사했어요" }
 }
 
 extension ArisDictationPillDisplay {
     static func == (a: Self, b: Self) -> Bool {
         a.phase == b.phase && a.drawn == b.drawn && a.appIcon === b.appIcon && a.fromPill == b.fromPill
-            && a.recordingSeconds == b.recordingSeconds && a.dictation == b.dictation && a.copiedAgain == b.copiedAgain
-            && a.hint == b.hint && a.english == b.english
+            && a.recordingSeconds == b.recordingSeconds && a.dictation == b.dictation
+            && a.hint == b.hint && a.english == b.english && a.copiedAgain == b.copiedAgain && a.light == b.light
     }
 }
 
@@ -71,12 +73,20 @@ struct ArisDictationPillView: View {
     /// Offscreen renders: fixed bar heights and ring share.
     var barsPreset: [CGFloat]?
     var ringPreset: Double?
+    var recoveredHover: ArisDictationPillRecoveredHover?
+    /// Offscreen renders: the recovered words' card drawn already open.
+    var recoveredStill = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var shown: Bool { display.phase.shown }
     private var phase: ArisDictationPillPhase { shown ? display.phase : display.drawn }
-    private var size: CGSize { ArisDictationPillRules.size(phase) }
+    /// The pill's own size; while the recovered words' card shows, the pill under it is the (hidden) sliver.
+    private var size: CGSize { showsCard ? ArisDictationPillRules.idleSize : ArisDictationPillRules.size(phase) }
+    /// The recovered words' card stands in the pill's place (shown, or the last thing shown while it all fades).
+    private var showsCard: Bool { if case .recovered = phase { true } else { false } }
+    /// The words of the card showing now.
+    private var recovered: String? { if case .recovered(let text) = display.phase { text } else { nil } }
 
     private var ease: Animation {
         let e = ArisDictationPillRules.ease
@@ -99,6 +109,28 @@ struct ArisDictationPillView: View {
     }
 
     private var pill: some View {
+        ZStack(alignment: .bottom) {
+            basePill
+                .opacity(showsCard ? 0 : 1)
+            if let recovered {
+                ArisDictationPillRecoveredCard(text: recovered, english: display.english, again: display.copiedAgain, light: display.light,
+                                               blending: blending, copy: actions.copyAgain, close: actions.closeRecovered,
+                                               hover: recoveredHover, still: recoveredStill)
+                    .id("recovered-\(display.dictation)")
+                    // It grows in by itself; it leaves with a fade and a small shrink (only the fade with Reduce Motion).
+                    .transition(.asymmetric(insertion: .identity,
+                                            removal: reduceMotion ? .opacity
+                                                : .opacity.combined(with: .scale(scale: ArisDictationPillRecoveredLayout.leaveScale, anchor: .bottom))))
+            }
+        }
+        .animation(.easeOut(duration: ArisDictationPillRecoveredLayout.leaveDuration), value: recovered == nil)
+        .opacity(shown ? 1 : 0)
+        .scaleEffect(shown || reduceMotion ? 1 : ArisDictationPillRules.hiddenScale, anchor: .center)
+        .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: ArisDictationPillRules.showDuration), value: shown)
+    }
+
+    /// The pill itself (the recovered words' card stands over it).
+    private var basePill: some View {
         ZStack {
             ArisDictationPillShell(size: size, gradientBorder: ArisDictationPillRules.gradientBorder(phase), blending: blending)
             content
@@ -108,19 +140,10 @@ struct ArisDictationPillView: View {
                 .transition(.opacity)
         }
         .frame(width: size.width, height: size.height)
-        .overlay(alignment: .topTrailing) {
-            if case .recovered = phase {
-                ArisDictationPillCloseButton(label: ArisDictationPillWords.close(display.english), action: actions.closeRecovered)
-                    .offset(x: 6, y: -6)
-            }
-        }
         .contentShape(ArisDictationPillShape(size: size))
         .onTapGesture { if phase == .idle || phase == .hover { actions.start() } }
         .animation(reduceMotion ? nil : ease, value: size)
         .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: ArisDictationPillRules.sizeDuration), value: contentKey)
-        .opacity(shown ? 1 : 0)
-        .scaleEffect(shown || reduceMotion ? 1 : ArisDictationPillRules.hiddenScale, anchor: .center)
-        .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: ArisDictationPillRules.showDuration), value: shown)
     }
 
     /// Content swaps fade (the size, below, eases).
@@ -159,8 +182,9 @@ struct ArisDictationPillView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 8)
-        case .recovered(let text):
-            recovered(text)
+        case .recovered:
+            // The card (ArisDictationPillRecoveredCard) shows instead.
+            Color.clear
         }
     }
 
@@ -187,25 +211,5 @@ struct ArisDictationPillView: View {
                                     action: actions.finish)
         }
         .padding(.horizontal, 6)
-    }
-
-    /// The copied words: 14 / 1.45 white .94 in 12 padding, scrolling under a 14 fade; the copy button at the corner.
-    private func recovered(_ text: String) -> some View {
-        ZStack(alignment: .bottomTrailing) {
-            ScrollView(.vertical, showsIndicators: false) {
-                Text(text)
-                    .font(.system(size: 14))
-                    .lineSpacing(14 * 0.45 - 3)
-                    .foregroundStyle(.white.opacity(0.94))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(EdgeInsets(top: 0, leading: 2, bottom: 1 + 36, trailing: 8))
-            }
-            .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.82), .init(color: .clear, location: 1)],
-                                 startPoint: .top, endPoint: .bottom))
-            ArisDictationPillCopyButton(label: display.copiedAgain ? ArisDictationPillWords.copyAgain(display.english)
-                                                                   : ArisDictationPillWords.copied(display.english),
-                                        copied: true, action: actions.copyAgain)
-        }
-        .padding(12)
     }
 }

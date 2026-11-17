@@ -130,7 +130,7 @@ private func vm2ClosedBandRegionTests() {
               "vm2 bug 6: the closed surface is the band and its two 13-point shoulders (\(notch))")
         let middle = width / 2, leftEar = 13 + ear / 2, rightEar = width - 13 - ear / 2, rightEnd = width - 4, leftEnd: CGFloat = 4
         // The band of a parked answer, the jobs' band, Claude's and music's: a rest anywhere opens Aris.
-        for other in [ArisNotchDecisions.Closed.star(.parked), .star(.tasks), .star(.turn), .claude, .music, .dueAlert, .empty, .notice] {
+        for other in [ArisNotchDecisions.Closed.star(.parked), .star(.tasks), .star(.turn), .claude, .music, .empty, .notice] {
             check(B.hoverInsets(other, notchWidth: notch) == nil
                   && [leftEnd, leftEar, middle, rightEar, rightEnd].allSatisfy { B.spot(x: $0, closed: other, notchWidth: notch) == .opensAris },
                   "vm2 bug 6: without a timer every part of the closed pill opens Aris (\(other), \(notch))")
@@ -250,7 +250,7 @@ private func vm2PointerTruthTests() {
 
 private func vm2MutedMarkTests() {
     typealias M = ArisMutedMark
-    let kinds: [ArisNotchDecisions.Closed] = [.notice, .star(.turn), .star(.tasks), .star(.parked), .star(.home), .dueAlert, .timer, .claude, .music, .empty]
+    let kinds: [ArisNotchDecisions.Closed] = [.notice, .star(.turn), .star(.tasks), .star(.parked), .star(.home), .timer, .claude, .music, .empty]
     for kind in kinds {
         for notch in [true, false] {
             check(M.place(closed: kind, muted: false, hasNotch: notch) == nil && M.place(closed: kind, muted: false, hasNotch: notch, earTaken: true) == nil,
@@ -268,7 +268,7 @@ private func vm2MutedMarkTests() {
     check(M.place(closed: .star(.turn), muted: true, hasNotch: true, earTaken: true) == .besideMark, "vm2 bug 8: beside the paused-listening mark too")
     check(M.place(closed: .star(.tasks), muted: true, hasNotch: true) == .ear && M.place(closed: .star(.tasks), muted: true, hasNotch: true, earTaken: true) == nil,
           "vm2 bug 8: the jobs' band shows it while its right ear is free (the pill under the notch holds the count)")
-    check([ArisNotchDecisions.Closed.timer, .claude, .music, .dueAlert, .notice].allSatisfy { M.place(closed: $0, muted: true, hasNotch: true) == nil && M.place(closed: $0, muted: true, hasNotch: false) == nil },
+    check([ArisNotchDecisions.Closed.timer, .claude, .music, .notice].allSatisfy { M.place(closed: $0, muted: true, hasNotch: true) == nil && M.place(closed: $0, muted: true, hasNotch: false) == nil },
           "vm2 bug 8: a band whose two ears belong to something else (a timer's ring and clock, Claude, music) is left alone")
     // Every state Aris itself holds the pill in shows the mark, on both kinds of display.
     let own: [(ArisNotchDecisions.Closed, Bool)] = [(.star(.parked), true), (.star(.parked), false), (.star(.turn), true), (.star(.turn), false)]

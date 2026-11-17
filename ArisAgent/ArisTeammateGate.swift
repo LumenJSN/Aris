@@ -77,11 +77,14 @@ enum ArisTeammateGate {
         return (ArisClaudeLaunch.outboundSteps(in: prompt) + ArisClaudeLaunch.outboundSteps(in: request ?? "")).filter { seen.insert($0).inserted }
     }
 
-    /// The folder to work in, resolved; nil when it isn't an existing folder under `home` (not `home` itself), or it is
-    /// (or leads through a link into) a protected place or ~/Library.
+    /// The folder to work in, resolved; nil when it isn't an existing folder under `home` or `home` itself, or it is
+    /// (or leads through a link into) a protected place or ~/Library. The home folder itself is where the user's own Claude
+    /// Code sessions run (the owner, 2026-11-14: "클로드 코드한테 물어봐… 내 마케팅…" died on "Claude Code를 열 폴더가 아니에요:
+    /// /Users/me"); from there, a prompt's mention of a protected place or ~/Library still counts as outside the project.
     static func folder(_ raw: String, home: String) -> String? {
         guard let (resolved, realHome) = resolvedFolder(raw, home: home) else { return nil }
         let inside = ArisProtectedPlaces.key(resolved), root = ArisProtectedPlaces.key(realHome)
+        if isExactly(inside, root) { return resolved }
         guard startsWith(inside, root + "/"), !ArisProtectedPlaces.blocks(resolved, home: realHome) else { return nil }
         let library = ArisProtectedPlaces.key(realHome + "/Library")
         guard !isExactly(inside, library), !startsWith(inside, library + "/") else { return nil }
@@ -400,7 +403,21 @@ enum ArisTeammateGate {
         }
         let landed = resolvedThroughLinks((full as NSString).standardizingPath)
         let inside = ArisProtectedPlaces.key(landed), root = ArisProtectedPlaces.key(cwd)
-        return isExactly(inside, root) || startsWith(inside, root + "/")
+        guard isExactly(inside, root) || startsWith(inside, root + "/") else { return false }
+        return !isProtected(landed, home: home)
+    }
+
+    /// A protected place, a folder holding one (the home folder itself) or ~/Library: never inside a project, even when
+    /// Claude Code opens in the home folder.
+    private static func isProtected(_ path: String, home: String) -> Bool {
+        let realHome = realPath(home) ?? home
+        let library = ArisProtectedPlaces.key(realHome + "/Library"), target = ArisProtectedPlaces.key(path)
+        if isExactly(target, library) || startsWith(target, library + "/") { return true }
+        // `blocks` standardizes both, which drops a leading /private only from what exists: a file not there yet under a
+        // home in /private/var would no longer start with its home. Both are given in the home's standardized form.
+        let standardHome = (realHome as NSString).standardizingPath
+        let under = isExactly(path, realHome) || startsWith(path, realHome + "/") ? standardHome + String(path.dropFirst(realHome.count)) : path
+        return ArisProtectedPlaces.blocks(under, home: standardHome)
     }
 
     /// `path` with its deepest existing part resolved through links (the rest, not there yet, appended as written).
@@ -464,7 +481,9 @@ enum ArisTeammateGate {
 
     /// Claude Code versions whose mention parser and path handling the gate was checked against (a differential run
     /// against that version's own parser). A newer one launches only after the user's yes until it is checked and added.
-    static let testedClaudeVersions: Set<String> = ["2.1.317"]
+    /// 2.1.325 (2026-11-15): its own SCs/f7n/BN/ams parser and path resolver, run from the installed binary over 56,058
+    /// hostile prompts, project folder and home folder: every existing path it would open outside was refused here.
+    static let testedClaudeVersions: Set<String> = ["2.1.317", "2.1.325"]
 
     /// The claude the launch runs: ~/.local/bin/claude resolved, which must be a version under
     /// ~/.local/share/claude/versions named x.y.z (the installer's layout). Nil otherwise. Never runs `claude --version`.
@@ -516,14 +535,16 @@ struct ArisTeammateTurns {
     }
 
     /// The user's words for the turn (and the job is used up) when `turn` dispatched exactly this job and isn't older than
-    /// ten minutes; nil otherwise.
+    /// ten minutes; nil otherwise. A job the turn gave no folder opens where the app proposes (ArisTeammateFolder: his
+    /// latest session's, else home), which the gate checks like any folder (ask-claude: no launch card for it).
     mutating func vouch(turn: String?, prompt: String, cwd: String?, now: Date) -> String? {
         guard let turn, var record = turns[turn] else { return nil }
         guard now >= record.at, now.timeIntervalSince(record.at) <= Self.lifetime else {
             turns[turn] = nil
             return nil
         }
-        guard let index = record.jobs.firstIndex(where: { $0.prompt == prompt && $0.cwd == cwd }) else { return nil }
+        let noFolder = { (recorded: String?) in (recorded ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard let index = record.jobs.firstIndex(where: { $0.prompt == prompt && ($0.cwd == cwd || noFolder($0.cwd)) }) else { return nil }
         record.jobs.remove(at: index)
         turns[turn] = record.jobs.isEmpty ? nil : record
         return record.request

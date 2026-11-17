@@ -67,6 +67,8 @@ enum ArisAgyRelay {
         if isDesktop(words) { return true }
         // Website work: Aris hands it to Aside behind the one Aside gate and card (ArisAsideTool), as on every brain.
         if isAside(words) { return true }
+        // A prompt into a Claude Code session: the user's card always, then Aris's own checks (ArisSessionSend).
+        if ArisSessionCall.isSession(words) { return true }
         // A file change: Aris runs it behind the same gate and card as `move` on every brain (ArisFileRelay).
         if ArisFileRelay.isFileChange(words) { return true }
         // Any other write (an event, a reminder, a to-do, a note, a link, a schedule, an undo…): Aris puts it to the
@@ -140,7 +142,7 @@ enum ArisAgyRelay {
     static func mayRelay(round: Int, commands: [[String]]) -> Bool {
         guard round > 0 else { return true }
         // A write too: an event is looked up in one block and removed or moved in the next (its card asks either way).
-        guard !commands.isEmpty, commands.allSatisfy({ isMCP($0) || isWeb($0) || isSkill($0) || isDesktop($0) || isAside($0) || isWrite($0) }) else { return false }
+        guard !commands.isEmpty, commands.allSatisfy({ isMCP($0) || isWeb($0) || isSkill($0) || isDesktop($0) || isAside($0) || isWrite($0) || ArisSessionCall.isSession($0) }) else { return false }
         return commands.contains(where: isDesktop) ? round < maxDesktopRounds : round < maxMCPRounds
     }
 

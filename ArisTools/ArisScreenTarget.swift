@@ -8,9 +8,7 @@
 //  aris-agent alone puts in the environment of that one run (as `activity log` has ARIS_LOCAL_LOG), and both gates
 //  rate an AI's `screen --pid` never (ArisRiskPolicy, ArisTurnGate). A pid that is no running app fails; it used to
 //  fall back to whatever was in front. `screen --around x,y,w,h` captures a part of the screen, whoever's windows are
-//  in it: it takes no pid, and reads nothing while any on-screen window of a private app (a password manager,
-//  ArisCaptureRules) overlaps the rectangle, the rule the helper's look already had for the pointer
-//  (ArisLook.privateWindow). Foundation only (tested).
+//  in it: it takes no pid. Foundation only (tested).
 //
 
 import Foundation
@@ -22,7 +20,6 @@ enum ArisScreenTarget {
     static let pidRefusal = "screen --pid is aris-agent's own, for its look; screen reads the app in front"
     static let pidUsage = "usage: screen [--image] | screen --around x,y,w,h"
     static func notRunning(_ pid: String) -> String { "no running app has the pid \(pid)" }
-    static let privateThere = "a private app's window is there; I don't read it"
 
     enum Named: Equatable {
         /// The app in front.
@@ -38,7 +35,7 @@ enum ArisScreenTarget {
     static func named(flagged: Bool, value: String?, around: Bool, environment: [String: String], runs: (Int32) -> Bool) -> Named {
         guard flagged else { return .front }
         guard environment[helperKey] == "1" else { return .refused(pidRefusal) }
-        // A part of the screen is whoever's windows are in it: no pid moves the private check off the app in front.
+        // A part of the screen is whoever's windows are in it: no pid is taken for it.
         if around { return .front }
         guard let value else { return .refused(pidUsage) }
         guard let pid = Int32(value), pid > 0, runs(pid) else { return .refused(notRunning(value)) }
@@ -69,16 +66,5 @@ enum ArisScreenTarget {
         guard let number = Int(requested), number > 0 else { return .refused(windowUsage) }
         guard windows.contains(where: { $0.number == number && $0.pid == pid && $0.layer == 0 }) else { return .refused(windowGone(requested)) }
         return .window(number)
-    }
-
-    /// A window on screen: whose it is (its app's bundle id) and where (global points from the top left).
-    struct Window: Equatable {
-        let bundleId: String?
-        let frame: CGRect
-    }
-
-    /// Whether any on-screen window of a private app overlaps `rect`.
-    static func coversPrivate(_ rect: CGRect, windows: [Window], isPrivate: (String?) -> Bool) -> Bool {
-        windows.contains { isPrivate($0.bundleId) && $0.frame.intersects(rect) }
     }
 }

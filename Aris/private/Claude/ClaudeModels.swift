@@ -189,6 +189,9 @@ struct ClaudeSession: Identifiable, Equatable {
     var contextPercent: Double?
     /// "claude", "codex" or "gemini" (ClaudeHookEvent.agent).
     var agent = "claude"
+    /// The last hook heard, by name ("Notification:idle_prompt" with its kind): whether it waits idle at its prompt
+    /// (ClaudeSessionsRoute, for a prompt sent into its terminal).
+    var lastHook = ""
 
     var title: String {
         let name = (cwd as NSString).lastPathComponent

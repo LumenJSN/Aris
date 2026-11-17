@@ -18,7 +18,7 @@ final class ArisSettingsOverlay: ObservableObject {
     static let shared = ArisSettingsOverlay()
 
     enum Sheet: String, Identifiable {
-        case export, diagnostics, wipe, uninstall, languages, restart, removeMate, memoryImport, featureDetail
+        case export, diagnostics, wipe, uninstall, languages, restart, removeMate, memoryImport, featureDetail, wakeRecord
         var id: Self { self }
     }
 

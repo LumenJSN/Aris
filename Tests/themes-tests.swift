@@ -63,7 +63,7 @@ private func themesRestStarTests() {
     check(band == CGSize(width: 321, height: 39) && ArisVNotch.ear(body: band.width, housing: 220) == 50.5,
           "rest star: at rest the band is 321 × 39 on the user's MacBook, the 220-wide housing and a 50.5-point ear each side")
     let rests = ArisStarBand.showsHome(closed: true, hidden: false, fullscreen: false, hasNotch: true, flat: false, busy: false)
-    let mode = ArisStarBand.mode(turn: false, dueAlert: false, timer: false, tasks: false, claude: false, music: false, parked: false, home: rests)
+    let mode = ArisStarBand.mode(turn: false, timer: false, tasks: false, claude: false, music: false, parked: false, home: rests)
     check(mode == .home, "rest star: a closed notch with nothing on is the star's home")
 
     check(ArisRestStar.sleeps(mode: .home, filesWaiting: false, modelNote: false), "rest star: at rest with nothing to tell, the star sleeps (not only after ten idle minutes)")
@@ -77,7 +77,7 @@ private func themesRestStarTests() {
     check(!ArisRestStar.sleeps(mode: .home, filesWaiting: true, modelNote: false) && !ArisRestStar.sleeps(mode: .home, filesWaiting: false, modelNote: true),
           "rest star: at rest beside files waiting or a speech model's note, the star stays awake to show it")
     // Back at rest after a turn: the same rule gives sleep again.
-    let after = ArisStarBand.mode(turn: false, dueAlert: false, timer: false, tasks: false, claude: false, music: false, parked: false, home: true)
+    let after = ArisStarBand.mode(turn: false, timer: false, tasks: false, claude: false, music: false, parked: false, home: true)
     check(ArisRestStar.sleeps(mode: after, filesWaiting: false, modelNote: false), "rest star: once everything is over it goes back to sleep at rest")
 
     var off = ArisSettingsSnapshot()
@@ -108,8 +108,8 @@ private func themesThemeTests() {
           "theme: what each theme writes reads back as that theme")
     check(ArisNotchTheme.stored(glass: " Clear-Glass ", voice: nil) == .clear && ArisNotchTheme.stored(glass: "floor", voice: "SURFACE-LIGHT") == .lightBottom,
           "theme: a value written by hand reads the way the notch reads it (any case, spaces ignored; the voice look wins)")
-    check(ArisNotchTheme.stored(glass: "mid", voice: nil) == nil && ArisNotchTheme.stored(glass: nil, voice: "siri-frost") == nil
-          && ArisNotchTheme.stored(glass: nil, voice: "siri") == nil,
+    check(ArisNotchTheme.stored(glass: "mid", voice: nil) == nil && ArisNotchTheme.stored(glass: nil, voice: "dusk-frost") == nil
+          && ArisNotchTheme.stored(glass: nil, voice: "dusk") == nil,
           "theme: a look set by hand that is none of the four (the whole light-bottom look among them) shows none picked")
 
     let suite = testSuiteName("aris-themes-tests")
@@ -144,7 +144,7 @@ private func themesThemeTests() {
           "theme: 기본 is Default only in the theme menu; everywhere else it reads as the catalog has it, and the Korean page is unchanged")
     let words = ArisNotchTheme.allCases.flatMap { [$0.title, $0.englishTitle, $0.rawValue] } + [ArisNotchLookSetting.themeTitle, ArisNotchLookSetting.themeDesc]
         + ArisNotchLookSetting.english.values
-    check(!words.contains { $0.lowercased().contains("siri") || $0.lowercased().contains("regular-glass") || $0.lowercased().contains("apple") },
+    check(!words.contains { $0.lowercased().contains("dusk") || $0.lowercased().contains("regular-glass") || $0.lowercased().contains("apple") },
           "theme: nothing the picker shows names another product")
 }
 
@@ -175,29 +175,29 @@ private func themesPlainPickerTests() {
 /// and text scrim over the glass, with Aris's own controls, layout and motion.
 private func themesSurfaceOnlyTests() {
     let surface = ArisVoiceLook.resolve("surface-light")
-    check(surface == .surfaceLight && surface.drawsSurface && !surface.isSiri,
+    check(surface == .surfaceLight && surface.drawsSurface && !surface.isDusk,
           "surface only: surface-light draws the light-bottom surface and is not the whole look")
-    check(ArisVoiceLook.siri.isSiri && ArisVoiceLook.siri.drawsSurface && ArisVoiceLook.siriFrost.isSiri && !ArisVoiceLook.aris.drawsSurface,
+    check(ArisVoiceLook.dusk.isDusk && ArisVoiceLook.dusk.drawsSurface && ArisVoiceLook.duskFrost.isDusk && !ArisVoiceLook.aris.drawsSurface,
           "surface only: the whole hidden look (set by hand) still brings its controls with its surface; Aris's own draws neither")
-    let before = ArisSiriLookNow.look
-    ArisSiriLookNow.look = .surfaceLight
-    let (on, surfaceOn) = (ArisSiriLookNow.on, ArisSiriLookNow.surfaceOn)
-    ArisSiriLookNow.look = .siri
-    let (siriOn, siriSurface) = (ArisSiriLookNow.on, ArisSiriLookNow.surfaceOn)
-    ArisSiriLookNow.look = before
-    check(!on && surfaceOn && siriOn && siriSurface, "surface only: with the theme the surface is on and every control keeps Aris's own")
+    let before = ArisDuskLookNow.look
+    ArisDuskLookNow.look = .surfaceLight
+    let (on, surfaceOn) = (ArisDuskLookNow.on, ArisDuskLookNow.surfaceOn)
+    ArisDuskLookNow.look = .dusk
+    let (duskOn, duskSurface) = (ArisDuskLookNow.on, ArisDuskLookNow.surfaceOn)
+    ArisDuskLookNow.look = before
+    check(!on && surfaceOn && duskOn && duskSurface, "surface only: with the theme the surface is on and every control keeps Aris's own")
 
     let root = themesSource("Aris/private/Notch/ArisNotchRoot.swift")
-    check(root.contains("let siri = ArisSiriLookNow.surfaceOn") && root.contains("siri ? ArisSiriLookSurface(shape: shape, open: open, band: siriBand"),
+    check(root.contains("let dusk = ArisDuskLookNow.surfaceOn") && root.contains("dusk ? ArisDuskLookSurface(shape: shape, open: open, band: duskBand"),
           "surface only: the notch draws the light-bottom surface (fill, rim, shadow) for the theme")
-    check(root.contains("if ArisSiriLookNow.on { $0.animation = ArisSiriLookMotion.surface(open: open) }") && root.contains("if ArisSiriLookNow.on {\n                withAnimation(ArisSiriLookMotion.resize"),
+    check(root.contains("if ArisDuskLookNow.on { $0.animation = ArisDuskLookMotion.surface(open: open) }") && root.contains("if ArisDuskLookNow.on {\n                withAnimation(ArisDuskLookMotion.resize"),
           "surface only: the look's springs come only with the whole look; the theme keeps Aris's curves")
-    check(themesSource("Aris/private/Aris/SiriLook/ArisSiriLookSurface.swift").contains("if ArisSiriLookNow.surfaceOn, !reduceTransparency"),
+    check(themesSource("Aris/private/Aris/DuskLook/ArisDuskLookSurface.swift").contains("if ArisDuskLookNow.surfaceOn, !reduceTransparency"),
           "surface only: the scrim the light bottom needs behind the text comes with the surface")
     let controls = ["Aris/private/Aris/Home/ArisComposer.swift", "Aris/private/Aris/Home/ArisNotchHeader.swift", "Aris/private/Aris/Home/ArisTurnView.swift",
-                    "Aris/private/Aris/Home/ArisActivityTag.swift", "Aris/private/Aris/SiriLook/ArisSiriLookHooks.swift", "Aris/private/Aris/ArisDocumentBlocks.swift",
+                    "Aris/private/Aris/Home/ArisActivityTag.swift", "Aris/private/Aris/DuskLook/ArisDuskLookHooks.swift", "Aris/private/Aris/ArisDocumentBlocks.swift",
                     "Aris/private/Aris/Home/ArisWidgetCards.swift", "Aris/private/Aris/Home/ArisAnswerDocumentView.swift"].map(themesSource)
-    check(controls.allSatisfy { $0.contains("ArisSiriLookNow.on") && !$0.contains("surfaceOn") },
+    check(controls.allSatisfy { $0.contains("ArisDuskLookNow.on") && !$0.contains("surfaceOn") },
           "surface only: the composer (no + or microphone), the request card, Stop and Close, the working mark, the tags, cards and answer type follow the whole look only")
 }
 

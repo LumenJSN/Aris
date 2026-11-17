@@ -100,13 +100,12 @@ final class ArisTeammateDesk {
         watchClose(connection)
         guard !cancelled.contains(job) else { return finish(job, "이 작업은 취소됐어요.") }
         // A folder outside the home folder isn't refused: it goes to the user's card, which names it (audit gate-20).
-        guard let place = ArisTeammateGate.place(rawCwd, home: home) else {
-            return finish(job, "Claude Code를 열 폴더가 아니에요: \(rawCwd.prefix(200)) (없는 폴더이거나, 시스템 폴더나 Aris가 지키는 폴더예요)")
-        }
+        // The home folder itself is one (the user's own sessions run there); ~/Library, the system's and Aris's own aren't.
+        guard let place = ArisTeammateGate.place(rawCwd, home: home) else { return finish(job, ArisClaudeJobWords.notAFolder) }
         let cwd = place.path
-        // What `claude` gets always starts with the launcher's fixed line, so a brief may start with a path, "#123" or
-        // "@src/…" (it was refused: audit gate-20); the argument itself is still checked.
-        guard ArisTeammateGate.isSafePrompt(ArisTeammateLauncher.argument(for: prompt)) else {
+        // What `claude` gets starts with Aris's own `/goal` line, then the launcher's fixed line, so a brief may start
+        // with a path, "#123" or "@src/…" (it was refused: audit gate-20); the fixed line and the brief are still checked.
+        guard ArisTeammateGate.isSafePrompt(ArisTeammateLauncher.body(for: prompt)) else {
             return finish(job, "Claude Code 프롬프트가 기호(-, !, / 같은)로 시작해서 열지 않았어요.")
         }
         guard !ArisTeammateGate.mentionsOutsideFiles(prompt, cwd: cwd, home: home) else {

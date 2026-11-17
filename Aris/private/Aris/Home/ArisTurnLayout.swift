@@ -25,6 +25,26 @@ enum ArisComposerLines {
     }
 }
 
+/// The composer's field after Return (the film's "…one pdfmake these…"): macOS's field editor behind a vertical
+/// TextField can keep the sent words when the bound text is cleared inside onSubmit, and write them back with the next
+/// keystroke, so the next request is typed onto the last one.
+enum ArisComposerClear {
+    /// The most new characters typed onto the sent words in the one change that brings them back (a keystroke, or a
+    /// few from an input method).
+    static let keystrokes = 3
+
+    /// Right after a send: the field still holds the sent words, so they are cleared.
+    static func stillSent(_ current: String, sent: String) -> Bool { !sent.isEmpty && current == sent }
+
+    /// The first change after a send, from an empty field to `new`: the sent words written back with what was just
+    /// typed, then only the typed part is kept; nil when it is ordinary typing (leave it).
+    static func restored(old: String, new: String, sent: String) -> String? {
+        guard !sent.isEmpty, old.isEmpty, new.hasPrefix(sent) else { return nil }
+        let typed = new.count - sent.count
+        return (0...keystrokes).contains(typed) ? String(new.dropFirst(sent.count)) : nil
+    }
+}
+
 /// The sent-prompt card: 22-point lines inside 16 of padding. Over two
 /// lines it collapses to two lines and an 18-point peek of the third under a 34-point fade; tapped, it shows all of it.
 enum ArisPromptCollapse {

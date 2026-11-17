@@ -6,9 +6,10 @@
 //  circle mode (⌥⇧ held or hands-free), a click on a window picks it and a second click lets it go. A picked window
 //  gets a light yellow wash over the whole of it in ink E's yellow: one sweep from the left, then still (no numbers,
 //  nothing blinks). The picked windows go with the question as numbered shots (`[img N]` chips), each captured on its
-//  own, so nothing else on the screen is sent. A private app's window (or one whose owner is unknown) is refused with
-//  the red refusal; the cap is 8 shots, circles included. While picking is on, an overlay takes the clicks, and
-//  Aris's own windows stay out of every shot. Pure, so the tests run it; ArisWindowPicker runs it on screen.
+//  own, so nothing else on the screen is sent. Every window but Aris's is picked, a password manager's or one whose
+//  owner is unknown too (the user 2026-11-16); the cap is 8 shots, circles included. While picking is on, an overlay
+//  takes the clicks, and Aris's own windows stay out of every shot. Pure, so the tests run it; ArisWindowPicker runs
+//  it on screen.
 //
 
 import CoreGraphics
@@ -30,10 +31,9 @@ enum ArisWindowPick {
         ArisGestureGate.allows(setting: setting, permission: permission, secureInput: secureInput)
     }
 
-    /// At capture the window's owner is checked again: never Aris, a private app or an owner with no bundle id.
+    /// At capture the window's owner is checked again: never Aris (by pid or bundle id).
     static func mayCapture(bundleId: String?, pid: Int32, ownPid: Int32, ownBundleId: String) -> Bool {
-        guard let bundleId, !bundleId.isEmpty else { return false }
-        return ArisCaptureRules.fallbackKeeps(bundleId: bundleId, pid: pid, ownPid: ownPid, ownBundleId: ownBundleId)
+        !ArisCaptureRules.excludes(bundleId: bundleId, pid: pid, ownPid: ownPid, ownBundleId: ownBundleId)
     }
 }
 
@@ -50,8 +50,6 @@ struct ArisWindowPickState {
     enum Outcome: Equatable {
         case added(Pick)
         case removed(ArisWindowHit)
-        /// A private window (or an unknown owner): the red refusal, nothing captured.
-        case refused(ArisWindowHit)
         /// Over the cap: the 8/8 capsule.
         case full(ArisWindowHit)
         case ignored
@@ -77,7 +75,6 @@ struct ArisWindowPickState {
             picks.remove(at: i)
             return .removed(hit)
         }
-        if ArisGestureSession.refuses(hit) || hit.bundleId == nil { return .refused(hit) }
         guard picks.count + max(0, otherShots) < ArisWindowPick.maxShots else { return .full(hit) }
         let pick = Pick(hit: hit, voicedMs: voicedMs, at: at, display: display)
         picks.append(pick)

@@ -90,7 +90,7 @@ extension ArisDesktopSession {
             return foreground(text, field: now, in: after, background: landed)
         }
         guard let typed, typed.safeToRepeat, let now = ArisDesktopVerify.find(field, in: after), now.rawValue == before, !now.rawCapped else {
-            return ArisDesktopResult(ok: false, text: "Typing into “\(ArisDesktopVerify.short(field.label))” isn't confirmed (\(landed.detail); Peekaboo said: \(why(typed))). " +
+            return ArisDesktopResult(ok: false, text: "Typing into “\(ArisDesktopVerify.short(field.label))” isn't confirmed (\(landed.detail); the engine said: \(why(typed))). " +
                                      Self.stopLine + "\n\n" + after.render())
         }
         // Rung 3: the field's value, set to what it held plus the text: only with nothing dispatched at all, its raw value
@@ -124,7 +124,7 @@ extension ArisDesktopSession {
             turn.ledger.noteBlindTyped(window: after.window, text: ArisPeekabooCommands.composed(text))
             return report(.done("the window shows the text"), envelope: envelope, after: seen, how: "typed in the background; read back from the window's text")
         }
-        return ArisDesktopResult(ok: false, text: "Not confirmed: “\(ArisDesktopVerify.short(field.label))” can't be read back, and the window doesn't show the text (Peekaboo said: \(why(envelope))). " +
+        return ArisDesktopResult(ok: false, text: "Not confirmed: “\(ArisDesktopVerify.short(field.label))” can't be read back, and the window doesn't show the text (the engine said: \(why(envelope))). " +
                                  "Don't type it again: look at the window, or ask the user.\n\n" + after.render())
     }
 

@@ -40,15 +40,21 @@ enum ArisContext {
     /// `shelfFiles`: how many files are on the notch shelf (a number only, never their names: a downloaded file's name
     /// is anyone's words), so "이거 바꿔줘" can use `--shelf`.
     /// `userName`: what the user asked to be called (ArisUserName; every brain's nameRule says to use it sparingly).
+    /// `programs`: the apps on this Mac the request names as the one to do or use something (ArisProgramMention.contextLine).
+    /// `claudeSessions`: the Claude Code sessions Aris's hooks know (ClaudeSessionsContext.lines), before the calendar so
+    /// the agent's cut of a long context keeps them.
     static func make(now: Date, timeZone: TimeZone, frontApp: String?, music: Music?,
-                     events: [Event], recent: [Turn], tasks: [String] = [], shelfFiles: Int = 0, userName: String? = nil) -> String {
+                     events: [Event], recent: [Turn], tasks: [String] = [], shelfFiles: Int = 0, userName: String? = nil,
+                     programs: String? = nil, claudeSessions: [String] = []) -> String {
         var lines = ["now: \(format(now, "EEEE, yyyy-MM-dd HH:mm", timeZone)) (\(timeZone.identifier))"]
         if let name = ArisUserName.contextLine(userName) { lines.append(name) }
         if let frontApp { lines.append("front app: \(frontApp)") }
+        if let programs { lines.append(programs) }
         if let music, !music.title.isEmpty {
             lines.append("music: \(plain(music.title)) by \(plain(music.artist)) (\(music.playing ? "playing" : "paused"))")
         }
         if shelfFiles > 0 { lines.append("shelf: \(shelfFiles) file\(shelfFiles == 1 ? "" : "s")") }
+        lines += claudeSessions
         lines += calendar(events, now: now, timeZone: timeZone)
         if !recent.isEmpty {
             lines.append("recent:")

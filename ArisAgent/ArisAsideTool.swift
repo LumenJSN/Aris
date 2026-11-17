@@ -65,6 +65,8 @@ struct ArisAsideDeps {
     var accountStatus: (String) -> ArisSkillProcessResult = { _ in ArisSkillProcessResult(status: -1, stdout: "", stderr: "", timedOut: false) }
     /// Whether a brief is about Aris's own data (ArisOwnData; live: one of Aris's schedules named in it counts too).
     var ownData: (String) -> Bool = { ArisOwnData.mentions($0) }
+    /// Whether a brief is about an app or a session on this Mac (ArisAsideLocal; live: the apps installed here count too).
+    var local: (String) -> Bool = { ArisAsideLocal.isLocal($0) }
 
     static var live: ArisAsideDeps {
         ArisAsideDeps(locate: { ArisAsideReadiness.shared.check() },
@@ -85,7 +87,8 @@ struct ArisAsideDeps {
                           ArisAsideLogin.run(path, environment: environment, limit: limit, line: line, stop: stop)
                       },
                       accountStatus: { ArisAsideReadiness.accountStatus($0) },
-                      ownData: { ArisOwnData.mentions($0, scheduleNames: ArisOwnDataTurn.scheduleNames(home: FileManager.default.homeDirectoryForCurrentUser.path)) })
+                      ownData: { ArisOwnData.mentions($0, scheduleNames: ArisOwnDataTurn.scheduleNames(home: FileManager.default.homeDirectoryForCurrentUser.path)) },
+                      local: { ArisAsideLocal.isLocal($0, installed: ArisAsideLocal.installedApps(home: FileManager.default.homeDirectoryForCurrentUser.path)) })
     }
 }
 
@@ -226,6 +229,12 @@ enum ArisAsideTool {
         if turn.asideOwnData || deps.ownData(brief) {
             turn.audit(["answer": "refused (Aris's own data)", "action": action, "risk": "never", "brain": turn.brainName])
             return .failed(ArisAside.ownDataLine)
+        }
+        // Aside sees only websites: an app or a session on this Mac is never its (the owner, 2026-11-15: a Warp tab's Devin
+        // sessions were handed to Aside and came back "못 끝냈어요").
+        if deps.local(brief) {
+            turn.audit(["answer": "refused (an app or session on this Mac)", "action": action, "risk": "never", "brain": turn.brainName])
+            return .failed(ArisAsideLocal.line)
         }
         let path: String
         switch deps.locate() {

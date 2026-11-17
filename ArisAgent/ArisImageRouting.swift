@@ -143,6 +143,16 @@ enum ArisImageRouting {
         return context.contains("(done:") || context.contains("(failed:")
     }
 
+    /// The start of the context's header over what Claude Code sessions said (ClaudeSessionsContext.textHeader, the
+    /// app's; the tests hold the two together).
+    static let sessionTextMark = "claude code sessions, with what they said"
+
+    /// Whether the turn's context carries what a Claude Code session said (its last reply, the question it waits on):
+    /// Claude Code wrote it from what it read, so the turn is outside text, as with a job's result.
+    static func carriesSessionText(_ context: String?) -> Bool {
+        context?.contains(sessionTextMark) ?? false
+    }
+
     /// Said in place of a jobs block a turn may not hand out (as ArisSpeakable.refusedJobs, in the app).
     static let refusedJobs = "이 일은 지금 팀원한테 못 넘겨요."
 

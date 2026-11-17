@@ -74,6 +74,8 @@ enum ArisSettingKey: Hashable {
     case apiBrain(String)
     /// What the closed notch's Claude ring shows (ClaudeRingMode's raw value).
     case claudeRing
+    /// 하루 소리 모으기 (ArisWakeCollect), on for a day.
+    case wakeCollect
 }
 
 enum ArisSettingValue: Equatable {
@@ -110,6 +112,8 @@ enum ArisSettingsAction: Equatable {
     case recheckNowPlaying
     /// Dictation's learned words: add a proposed one, dismiss it, or delete a learned one.
     case learnWord(String), dismissWord(String), forgetWord(String)
+    /// 호출어 녹음: the recording sheet opens; every recording erased (asked twice), or kept after all.
+    case recordWakeCalls, clearWakeRecordings, keepWakeRecordings
 }
 
 enum ArisChipTone: Equatable { case plain, ok, warn }

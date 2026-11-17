@@ -55,6 +55,7 @@ enum ArisSealedTools {
             + reads + ["Bash(\(tools) mcp list)", "Bash(\(tools) mcp list:*)", "Bash(\(tools) mcp call:*)", "Bash(\(tools) mcp wait:*)"]
             + desktopVerbs.sorted().map { "Bash(\(tools) desktop \($0):*)" }
             + ["Bash(\(tools) skill list)", "Bash(\(tools) skill read:*)", "Bash(\(tools) skill run:*)", "Bash(\(tools) skill wait:*)", "Bash(\(tools) aside:*)"]
+            + ["Bash(\(tools) session list)", "Bash(\(tools) session send:*)"]
             + ["Bash(\(tools) maps search:*)", "Bash(\(tools) maps directions:*)"]
             + (memory ? ["Bash(\(tools) memory)", "Bash(\(tools) memory:*)", "Bash(\(tools) recall)", "Bash(\(tools) recall:*)"] : [])
             + (messages ? ["Bash(\(tools) message:*)"] : [])
@@ -97,10 +98,18 @@ enum ArisSealedTools {
         case "skill": return skillForm(rest)
         // Website work for Aside: the agent's one gate asks the user on every sealed turn (the screen, hands-free).
         case "aside": return !rest.isEmpty && rest.joined(separator: " ").count <= 4_000
+        // A prompt into one of the user's Claude Code sessions: the agent asks the user on their card every time (ArisSessionSend).
+        case "session": return sessionForm(rest)
         // A maps lookup (--json, nothing opens): a read, the hook asks the judge first (QA BUG-1). Never Maps opened.
         case "maps": return ArisReadGate.isMapsLookup(arguments)
         default: return false
         }
+    }
+
+    /// `session list` or `session send <session> <text…>`, within the limits (the agent reads them again: ArisSessionCall).
+    static func sessionForm(_ rest: [String]) -> Bool {
+        guard rest.count <= 400, rest.joined(separator: " ").count <= 4_096 else { return false }
+        return rest == ["list"] || (rest.first == "send" && rest.count >= 3)
     }
 
     /// `skill list`, `skill read <name> [file]` or `skill run <name> scripts/<file> [arguments…]`: the agent reads only

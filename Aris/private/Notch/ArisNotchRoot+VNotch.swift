@@ -28,7 +28,7 @@ extension ArisNotchRoot {
         case .empty: return .idle
         // Listening, and whatever sizes itself (the Now Playing notice): never grown under the pointer.
         case .star(.turn), .notice: return .liveBand
-        case .star, .dueAlert, .timer, .claude, .music: return .band
+        case .star, .timer, .claude, .music: return .band
         }
     }
 

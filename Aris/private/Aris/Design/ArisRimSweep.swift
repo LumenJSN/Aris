@@ -32,6 +32,12 @@ enum ArisRimSweep {
         return -lead + progress(u) * (lead + total + clearance)
     }
 
+    /// As `head(at:total:)`, or nil once one pass is over when `once`.
+    static func head(at t: Double, total: Double, once: Bool) -> Double? {
+        guard !once || t < period else { return nil }
+        return head(at: t, total: total)
+    }
+
     /// 0...1 over a pass: speed rising linearly from `startSpeed` to full over `easeIn`, then even.
     private static func progress(_ u: Double) -> Double {
         let speed = 1 / (1 - easeIn * (1 - startSpeed) / 2)

@@ -30,9 +30,9 @@ struct ArisDocMetrics: Equatable {
     let line: CGFloat
     let itemGap: CGFloat
 
-    /// The notch's body text: Aris's 14 on 21, or Siri's 15 on 18 in the siri look (ArisSiriLook.Answer).
+    /// The notch's body text: Aris's 14 on 21, or the system assistant's 15 on 18 in the dusk look (ArisDuskLook.Answer).
     static var notch: ArisDocMetrics {
-        ArisSiriLookNow.on ? ArisDocMetrics(size: ArisSiriLook.Answer.fontSize, line: ArisSiriLook.Answer.lineHeight, itemGap: 4)
+        ArisDuskLookNow.on ? ArisDocMetrics(size: ArisDuskLook.Answer.fontSize, line: ArisDuskLook.Answer.lineHeight, itemGap: 4)
             : ArisDocMetrics(size: 14, line: 21, itemGap: 5)
     }
     static let reader = ArisDocMetrics(size: 14, line: 14 * 1.7, itemGap: 4)

@@ -14,13 +14,16 @@ import SwiftUI
 struct ArisComposer: View {
     @ObservedObject private var aris = ArisController.shared
     @ObservedObject private var attachments = ArisAttachments.shared
-    /// Re-draws this view when the hidden look changes (ArisSiriLookGate).
-    @ObservedObject private var siriLook = ArisSiriLookGate.shared
+    /// Re-draws this view when the hidden look changes (ArisDuskLookGate).
+    @ObservedObject private var duskLook = ArisDuskLookGate.shared
     @State private var text = ""
     /// Set only after files are given to Aris (BUG-24a); never on hover.
     @FocusState private var focused: Bool
     /// The lines the text takes, one to three (ArisComposerLines).
     @State private var lines = 1
+    /// The words last sent, until the field's first typing after it (ArisComposerClear): the field editor may write
+    /// them back.
+    @State private var sent: String?
 
     /// The field's own line at 15 points (ascender, descender and leading), to count its lines from its height.
     private static let fieldLine: CGFloat = {
@@ -36,10 +39,10 @@ struct ArisComposer: View {
         VStack(alignment: .leading, spacing: 6) {
             if !attachments.files.isEmpty { chips }
             ArisDropChipsView()
-            if ArisSiriLookNow.on {
-                // The siri look: Siri's row, a round + (choose files for Aris), the pill, a round microphone.
-                ArisSiriLookFieldRow(attachHelp: ArisUIWords.text("파일 주기", "Give files"), speakHelp: ArisUIWords.text("말하기", "Speak"),
-                                     attach: { ArisSiriLookAttach.choose() }, speak: { aris.startListening() }) { field }
+            if ArisDuskLookNow.on {
+                // The dusk look: the system assistant's row, a round + (choose files for Aris), the pill, a round microphone.
+                ArisDuskLookFieldRow(attachHelp: ArisUIWords.text("파일 주기", "Give files"), speakHelp: ArisUIWords.text("말하기", "Speak"),
+                                     attach: { ArisDuskLookAttach.choose() }, speak: { aris.startListening() }) { field }
             } else {
                 field
             }
@@ -55,10 +58,10 @@ struct ArisComposer: View {
         }
     }
 
-    /// The pill and its field. In the siri look it is Siri's: 36 tall for one line, the control glass, a capsule.
+    /// The pill and its field. In the dusk look it is the system assistant's: 36 tall for one line, the control glass, a capsule.
     private var field: some View {
-        let siri = ArisSiriLookNow.on
-        let radius = siri ? CGFloat(ArisSiriLook.Field.height) / 2 : ArisGlass.pillRadius
+        let dusk = ArisDuskLookNow.on
+        let radius = dusk ? CGFloat(ArisDuskLook.Field.height) / 2 : ArisGlass.pillRadius
         return ZStack(alignment: .leading) {
                 if text.isEmpty { hint.allowsHitTesting(false) }
                 TextField("", text: $text, axis: .vertical)
@@ -69,6 +72,7 @@ struct ArisComposer: View {
                     .arisTextBacking(when: !text.isEmpty)
                     .focused($focused)
                     .onSubmit(send)
+                    .onChange(of: text) { old, new in keepCleared(old: old, new: new) }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                         let next = ArisComposerLines.lines(measured: height, lineHeight: Self.fieldLine)
                         // The height transition: 340 ms (0.45, 0, 0.55, 1), the notch growing with it.
@@ -76,12 +80,12 @@ struct ArisComposer: View {
                     }
             }
             .padding(.horizontal, 16)
-            .frame(height: ArisComposerLines.height(lines: lines) - (siri ? ArisComposerLines.height(lines: 1) - CGFloat(ArisSiriLook.Field.height) : 0))
+            .frame(height: ArisComposerLines.height(lines: lines) - (dusk ? ArisComposerLines.height(lines: 1) - CGFloat(ArisDuskLook.Field.height) : 0))
             .frame(maxWidth: .infinity)
-            // Just the fill: no shadow or rim. (The siri look's is Siri's glass, rim and all.)
+            // Just the fill: no shadow or rim. (The dusk look's is the system assistant's glass, rim and all.)
             .background {
-                if siri {
-                    ArisSiriLookGlass(shape: RoundedRectangle(cornerRadius: radius, style: .continuous))
+                if dusk {
+                    ArisDuskLookGlass(shape: RoundedRectangle(cornerRadius: radius, style: .continuous))
                 } else {
                     RoundedRectangle(cornerRadius: radius, style: .continuous).fill(ArisGlass.composerFill)
                 }
@@ -104,8 +108,8 @@ struct ArisComposer: View {
         focused = true
     }
 
-    /// The hint in the siri look: the same colour at .78, because it sits on lighter glass there (ArisSiriLook.Field).
-    private static let siriHint = Color(red: 236 / 255, green: 239 / 255, blue: 247 / 255).opacity(ArisSiriLook.Field.arisHintInk)
+    /// The hint in the dusk look: the same colour at .78, because it sits on lighter glass there (ArisDuskLook.Field).
+    private static let duskHint = Color(red: 236 / 255, green: 239 / 255, blue: 247 / 255).opacity(ArisDuskLook.Field.arisHintInk)
 
     /// The composer's hint line in the app's language.
     private static var korean: Bool { !ArisUILanguage.english }
@@ -116,7 +120,7 @@ struct ArisComposer: View {
         if let given = ArisPendingFiles.hint(for: attachments.files, korean: Self.korean) {
             // Files just given: the same line says they arrived and asks what to do (BUG-24a).
             Text(given).font(Self.hintFont).tracking(0.2).lineLimit(1)
-                .foregroundStyle(ArisSiriLookNow.on ? Self.siriHint : Color(red: 236 / 255, green: 239 / 255, blue: 247 / 255).opacity(0.62))
+                .foregroundStyle(ArisDuskLookNow.on ? Self.duskHint : Color(red: 236 / 255, green: 239 / 255, blue: 247 / 255).opacity(0.62))
                 .arisTextBacking()
         } else {
             keysHint
@@ -133,7 +137,7 @@ struct ArisComposer: View {
         }
         .font(Self.hintFont)
         .tracking(0.2)
-        .foregroundStyle(ArisSiriLookNow.on ? Self.siriHint : Color(red: 236 / 255, green: 239 / 255, blue: 247 / 255).opacity(0.62))
+        .foregroundStyle(ArisDuskLookNow.on ? Self.duskHint : Color(red: 236 / 255, green: 239 / 255, blue: 247 / 255).opacity(0.62))
         .arisTextBacking()
     }
 
@@ -163,7 +167,33 @@ struct ArisComposer: View {
         guard !words.isEmpty else { return }
         aris.submitTyped(attachments.request(with: words))
         attachments.clear()
+        let shown = text
+        sent = shown
         text = ""
+        // Cleared inside onSubmit, the field editor may still show the sent words: cleared again once submit is over.
+        DispatchQueue.main.async {
+            if ArisComposerClear.stillSent(text, sent: shown) { text = "" }
+            setFieldEditor("", ifShowing: shown)
+        }
+    }
+
+    /// The first typing after a send: the sent words written back by the field editor are taken out again, only
+    /// what was just typed stays (ArisComposerClear.restored).
+    private func keepCleared(old: String, new: String) {
+        guard let last = sent, !new.isEmpty else { return }
+        sent = nil
+        guard let typed = ArisComposerClear.restored(old: old, new: new, sent: last) else { return }
+        text = typed
+        setFieldEditor(typed, ifShowing: new)
+    }
+
+    /// The notch's text view in use (the field editor behind the focused field) set to `value` when it shows exactly
+    /// `showing`; nothing else is touched.
+    private func setFieldEditor(_ value: String, ifShowing showing: String) {
+        guard let panel = NSApp.windows.first(where: { $0 is ArisNotchPanel && $0.isVisible && $0.firstResponder is NSTextView }),
+              let editor = panel.firstResponder as? NSTextView, editor.string == showing else { return }
+        editor.string = value
+        editor.setSelectedRange(NSRange(location: (value as NSString).length, length: 0))
     }
 }
 

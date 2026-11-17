@@ -22,4 +22,9 @@ enum ArisCaptureTiming {
         guard gesture.isEmpty else { return gesture }
         return cursor.map { [$0] } ?? []
     }
+
+    /// The same with the screenshots of up to three displays (ArisDisplayPick), in their order.
+    static func images(cursors: [ArisTurnImage], gesture: [ArisTurnImage]) -> [ArisTurnImage] {
+        gesture.isEmpty ? cursors : gesture
+    }
 }

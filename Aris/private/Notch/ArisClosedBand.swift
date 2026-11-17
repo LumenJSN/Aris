@@ -58,7 +58,7 @@ enum ArisClosedBand {
             return ArisStarBand.hitWidth(mode: mode, notchWidth: notchWidth) == nil ? nil : Insets(leading: side, trailing: side)
         case .timer:
             return Insets(leading: side, trailing: 0)
-        case .notice, .dueAlert, .claude, .music, .empty:
+        case .notice, .claude, .music, .empty:
             return nil
         }
     }

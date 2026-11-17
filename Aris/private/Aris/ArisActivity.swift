@@ -89,7 +89,9 @@ struct ArisActivity: View {
     private var starEar: some View {
         let resting = mode == .home
         let paused = !resting && aris.conversing && aris.pausedForOtherAudio
-        let lock = aris.handsFree && session.phase == .listening && !paused && !muted
+        // The wake word's quiet lap shows only the bars and the light (the owner's pick C): the lock comes with the open notch.
+        let quietLap = aris.wakeLap == .waiting
+        let lock = aris.handsFree && session.phase == .listening && !paused && !muted && !quietLap
         switch ArisBandEar.shows(resting: resting, files: files.files.count, handsFreeLock: lock, answerDot: dot != nil, paused: paused) {
         case .lock:
             // The hands-free lock, ending 14 points from the band's edge: a press ends the listening.

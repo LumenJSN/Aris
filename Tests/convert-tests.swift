@@ -181,12 +181,12 @@ private func runConvertSelectorTests(desk: String, home: String) {
         }
     }
     let said = pick(["convert", "--finder", "--to", "jpg"], pictures)
-    check(said == .success("2개를 JPG로 바꿨어요 (원본 옆에 저장)") && FileManager.default.fileExists(atPath: folder + "/\(planted) 1.jpg")
+    check(said == .success("2개를 JPG로 바꿨어요 (원본 옆에 저장)\n" + ArisConvert.madeHintLine) && FileManager.default.fileExists(atPath: folder + "/\(planted) 1.jpg")
           && FileManager.default.fileExists(atPath: folder + "/\(planted) 2.jpg"),
           "convert --finder: the files are converted next to them; the answer is a count, never a name")
     check(pick(["merge", "--shelf"], [folder + "/\(planted) a.pdf", folder + "/\(planted) b.pdf"]) == .success("2개를 PDF 하나로 합쳤어요 (첫 파일 옆에 저장)")
           && pick(["split", "--finder"], [folder + "/\(planted) a.pdf"]) == .success("PDF를 2개로 나눴어요 (원본 옆에 저장)")
-          && pick(["compress", "--shelf", "--quality", "20"], [desk + "/photo.jpg"]) == .success("1개를 줄였어요 (원본 옆에 저장)"),
+          && pick(["compress", "--shelf", "--quality", "20"], [desk + "/photo.jpg"]) == .success("1개를 줄였어요 (원본 옆에 저장)\n" + ArisConvert.madeHintLine),
           "merge, split and compress by selector: counts only")
     let refusals = [pick(["convert", "--finder", "--to", "png"], [folder + "/\(planted).webm"]), pick(["convert", "--finder", "--to", "jpg"], [folder + "/\(planted) gone.png"]),
                     pick(["convert", "--finder", "--to", "jpg"], [pictures[0], folder + "/\(planted) broken.png"]),
@@ -447,8 +447,8 @@ private func runConvertReviewTests(desk: String, home: String, folder: String, p
     let across = try? ArisConvert.run(ArisConvertWords.parse(["merge", desk + "/doc.pdf", elsewhere + "/other.pdf"])!, home: home, cwd: desk)
     let acrossQuiet = try? quiet(["merge", "--finder"], [elsewhere + "/other.pdf", desk + "/doc.pdf"])
     check(across?.shown == ["~/Downloads/doc (합침).pdf"] && ArisConvert.report(across!).contains("다운로드 폴더에 저장")
-          && acrossQuiet?.quietLine == "2개를 PDF 하나로 합쳤어요 (다운로드 폴더에 저장)" && FileManager.default.fileExists(atPath: home + "/Downloads/other (합침).pdf"),
-          "merge (M2): files from different folders go to Downloads, and the answer says so")
+          && acrossQuiet?.quietLine == "2개를 PDF 하나로 합쳤어요 (다운로드 폴더에 저장)" && FileManager.default.fileExists(atPath: home + "/Downloads/doc (합침) 2.pdf"),
+          "merge (M2): files from different folders go to Downloads, and the answer says so (Finder's in name order: doc first)")
     // M3: one deadline for the whole call; the log is written as each file lands.
     var seen: [[String]] = []
     let two = try? ArisConvert.run(ArisConvertWords.parse(["convert", desk + "/in-png/pic.png", desk + "/in-jpg/pic.jpg", "--to", "tiff"])!, home: home, cwd: desk,
@@ -500,12 +500,10 @@ private func runConvertReviewTests(desk: String, home: String, folder: String, p
     check(capped.contains("more new files than"), "convert (M4): a call's new files have a total size limit")
     var tight = ArisConvert.Limits.standard
     tight.mergePixels = 21_000
-    let pixels: String
-    do {
-        _ = try ArisConvert.run(ArisConvertWords.parse(["merge", desk + "/in-png/pic.png", desk + "/in-png/pic 2.png"])!, home: home, cwd: desk, limits: tight)
-        pixels = ""
-    } catch { pixels = ArisConvert.message(error, quiet: false) }
-    check(pixels.contains("megapixels"), "merge (follow-up 2): the pictures of one merge have a total pixel budget, checked before any is drawn (\(pixels))")
+    // The film (2026-11-16): over the total the pictures are drawn smaller to fit (each page keeps its size), never refused.
+    let fitted = try? ArisConvert.run(ArisConvertWords.parse(["merge", desk + "/in-png/pic.png", desk + "/in-png/pic 2.png"])!, home: home, cwd: desk, limits: tight)
+    check(fitted.map { pdfPages($0.made[0]) == 2 } == true,
+          "merge (follow-up 2, the film): the pictures of one merge have a total pixel budget; over it they are drawn smaller, not refused")
     // M5: --finder only when Finder was in front as the user asked; a background job picks nothing.
     let finder = ArisShelfFiles.State(shelf: ["/x.png"], front: "com.apple.finder", at: Date())
     let notes = ArisShelfFiles.State(shelf: [], front: "com.apple.Notes", at: Date())

@@ -56,6 +56,8 @@ struct ArisSettingsSnapshot: Equatable {
     // 대화
     var wakeWord = true
     var hasVoiceModel = false
+    /// 호출어 녹음 and 하루 소리 모으기 (ArisWakeRecordRows).
+    var wakeRecord = ArisWakeRecordSummary()
     var busy = false
     var talkCaps = ["⌥", "Space"]
     var minutes = 5
@@ -73,8 +75,8 @@ struct ArisSettingsSnapshot: Equatable {
     /// What the Claude ear's ring shows: "fiveHour", "sevenDay" or "auto" (ClaudeRingMode).
     var claudeRing = "fiveHour"
     var brain = "codex"
-    var computerEngine = "peekaboo"
-    var computerEngines: [ArisSettingOption] = [.init(id: "peekaboo", title: "Peekaboo (무료)"), .init(id: "codex", title: "GPT (Codex)")]
+    var computerEngine = "aris"
+    var computerEngines: [ArisSettingOption] = [.init(id: "aris", title: "Aris (기본)"), .init(id: "peekaboo", title: "Peekaboo (무료)"), .init(id: "codex", title: "GPT (Codex)")]
     var brains: [ArisSettingOption] = [.init(id: "claude", title: "Claude"), .init(id: "codex", title: "Codex"), .init(id: "antigravity", title: "Gemini")]
 
     // 기억 (ArisMemorySettingsRows): nil until the agent answers (or when it doesn't).

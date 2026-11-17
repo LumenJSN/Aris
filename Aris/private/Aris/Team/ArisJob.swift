@@ -48,6 +48,9 @@ struct ArisJobSpec: Equatable {
     let assignee: ArisJobAssignee
     let cwd: String?
     let appHint: String?
+    /// The brain the jobs block named for a job of Aris's own ("brain": "claude": the user handed it to that AI); nil: the
+    /// turn's own (ArisBrainHandOff, ArisHandOutPlan).
+    var brain: ArisBrain? = nil
 }
 
 /// A background job's question parked until the user is at the Mac.

@@ -289,11 +289,11 @@ private func wakeRestRuleTests() {
     typealias P = ArisOtherAudio.Process
     let own = P(pid: 10, bundle: "com.lumenjsn.aris", output: false, input: true)
     let agent = P(pid: 11, bundle: "com.lumenjsn.aris.aris-agent", output: false, input: true)
-    let siri = P(pid: 12, bundle: "com.apple.CoreSpeech", output: false, input: true)
+    let listener = P(pid: 12, bundle: "com.apple.CoreSpeech", output: false, input: true)
     let zoom = P(pid: 13, bundle: "us.zoom.xos", output: true, input: true)
     let music = P(pid: 14, bundle: "com.spotify.client", output: true, input: false)
-    check(R.recorder([own, agent, siri, music], ownPid: 10) == nil, "who records: Aris itself, macOS's “Siri야” listener and an app that only plays are not a call")
-    check(R.recorder([own, siri, music, zoom], ownPid: 10) == zoom, "who records: a call app is")
+    check(R.recorder([own, agent, listener, music], ownPid: 10) == nil, "who records: Aris itself, macOS's own wake-phrase listener and an app that only plays are not a call")
+    check(R.recorder([own, listener, music, zoom], ownPid: 10) == zoom, "who records: a call app is")
     check(R.recorder([P(pid: 20, bundle: nil, output: false, input: true)], ownPid: 10)?.pid == 20, "who records: a process with no bundle id too")
     check(R.recorder([P(pid: 10, bundle: nil, output: false, input: true)], ownPid: 10) == nil, "who records: never Aris's own process")
 
@@ -336,14 +336,23 @@ private func wakeRestRuleTests() {
     check(R.appName(recorder: "com.apple.avconferenced", pid: 9, among: apps) == nil && R.appName(recorder: "", pid: nil, among: apps) == nil
           && R.appName(recorder: "com.google.ChromeCanary", pid: 8, among: apps) == nil, "the app's name: none when there is no app to name")
 
-    check(R.kept("오늘 회의 몇 시야", path: "rejected") == "" && R.kept("아리스", path: "whisper") == "아리스" && R.kept(nil, path: "voice") == "",
-          "the tuning log: what a phrase that was not the name said is never written down")
+    // false-wake: the owner's own wake log keeps Whisper's text for rejected candidates too, for tuning (real calls
+    // were rejected on 2026-11-14 and nothing said what Whisper had heard).
+    check(R.kept("오늘 회의 몇 시야", path: "rejected") == "오늘 회의 몇 시야" && R.kept("아리스", path: "whisper") == "아리스" && R.kept(nil, path: "voice") == "",
+          "the tuning log: what Whisper wrote is kept for every checked candidate, nothing when it didn't run")
 }
 
 private func wakeHonestyTests() {
     let line = ArisWakeHonesty.settingsLine, english = ArisWakeHonesty.settingsLineEnglish
-    check(["마이크가 켜져", "마이크 표시", "보내거나 남기지", "알아서 쉬어요"].allSatisfy(line.contains), "honesty: the settings row says all four truths")
-    check(["microphone is on", "indicator", "nothing is sent or kept", "rests by itself"].allSatisfy(english.contains), "honesty: and in English")
+    check(["마이크가 켜져", "마이크 표시", "알아들은 글자만 이 Mac에 남겨요", "하루 소리 모으기를 켠 동안에만", "아무것도 보내지 않아요", "알아서 쉬어요"].allSatisfy(line.contains)
+          && !line.contains("보내거나 남기지"), "honesty: the settings row says what is true now: only the recognised text is kept, sound only while collecting, nothing sent")
+    check(["microphone is on", "indicator", "only the recognised text is kept", "Collect a day of sound", "nothing is sent off the Mac", "rests by itself"].allSatisfy(english.contains)
+          && !english.contains("nothing is sent or kept"), "honesty: and in English")
+    // Each claim checked against the code: the wake log keeps Whisper's text of every candidate (text only, in the
+    // app's own folder); a borderline wake streams to Scribe only once kept.
+    check(ArisWakeRest.kept("오늘 회의", path: "rejected") == "오늘 회의" && !ArisWakeHonesty.note.contains("보내거나 남기지")
+          && ArisWakeHonesty.note.contains("알아들은 글자만") && ArisWakeHonesty.line(english: false).contains("알아들은 글자만"),
+          "honesty: the note and the short line no longer say nothing is kept")
     check(ArisSettingsCopyMore.english[line] == english && ArisWakeHonesty.line(english: false).hasSuffix("알아서 쉬어요."), "honesty: the settings pages find its English")
 
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../Aris")

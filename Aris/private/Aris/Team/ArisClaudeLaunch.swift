@@ -22,11 +22,27 @@ enum ArisClaudeLaunch {
         }
     }
 
-    /// `cd '<cwd>' && '<claude>' "$(cat '<promptFile>')"`: `claude` is the checked binary's absolute path
+    /// `cd '<cwd>' && '<claude>' <flags> "$(cat '<promptFile>')"`: `claude` is the checked binary's absolute path
     /// (ArisTeammateGate.claudeBinary); without one, the bare `claude` on the PATH (such a launch is never vouched).
     static func command(promptFile: String, cwd: String, claude: String? = nil) -> String {
-        "cd \(shellQuoted(cwd)) && \(claude.map(shellQuoted) ?? "claude") \"$(cat \(shellQuoted(promptFile)))\""
+        "cd \(shellQuoted(cwd)) && \(claude.map(shellQuoted) ?? "claude") \(flags) \"$(cat \(shellQuoted(promptFile)))\""
     }
+
+    /// Every job runs in Claude Code's auto mode (the owner, 2026-11-14: "클코는 automode 로 항상 돌려"; 2.1.325's
+    /// `--permission-mode` choices include "auto"), with deny rules on the places credentials live (`--settings`), so
+    /// with no launch card and the home folder allowed, its file tools still never read or change them.
+    static let flags = "--permission-mode auto --settings " + shellQuoted(settings)
+
+    /// Where credentials live: never read or edited by a launched job (Claude Code's Read and Edit rules; Edit covers
+    /// every tool that writes a file). `~/` is the home folder, `**/` any folder under the one it opens in.
+    static let deniedPlaces = ["~/.ssh/**", "~/.aws/**", "~/.config/aris/**", "~/.gnupg/**", "~/Library/Keychains/**", "~/.netrc",
+                               "~/**/.env*", "**/.env*"]
+
+    /// The settings JSON: `{"permissions":{"deny":["Read(…)","Edit(…)",…]}}`, in a fixed order (no quote or backslash in it).
+    static let settings: String = {
+        let rules = deniedPlaces.flatMap { ["Read(\($0))", "Edit(\($0))"] }
+        return #"{"permissions":{"deny":["# + rules.map { "\"\($0)\"" }.joined(separator: ",") + "]}}"
+    }()
 
     /// POSIX single quotes: nothing inside is special, and a quote itself becomes '\''.
     static func shellQuoted(_ text: String) -> String {

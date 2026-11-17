@@ -10,8 +10,9 @@
 //  Measured: radius 24 in every state; show/hide opacity + scale 0.8 → 1 from the centre,
 //  0.15 s ease; size changes 0.15 s ease; idle 36 × 8, hover 50 × 30, hold recording 80 × 30, pill-click or hands-free
 //  recording 102 × 30, transcribing / awaiting insertion 30 × 30, inline error ceil(clamp(136, textW + 44, 280)) × 38,
-//  recovered transcript 282 / 326 / 364 × 92 / 110 / 130; window at most 540 × 700, its bottom 5 under the screen's
-//  usable bottom and the pill 6 above the window's bottom; parked after 12 s with nothing to show.
+//  window at most 540 × 700, its bottom 5 under the screen's usable bottom and the pill 6 above the window's bottom;
+//  parked after 12 s with nothing to show. The recovered words are a card fitted to them instead (the owner's pick B,
+//  ArisDictationPillRecoveredLayout), radius 18, standing where the pill stands.
 //
 
 import CoreGraphics
@@ -124,14 +125,16 @@ enum ArisDictationPillRules {
 
     // MARK: - Sizes
 
-    static func size(_ phase: ArisDictationPillPhase) -> CGSize {
+    /// The pill's size, or the recovered words' card's (ArisDictationPillRecoveredLayout: it hugs its words; the
+    /// label is longer in English and after a copy).
+    static func size(_ phase: ArisDictationPillPhase, english: Bool = false, again: Bool = false) -> CGSize {
         switch phase {
         case .hidden, .idle: idleSize
         case .hover: hoverSize
         case .recording(let handsFree): handsFree ? handsFreeSize : holdSize
         case .transcribing: transcribingSize
         case .error(let line): CGSize(width: errorWidth(line), height: errorHeight)
-        case .recovered(let text): recoveredSize(text)
+        case .recovered(let text): ArisDictationPillRecoveredLayout.size(text, english: english, again: again)
         }
     }
 
@@ -147,14 +150,6 @@ enum ArisDictationPillRules {
         (min(errorMaxWidth, max(errorMinWidth, errorTextWidth(text) + errorPadding))).rounded(.up)
     }
 
-    /// Shorter than 42 / 90 characters (UTF-16, as measured) or longer.
-    static func recoveredSize(_ text: String) -> CGSize {
-        let length = text.utf16.count
-        if length < 42 { return CGSize(width: 282, height: 92) }
-        if length < 90 { return CGSize(width: 326, height: 110) }
-        return CGSize(width: 364, height: 130)
-    }
-
     /// Solid 1 px white .18 with an error; the gradient ring otherwise.
     static func gradientBorder(_ phase: ArisDictationPillPhase) -> Bool {
         if case .error = phase { return false }
@@ -162,6 +157,7 @@ enum ArisDictationPillRules {
     }
 
     // MARK: - Where it sits (AppKit coordinates)
+
 
     /// The bottom the pill stands on: the Dock's top when it shows at the bottom (the visible frame's bottom), else the
     /// screen's own bottom (a hidden Dock, a Dock at the side).
@@ -214,3 +210,4 @@ enum ArisDictationPillRules {
         pillOn && (dictating || (endedDictation && idle))
     }
 }
+

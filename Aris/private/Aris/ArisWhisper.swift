@@ -125,6 +125,23 @@ actor ArisWhisper {
         return ArisLongTurn.joined(pieces)
     }
 
+    /// The wake check's reading of a candidate phrase (ArisWakeDoubt): in `language` (nil: Whisper guesses), starting
+    /// from the name as its prompt, with unsure pieces and silence's subtitle phrases left out ("" is no speech).
+    /// Nil when Whisper isn't ready yet.
+    func checkName(_ samples: [Float], language: String?) async throws -> String? {
+        guard Self.chosen != nil, let kit else {
+            Task { await prepare() }
+            return nil
+        }
+        let prompt = kit.tokenizer.map { tokenizer in
+            tokenizer.encode(text: " " + ArisWakeDoubt.checkPrompt(language: language)).filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+        }
+        let options = DecodingOptions(task: .transcribe, language: language, usePrefillPrompt: true, detectLanguage: language == nil,
+                                      skipSpecialTokens: true, withoutTimestamps: true, promptTokens: prompt)
+        let results = try await kit.transcribe(audioArray: samples, decodeOptions: options)
+        return ArisWakeDoubt.checkedText(results.flatMap(\.segments).map { .init(text: $0.text, avgLogprob: $0.avgLogprob) })
+    }
+
     static var folder: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("Aris/Whisper", isDirectory: true)

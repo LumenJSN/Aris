@@ -31,7 +31,8 @@ enum ArisDispatch {
         let assignee: ArisJobAssignee = nonEmpty(item["assignee"]).flatMap { teammateIds.contains($0) ? .teammate($0) : nil } ?? .clone
         let title = nonEmpty(item["title"]) ?? prompt
         return ArisJobSpec(title: shortened(title), prompt: prompt, assignee: assignee,
-                           cwd: nonEmpty(item["cwd"]), appHint: nonEmpty(item["appHint"]))
+                           cwd: nonEmpty(item["cwd"]), appHint: nonEmpty(item["appHint"]),
+                           brain: nonEmpty(item["brain"]).flatMap(ArisBrain.init(rawValue:)))
     }
 
     private static func nonEmpty(_ value: Any?) -> String? {

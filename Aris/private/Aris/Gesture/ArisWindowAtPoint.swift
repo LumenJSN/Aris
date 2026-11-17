@@ -36,8 +36,8 @@ enum ArisWindowAtPoint {
 
     /// One hit per sample (the frontmost layer-0, visible window containing it, never `ownPid`'s), grouped by window
     /// with sample counts and the centre flag (`ArisGestureGeometry.groupHits`). `windows` is front to back, as
-    /// `CGWindowListCopyWindowInfo` returns it. An owner whose bundle can't be resolved keeps a nil id: the session
-    /// refuses it (fail closed).
+    /// `CGWindowListCopyWindowInfo` returns it. An owner whose bundle can't be resolved keeps a nil id and is picked
+    /// like any (the owner, 2026-11-16).
     static func match(_ samples: [CGPoint], windows: [[String: Any]], ownPid: Int32,
                       bundle: (Int32) -> String?) -> [ArisWindowHit] {
         var candidates: [ArisWindowHit] = []

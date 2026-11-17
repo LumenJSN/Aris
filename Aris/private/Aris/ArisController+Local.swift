@@ -17,7 +17,8 @@ private let log = Logger(subsystem: "com.lumenjsn.aris", category: "turn")
 extension ArisJobSpec {
     /// The same job with `request` as what it is asked: the user's words and the files they gave with them.
     func asking(_ request: String) -> ArisJobSpec {
-        ArisJobSpec(title: title, prompt: request.trimmingCharacters(in: .whitespacesAndNewlines), assignee: assignee, cwd: cwd, appHint: appHint)
+        ArisJobSpec(title: title, prompt: request.trimmingCharacters(in: .whitespacesAndNewlines), assignee: assignee, cwd: cwd, appHint: appHint,
+                    brain: brain)
     }
 }
 

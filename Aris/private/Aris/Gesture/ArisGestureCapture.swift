@@ -11,7 +11,7 @@
 //  - at finalize, per drawn display, the drawing reference (budget 1280/800, ink at 0.55, JPEG 0.80); the result is
 //    parked for the turn ≤ 30 s, then dropped.
 //  - a shot still being made when the key is let go isn't lost (audit imp-1): the result waits for it (at most 0.9 s).
-//  Frames come from `ArisScreenCapture` (its filter keeps Aris's own windows and the private apps out of every frame,
+//  Frames come from `ArisScreenCapture` (its filter keeps Aris's own windows out of every frame,
 //  and it gives nothing under secure input). Nothing is written to disk; frames are released at finalize or abort.
 //
 

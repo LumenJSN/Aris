@@ -81,20 +81,18 @@ extension ArisController {
     }
 
     func runTeammate(_ job: ArisJob, _ run: ArisJobRun) async {
-        var cwd = job.cwd ?? "", turn = run.plan.turn
+        var cwd = job.cwd ?? ""
+        let turn = run.plan.turn
         if ArisTeammateFolder.isMissing(job.cwd) {
-            // No folder was named (audit imp-2): the most recent Claude Code session's is proposed. Aris chose it, so the
-            // launch isn't sent as vouched by the user's turn: the agent's card asks, with the folder on it.
+            // No folder was named (audit imp-2): the most recent Claude Code session's is proposed, else the home folder.
+            // Claude Code runs in auto mode (the owner, 2026-11-14: "클코는 automode 로 항상 돌려"), so the user's own turn vouches for
+            // it there as for a folder he named: no launch card (the agent still checks the folder, and asks for one
+            // outside home, an untrusted turn's job, outbound steps or an untested claude).
             let korean = ArisSpeech.language(of: job.title) == "ko-KR"
             let sessions = ClaudeStore.shared.sessions.values.map { ArisTeammateFolder.Session(cwd: $0.cwd, lastEvent: $0.lastEvent, agent: $0.agent) }
-            guard let proposed = ArisTeammateFolder.proposed(sessions, home: UserHome.path) else {
-                let said = ArisTeammateFolder.noFolder(korean: korean)
-                await reportFailure(job, said, said: said)
-                return
-            }
+            let proposed = ArisTeammateFolder.proposed(sessions, home: UserHome.path)
             log.notice("teammate job: no folder named, proposing the most recent session's")
             cwd = proposed
-            turn = nil
             setState(job.id, .running(step: ArisTeammateFolder.proposingStep(proposed, home: UserHome.path, korean: korean)))
         }
         let source = ArisAgentClient.teammate(job: job.id, teammate: ArisTeammate.claudeCodeId, prompt: job.prompt, cwd: cwd,
@@ -114,6 +112,7 @@ extension ArisController {
         defer {
             pump.cancel()
             teammateWatch.forget(job: job.id)
+            teammateGoalStops.forget(job: job.id)
         }
         for await reply in replies {
             guard !Task.isCancelled else { return }
@@ -218,6 +217,8 @@ extension ArisController {
         guard teammateWaits[id] != nil, case .window(let pid, let number)? = jobs.first(where: { $0.id == id })?.target,
               ArisWindowLocator.presence(pid: pid, windowNumber: number) == .closed else { return }
         log.notice("teammate job: its window closed")
+        // Closed while quiet after a Stop: that Stop was its end.
+        if let message = teammateGoalStops.due(job: id, now: .distantFuture) { return resumeTeammate(id, .finished(message)) }
         resumeTeammate(id, .closed(asked: teammateWatch.asked(job: id)))
     }
 
@@ -235,6 +236,8 @@ extension ArisController {
     }
 
     private func heardClaude(_ event: ClaudeHookEvent, at now: Date) {
+        // A session Aris typed a prompt into (ArisSessionSend, at the user's yes) stopped: said once, with its last words.
+        if let done = ClaudeSessionWatch.shared.heard(event, at: now) { sessionFinished(folder: done.folder, message: done.message) }
         // The terminal the user runs Claude Code in themselves is remembered for the next teammate (never a teammate's own
         // session: that window was Aris's choice, and would only confirm itself).
         if let used = ArisTerminalMemory.used(event: event.name, agent: event.agent, terminal: event.terminal,
@@ -242,12 +245,27 @@ extension ArisController {
            Defaults[.arisClaudeTerminal] != used.rawValue {
             Defaults[.arisClaudeTerminal] = used.rawValue
         }
+        // A job whose session stopped: under `/goal` the session may go on, so its end waits for a quiet spell.
+        switch teammateGoalStops.heard(event.name, session: event.sessionId, message: event.lastMessage, at: now) {
+        case .wentOn(let id):
+            if event.name == "Stop" { checkGoalStop(id) } else if let job = jobs.first(where: { $0.id == id }), case .running = job.state,
+                                                                    job.state != .running(step: "Claude Code 작업 중") {
+                setState(id, .running(step: "Claude Code 작업 중"))
+            }
+            return
+        case .closed(let id, let message):
+            return resumeTeammate(id, .finished(message))
+        case .none:
+            break
+        }
         let asking = Set(teammateWaits.keys.filter { teammateWatch.asked(job: $0) })
         let question = event.name == "Stop" ? ArisTeammateCompletion.question(in: event.lastMessageEnd) : nil
         let outcome = teammateWatch.observe(event.name, session: event.sessionId, cwd: event.cwd, agent: event.agent, source: event.source,
                                             asks: question != nil, at: now)
         switch outcome {
-        case .finished(let id)?: resumeTeammate(id, .finished(event.lastMessage))
+        case .finished(let id)?:
+            teammateGoalStops.stopped(job: id, session: event.sessionId, message: event.lastMessage, at: now)
+            checkGoalStop(id)
         case .closed(let id)?: resumeTeammate(id, .closed(asked: asking.contains(id)))
         case .asked(let id)?: teammateAsked(id, question)
         case nil:
@@ -257,6 +275,28 @@ extension ArisController {
                 let korean = ArisSpeech.language(of: job.title) == "ko-KR"
                 if job.state == .running(step: ArisTeammateSilence.nudgeStep(korean: korean)) { setState(job.id, .running(step: "Claude Code 작업 중")) }
             }
+        }
+    }
+
+    /// The prompt Aris sent into the user's own session is done: a card under the notch and the line said, like a teammate's end.
+    private func sessionFinished(folder: String, message: String?) {
+        let korean = !ArisUIWords.english
+        let said = ClaudeSessionWatch.finishedLine(folder: folder, message: message, korean: korean)
+        log.notice("a session Aris sent a prompt to finished")
+        Task { [weak self] in
+            await self?.notify(ArisNoticeRoute.announcement(title: korean ? "\(folder) 세션" : "\(folder) session", text: said, kind: .done),
+                               saying: said, parking: said)
+        }
+    }
+
+    /// The job finishes once its session has been quiet since its last Stop for ArisTeammateGoalStop.quiet (a later
+    /// event puts it off; a stale check finds nothing due).
+    private func checkGoalStop(_ id: UUID) {
+        guard let dueAt = teammateGoalStops.dueAt(job: id) else { return }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, dueAt.timeIntervalSinceNow) + 0.5))
+            guard let self, self.teammateWaits[id] != nil, let message = self.teammateGoalStops.due(job: id, now: Date()) else { return }
+            self.resumeTeammate(id, .finished(message))
         }
     }
 

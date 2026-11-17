@@ -559,7 +559,8 @@ private func runAPICatalogTests() {
     let sealedNames = ArisAPICatalog.names(sealed: true)
     let sealedSamples = [["timer", "25"], ["timer", "25", "--focus"], ["music", "play"], ["volume", "up"], ["app", "Figma"],
                          ["desktop", "see", "--app", "TextEdit"], ["desktop", "type", "@s1abc:e2", "--stdin"], ["desktop", "menu", "click", "--app", "TextEdit", "--path", "File › Save"],
-                         ["desktop", "dialog", "file", "--app", "TextEdit", "--path", "/tmp/out", "--name", "copy"], ["aside", "쿠팡에서 이어폰 찾아줘"]]
+                         ["desktop", "dialog", "file", "--app", "TextEdit", "--path", "/tmp/out", "--name", "copy"], ["aside", "쿠팡에서 이어폰 찾아줘"],
+                         ["session", "send", "aris-site", "/unslop humanize it"], ["session", "list"], ["devin", "sessions"]]
     // Computer use too (the owner: no feature locked out by the brain): its gate is the desktop engine's, and every action there
     // shows the user a card on a sealed turn.
     let desktopNames: Set<String> = ["desktop_see", "desktop_click", "desktop_type", "desktop_set_value", "desktop_press", "desktop_menu", "desktop_scroll",
@@ -567,7 +568,9 @@ private func runAPICatalogTests() {
                                      // HANDOVERS C: the desktop calls the API brain had no function for.
                                      "desktop_app", "desktop_drag", "desktop_click_at", "desktop_dialog_click", "desktop_dialog_input"]
     // file_read (audit gate-1 / F1): a document's text is a read like the user's app reads, judged first on a sealed turn.
-    check(sealedNames == Set(["aris", "timer", "music", "volume", "open_app", "aside_task", "file_read"]).union(desktopNames) && sealedSamples.allSatisfy { ArisSealedTools.allows($0) }
+    check(sealedNames == Set(["aris", "timer", "music", "volume", "open_app", "aside_task", "file_read",
+                         // session-send: a prompt into a Claude Code session (the user's card every time), the list, and Devin's records read.
+                         "claude_session_send", "claude_sessions", "devin_sessions"]).union(desktopNames) && sealedSamples.allSatisfy { ArisSealedTools.allows($0) }
           && !sealedNames.contains("send_message") && !sealedNames.contains("save_note") && !sealedNames.contains("remember")
           && !sealedNames.contains("file_rename") && !sealedNames.contains("file_move") && !sealedNames.contains("folder_new"),
           "api catalog: the sealed subset's typed functions make only sealed-list argv; nothing that sends or writes is offered (desktop asks on its card)")

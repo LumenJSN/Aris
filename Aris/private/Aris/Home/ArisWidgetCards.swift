@@ -26,9 +26,9 @@ enum ArisWidgetStyle {
     static let warn = Color(red: 240 / 255, green: 185 / 255, blue: 90 / 255).opacity(0.95)
     static let dotFill = Color(red: 42 / 255, green: 43 / 255, blue: 47 / 255)
     /// The generic card: radius 26, padding 16 / 18.
-    static var radius: CGFloat { ArisSiriLookNow.on ? CGFloat(ArisSiriLook.Card.radius) : 26 }
-    /// The weather card's corners: 28, Siri's 32 in the siri look.
-    static var weatherRadius: CGFloat { ArisSiriLookNow.on ? CGFloat(ArisSiriLook.Card.radius) : 28 }
+    static var radius: CGFloat { ArisDuskLookNow.on ? CGFloat(ArisDuskLook.Card.radius) : 26 }
+    /// The weather card's corners: 28, the system assistant's 32 in the dusk look.
+    static var weatherRadius: CGFloat { ArisDuskLookNow.on ? CGFloat(ArisDuskLook.Card.radius) : 28 }
     static let padding = EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18)
     /// The card present: opacity + scale .965 from the top on the opening clock (280 ms, 0.2 0.8 0.2 1).
     static let present = Animation.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.28)

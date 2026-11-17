@@ -224,9 +224,10 @@ private func editReviseTests() {
     check(revise("내일로 바꿔", message) == nil, "revise: a message has no time to move")
     check(revise("응, 보내", message) == nil && revise("날씨 어때", message) == nil && revise("", message) == nil,
           "revise: a yes or another question isn't a change")
-    // Security review I2 stands: only a short yes form is a yes ("응"), never "보내"; the card's change never is.
-    check(ArisConfirmReply.parse("응") == true && ArisConfirmReply.parse("응, 보내") == nil && ArisConfirmReply.parse("내일로 바꿔") == nil,
-          "revise: 응 is the yes, 응 보내 and a change are not")
+    // Security review I2 stands for longer words; "보내" is a short yes since 2026-11-15 (the user); the card's change never is.
+    check(ArisConfirmReply.parse("응") == true && ArisConfirmReply.parse("응, 보내") == true && ArisConfirmReply.parse("내일로 바꿔") == nil
+          && ArisConfirmReply.parse("아빠한테 보내") == nil,
+          "revise: 응 and 응 보내 are the yes, a change is not")
     check(ArisCardTime.friendly("2026-11-05 18:00", now: now, calendar: calendar) == "오늘 오후 6:00"
           && ArisCardTime.friendly("2026-11-06 09:30", now: now, calendar: calendar) == "내일 오전 9:30"
           && ArisCardTime.friendly("2026-11-20 12:00", now: now, calendar: calendar) == "11월 20일 오후 12:00"

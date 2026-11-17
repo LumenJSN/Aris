@@ -11,8 +11,10 @@
 //  (read for the card) or a paste would put in (the clipboard's, read for the card and held to it), and never takes a
 //  multi-key send or a line break. Calendar and Reminders show the card every time, and never delete, cut or send
 //  through their windows (that is the event and reminder tools' work). A file panel always shows the card, with the
-//  document and the place. Never: password stores, Keychain, terminals and code runners, sign-in prompts, the
-//  installer, Aris and Peekaboo (ArisRiskPolicy.computerUseIsNever), System Settings' permission, account and profile
+//  document and the place. Terminals, code editors, code runners and AI apps are ordinary apps, but typing and Return
+//  there always show the card with the exact text. Password managers, Keychain Access and System Information are
+//  ordinary apps (the owner, 2026-11-16). Never: sign-in prompts, the installer, Aris and Peekaboo
+//  (ArisRiskPolicy.computerUseIsNever), System Settings' permission, account and profile
 //  panes (the rest of it is an ordinary app), a password field, typing or screen reads while secure input is on, the
 //  Apple menu, Recent Items, Services, an app's own Quit item (`desktop app quit` asks instead), logging out, and a
 //  file panel aimed at a protected place; browsers go to Aside. Pure.
@@ -80,7 +82,9 @@ enum ArisDesktopDecision: Equatable {
 }
 
 enum ArisDesktopGate {
-    static let neverRefusal = "Refused: Aris never works in this app (password stores, Keychain, terminals, code runners, system settings and sign-in prompts, Aris itself). Don't try it another way."
+    static let neverRefusal = "Refused: Aris never works in this app (the installer, sign-in and permission prompts, Aris itself). Don't try it another way."
+    static let codeRunnerPasteRefusal = "Refused: the user's card couldn't show what this paste would put into a terminal or code runner (the clipboard holds no plain text, or too much). " +
+        "Type the exact text with `desktop type` instead: its card shows it."
     static let secureRefusal = "Refused: a password field (secure input) is active, and Aris never types, clicks or reads the screen then. Ask the user to do it themselves."
     static let secureFieldRefusal = "Refused: that is a password field, and Aris never types into one. Ask the user to type it themselves."
     static let hiddenRefusal = "Refused: the text carries hidden or direction-changing characters."
@@ -163,6 +167,16 @@ enum ArisDesktopGate {
                 }
                 if request.verb == .press, request.keys.count > 1, request.keys.contains(where: isSendChord) { return .refuse(multiSendRefusal) }
             }
+            // Terminals, code editors, code runners and AI apps (the owner, 2026-11-16): ordinary apps, but text typed into a
+            // terminal (or an editor's terminal) and Return or Enter pressed there always go to his card with the exact
+            // text, never remembered; a paste only when the card can show the clipboard's text.
+            if target.codeRunner, codeRunnerTyping(request, target: target, element: element) {
+                if pastes(request) {
+                    guard let clipboard = context.clipboard, !clipboard.isEmpty, clipboard.count <= maxPaste else { return .refuse(codeRunnerPasteRefusal) }
+                    if ArisMCPPolicy.hidesCharacters(clipboard) { return .refuse(hiddenRefusal) }
+                }
+                return .ask(remember: false)
+            }
             // A screenshot and a guessed spot, or a file panel brought forward: always the user, never remembered.
             if request.verb == .clickAt || request.verb == .dialogFile { return .ask(remember: false) }
             // Mail, chat and calls: every action asks, with what it types or may send.
@@ -182,6 +196,43 @@ enum ArisDesktopGate {
                let text = request.text, ArisRiskPolicy.typesUsersWords(text, request: context.request) { return .run }
             if remembered, !context.handsFree { return .run }
             return .ask(remember: target.memoryKey != nil && context.taintForApp == .none && !context.handsFree)
+        }
+    }
+
+    // MARK: - Terminals and code runners
+
+    /// Words a terminal's own field carries (VS Code's and its forks' terminal, iTerm2's and Terminal's shell area).
+    private static let terminalWords = ["terminal", "터미널", "shell", "xterm", "console", "콘솔"]
+
+    /// Whether a field is a terminal's command line by what it says of itself.
+    static func looksLikeTerminal(_ element: ArisDesktopElement) -> Bool {
+        let said = ArisRiskPolicy.folded([element.label, element.roleDescription ?? "", element.identifier ?? ""].joined(separator: " "))
+        return terminalWords.contains(where: said.contains)
+    }
+
+    /// Whether the call types text, presses Return or Enter, pastes or types a character in a terminal or code runner
+    /// where it would reach a command line: anywhere in a terminal app; in an editor or AI app, a field that is a
+    /// terminal or one Aris can't tell (no field named), and every Return, Enter, paste or character key. Pure.
+    static func codeRunnerTyping(_ request: ArisDesktopRequest, target: ArisDesktopTarget, element: ArisDesktopElement?) -> Bool {
+        switch request.verb {
+        case .type, .setValue, .dialogInput:
+            if target.terminal { return true }
+            guard let element else { return true }
+            return looksLikeTerminal(element) || !element.isTextEntry
+        case .press:
+            return request.keys.contains { chord in
+                let parts = chord.lowercased().split(separator: "+").map(String.init)
+                let key = parts.last ?? ""
+                let modifiers = Set(parts.dropLast())
+                if ["return", "enter", "kp_enter", "keypadenter"].contains(key) { return true }
+                if pastes(ArisDesktopRequest(verb: .press, keys: [chord])) { return true }
+                // A character with no command, control or option: typed into the line.
+                return key.count == 1 && modifiers.isSubset(of: ["shift"]) || key == "space" && modifiers.isEmpty
+            }
+        case .menuClick:
+            return pastes(request)
+        default:
+            return false
         }
     }
 

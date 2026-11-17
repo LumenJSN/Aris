@@ -14,7 +14,7 @@ enum ArisConfirmReply {
     /// The whole utterance must be a short yes (security review I2): one or two of these, a polite 요, nothing else, so
     /// a sentence that merely starts with "네" or has "ok" in it is no answer. A lone "어" or "음" is someone thinking,
     /// not agreeing: it only leads into a yes ("어 그래").
-    private static let yesWord = #"(네|응|예|그래|좋아|해\s*줘|오케이|yes|yeah|ok|okay|sure)(요)?"#
+    private static let yesWord = #"(네|응|예|그래|좋아|해\s*줘|보내(\s*줘)?|오케이|yes|yeah|ok|okay|sure)(요)?"#
     private static let yes = "(?i)^\\s*((어|음)[\\s,.…]+)?" + yesWord + "([\\s,.!~]+" + yesWord + ")?[\\s,.!~]*$"
 
     static func parse(_ text: String) -> Bool? {
@@ -23,9 +23,9 @@ enum ArisConfirmReply {
         return nil
     }
 
-    /// Whether a spoken yes may count (security review C1, N3): not in a conversation (the microphone hears more than
-    /// The user), and never for a card from a hands-free turn or its job, whatever the session; then only a click or Y.
-    static func voiceYes(inConversation: Bool, handsFree: Bool) -> Bool { !inConversation && !handsFree }
+    /// Whether a spoken yes may count. Always, since 2026-11-15 (the owner: cards answered by voice, "응", "보내", "아니"): the
+    /// conversation rule and the hands-free one (security review C1, N3) are gone; the card, its hold and the gate stay.
+    static func voiceYes(inConversation: Bool, handsFree: Bool) -> Bool { true }
 
     /// What a spoken answer counts as: a no always; a yes only when `voiceYes`.
     static func spoken(_ text: String, voiceYes: Bool) -> Bool? {

@@ -52,7 +52,7 @@ extension ArisCodexDriver {
         // A path is never resolved, but its file's name still counts for what's never allowed.
         let pathName = named.map { ($0 as NSString).lastPathComponent }.map { $0.hasSuffix(".app") ? String($0.dropLast(4)) : $0 }
         let names: [String?] = [name, shown, named, namedBundle, pathName]
-        let never = ArisRiskPolicy.computerUseIsNever(names)
+        let never = ArisRiskPolicy.computerUseIsNeverForOthers(names)
         let browser = names.compactMap { $0 }.contains { ArisRiskPolicy.isBrowser(name: $0, bundle: $0, webHandlers: ArisAppIdentity.webHandlers) }
         let label = shown.map { $0.lowercased() == name.lowercased() ? "" : " · 표시: \($0)" } ?? ""
         let purpose = asked.isEmpty ? "" : "\(name)에서: \(asked.prefix(80))\n"
@@ -64,7 +64,7 @@ extension ArisCodexDriver {
     static func target(_ name: String) -> ArisJSTarget {
         let bundle = ArisAppIdentity.bundle(for: name)
         let names: [String?] = [name, bundle]
-        let offLimits = ArisRiskPolicy.computerUseIsNever(names)
+        let offLimits = ArisRiskPolicy.computerUseIsNeverForOthers(names)
             || names.compactMap { $0 }.contains { ArisRiskPolicy.isBrowser(name: $0, bundle: $0, webHandlers: ArisAppIdentity.webHandlers) }
         return ArisJSTarget(name: name, bundle: bundle, offLimits: offLimits, sending: ArisRiskPolicy.isSendingApp(bundle: bundle, name: name))
     }

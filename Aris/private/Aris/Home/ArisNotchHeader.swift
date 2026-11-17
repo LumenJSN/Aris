@@ -17,11 +17,9 @@ struct ArisNotchHeader: View {
     @ObservedObject private var coordinator = ArisNotchNavigation.shared
     @ObservedObject private var aris = ArisController.shared
     @ObservedObject private var claude = ClaudeStore.shared
-    /// Re-draws this view when the hidden look changes (ArisSiriLookGate).
-    @ObservedObject private var siriLook = ArisSiriLookGate.shared
+    /// Re-draws this view when the hidden look changes (ArisDuskLookGate).
+    @ObservedObject private var duskLook = ArisDuskLookGate.shared
 
-    /// Claude's done notice is up (on the Claude page, but on the 416 answer page, not the 540 sessions list).
-    var showingNotice = false
     /// The voice switch drawn as if the pointer were on the mark (the off-screen render only).
     var previewSwitch = false
 
@@ -41,8 +39,8 @@ struct ArisNotchHeader: View {
         ArisBandFace(bodyWidth: width + 2 * ArisGlass.inset, height: Self.height) {
             Button { withAnimation(ArisGlass.resize) { coordinator.currentView = .home } } label: {
                 ArisLiveVoiceGlyph(mode: aris.session.phase.glyphMode)
-                    // The siri look: Siri's ring of dots in the working mark's place, in this same seat and box.
-                    .modifier(ArisSiriLookWorkingMark(phase: aris.session.phase))
+                    // The dusk look: the system assistant's ring of dots in the working mark's place, in this same seat and box.
+                    .modifier(ArisDuskLookWorkingMark(phase: aris.session.phase))
                     .background { ArisMarkHalo(halo: halo) }
                     .frame(width: ArisVNotch.orbBox, height: ArisVNotch.orbBox)
                     .contentShape(Circle())
@@ -63,8 +61,8 @@ struct ArisNotchHeader: View {
                         if answerUp {
                             ArisCloseAnswerButton(action: close)
                                 .padding(.trailing, working ? Self.closeBesideStop : 0)
-                                // The siri look's round buttons are wider than the 23-point slot: the ✕ clears the stop.
-                                .padding(.trailing, working && ArisSiriLookNow.on ? ArisSiriLookBand.closeBesideStop(band: Self.height) - Self.closeBesideStop : 0)
+                                // The dusk look's round buttons are wider than the 23-point slot: the ✕ clears the stop.
+                                .padding(.trailing, working && ArisDuskLookNow.on ? ArisDuskLookBand.closeBesideStop(band: Self.height) - Self.closeBesideStop : 0)
                                 .transition(.opacity)
                         }
                         if handsFreeListening {
@@ -102,7 +100,7 @@ struct ArisNotchHeader: View {
     }
 
     private var showsStar: Bool {
-        ArisNotchHeaderLayout.showsStar(claudePage: coordinator.currentView == .claude, showingNotice: showingNotice)
+        ArisNotchHeaderLayout.showsStar(claudePage: coordinator.currentView == .claude)
     }
 
     /// Close: the answer goes, a voice still reading it stops (a
@@ -113,7 +111,7 @@ struct ArisNotchHeader: View {
     }
 
     private var width: CGFloat {
-        ArisNotchHeaderLayout.usesSessionsWidth(claudePage: coordinator.currentView == .claude, showingNotice: showingNotice)
+        ArisNotchHeaderLayout.usesSessionsWidth(claudePage: coordinator.currentView == .claude)
             ? ArisGlass.claudeWidth : ArisGlass.contentWidth
     }
     /// Shelf, Claude and settings in the room right of the camera housing, on the band's grid: the last slot ends
@@ -173,9 +171,9 @@ struct ArisStopButton: View {
     static let tipMotion = ArisHoverTip.motion
 
     var body: some View {
-        if ArisSiriLookNow.on {
-            // The siri look: Siri's round glass button, Aris's stop square in it.
-            ArisSiriLookRoundButton(size: ArisSiriLookBand.size(band: ArisNotchHeader.height), help: ArisUIWords.text("그만 (esc)", "Stop (esc)"), action: action) {
+        if ArisDuskLookNow.on {
+            // The dusk look: the system assistant's round glass button, Aris's stop square in it.
+            ArisDuskLookRoundButton(size: ArisDuskLookBand.size(band: ArisNotchHeader.height), help: ArisUIWords.text("그만 (esc)", "Stop (esc)"), action: action) {
                 RoundedRectangle(cornerRadius: 1.8, style: .continuous).frame(width: 9, height: 9)
             }
         } else {
@@ -223,9 +221,9 @@ struct ArisCloseAnswerButton: View {
     @State private var hovering = false
 
     var body: some View {
-        if ArisSiriLookNow.on {
-            // The siri look: Siri's round glass ✕ where Aris has the word.
-            ArisSiriLookRoundButton(symbol: "xmark", size: ArisSiriLookBand.size(band: ArisNotchHeader.height), action: action)
+        if ArisDuskLookNow.on {
+            // The dusk look: the system assistant's round glass ✕ where Aris has the word.
+            ArisDuskLookRoundButton(symbol: "xmark", size: ArisDuskLookBand.size(band: ArisNotchHeader.height), action: action)
                 .help(ArisUIWords.text("답 닫고 노치 접기 · 왼쪽 기록에서 다시 볼 수 있어요", "Close the answer and fold the notch · it stays in History on the left"))
         } else {
             plain

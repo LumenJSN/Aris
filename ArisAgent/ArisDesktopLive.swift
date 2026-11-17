@@ -16,10 +16,6 @@ import Carbon
 import Foundation
 import Vision
 
-/// The window server's id of an Accessibility window (HIServices; no public equivalent).
-@_silgen_name("_AXUIElementGetWindow")
-func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePointer<CGWindowID>) -> AXError
-
 struct ArisDesktopLiveApps: ArisDesktopApps {
     /// The app that has the keyboard now (ArisFrontLive): NSWorkspace's answer goes stale in this process (second
     /// upgrade run, bug 1), and "keys may go" must be true at the moment of the key.
@@ -181,7 +177,8 @@ struct ArisDesktopLiveApps: ArisDesktopApps {
         let browser = names.contains { ArisRiskPolicy.isBrowser(name: $0, bundle: bundle, webHandlers: ArisAppIdentity.webHandlers) }
         let sending = names.contains { ArisRiskPolicy.isSendingApp(bundle: bundle, name: $0) }
         return ArisDesktopTarget(name: name, bundle: bundle, pid: pid, known: known, never: ArisRiskPolicy.computerUseIsNever(names),
-                                 browser: browser, sending: sending, settings: ArisRiskPolicy.isSystemSettings(names + [bundle]), appleSigned: appleSigned)
+                                 browser: browser, sending: sending, settings: ArisRiskPolicy.isSystemSettings(names + [bundle]), appleSigned: appleSigned,
+                                 codeRunner: ArisRiskPolicy.isCodeRunner(names), terminal: ArisRiskPolicy.isTerminalApp(names))
     }
 
     func isRunning(_ target: ArisDesktopTarget) -> Bool {
@@ -374,5 +371,6 @@ extension ArisDesktopEngine {
                                           windows: ArisDesktopLiveWindows(), pointer: ArisDesktopLivePointer(),
                                           vision: ArisDesktopLiveVision(environment: ArisAgentRunner.environment()), reader: ArisDesktopLiveText(),
                                           identity: ArisDesktopLiveIdentity.current, tools: ArisAgentRunner.toolsPath,
-                                          computerEngine: { ArisComputerEngineChoice.current }, lock: .shared, pausePolicy: .live)
+                                          computerEngine: { ArisComputerEngineChoice.current }, lock: .shared, pausePolicy: .live,
+                                          native: .shared)
 }

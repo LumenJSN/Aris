@@ -115,26 +115,32 @@ private func windowPickHitTests() {
 private func windowPickPrivacyTests() {
     var s = ArisWindowPickState()
     s.arm()
+    // The user 2026-11-16: a password app's window (and its helper's) is picked like any app's.
     let passwords = pickHit(70, bundle: "com.apple.Passwords", app: "Passwords")
-    check(s.toggle(passwords, otherShots: 0, voicedMs: 0, at: 0, display: 1) == .refused(passwords) && s.ids.isEmpty,
-          "pick privacy: a password app's window is refused (the red refusal), never picked")
+    var addedPasswords = false
+    if case .added = s.toggle(passwords, otherShots: 0, voicedMs: 0, at: 0, display: 1) { addedPasswords = true }
+    check(addedPasswords && s.ids == [70], "pick privacy: a password app's window is picked like any app's")
     let helper = pickHit(80, bundle: "com.1password.1password.helper")
-    check(s.toggle(helper, otherShots: 0, voicedMs: 0, at: 0, display: 1) == .refused(helper),
-          "pick privacy: a helper inside a private app is refused too")
+    var addedHelper = false
+    if case .added = s.toggle(helper, otherShots: 0, voicedMs: 0, at: 0, display: 1) { addedHelper = true }
+    check(addedHelper && s.ids == [70, 80], "pick privacy: a helper inside a password app is picked too")
     let unknown = pickHit(90, bundle: nil)
-    check(s.toggle(unknown, otherShots: 0, voicedMs: 0, at: 0, display: 1) == .refused(unknown) && s.ids.isEmpty,
-          "pick privacy: a window whose owner can't be resolved is refused (fail closed)")
+    var addedUnknown = false
+    if case .added = s.toggle(unknown, otherShots: 0, voicedMs: 0, at: 0, display: 1) { addedUnknown = true }
+    check(addedUnknown && s.ids == [70, 80, 90], "pick privacy: a window whose owner can't be resolved is picked like any (the user 2026-11-16)")
     var full = ArisWindowPickState()
     full.arm()
     for id in 1...8 { _ = full.toggle(pickHit(UInt32(id)), otherShots: 0, voicedMs: 0, at: 0, display: 1) }
-    check(full.toggle(passwords, otherShots: 0, voicedMs: 0, at: 0, display: 1) == .refused(passwords),
-          "pick privacy: at the cap a private window still gets the privacy refusal, not 8/8")
+    check(full.toggle(unknown, otherShots: 0, voicedMs: 0, at: 0, display: 1) == .full(unknown)
+          && full.toggle(passwords, otherShots: 0, voicedMs: 0, at: 0, display: 1) == .full(passwords),
+          "pick privacy: at the cap an unknown owner's and a password app's window get the 8/8 like any")
     check(ArisWindowPick.mayCapture(bundleId: "com.apple.Safari", pid: 5, ownPid: 1, ownBundleId: "com.lumenjsn.aris")
-          && !ArisWindowPick.mayCapture(bundleId: "com.apple.Passwords", pid: 5, ownPid: 1, ownBundleId: "com.lumenjsn.aris")
-          && !ArisWindowPick.mayCapture(bundleId: nil, pid: 5, ownPid: 1, ownBundleId: "com.lumenjsn.aris")
+          && ArisWindowPick.mayCapture(bundleId: "com.apple.Passwords", pid: 5, ownPid: 1, ownBundleId: "com.lumenjsn.aris")
+          && ArisWindowPick.mayCapture(bundleId: "com.apple.keychainaccess", pid: 5, ownPid: 1, ownBundleId: "com.lumenjsn.aris")
+          && ArisWindowPick.mayCapture(bundleId: nil, pid: 5, ownPid: 1, ownBundleId: "com.lumenjsn.aris")
           && !ArisWindowPick.mayCapture(bundleId: "com.lumenjsn.aris", pid: 9, ownPid: 1, ownBundleId: "com.lumenjsn.aris")
           && !ArisWindowPick.mayCapture(bundleId: "com.apple.Safari", pid: 1, ownPid: 1, ownBundleId: "com.lumenjsn.aris"),
-          "pick privacy: at capture the window's owner is checked again: never a private app, an unknown owner or Aris")
+          "pick privacy: at capture the window's owner is checked again: never Aris (an unknown owner's and a password app's are captured)")
     check(!ArisWindowPick.listens(setting: true, permission: true, secureInput: true)
           && !ArisWindowPick.listens(setting: true, permission: false, secureInput: false)
           && !ArisWindowPick.listens(setting: false, permission: true, secureInput: false)

@@ -88,15 +88,28 @@ private final class HooksClient {
 private func hooksNow() -> Double { Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000 }
 
 private func hooksFreePort() -> UInt16 {
-    let fd = socket(AF_INET, SOCK_STREAM, 0)
-    defer { close(fd) }
-    var address = sockaddr_in()
-    address.sin_family = sa_family_t(AF_INET)
-    address.sin_addr.s_addr = inet_addr("127.0.0.1")
-    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-    _ = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, length) } }
-    _ = withUnsafeMutablePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) } }
-    return UInt16(bigEndian: address.sin_port)
+    loopbackFreePort()
+}
+
+/// A loopback port no other process holds, for a test server. Picked outside the system's ephemeral range
+/// (49152–65535): a port the kernel hands out to a probe and takes back is often given straight to another process's
+/// outgoing connection before the server binds it (2026-11-15: 4 in 400 here with many apps connecting, so the hook
+/// server tests failed "Address already in use"). Aris's own ports (23350–23352) are outside the range.
+func loopbackFreePort() -> UInt16 {
+    func binds(_ port: UInt16) -> Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        address.sin_port = port.bigEndian
+        return withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } } == 0
+    }
+    for _ in 0..<200 {
+        let port = UInt16.random(in: 30_000...39_999)
+        if binds(port) { return port }
+    }
+    return 39_999
 }
 
 private func hooksEvent(_ name: String, session: String = "s1", tool: String? = "Bash", input: [String: Any] = ["command": "ls"], padding: Int = 0) -> Data {

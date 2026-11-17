@@ -29,6 +29,8 @@ final class ArisController: ObservableObject {
                 // The silence between turns counts from the end of Aris's own speech (QA BUG-49).
                 conversation = conversation.spoke(at: Self.uptime)
             }
+            // A new turn starts not handed off.
+            if oldValue.phase == .idle, session.phase != .idle { handedOff = false }
             if session.phase != oldValue.phase || session.question != oldValue.question { updateVoiceWatch() }
             // The card's click hold follows the card: gone with it, and started for a card put up by any path (ArisCardHold).
             if session.question?.id != oldValue.question?.id { ArisCardStill.shared.follow(session.question?.id) }
@@ -107,10 +109,12 @@ final class ArisController: ObservableObject {
         var done = false
     }
     @Published var training: Training?
+    /// Settings › 호출어 녹음 has the microphone (ArisWakeRecorderModel): the wake word waits closed until it ends.
+    @Published var recordingCalls = false
     @Published var hasWakeModel = ArisController.loadWakeModel() != nil
 
     static var locale: Locale { ArisHearing.locale }
-    static let lingerAfterAnswer: Duration = .seconds(1.5)
+    static let lingerAfterAnswer: Duration = ArisNotch.lingerAfterAnswer
     static let lingerAfterFailure: Duration = .seconds(4)
     static let startTimeout: Duration = .seconds(8)
     static let stopTimeout: Duration = .seconds(5)
@@ -172,10 +176,37 @@ final class ArisController: ObservableObject {
     var scribeIsHearing = false
     /// A conversation's turn warms the brain and starts streaming to Scribe at its first words (ArisController+Conversation).
     var scribeOnWords = false
-    /// This turn was heard hands-free: started by voice in a conversation, no key and no name (ArisHandsFree, agent side).
+    /// This turn was heard hands-free (ArisHandsFree, agent side). Never set since 2026-11-15 (the owner: "what is the point of
+    /// calling it by name if it then says to re-say it with ⌥Space?"): every turn, a conversation's follow-up too, goes
+    /// through the risk gate and its cards as a key press's does, and a card is answered by voice.
     var turnHandsFree = false
     /// This turn was typed in the composer (the user at the keyboard), not heard.
     var turnTyped = false
+    /// The wake word started this turn (ArisWakeDoubt): heard nothing, it closes without a word.
+    var turnByWakeWord = false
+    /// That wake opened the conversation the turn is in (it closes with a turn that came to nothing).
+    var wakeOpenedConversation = false
+    /// Whisper checking a borderline sure wake after it opened (ArisController+FalseWake).
+    var wakeDoubleCheck: Task<Void, Never>?
+    /// The last candidate the wake check took up: its voice-print score and whether it was sure (for the wake log).
+    var wakeCandidate: (score: Float?, sure: Bool) = (nil, false)
+    /// When the wake check last rejected a candidate (uptime, s): a call repeated soon after gets a second chance.
+    var lastWakeRejection: Double?
+    /// A wake-word turn's quiet lap (ArisQuietWake, ArisController+QuietWake): waiting while the closed band's light
+    /// makes its one lap, heard once the user talks (the notch opens), unheard when the lap ended; nil for any other turn.
+    @Published var wakeLap: ArisQuietWake.State? {
+        // A wake-word turn's music is paused only once the wake is kept: its lap heard (ArisWakeStrict).
+        didSet { if ArisWakeStrict.pausesMusic(lap: wakeLap), oldValue != wakeLap, turnByWakeWord { pauseMusic() } }
+    }
+    var quietWake: ArisQuietWake?
+    var quietLapTimer: Task<Void, Never>?
+    /// A borderline wake's evidence while it isn't in (ArisWakeEvidence, ArisController+WakeEvidence): the notch stays
+    /// closed and the request waits; nil for any other turn, and once it was kept.
+    var wakeEvidence: ArisWakeEvidence?
+    /// The judgement of its words under way (ArisWakeAddressed).
+    var wakeJudge: Task<Void, Never>?
+    /// Scribe starts only once that wake is kept (it replays the turn from its start): a song never leaves the Mac.
+    var scribeAfterWakeEvidence = false
     /// This turn went to the AI (askAndSpeak): only such a turn restarts the conversation's silence clock.
     var turnReachedAI = false
     /// This turn's words were understood and answered (any path, local too): it restarts the silence clock (QA BUG-49).
@@ -191,6 +222,13 @@ final class ArisController: ObservableObject {
     @Published var systemAudioMissing = false
     /// Aris's own words that may come back at the start of a barge-in turn on speakers: at most this many (ArisEchoTrim).
     var echoWords = 0
+    /// Arms the between-turn watch once Aris's voice is out of the room (ArisController+Conversation.echoTailOver).
+    var echoTailWatch: Task<Void, Never>?
+    /// Echo turns in a row in this conversation (ArisEchoLoop): two end it.
+    var echoLoop = ArisEchoLoop()
+    /// This turn handed its work to a job (a teammate, Claude Code, a clone, Aside): once its line is said the notch
+    /// closes onto the jobs' pill (ArisNotch.ending). Cleared as the next turn starts.
+    var handedOff = false
     /// The language the last turn was in (Scribe's code), for the answer and the voice.
     var heardLanguage: String?
     /// When the last answer finished: the conversation carries on until 닫기 or this long without a turn.
@@ -213,6 +251,12 @@ final class ArisController: ObservableObject {
     var answerBeforeFollowUp: (heard: String, reply: String)?
     /// The last few turns, so Claude can follow "그거" and "that one".
     var history: [ArisContext.Turn] = []
+    /// A hand-off Aris asked about ("Claude Code한테 무엇을 맡길까요?"): the next words in the conversation are its task.
+    var pendingHandOff: (handOff: ArisBrainHandOff, at: Date)?
+    /// The context's line for the apps this turn's words name (ArisProgramMention); nil for none.
+    var turnPrograms: String?
+    /// This turn's words ask about the Claude Code sessions (ClaudeSessionsContext.asks).
+    var turnAsksSessions = false
     /// Whether this turn's answer is in `history` and the 기록 tab yet (recorded once, before the voice reads it).
     var turnMemory = ArisTurnMemory()
     /// Long work handed to Aris ("조사해서 정리해 놔"), running in the background.
@@ -234,6 +278,8 @@ final class ArisController: ObservableObject {
     var notDoneJobs: [UUID: ArisJobRun] = [:]
     /// Which Claude hook event ends a launched Claude Code teammate's job, and the jobs waiting for it (main actor only).
     var teammateWatch = ArisTeammateCompletion()
+    /// Jobs whose session stopped, until it has stayed quiet long enough for `/goal`'s verdict (ArisTeammateGoalStop).
+    var teammateGoalStops = ArisTeammateGoalStop()
     var teammateWaits: [UUID: CheckedContinuation<ArisTeammateEnd, Never>] = [:]
     /// Delivering what scheduled jobs left in the agent's inbox (ArisController+Inbox), and whether to fetch again after.
     var inboxDelivery: Task<Void, Never>?
@@ -327,7 +373,9 @@ final class ArisController: ObservableObject {
             if session.phase == .listening, listener != nil {
                 gestureKeyDown()
             }
-        case .finish: stopListening()
+        case .finish:
+            vouchForWakeTurn()
+            stopListening()
         case .ignore: break
         }
     }
@@ -394,6 +442,9 @@ final class ArisController: ObservableObject {
         preparedWhisper = nil
         scribeOnWords = false
         turnHandsFree = false
+        turnByWakeWord = false
+        wakeDoubleCheck?.cancel()
+        endQuietLap()
         arisWasSaying = ""
         let listener = ArisListener()
         listener.use = dictation == .listening ? .dictation : .talk
@@ -422,9 +473,12 @@ final class ArisController: ObservableObject {
     func follow(_ listener: ArisListener) {
         listener.onText = { [weak self, weak listener] text in
             guard let self else { return }
-            if text != self.session.heard, !ArisWakeWord.isOnlyTheName(text),
+            // A wake turn's call may be a near spelling ("알리스"): only the call so far is no words yet either.
+            let onlyTheName = self.turnByWakeWord ? ArisWakeWord.isOnlyTheCall(text) : ArisWakeWord.isOnlyTheName(text)
+            if text != self.session.heard, !onlyTheName,
                text.unicodeScalars.contains(where: CharacterSet.alphanumerics.contains) {
                 self.lastWordsAt = .now
+                self.quietLapWords()
                 // A conversation's turn streams to Scribe only once it has words (noise never leaves the Mac).
                 if self.scribeOnWords, let listener {
                     self.scribeOnWords = false
@@ -434,16 +488,21 @@ final class ArisController: ObservableObject {
             }
             guard !self.scribeIsHearing else { return }
             self.session = self.session.hearing(text)
+            // A borderline wake's words are judged as they come (ArisWakeEvidence).
+            if self.wakeEvidence != nil { self.settleWakeEvidence() }
         }
         listener.onLevel = { [weak self] level in
             guard let self else { return }
             self.level = level
             self.voicePeak = max(self.voicePeak, level)
-            if ArisTalkKey.isVoice(level: level, floor: self.voiceFloor) {
+            let voice = ArisTalkKey.isVoice(level: level, floor: self.voiceFloor)
+            if voice {
                 self.lastVoiceAt = .now
                 self.graceVoiceFrames += 1
                 self.turnVoiceFrames += 1
             }
+            // A wake-word turn's quiet lap opens the notch on the user's voice (the same gate), not on their first word.
+            self.quietLapLevel(voice: voice)
             self.voiceFloor = ArisTalkKey.nextFloor(self.voiceFloor, level: level)
         }
         // The microphone changed or went away mid-turn (a headset connected, a device unplugged): the turn ends with a
@@ -478,7 +537,7 @@ final class ArisController: ObservableObject {
                 try? await Task.sleep(for: .milliseconds(200))
                 let now = ContinuousClock.now
                 let sinceStart = listeningSince.map { now - $0 } ?? .zero
-                let said = ArisWakeWord.stripped(session.heard)
+                let said = turnByWakeWord ? ArisWakeWord.strippedCall(session.heard) : ArisWakeWord.stripped(session.heard)
                 let complete = ArisEndpoint.looksComplete(said), hanging = ArisEndpoint.isHanging(said)
                 let sinceWords = lastWordsAt.map { now - $0 }, sinceVoice = lastVoiceAt.map { now - $0 }
                 // Smart Turn only once there are words: a follow-up that's still only noise isn't scored.
@@ -517,8 +576,9 @@ final class ArisController: ObservableObject {
         }
         let starting = self.starting
         log.notice("key released")
-        // A soft tick the moment Aris stops listening, so you know it heard you (like Siri's).
-        if lastVoiceAt != nil, ArisQuietLive.shared.heardUser() { Self.heardSound?.play() }
+        // A soft tick the moment Aris stops listening, so you know it heard you (like the system assistant's).
+        // A wake-word turn ticks only once it has words: one that heard nothing closes without a sound.
+        if ArisWakeDoubt.ticks(byWakeWord: turnByWakeWord, heardSoFar: session.heard, voiceHeard: lastVoiceAt != nil), ArisQuietLive.shared.heardUser() { Self.heardSound?.play() }
         stats = ArisTurnStats(startedAt: .now)
         turn = Task {
             // The drawing (if the user circled) is collected while the words are picked.
@@ -529,20 +589,41 @@ final class ArisController: ObservableObject {
             self.listener = nil
             level = 0
             log.notice("heard \(apple.count, privacy: .public) characters")
-            // Talking over Aris on speakers: its own words heard back at the start are dropped.
-            let text = ArisEchoTrim.trimmed(ArisWakeWord.stripped(await secondListen(recording, apple: apple)), arisWasSaying: arisWasSaying,
-                                            atMost: echoWords)
+            // Talking over Aris on speakers: its own words heard back at the start are dropped. A wake turn loses the call
+            // it was woken by, whichever spelling the check took ("어, 알리스 …").
+            let heard = await secondListen(recording, apple: apple)
+            let text = ArisEchoTrim.trimmed(turnByWakeWord ? ArisWakeWord.strippedCall(heard) : ArisWakeWord.stripped(heard),
+                                            arisWasSaying: arisWasSaying, atMost: echoWords)
             arisWasSaying = ""
             echoWords = 0
             // The exact words, to tell a mishearing from a misunderstanding: in turns.jsonl (0600), private in the log.
             log.notice("you said “\(text, privacy: .private)” (Apple heard “\(apple, privacy: .private)”)")
             let gesture = await drawn
             guard session.phase == .listening, !Task.isCancelled else { return seeEnded() }
+            // Heard without the key (between turns, over Aris, by the name): words that are mostly Aris's own, heard
+            // back through the room, are never a turn and never answered (ArisEchoGuard).
+            if gesture == nil, followingUp || turnByWakeWord {
+                let verdict = ArisEchoGuard.verdict(text, recent: speaker.recentlySaid)
+                guard verdict == .user else { return echoHeard(verdict) }
+                echoLoop = echoLoop.after(.user)
+            }
+            // A borderline wake's request runs only once it is known to be the user's (ArisWakeEvidence): a song's lyrics,
+            // the TV or other people talking close it here, before anything is routed or asked.
+            if let end = await wakeEvidenceAtEnd(said: text) { return closeWakeTurnQuietly(end) }
+            guard session.phase == .listening, !Task.isCancelled else { return seeEnded() }
             if let gesture { attachGesture(gesture) }
+            // A wake turn whose lap never opened (a key press ended it) is kept now: its music pauses before the answer.
+            if turnByWakeWord { pauseMusic() }
             session = session.hearing(gesture?.display(text) ?? text).thinking()
             guard session.phase == .thinking else {
-                // Nothing in the turn was speech (silence, noise, Whisper's made-up words): said so, nothing routed.
-                if gesture == nil { return notHeard() }
+                // Nothing in the turn was speech (silence, noise, Whisper's made-up words): said so, nothing routed. A turn
+                // the wake word started was most likely not the user calling: it closes without a word (2026-11-14).
+                if gesture == nil {
+                    switch ArisWakeDoubt.unheard(byWakeWord: turnByWakeWord) {
+                    case .closeQuietly: return closeWakeTurnQuietly(.nothingSaid)
+                    case .notHeard: return notHeard()
+                    }
+                }
                 seeEnded()
                 return resumeMusicIfPaused()
             }
@@ -787,8 +868,11 @@ final class ArisController: ObservableObject {
         if ArisPendingFiles.dropsTurnImages(heard, circledShots: shots) { seeEnded() }
         // The files' text came with it: outside text from here on, as anything read (QA BUG-35).
         if ArisAttachmentText.carriesText(heard) { outsideConversation = true }
+        // "아니 그냥 클로드 시켜": an AI (or a teammate) named as the one to do it takes the work as a background job
+        // (ArisBrainHandOff), decided before an AI is picked to answer this turn; never "no such teammate".
+        let handOff = shots ? nil : await brainHandOff(ArisPendingFiles.words(of: heard))
         // "GPT한테 물어봐, …" goes straight to that AI; anything else tries the Mac first, then the default AI.
-        let named = ArisBrain.pick(from: heard)
+        let named = handOff == nil ? ArisBrain.pick(from: heard) : nil
         // `whole` is what the AI or a job gets: the user's words, then the files they gave and their text. `unmarked` is their
         // own words alone, the only part ever read as a command, sent to the router or matched against a phrase (audit
         // files-1: a file named "timer 5 min.png" set a timer, and a document saying "in the background" became a job).
@@ -796,6 +880,11 @@ final class ArisController: ObservableObject {
         let unmarked = ArisPendingFiles.words(of: whole)
         let text = shots ? (gesture?.markedRequest(heard) ?? whole) : whole
         let brain = named?.brain ?? ArisBrain.named(Defaults[.arisBrain])
+        // "클로드 앱으로 해", "ChatGPT 열어서 물어봐": the apps on this Mac the words name, for the context (ArisProgramMention).
+        turnPrograms = handOff == nil && !shots ? await programsLine(unmarked) : nil
+        // "세션 읽어줘", "뭐 기다려?", "클로드 뭐 하고 있어?": answered from the sessions Aris's hooks know, not a look at the
+        // screen (the owner, 2026-11-14: "클로드 코드 저거, 세션 … 읽어줘" got "I can't see any session on the screen").
+        turnAsksSessions = handOff == nil && !shots && ClaudeSessionsContext.asks(unmarked)
         // "응" or "아니" while the new-teammate card is up answers it first, on every path, before the done words and the
         // router (BUG-25c reopened: "응" went to the router and on to the brain, and the turn hung).
         let madeAnswer = !shots && named == nil ? ArisTeamMadeAnswer.reply(unmarked, cardUp: ArisTeamModel.shared.made != nil) : nil
@@ -817,7 +906,7 @@ final class ArisController: ObservableObject {
         var intent = named == nil ? ArisGestureTurn.intent(unmarked: unmarked, marked: text, hasShots: shots) : .ask(text)
         var tier = ArisTier.quick
         var browserWork = false
-        if named == nil, madeAnswer == nil, fx == nil, !ArisIntent.isRecurring(unmarked), needsSecondGuess(shots ? ArisIntent.parse(unmarked) : intent) {
+        if named == nil, madeAnswer == nil, handOff == nil, fx == nil, !ArisIntent.isRecurring(unmarked), needsSecondGuess(shots ? ArisIntent.parse(unmarked) : intent) {
             let routed = await route(unmarked)
             tier = routed.tier
             if !shots {
@@ -844,6 +933,9 @@ final class ArisController: ObservableObject {
         if case .finishTodo(let item) = intent { finishing = await ArisTodoModel.shared.finishable(item) }
         // Stopped or replaced while the router or the list was asked: this turn does nothing more (audit turn-2).
         guard !Task.isCancelled else { return }
+        // A teammate called by name with its task ("코디한테 이거 정리하라고 시켜") goes the way it always did, with its files;
+        // everything else the hand-off names is handed over here, the last request carried over when no task was said.
+        let handing = plain && link == nil && removal == nil && making == nil ? handOff.flatMap { called != nil && $0.task != nil ? nil : $0 } : nil
         let reply: String
         if let yes = madeAnswer {
             // "응" or "아니" while the new-teammate card is up answers the card, never the brain (BUG-25c).
@@ -865,6 +957,11 @@ final class ArisController: ObservableObject {
             // "문서 정리하는 팀원 하나 만들어줘, 이름은 코디": made here, no brain; the notch shows it (ArisTeammateMadeCard).
             understood(text, path: "local", tier: tier)
             reply = await makeTeammate(making)
+        } else if let handing {
+            // "아니 그냥 클로드 시켜": that AI (or teammate) takes the request as a background job; an AI that isn't set up
+            // here is said as exactly that (ArisController+BrainHandOff).
+            understood(text, path: "task:handoff", tier: tier)
+            reply = await handOver(handing, words: unmarked, whole: whole, tier: tier, brain: brain, korean: korean)
         } else if let job = called?.asking(whole) {
             // "큐에이봇, 17 곱하기 23은?": the teammate called by name takes it, on its own brain (BUG-25b), with the files
             // The user gave.
@@ -973,7 +1070,7 @@ final class ArisController: ObservableObject {
             session = session.answering(reply)
             recordTurn(heard: unmarked, reply: reply, job: handed.job)
             await speak { await self.speaker.speak(reply) }
-        } else if !shots, ArisDeixis.refersToScreen(text) || ArisDeixis.refersToClipboard(unmarked) {
+        } else if !shots, !turnAsksSessions, ArisDeixis.refersToScreen(text) || ArisDeixis.refersToClipboard(unmarked) {
             log.notice("asking about the screen (\(tier.rawValue, privacy: .public))")
             understood(text, path: "screen", tier: tier)
             guard let answer = await answerAboutScreen(text, tier: tier, brain: brain) else { return }
@@ -993,7 +1090,8 @@ final class ArisController: ObservableObject {
         lastTurnAt = .now
         finishTurn("ok")
         // The answer stays up and the conversation stays open; the next ⌥Space or "아리스" carries it on.
-        try? await Task.sleep(for: Self.lingerAfterAnswer)
+        // A hand-off's turn ends as its line ends: the notch goes and the jobs' pill tells how the work goes.
+        try? await Task.sleep(for: ArisNotch.linger(handedOff: handedOff))
         guard !Task.isCancelled else { return }
         session = session.done()
         resumeMusicIfPaused()
@@ -1053,7 +1151,7 @@ final class ArisController: ObservableObject {
         readTeammatesIfMissing()
         // The screenshot wait and the context build run together.
         async let taking = turnImages()
-        async let gathering = currentContext()
+        async let gathering = currentContext(sessions: true)
         let (images, focus) = await taking
         let context = await gathering
         // A turn stopped during that wait never asked: the next one still starts the new conversation (audit turn-2).
@@ -1091,6 +1189,11 @@ final class ArisController: ObservableObject {
                 // A late line about a step he just said no to is no step (ArisSession.ignoresStatus).
                 guard !ArisSession.ignoresStatus(ArisUIWords.status(status), declined: declinedTools) else { break }
                 session = session.working(ArisUIWords.status(status))
+                // A turn that has to look things up says so at once, before the slow work (ArisThinking, look first).
+                if speaking == nil, !saidHold, ArisThinking.saysAtOnce(status) {
+                    saidHold = true
+                    say([ArisThinking.lookingLine(korean: ArisSpeech.language(of: text) == "ko-KR")])
+                }
                 // The AI went off to do something and nothing's been said yet: a word, so the silence isn't a mystery.
                 if speaking == nil, !saidHold, ContinuousClock.now - askedAt > Self.holdAfter {
                     saidHold = true
@@ -1333,7 +1436,8 @@ final class ArisController: ObservableObject {
     /// Jev's guess at an everyday request; nil (ask Claude) when it's unsure, slow, or not set up.
     /// What the moment looks like, for the AI (the calendar covers the coming week).
     /// `conversation`: with the recent turns and the jobs (false: only the moment, for a job that must not hear them).
-    func currentContext(conversation: Bool = true) async -> String {
+    /// `sessions`: the main turn's, with the Claude Code sessions Aris's hooks know (what they said only when asked).
+    func currentContext(conversation: Bool = true, sessions: Bool = false) async -> String {
         let music = ArisNowPlaying.shared
         let now = Date()
         // Never asked from here (QA BUG-55: a weather question popped the Calendar prompt): read only when already allowed.
@@ -1346,7 +1450,18 @@ final class ArisController: ObservableObject {
             events: upcoming.map { ArisContext.Event(start: $0.start, end: $0.end, title: $0.title, allDay: $0.isAllDay, outside: ArisOutsideItems.shared.contains($0.id),
                                                         todo: $0.kind.isReminder) },
             recent: conversation ? history : [], tasks: conversation ? contextTasks() : [],
-            shelfFiles: ShelfStateViewModel.shared.items.filter { $0.fileURL != nil }.count, userName: ArisUserName.current)
+            shelfFiles: ShelfStateViewModel.shared.items.filter { $0.fileURL != nil }.count, userName: ArisUserName.current,
+            programs: turnPrograms, claudeSessions: sessions ? contextClaudeSessions() : [])
+    }
+
+    /// The Claude Code sessions' context lines. What they said goes in only when the words ask about them, and is
+    /// outside text from then on (outsideConversation, which the agent also sees from the header), as a job's result is.
+    private func contextClaudeSessions() -> [String] {
+        let store = ClaudeStore.shared
+        let lines = ClaudeSessionsContext.lines(Array(store.sessions.values), approvals: store.approvals, now: Date(), home: UserHome.path,
+                                                withText: turnAsksSessions)
+        if ClaudeSessionsContext.carriesText(lines) { outsideConversation = true }
+        return lines
     }
 
     /// The background tasks' context lines. A finished or failed one carries an untrusted job's words: from then on the
@@ -1374,6 +1489,13 @@ final class ArisController: ObservableObject {
             log.error("router skipped: \(String(describing: error), privacy: .public)")
             return (nil, .quick, false)
         }
+    }
+
+    /// The context's line for the apps on this Mac `words` name as the one to do or use something (ArisProgramMention);
+    /// nil when they name none. The installed list is read once, off the main actor (the router reads the same).
+    func programsLine(_ words: String) async -> String? {
+        let found = ArisProgramMention.named(in: words, installed: await Self.installedApps.value)
+        return ArisProgramMention.contextLine(apps: found.apps, missing: found.missing)
     }
 
     /// Read once: what Jev may pick from when you ask to open an app.

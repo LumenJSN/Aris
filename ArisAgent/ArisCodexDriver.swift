@@ -104,7 +104,7 @@ final class ArisCodexDriver: ArisBrainDriver {
     /// Codex's computer use (it sees and works the Mac's apps): on for work and critical turns only, and only when the
     /// user picked it as the engine (ArisComputerEngine); otherwise Codex works apps through `aris-tools desktop`.
     static let computerUse = "unified-computer-use@openai-bundled"
-    var computerEngine = ArisComputerEngine.peekaboo
+    var computerEngine = ArisComputerEngine.aris
 
     /// Aris's own Notion login (`codex mcp login aris_notion`), separate from the user's Codex setup.
     static let notionURL = "https://mcp.notion.com/mcp"
@@ -232,7 +232,7 @@ final class ArisCodexDriver: ArisBrainDriver {
             return []
         }
         self.tier = tier
-        return [request("turn/start", ["threadId": threadId, "effort": tier == .critical ? "high" : "low",
+        return [request("turn/start", ["threadId": threadId, "effort": ArisThinking.codexEffort(tier: tier),
                                        "disabledPluginIds": tier == .quick || computerEngine != .codex ? [Self.computerUse] : [String](),
                                        "input": Self.input(prompt: prompt, images: images)])]
     }
@@ -808,7 +808,8 @@ final class ArisCodexDriver: ArisBrainDriver {
         // A conversion hidden in another command (sh -c, a pipe) after outside text or the screen: refused. One written
         // plainly asked above, on the user's card (audit gate-4).
         if taint != .none, ArisRiskPolicy.refusedAfterOutsideText(action, tools: tools) { refuse("a conversion hidden inside another command, after outside text came in") }
-        // Websites are Aside's, and terminals, password and code-running apps are never computer use's.
+        // Websites are Aside's, and terminals, password and code-running apps are never Codex's own computer use's (Aris's engine
+        // works them, with a card for typing).
         if let app, app.browser || app.never { refuse(app.browser ? "computer use in a browser (websites are Aside's)" : "computer use is never in \(app.name)") }
         // System Settings like any app, judged by the pane last seen there (the desktop engine's three tiers): never in a
         // protected one; a pane not told for sure, or a step whose words name a protected one, asks every time, never kept.
