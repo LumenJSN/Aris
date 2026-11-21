@@ -11,7 +11,7 @@
 //   · AI 고르기 is left out when exactly one AI is set up (that one answers; there is nothing to pick). With none it
 //     shows (a key can be pasted there), with several it shows (one is picked), and while the helper has not said
 //     which are set up it shows.
-//   · 아리스라고 부르기 and 받아쓰기 always show.
+//   · 아리스라고 부르기, 받아쓰기 and 준비 끝 (the last page, with the repository card) always show.
 //  What is learned about the AIs after the setup opened (the helper answers a moment later; a key is saved on the AI
 //  page) changes the plan only for pages not reached yet. Pure, so the tests walk every kind of user.
 //
@@ -32,7 +32,7 @@ struct ArisSetupPlan: Equatable {
             switch page {
             case .permissions: !permissionsSettled
             case .brain: picksAI(readyAIs: readyAIs)
-            case .ask, .wake, .dictation: true
+            case .ask, .wake, .dictation, .done: true
             }
         })
     }

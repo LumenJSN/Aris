@@ -39,7 +39,7 @@ struct ArisTimerMenu: View {
         Button(ArisUIWords.text("+1분", "+1 min")) { timer.add(60) }
         Button(ArisUIWords.text("+5분", "+5 min")) { timer.add(300) }
         Divider()
-        Button(ArisUIWords.text("타이머 끄기", "Turn the timer off"), role: .destructive) { timer.cancel() }
+        Button(ArisUIWords.text("타이머 끄기", "Turn the timer off"), role: .destructive) { timer.cancelLogged() }
     }
 }
 

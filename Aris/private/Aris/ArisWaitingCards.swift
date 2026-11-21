@@ -77,6 +77,12 @@ struct ArisWaitingList: Equatable {
 }
 
 enum ArisParkedAsk {
+    /// The agent couldn't say whether it still waits: asked again after 5 s, doubling to 5 min, for as long as the job
+    /// runs (one failed check used to drop the question).
+    static let unreachableBackoff = ArisRetryBackoff(first: .seconds(5), longest: .seconds(300))
+
+    static func unreachableWait(tries: Int) -> Duration { unreachableBackoff.wait(afterFailures: tries) }
+
     /// What a showing's end means for a question the agent holds.
     enum Next: Equatable {
         /// The user answered: their yes or no goes to the agent.

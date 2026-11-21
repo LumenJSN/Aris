@@ -40,7 +40,7 @@ private func followupTeamMadeTests() {
     let typed = followupSource("ArisController+Typed.swift")
     check(typed.contains("practiceTurn = onboardingTalk == .practice") && typed.contains("answer(heard, typed: true)"),
           "M5: a typed turn follows the practice rule both ways and is marked typed")
-    check(followupSource("ArisController.swift").contains("turnTyped = typed"), "M5: every turn sets whether it was typed")
+    check(followupSource("Routing/ArisController+Funnel.swift").contains("turnTyped = typed"), "M5: every turn sets whether it was typed")
 }
 
 // MARK: - MEDIUM 6
@@ -63,8 +63,8 @@ private func followupPendingFilesTests() {
     let again = given.adding([URL(fileURLWithPath: "/Users/me/b.pdf")], at: start.addingTimeInterval(200))
     check(ArisPendingFiles.carriesFiles(again.taking(into: "x", at: start.addingTimeInterval(200 + ArisPendingFiles.lifetime - 1), handsFree: false, shown: true).text),
           "M6: a new drop starts the 5 minutes again")
-    let controller = followupSource("ArisController.swift")
-    check(controller.contains("ArisAttachments.shared.take(into: said, handsFree: turnHandsFree, shown: ArisNotchPresence.shared.isOpen)"),
+    let controller = followupSource("Routing/ArisController+Funnel.swift")
+    check(controller.contains("ArisAttachments.shared.take(into: request.said, handsFree: turnHandsFree, shown: ArisNotchPresence.shared.isOpen)"),
           "M6: the turn tells whether it is hands-free and whether the chips can be seen")
 }
 
@@ -127,8 +127,9 @@ private func followupHandOutTests() {
     let screen = ArisHandOutPlan.plan([mate], turn: ArisHandOutPlan.Turn(words: "큐에이봇, 이거 봐", brain: .codex, turnId: "t",
                                                                         screenConversation: true), brains: ["qa-bot": .claude])
     check(screen.first?.provenance.untrusted == true && screen.first?.provenance.screenConversation == true, "BUG-25b: after the screen too")
-    let controller = followupSource("ArisController.swift")
-    check(controller.contains("let handed = handOut([job], turn: ArisHandOutPlan.Turn(words: unmarked, brain: brain, turnId: nil, screenConversation: screenConversation,")
+    let controller = followupSource("Routing/ArisController+TurnRuns.swift")
+    check(controller.contains("return await handOutNow([job], words: unmarked, recorded: unmarked, brain: heard.brain, tier: tier, korean: korean, browser: false)")
+          && controller.contains("let handed = handOut(jobs, turn: ArisHandOutPlan.Turn(words: words, brain: brain, turnId: nil, screenConversation: screenConversation,")
           && controller.contains("outsideConversation: outsideConversation, handsFree: turnHandsFree),"),
           "BUG-25b: the teammate called by name hands out with the turn's hands-free and outside-text claims")
 }

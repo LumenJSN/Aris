@@ -26,9 +26,11 @@ enum ArisScheduleTool {
         guard let next = ArisSchedule.next(parsed.rule, after: now, calendar: calendar) else {
             throw ArisScheduleError(message: "that schedule never runs")
         }
+        // A rule an older Aris can't read is written as the store's version 2, so it is kept aside there, never lost.
         let job = ArisScheduledJob(id: UUID(), title: parsed.title, prompt: parsed.prompt, teammate: teammate, rule: parsed.rule,
                                    created: now, nextRun: next, lastRun: nil, runningSince: nil, parked: [],
-                                   brain: ArisSchedule.brainName(environment[ArisSchedule.brainKey]))
+                                   brain: ArisSchedule.brainName(environment[ArisSchedule.brainKey]),
+                                   version: parsed.rule.isVersion2 ? ArisSchedule.storeVersion : nil)
         try ArisScheduleStore.add(job, file: ArisScheduleStore.file(home: home))
         log("예약: \(job.title) (\(ArisSchedule.describe(job.rule, calendar: calendar)))", undo: .removeSchedule(id: job.id.uuidString),
             home: home, environment: environment, now: now)
@@ -47,7 +49,7 @@ enum ArisScheduleTool {
     private static func log(_ summary: String, undo: ArisUndo, home: String, environment: [String: String], now: Date) {
         ArisActivity.append(ArisActivityEntry(id: UUID(), date: now, job: environment["ARIS_JOB"] ?? "Aris",
                                               worker: environment["ARIS_WORKER"] ?? "aris-tools", summary: summary, undo: undo, undone: false,
-                                              teammate: environment["ARIS_TEAMMATE"]),
+                                              teammate: environment["ARIS_TEAMMATE"], call: environment[ArisActivity.callMarkKey].flatMap(ArisActivity.callMark)),
                             file: ArisPrivateFile.folder(home: home).appendingPathComponent("activity.jsonl"))
     }
 
@@ -62,7 +64,9 @@ enum ArisScheduleTool {
         let jobs = ArisScheduleStore.load(file: ArisScheduleStore.file(home: home))
         guard !jobs.isEmpty else { return "(no schedules)" }
         return jobs.map { job in
-            let next = job.nextRun.map { "next \(timestamp($0, calendar: calendar))" } ?? "done"
+            let stopped = "stopped: its one run failed or was cut off, so it won't run on its own (remove it, or add it again)"
+            let next = job.nextRun.map { "next \(timestamp($0, calendar: calendar))" + (job.tries != nil ? " (trying again after a failed run)" : "") }
+                ?? (ArisSchedule.isStopped(job) ? stopped : "done")
             return "\(job.id.uuidString)  \(job.title) · \(ArisSchedule.describe(job.rule, calendar: calendar)) · \(next)"
         }.joined(separator: "\n")
     }

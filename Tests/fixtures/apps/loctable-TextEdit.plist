@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>en</key>
+	<dict>
+		<key>CFBundleDisplayName</key>
+		<string>TextEdit</string>
+		<key>CFBundleName</key>
+		<string>TextEdit</string>
+	</dict>
+	<key>ja</key>
+	<dict>
+		<key>CFBundleDisplayName</key>
+		<string>テキストエディット</string>
+		<key>CFBundleName</key>
+		<string>テキストエディット</string>
+	</dict>
+	<key>ko</key>
+	<dict>
+		<key>CFBundleDisplayName</key>
+		<string>텍스트 편집기</string>
+		<key>CFBundleName</key>
+		<string>텍스트 편집기</string>
+	</dict>
+</dict>
+</plist>

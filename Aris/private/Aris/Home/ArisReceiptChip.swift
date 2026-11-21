@@ -78,13 +78,17 @@ struct ArisReceiptChip: View {
                 Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).frame(width: 9, height: 9).opacity(0.6)
             }
             if line.offersUndo {
+                // The pill is never cut: its words keep their width and the act's words give way first (third VM run:
+                // a Korean "✓ 타이머 맞춤" chip showed its pill as "되돌…", the two texts squeezed alike).
                 Button(action: undo) {
                     HStack(spacing: 3) {
                         Image(systemName: "arrow.uturn.backward").font(.system(size: 8.5, weight: .bold))
-                        Text(verbatim: ArisReceiptWords.undo(english: english))
+                        Text(verbatim: ArisReceiptWords.undo(english: english)).lineLimit(1)
                     }
+                    .fixedSize()
                 }
                 .buttonStyle(ArisReceiptUndoStyle())
+                .layoutPriority(1)
                 .disabled(line.stage == .undoing)
                 .opacity(line.stage == .undoing ? 0.5 : 1)
                 .help(ArisReceiptWords.undo(english: english))

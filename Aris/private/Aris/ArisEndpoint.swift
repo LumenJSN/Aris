@@ -40,6 +40,16 @@ enum ArisEndpoint {
         let words = said.split(whereSeparator: { $0 == " " || $0 == "," }).map(String.init)
         guard let word = words.last else { return false }
         if hangingWords.contains(word.lowercased()) { return false }
+        // English (2026-11-18 audit: every English turn took the slow path, the test below being Korean only): two words
+        // or more that don't end on one that needs more ("set a timer for", "can you") look finished ("open Safari",
+        // "what time is it", "set an alarm for 7").
+        if word.unicodeScalars.allSatisfy({ $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "'’:".unicodeScalars.contains($0)) }) {
+            let needsMore: Set<String> = ["a", "an", "the", "to", "for", "of", "in", "on", "at", "with", "about", "from", "by", "into", "and", "or",
+                                          "but", "so", "then", "if", "that", "my", "your", "his", "her", "their", "our", "is", "are", "was", "were",
+                                          "be", "can", "could", "would", "should", "will", "do", "does", "i", "you", "we", "they", "he", "she",
+                                          "like", "um", "uh", "hmm"]
+            return words.count >= 2 && !needsMore.contains(word.lowercased())
+        }
         // A one-syllable word finishes only after another word ("음악 꺼", "봐 줘"); alone ("네", "요") it doesn't.
         return (word.count > 1 || words.count > 1) && finishedSyllables.contains(last)
     }

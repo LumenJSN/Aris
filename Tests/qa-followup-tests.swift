@@ -31,7 +31,7 @@ private func qaFollowupCardArmTests() {
               "LOW: hovering while Aris is active: the card's keys work as before")
         check(KeyboardTextInput.arm(byHotkey: true, arisActive: false) == .init(makeKey: true, activate: true),
               "LOW: the answer hotkey (the user's own press) brings Aris forward so Y/N really reach the card")
-        check(!KeyboardTextInput.answersCardKey(arisActive: false) && KeyboardTextInput.answersCardKey(arisActive: true),
+        check(!KeyboardTextInput.answersCardKey(arisActive: false, sourcePid: 0) && KeyboardTextInput.answersCardKey(arisActive: true, sourcePid: 0),
               "LOW: a card key counts only while Aris is the active app")
     }
 }

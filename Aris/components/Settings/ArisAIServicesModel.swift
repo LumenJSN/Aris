@@ -16,7 +16,8 @@ enum ArisAIJob: String, CaseIterable, Equatable, Sendable {
 
     var title: String {
         switch self {
-        case .think: "생각"
+        // Option A: the row says what it chooses (생각 was the row nobody searched for: settings-ia DIAGNOSIS §2).
+        case .think: "답하는 AI"
         case .hear: "듣기"
         case .speak: "말하기"
         }
@@ -47,7 +48,8 @@ enum ArisAILack: Equatable, Sendable {
 }
 
 struct ArisAIProvider: Equatable, Identifiable, Sendable {
-    enum Group: Equatable, Sendable { case subscription, apiKey, onMac, cloud, connection }
+    /// `auto`: the hearing menu's first entry, which is no one engine (ArisHearEngine.auto).
+    enum Group: Equatable, Sendable { case subscription, apiKey, onMac, cloud, connection, auto }
 
     let id: String
     let job: ArisAIJob
@@ -85,6 +87,15 @@ struct ArisAIProfile: Equatable, Sendable {
     let hasKey: Bool
     /// Its key is saved and has never answered (the helper's check failed, or was never made).
     var unchecked = false
+    /// The model that does the quick understanding with it (짧은 명령 빨리 알아듣기), as aris-agent says.
+    var router: String?
+    /// That model's price in USD per million tokens (input, output), when aris-agent knows it.
+    var routerPrice: ArisAIPrice?
+}
+
+struct ArisAIPrice: Equatable, Sendable {
+    let input: Double
+    let output: Double
 }
 
 /// The models a provider answered with.
@@ -148,13 +159,15 @@ enum ArisAIPrefKey {
     static let speakEngine = "arisSpeakEngine"
     static let voiceModel = "arisVoiceModel"
     static let systemVoice = "arisSystemVoice"
+    /// Who does the quick understanding (ArisRouterModels.preferenceKey): "auto", "jev", "decide:<id>", "api:<id>" or "rules".
+    static let router = ArisRouterModels.preferenceKey
 }
 
 struct ArisAIChoices: Equatable, Sendable {
     /// "claude", "codex", "antigravity", or "api:<id>" (an API brain or a connection, by aris-agent's id). "" on the
     /// page: nobody chose an AI and none is ready on this Mac (ArisBrainChoice.shown), so none is shown as chosen.
-    var think = "codex"
-    /// "apple", "whisper" or "scribe".
+    var think = ArisBrain.standard.rawValue
+    /// "auto", "apple", "whisper", "scribe", "soniox" or "openai-stt" (ArisHearEngine's raw values).
     var hear = "apple"
     /// "small" or "large"; nil: none picked.
     var whisperModel: String?
@@ -167,6 +180,8 @@ struct ArisAIChoices: Equatable, Sendable {
     var systemVoice = ""
     var speed = 1.0
     var languages = ArisLanguages.defaults
+    /// 짧은 명령 빨리 알아듣기: "auto", "jev" or "api:<id>" (ArisRouterModels.Choice).
+    var router = "auto"
 }
 
 /// One thing the user (or Aris, on a confirm card) changes.
@@ -181,6 +196,8 @@ enum ArisAIChange: Equatable, Sendable {
     case elevenModel(String)
     case systemVoice(String)
     case speed(Double)
+    /// Who does the quick understanding ("auto", "jev", "api:<id>").
+    case router(String)
 }
 
 enum ArisAIValue: Equatable, Sendable {
@@ -204,7 +221,9 @@ enum ArisAIStore {
     static let speedRange: ClosedRange<Double> = 0.7...1.2
 
     static let brains = ["claude", "codex", "antigravity"]
-    static let hearEngines = ["apple", "whisper", "scribe"]
+    static let hearEngines = ArisHearEngine.allCases.map(\.rawValue)
+    /// The old "hear with Scribe" switch (`arisCloudListening`) as each choice leaves it: on while Scribe may listen.
+    static func usesScribe(_ engine: String) -> Bool { engine == "scribe" || engine == "auto" }
     static let speakEngines = ["macos", "eleven"]
     static let whisperModels = ["small", "large"]
     static let voiceModels = ["eleven_flash_v2_5", "eleven_v4_turbo", "eleven_v4", "eleven_multilingual_v2"]
@@ -223,14 +242,17 @@ enum ArisAIStore {
     /// voice, speed, languages and listening are exactly what they were.
     static func read(_ pref: (String) -> Any?, facts: Facts) -> ArisAIChoices {
         var choices = ArisAIChoices()
-        let brain = pref(ArisAIPrefKey.brain) as? String ?? "codex"
-        choices.think = brain == "api" ? "api:" + (facts.apiActive ?? "") : brains.contains(brain) ? brain : "codex"
+        let brain = pref(ArisAIPrefKey.brain) as? String ?? ArisBrain.standard.rawValue
+        choices.think = brain == "api" ? "api:" + (facts.apiActive ?? "") : brains.contains(brain) ? brain : ArisBrain.standard.rawValue
 
         let model = (pref(ArisAIPrefKey.speechModel) as? String).flatMap { whisperModels.contains($0) ? $0 : nil }
         choices.whisperModel = model ?? (facts.whisperLargeInstalled ? "large" : nil)
         let cloud = pref(ArisAIPrefKey.cloudListening) as? Bool
-        if let stored = pref(ArisAIPrefKey.hearEngine) as? String, hearEngines.contains(stored), cloud == nil || cloud == (stored == "scribe") {
+        if let stored = pref(ArisAIPrefKey.hearEngine) as? String, hearEngines.contains(stored), cloud == nil || cloud == usesScribe(stored) {
             choices.hear = stored
+        } else if pref(ArisAIPrefKey.hearEngine) == nil, cloud != false {
+            // Nothing was ever chosen: Automatic (Scribe with its key, as before, then whatever else is set up).
+            choices.hear = "auto"
         } else {
             // Before the page (or after the old Scribe switch on 목소리 · 언어 was flipped since): Scribe listens when its
             // switch is on and a key is there; else Whisper once a model is in, else Apple's recognition.
@@ -249,6 +271,7 @@ enum ArisAIStore {
         choices.systemVoice = pref(ArisAIPrefKey.systemVoice) as? String ?? ""
         choices.speed = pref(ArisAIPrefKey.voiceSpeed) as? Double ?? 1.0
         choices.languages = pref(ArisAIPrefKey.languages) as? [String] ?? facts.languages
+        choices.router = ArisRouterModels.stored(ArisRouterModels.choice(pref(ArisAIPrefKey.router) as? String))
         return choices
     }
 
@@ -265,8 +288,8 @@ enum ArisAIStore {
             return [.models(id: api, quick: nil, strong: model)]
         case .hear(let id):
             guard hearEngines.contains(id) else { return [] }
-            // Scribe listens exactly while its old switch is on.
-            return [.pref(ArisAIPrefKey.hearEngine, .text(id)), .pref(ArisAIPrefKey.cloudListening, .flag(id == "scribe"))]
+            // The old Scribe switch is kept in step with the choice.
+            return [.pref(ArisAIPrefKey.hearEngine, .text(id)), .pref(ArisAIPrefKey.cloudListening, .flag(usesScribe(id)))]
         case .whisperModel(let model):
             guard whisperModels.contains(model) else { return [] }
             return [.pref(ArisAIPrefKey.speechModel, .text(model))]
@@ -284,6 +307,10 @@ enum ArisAIStore {
         case .speed(let speed):
             guard speedRange.contains(speed) else { return [] }
             return [.pref(ArisAIPrefKey.voiceSpeed, .number(speed))]
+        case .router(let id):
+            // Only a choice ArisRouterModels reads back as itself ("api:" alone would read as 자동).
+            guard ArisRouterModels.stored(ArisRouterModels.choice(id)) == id else { return [] }
+            return [.pref(ArisAIPrefKey.router, .text(id))]
         }
     }
 
@@ -301,6 +328,7 @@ enum ArisAIStore {
         case .elevenModel(let model): next.elevenModel = model
         case .systemVoice(let identifier): next.systemVoice = identifier
         case .speed(let speed): next.speed = speed
+        case .router(let id): next.router = id
         }
         return next
     }
@@ -322,6 +350,9 @@ struct ArisAIUI: Equatable, Sendable {
     var keyError: [String: String] = [:]
     var jevOpen = false
     var jevError: String?
+    /// The decision model whose key field is open (its id), and what was wrong with the key typed.
+    var decisionOpen: String?
+    var decisionError: String?
     /// The Whisper model whose download the page is asking about.
     var asking: String?
     /// The voice sample playing ("": the main 미리 듣기).
@@ -343,6 +374,8 @@ struct ArisAIServicesState: Equatable, Sendable {
     /// Whether Claude Code, Codex and Antigravity are installed on this Mac, as aris-agent says (missing: it hasn't
     /// answered yet, and nothing is called missing).
     var brainReady: [String: Bool] = [:]
+    /// 다른 AI로 넘기기 is on (ArisBrainFallbackSetting): only then does the card name who answers when the chosen AI can't.
+    var fallbackOn = false
     /// aris-agent answered (it keeps the API brains).
     var agentReachable = true
     var presets: [ArisAIPreset] = []
@@ -351,7 +384,12 @@ struct ArisAIServicesState: Equatable, Sendable {
     var models: [String: ArisAIModelList] = [:]
     /// The ElevenLabs and TypeSafe keys as they may be shown ("••••••••a91c"); nil: none saved.
     var elevenKey: String?
+    /// The other recognisers' keys the app holds, by key holder ("soniox", "openai-stt"), as they may be shown.
+    var hearKeys: [String: String] = [:]
     var jevKey: String?
+    /// The other decision models' keys as they may be shown, and what was typed for each (model, address), by provider id.
+    var decisionKeys: [String: String] = [:]
+    var decisionSetup: [String: ArisDecisionProviders.Setup] = [:]
     /// Whisper models on this Mac ("small", "large").
     var whisperInstalled: Set<String> = []
     var download: ArisAIDownload?
@@ -379,10 +417,12 @@ enum ArisAICatalogue {
     ]
 
     static let hear = [
+        ArisAIProvider(id: "auto", job: .hear, name: "자동", note: "키가 있는 것 중 가장 잘 듣는 순서로, 안 되면 다음으로 넘어가요", group: .auto),
         ArisAIProvider(id: "apple", job: .hear, name: "Apple 받아쓰기", note: "말하는 대로 글자가 떠요", group: .onMac),
         ArisAIProvider(id: "whisper", job: .hear, name: "Whisper", note: "말을 마치면 한 번에 적어요", group: .onMac),
         ArisAIProvider(id: "scribe", job: .hear, name: "ElevenLabs Scribe", note: "말하는 대로 글자가 떠요", group: .cloud, keyHolder: "elevenlabs"),
-        ArisAIProvider(id: "openai-stt", job: .hear, name: "OpenAI", note: "gpt-4o-transcribe", group: .cloud, built: false),
+        ArisAIProvider(id: "soniox", job: .hear, name: "Soniox", note: "말하는 대로 글자가 떠요 · 한국어에 영어를 섞어도 잘 들어요", group: .cloud, keyHolder: "soniox"),
+        ArisAIProvider(id: "openai-stt", job: .hear, name: "OpenAI", note: "말을 마치면 한 번에 적어요", group: .cloud, keyHolder: "openai-stt"),
         ArisAIProvider(id: "groq-stt", job: .hear, name: "Groq", note: "whisper-large-v3 · 아주 빨라요", group: .cloud, built: false),
         ArisAIProvider(id: "deepgram", job: .hear, name: "Deepgram", note: "말하는 대로 글자가 떠요", group: .cloud, built: false),
         ArisAIProvider(id: "fish-stt", job: .hear, name: "Fish Audio", note: "말을 마치면 한 번에 적어요", group: .cloud, built: false),
@@ -401,17 +441,24 @@ enum ArisAICatalogue {
         ("elevenlabs", "ElevenLabs", "scribe", "eleven"), ("openai", "OpenAI", nil, nil), ("fish", "Fish Audio", nil, nil),
     ]
 
+    /// The keys the app itself keeps in the Keychain, by key holder: its Keychain account (ArisKeyFile).
+    static let appKeys = ["elevenlabs": "elevenlabs-key", "soniox": "soniox-key", "openai-stt": "openai-key"]
+
     /// A key holder's name ("ElevenLabs API 키").
     static func keyName(_ holder: String, in state: ArisAIServicesState) -> String {
         switch holder {
         case "elevenlabs": "ElevenLabs"
+        case "soniox": "Soniox"
+        case "openai-stt": "OpenAI"
         case "typesafe": "TypeSafe"
         default: state.preset(holder).map(apiName) ?? holder
         }
     }
 
     /// The jobs a holder's one key serves ("듣기 · 말하기에 같이 써요").
-    static func keyJobs(_ holder: String) -> String { holder == "elevenlabs" ? "듣기 · 말하기에 같이 써요" : "생각에 써요" }
+    static func keyJobs(_ holder: String) -> String {
+        holder == "elevenlabs" ? "듣기 · 말하기에 같이 써요" : appKeys[holder] != nil ? "듣기에만 써요" : "생각에 써요"
+    }
 
     /// "Ollama (이 Mac)" → "Ollama": the menu's group already says where it runs.
     static func apiName(_ preset: ArisAIPreset) -> String {
@@ -462,6 +509,8 @@ enum ArisAICatalogue {
             return state.brainReady[provider.id] == false ? .install : nil
         case "scribe", "eleven":
             return state.elevenKey == nil ? .key : nil
+        case "soniox", "openai-stt":
+            return state.hearKeys[provider.id] == nil ? .key : nil
         case "whisper":
             return state.whisperInstalled.contains(whisperModel(in: state)) ? nil : .model
         default: break
@@ -507,7 +556,12 @@ enum ArisAIAgentAnswers {
         }
         list.profiles = (object["profiles"] as? [[String: Any]] ?? []).compactMap { row in
             guard let id = row["id"] as? String else { return nil }
-            return ArisAIProfile(id: id, quick: row["quick"] as? String ?? "", strong: row["strong"] as? String ?? "", hasKey: row["hasKey"] as? Bool ?? false, unchecked: row["unchecked"] as? Bool ?? false)
+            let price = (row["routerPrice"] as? [String: Any]).flatMap { price -> ArisAIPrice? in
+                guard let input = (price["input"] as? NSNumber)?.doubleValue, let output = (price["output"] as? NSNumber)?.doubleValue else { return nil }
+                return ArisAIPrice(input: input, output: output)
+            }
+            return ArisAIProfile(id: id, quick: row["quick"] as? String ?? "", strong: row["strong"] as? String ?? "", hasKey: row["hasKey"] as? Bool ?? false,
+                                 unchecked: row["unchecked"] as? Bool ?? false, router: row["router"] as? String, routerPrice: price)
         }
         for row in object["connections"] as? [[String: Any]] ?? [] {
             guard let id = row["id"] as? String, let name = row["name"] as? String, let base = row["base"] as? String, !list.presets.contains(where: { $0.id == id }) else { continue }

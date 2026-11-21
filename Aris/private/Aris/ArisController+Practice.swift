@@ -21,14 +21,17 @@ extension ArisController {
     }
 
     func answerPractice(_ heard: String) async {
-        let korean = ArisSpeech.language(of: heard) == "ko-KR"
+        let korean = Self.replyKorean
         let question = ArisOnboardingPractice.question(heard)
         log.notice("practice turn: \(String(describing: question), privacy: .public)")
         understood(heard, path: "practice", tier: .quick)
         let reply: String
         switch question {
         // The timer is set for real, by the same code a turn outside the setup runs, and said from what happened.
-        case .timer(let intent): reply = await doOnMac(intent, korean: korean) ?? ArisOnboardingPractice.answersOnly(korean: korean)
+        // Never in the record of what Aris did: a practice is no work of the day (VM run 2026-11-19, D5: the practice
+        // timer that rang during the setup was "타이머: 3분" in the day in review and "1 done" in the wrap-up).
+        case .timer(let intent): reply = await doOnMac(intent, korean: korean, recorded: ArisOnboardingPractice.recordsChanges)
+            ?? ArisOnboardingPractice.answersOnly(korean: korean)
         case .time: reply = ArisIntent.tellTime.acknowledgement(korean: korean) ?? ""
         case .date: reply = ArisIntent.tellDate.acknowledgement(korean: korean) ?? ""
         case .calendar(let day, let part): reply = await practiceAgenda(day: day, part: part, korean: korean)
@@ -37,7 +40,7 @@ extension ArisController {
         guard !Task.isCancelled else { return }
         // The timer it set is the setup's own: it goes with the setup (ArisPracticeLeftovers).
         if case .timer = question { ArisOnboardingGuide.shared.practiceTimer = ArisTimerModel.shared.state }
-        session = session.answering(reply)
+        setSession(session.answering(reply))
         // The page is done only by what really happened: a timer that is running now, or an answer.
         ArisOnboardingGuide.shared.tryEnded(ArisSetupTry.outcome(of: question, timerRunning: ArisTimerModel.shared.isRunning))
         stats?.firstSound(at: .now)
@@ -48,7 +51,7 @@ extension ArisController {
         finishTurn("ok")
         try? await Task.sleep(for: Self.lingerAfterAnswer)
         guard !Task.isCancelled else { return }
-        session = session.done()
+        setSession(session.done())
         resumeMusicIfPaused()
     }
 
@@ -58,15 +61,18 @@ extension ArisController {
     func clearPracticeLeftovers(timer practice: ArisTimerState?) {
         if ArisPracticeLeftovers.cancelsTimer(practice: practice, running: ArisTimerModel.shared.state) {
             log.notice("the setup's practice timer goes with the setup")
+            // It was never recorded, so its going isn't either.
             ArisTimerModel.shared.cancel()
         }
+        // Its receipt too ("✓ Set a timer · Undo" stayed up with nothing left to undo), whatever the turn is doing.
+        ArisReceiptModel.shared.setupEnded()
         guard ArisPracticeLeftovers.clearsReply(listening: session.phase == .listening, thinking: session.phase == .thinking, asking: session.question != nil) else { return }
-        turn?.cancel()
+        endTurn(.dismissed)
         speaker.stop()
         dropPendingAnswer()
         announcing = nil
         endConversation()
-        session = ArisSession()
+        setSession(ArisSession(), from: nil)
     }
 
     /// The calendar for that part of the day, read through EventKit (never asks for access, never changes anything).

@@ -2,10 +2,10 @@
 //  ArisScribe.swift
 //  Aris
 //
-//  A turn heard by ElevenLabs Scribe v2 Realtime, the recognizer behind Aris's 100 languages: the turn's
-//  16 kHz audio streams over a WebSocket while you talk (the words so far come back for the notch), and when you
-//  stop, a commit returns the whole turn and the language it was in. Uses the ElevenLabs key in
-//  ~/.config/aris/elevenlabs-key. Anything going wrong returns nil, and Whisper on the Mac takes over.
+//  A turn heard by ElevenLabs Scribe v3 Live (the successor of Scribe v2 Realtime on the same socket and key): the
+//  turn's 16 kHz audio streams over a WebSocket while you talk (the words so far come back for the notch), and when
+//  you stop, a commit returns the whole turn and the language it was in. What is sent and how the answers are read is
+//  ArisScribeWire. Uses the ElevenLabs key. Anything going wrong returns nil, and the next engine takes over.
 //
 
 import Foundation
@@ -13,16 +13,16 @@ import os
 
 private let log = Logger(subsystem: "com.lumenjsn.aris", category: "scribe")
 
-final class ArisScribe: @unchecked Sendable {
-    struct Heard: Equatable {
-        let text: String
-        let language: String?
-    }
+final class ArisScribe: ArisLiveHearing, @unchecked Sendable {
+    typealias Heard = ArisHeard
 
+    let engine = ArisHearEngine.scribe
+
+    /// The ElevenLabs key (the voice uses the same one: ArisElevenLabs.loadKey).
+    static let keyName = "elevenlabs-key"
     static let sampleRate = 16_000
     /// A tenth of a second per message.
     private static let chunk = sampleRate / 10
-    private static let maxKeyterms = 50
     /// Scribe ignores a commit with less than 0.3 s of audio it hasn't committed ("commit_throttled"); the commit
     /// is padded with silence to a little more, so it always counts.
     static let shortestCommit = sampleRate * 35 / 100
@@ -44,30 +44,16 @@ final class ArisScribe: @unchecked Sendable {
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
     init(key: String, languages: [String], keyterms: [String]) {
-        var components = URLComponents(string: "wss://api.elevenlabs.io/v1/speech-to-text/realtime")!
-        var items = [
-            URLQueryItem(name: "model_id", value: "scribe_v2_realtime"),
-            URLQueryItem(name: "audio_format", value: "pcm_\(Self.sampleRate)"),
-            URLQueryItem(name: "commit_strategy", value: "manual"),
-            URLQueryItem(name: "include_language_detection", value: "true"),
-            URLQueryItem(name: "include_timestamps", value: "true"),
-        ]
-        // The first language turned on, and the rest as the only others it may hear.
-        if let first = languages.first {
-            items.append(URLQueryItem(name: "language_code", value: ArisLanguages.baseCode(first)))
-            items += languages.dropFirst().map { URLQueryItem(name: "secondary_languages", value: ArisLanguages.baseCode($0)) }
-        }
-        items += keyterms.prefix(Self.maxKeyterms).map { URLQueryItem(name: "keyterms", value: $0) }
-        components.queryItems = items
+        var components = URLComponents(string: ArisScribeWire.endpoint)!
+        components.queryItems = ArisScribeWire.query(languages: languages, keyterms: keyterms, sampleRate: Self.sampleRate)
         var request = URLRequest(url: components.url!, timeoutInterval: 10)
         request.setValue(key, forHTTPHeaderField: "xi-api-key")
-        task = URLSession.shared.webSocketTask(with: request)
+        task = ArisNoStore.session.webSocketTask(with: request)
     }
 
-    /// With the key and the setting on; nil means Whisper does the listening.
-    static func make(languages: [String], keyterms: [String], enabled: Bool) -> ArisScribe? {
-        guard enabled, let key = ArisElevenLabs.loadKey() else { return nil }
-        return ArisScribe(key: key, languages: languages, keyterms: keyterms)
+    /// With the key; nil means another engine does the listening. `languages`: base codes, the main one first.
+    static func make(languages: [String], keyterms: [String]) -> ArisScribe? {
+        ArisKeyFile.load(keyName).map { ArisScribe(key: $0, languages: languages, keyterms: keyterms) }
     }
 
     func start() {
@@ -177,20 +163,16 @@ final class ArisScribe: @unchecked Sendable {
     }
 
     private func handle(_ text: String) {
-        guard let data = text.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = object["message_type"] as? String else { return }
-        let words = object["text"] as? String ?? ""
-        switch type {
-        case "session_started":
+        switch ArisScribeWire.event(text) {
+        case .started:
             log.notice("session started")
-        case "partial_transcript":
+        case .partial(let words):
             let shown: String = lock.withLock {
                 partial = words
                 return Self.joined(committed, partial)
             }
             publish(shown)
-        case "committed_transcript":
+        case .committed(let words):
             let shown: String = lock.withLock {
                 if !words.isEmpty { committed.append(words) }
                 partial = ""
@@ -204,20 +186,20 @@ final class ArisScribe: @unchecked Sendable {
                     self?.resolve(failing: false)
                 }
             }
-        case "committed_transcript_with_timestamps":
+        case .timestamps(let code):
             let requested: Bool = lock.withLock {
-                if let code = object["language_code"] as? String, !code.isEmpty { language = code }
+                if let code { language = code }
                 return commitRequested
             }
             if requested { resolve(failing: false) }
-        case "commit_throttled":
+        case .throttled:
             // Nothing new since the audio it already has: the turn is what it has heard.
             log.notice("commit throttled; using what Scribe already heard")
             resolve(failing: false)
-        default:
-            if object["error"] != nil || type.hasSuffix("error") {
-                resolve(failing: true, reason: "\(type): \(object["error"] as? String ?? "")")
-            }
+        case .failed(let type):
+            resolve(failing: true, reason: type)
+        case .other, nil:
+            break
         }
     }
 
@@ -245,12 +227,5 @@ final class ArisScribe: @unchecked Sendable {
     }
 
     /// Little-endian 16-bit PCM, as Scribe takes it.
-    static func pcm16(_ samples: [Float]) -> Data {
-        var data = Data(capacity: samples.count * 2)
-        for sample in samples {
-            let value = Int16(max(-1, min(1, sample)) * Float(Int16.max))
-            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
-        }
-        return data
-    }
+    static func pcm16(_ samples: [Float]) -> Data { ArisPCM16.data(samples) }
 }

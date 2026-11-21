@@ -7,7 +7,8 @@
 //  - "화면을 보려면 화면 기록 권한이 필요해요" with 허용하기, which opens the guide (the only place Aris asks macOS);
 //  - once the guide has been opened this launch and the grant still reads false (macOS needs a relaunch for it),
 //    "Aris를 다시 열면 화면을 볼 수 있어요" with 다시 열기.
-//  Pure, so the tests run it.
+//  What was shown is kept across launches in ArisPermissions' records (ArisPermissionCenter), so a refusal is not
+//  told again at every launch. Pure, so the tests run it.
 //
 
 import Foundation
@@ -44,15 +45,23 @@ enum ArisScreenPermissionNotice {
         openedGuide = true
     }
 
-    /// The line to show now that a turn or a circle found no grant, or nil (each shows once per launch).
+    /// Across launches (ArisPermissionCenter sets these): whether a line was already shown for the switch as it is
+    /// now, and that it has been. A switch turned on in between makes the lines due again. Never across, by default.
+    static var shownBefore: (Line) -> Bool = { _ in false }
+    static var noteShown: (Line) -> Void = { _ in }
+
+    /// The line to show now that a turn or a circle found no grant, or nil (each shows once, and once across
+    /// launches while the switch stays as it is).
     static func next() -> Line? {
         if openedGuide {
-            guard !shownRelaunch else { return nil }
+            guard !shownRelaunch, !shownBefore(.relaunch) else { return nil }
             shownRelaunch = true
+            noteShown(.relaunch)
             return .relaunch
         }
-        guard !shownPermission else { return nil }
+        guard !shownPermission, !shownBefore(.permission) else { return nil }
         shownPermission = true
+        noteShown(.permission)
         return .permission
     }
 }

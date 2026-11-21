@@ -62,6 +62,9 @@ final class ArisReceiptModel: ObservableObject {
         read()
     }
 
+    /// The setup ended (finished or put off): what its practice did leaves the notch with it (ArisReceiptDesk.puttingAwaySetup).
+    func setupEnded() { show(desk.puttingAwaySetup()) }
+
     /// A change the app made itself (a to-do, the timer, the volume) has reached the log (ArisAgentClient.logLocalChange).
     func localChangeLogged() { read() }
 
@@ -131,8 +134,10 @@ final class ArisReceiptModel: ObservableObject {
 
     private func tick() {
         guard let line = desk.line else { return }
-        clock = clock.ticking(hovering: hovering, speaking: ArisController.shared.session.phase == .speaking, undoing: line.stage == .undoing)
-        if clock.isOver(failed: line.saysNotUndone) { show(desk.closing()) }
+        // Speaking: the turn says so, or the voice is still going (the clock stands still for both).
+        let speaking = ArisController.shared.session.phase == .speaking || ArisController.shared.speaker.isPlaying
+        clock = clock.ticking(hovering: hovering, speaking: speaking, undoing: line.stage == .undoing)
+        if clock.isOver(failed: line.saysNotUndone, offersUndo: line.offersUndo) { show(desk.closing()) }
     }
 
     /// The notch stays open while the line is up (the end of a turn in ArisNotchRoot): back once it has left. The

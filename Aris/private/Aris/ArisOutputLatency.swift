@@ -15,7 +15,9 @@ enum ArisOutputLatency {
     /// The tail to wait now for the default output (ArisEchoGuard.tail).
     static func tail() -> Double {
         let device = defaultOutput()
-        return ArisEchoGuard.tail(outputLatency: device.flatMap(seconds), bluetooth: device.map(isBluetooth) ?? false)
+        let legacy = ArisEchoGuard.tail(outputLatency: device.flatMap(seconds), bluetooth: device.map(isBluetooth) ?? false)
+        // Aris's last line went through the duplex engine's canceller (arisDuplexAudio): its tail is cancelled too.
+        return ArisDuplexSwitch.isOn ? ArisDuplexRoute.tail(legacy: legacy, cancelled: ArisDuplexAudio.lastLineCancelled) : legacy
     }
 
     private static func defaultOutput() -> AudioDeviceID? {

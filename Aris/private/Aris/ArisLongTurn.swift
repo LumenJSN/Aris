@@ -78,8 +78,4 @@ enum ArisLongTurn {
         let further = max(0, Int((Double(samples) / sampleRate / windowSeconds).rounded(.up)) - 1)
         return min(first + timeoutPerFurtherWindow * further, max(first, longestTimeout))
     }
-
-    /// Whether Whisper reads the turn during the grace moment after a pause: only while it fits one window. A longer
-    /// one is read once, when the turn ends (each grace moment would start a read of minutes of audio).
-    static func readsDuringGrace(seconds: Double) -> Bool { seconds <= windowSeconds }
 }

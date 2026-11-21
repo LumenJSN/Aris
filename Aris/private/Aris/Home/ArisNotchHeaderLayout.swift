@@ -18,6 +18,9 @@ enum ArisNotchHeaderLayout {
     /// Shelf, Claude and settings (the music page went with the full player).
     static let placeCount = 3
 
+    /// The places shown: settings' gear only while 노치에 설정 아이콘 is on (the row was stored and never read).
+    static func placeCount(settingsIcon: Bool) -> Int { settingsIcon ? placeCount : placeCount - 1 }
+
     /// Only the sessions list takes the wider 540 page (Claude Code's done notice is on the notice pill under the
     /// notch now, never this page).
     static func usesSessionsWidth(claudePage: Bool) -> Bool { claudePage }

@@ -36,7 +36,10 @@ enum ArisDropGuard {
                                         "mp3", "wav", "aiff", "ppt", "pptx", "epub"]
     private static let secretWords: Set = ["token", "tokens", "secret", "secrets", "password", "passwords", "passwd", "passphrase", "passcode", "passcodes",
                                            "credential", "credentials", "apikey", "apikeys", "privatekey", "암호"]
-    private static let secretParts = ["비밀번호", "패스워드", "비번"]
+    private static let secretParts = ["비밀번호", "패스워드"]
+    /// The short word for a password: only where a word of the name starts or ends with it ("비번 모음", "와이파이비번"),
+    /// never inside another word ("준비번호", "예비번호" are numbers, not passwords: audit 10).
+    private static let shortSecretParts = ["비번"]
     private static let keyQualifiers: Set = ["api", "private", "secret", "ssh", "access", "auth", "signing", "encryption", "pgp", "gpg", "rsa", "account",
                                              "license", "licence", "recovery", "master", "deploy", "aws", "root", "wallet", "seed"]
     private static let secretStems = ["password", "passwd", "passphrase", "passcode", "token", "secret", "credential"]
@@ -75,6 +78,7 @@ enum ArisDropGuard {
         if rendered.contains(kind) { return false }
         let base = kind.isEmpty ? whole : (whole as NSString).deletingPathExtension
         if secretParts.contains(where: base.contains) { return true }
+        if Self.words(base).contains(where: { word in shortSecretParts.contains { word.hasPrefix($0) || word.hasSuffix($0) } }) { return true }
         let words = words(base)
         return words.contains(where: secretWords.contains) || hasGluedSecret(words) || hasSecretPhrase(words) || hasCredentialKey(words)
     }
@@ -115,6 +119,8 @@ enum ArisDropGuard {
         ".oh-my-zsh", ".zsh", ".config/zsh", ".zshrc.d", ".bashrc.d",
         "Library/Application Support/Aris/Skills", "Library/Application Support/Aris/skills-runtime",
         "Library/Application Support/Aris/computer-runtime", ".peekaboo",
+        // The app's own clipboard history, in its container and where an unsandboxed build keeps it.
+        "Library/Containers/com.lumenjsn.aris/Data/Library/Application Support/Aris/clipboard.json", "Library/Application Support/Aris/clipboard.json",
     ]
 
     /// A path as it is compared: canonical Unicode, case folded as APFS does.

@@ -77,27 +77,28 @@ extension ArisDataModel.Actions {
     }
 
     @MainActor
-    private static func liveUninstall(keepData: Bool, typed: String) async -> [ArisDataModel.UninstallStep]? {
+    private static func liveUninstall(keepData: Bool, typed: String) async -> ArisUninstallReply {
         // 로그인 시 실행 goes first, while the app is still where macOS registered it; put back if nothing else happens.
         let wasLoginItem = ArisLoginItem.isEnabled
         ArisLoginItem.set(false)
-        // Then the agent: without it nothing outside the app's container can go, so nothing goes at all.
-        guard let reply = await ArisAgentClient.uninstall(confirm: typed, keepData: keepData) else {
+        // Then the agent: without it nothing outside the app's container can go, so nothing goes at all. Refused,
+        // unreachable, or the app couldn't go to the Trash (the agent stopped there): the app stops too.
+        let reply = await ArisAgentClient.uninstall(confirm: typed, keepData: keepData)
+        guard reply.steps != nil, reply.stoppedLine == nil else {
             if wasLoginItem { ArisLoginItem.set(true) }
-            return nil
-        }
-        let steps = reply.map { ArisDataModel.UninstallStep(step: $0.step, ok: $0.ok, note: $0.note) }
-        // The app couldn't go to the Trash: the agent stopped there, and so does the app.
-        guard steps.first(where: { $0.step == "app" })?.ok == true else {
-            if wasLoginItem { ArisLoginItem.set(true) }
-            return steps
+            return reply
         }
         ArisController.shared.forgetPastTurns { _ in true }
         ArisClipboardModel.shared.clear(includingPinned: true)
+        // Claude Code's hooks this app put in (Settings › Claude Code 연결): the helper's cleanup knows only the script's.
+        ClaudeConnect.removeQuietly()
         _ = ArisAppData.Places.current()?.remove(ArisAppData.Item.allCases)
-        for name in ArisKeyFile.names { ArisKeychain.delete(name); ArisKeychain.delete(ArisKeyFile.tombstone(name)) }
+        // Everything else the app kept in its container: the Whisper model, the wake recordings and voice model, the
+        // jobs' ledger, the shelf and its files, the caches (they stayed behind).
+        _ = ArisAppData.Places.current()?.removeContainerData()
+        for name in ArisKeyFile.allNames { ArisKeychain.delete(name); ArisKeychain.delete(ArisKeyFile.tombstone(name)) }
         if let id = Bundle.main.bundleIdentifier { UserDefaults.standard.removePersistentDomain(forName: id) }
-        return steps
+        return reply
     }
 
     @MainActor

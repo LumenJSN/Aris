@@ -74,6 +74,11 @@ enum ArisWakeArm {
         return nil
     }
 
+    /// Whether the screen counts as away (nothing listens), asked of the Mac itself whatever the last notice said: a
+    /// display that wakes to the lock screen sends "screens did wake" while the Mac is still locked, and that notice
+    /// alone used to arm the wake word on the lock screen. No setting lets it listen while locked.
+    static func screenAway(lockedNow: Bool, displayAsleepNow: Bool) -> Bool { lockedNow || displayAsleepNow }
+
     /// The detector hands on candidates for the name: always outside a conversation, and in one while another app's
     /// sound pauses its listening between turns (2026-11-14: the wake word was closed for 15–30 s after every turn, so
     /// a real "아리스" then did nothing). The name is checked as when idle: voice print, then the recognizer or Whisper.
@@ -84,13 +89,14 @@ enum ArisWakeArm {
     private static let pauses: [Duration] = [.seconds(30), .seconds(120), .seconds(600)]
 
     /// How long until the model is looked for again after `tries` looks that didn't find it (no microphone is open
-    /// meanwhile); nil: no more looks until something changes (a turn, the setting, the screen coming back).
+    /// meanwhile): the longest pause from then on, never "not again" (2026-11-18: after three it stopped until relaunch).
     static func speechRecheck(after tries: Int) -> Duration? {
-        tries >= 0 && tries < pauses.count ? pauses[tries] : nil
+        tries >= 0 ? pauses[min(tries, pauses.count - 1)] : nil
     }
 
-    /// How long the microphone stays closed after the `failures`th check in a row whose recognizer couldn't start;
-    /// nil: it stays closed until something changes.
+    /// How long the microphone stays closed after the `failures`th check in a row whose recognizer couldn't start; it
+    /// is always tried again, at most ten minutes later (and at once on a route change, a wake from sleep, the
+    /// permission given, or another app letting the microphone go: ArisWakeDown).
     static func pause(afterListenFailures failures: Int) -> Duration? {
         speechRecheck(after: max(0, failures - 1))
     }

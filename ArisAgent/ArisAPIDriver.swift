@@ -7,7 +7,7 @@
 //  here, in Aris: every function call the model makes becomes an aris-tools argv, then the command the risk gate judges
 //  (ArisAPIGate: the Codex approve path), and the helper runs it only after this driver writes `allow` with that argv.
 //  A call to a function that wasn't offered, arguments that don't parse, a sealed turn's command off the sealed list,
-//  or more than eight rounds in a turn stop the turn. Taint is exact: every call's kind is known before it runs, so a
+//  or more rounds than the turn's budget (ArisAPIDriver.roundBudget, with its time: turnBudget) stop the turn, and say so. Taint is exact: every call's kind is known before it runs, so a
 //  read makes the conversation outside text, and so does anything the helper couldn't read (fail closed). A turn that
 //  saw the screen keeps every function (the gate knows the screen came in: reads judged, what the user's words don't cover
 //  asked on his card). Only a hands-free turn runs the sealed process: offered only the sealed subset, with
@@ -19,6 +19,8 @@ import Foundation
 final class ArisAPIDriver: ArisBrainDriver {
     static let quietKinds: Set<String> = ["tool_done", "notice"]
     var quietKinds: Set<String> { Self.quietKinds }
+    /// The helper waits on a slow call (a card the owner hasn't answered, the work after it) this long, saying nothing.
+    var longestSilentCall: TimeInterval { ArisSlowCalls.ownerWait }
 
     let profile: ArisAPIProfile?
     let tools: String
@@ -48,7 +50,14 @@ final class ArisAPIDriver: ArisBrainDriver {
     /// Made-up function names answered as a tool error this turn (ArisAPIUnknownTool).
     private var unknownCalls = 0
 
-    static let maxRounds = 8
+    /// A turn's budget: rounds of tool calls, and the time all of them may take together (the helper ends the turn
+    /// then). Eight rounds stopped ordinary work halfway (find a file, read it, make the event, check it: four already);
+    /// a background job gets more of both. Past either, the turn stops and says which (roundsStop, timeStop).
+    static let roundBudget = 24
+    static let taskRoundBudget = 40
+    static let turnBudget: TimeInterval = 300
+    static let taskTurnBudget: TimeInterval = 1_200
+    var maxRounds: Int { task ? Self.taskRoundBudget : Self.roundBudget }
 
     init(profile: ArisAPIProfile?, tools: String, sealed: Bool = false, task: Bool = false, handsFree: Bool = false,
          home: String = FileManager.default.homeDirectoryForCurrentUser.path,
@@ -84,8 +93,11 @@ final class ArisAPIDriver: ArisBrainDriver {
         return !preset.needsKey || hasKey() ? nil : .key
     }
 
-    /// Nothing: the helper reads its provider, address and key from its own argv and the signed profile (C1).
-    func opening() -> [Data] { [] }
+    /// The helper reads its provider, address and key from its own argv and the signed profile (C1): nothing of that
+    /// comes over the pipe. A background job only says how long its turns may take.
+    func opening() -> [Data] {
+        task ? [Self.line(["type": "configure", "turn": Self.taskTurnBudget])] : []
+    }
 
     /// A model that searches the web on its own (OpenRouter's :online, Perplexity's sonar, a *search* model): what it
     /// says is outside text from the first round (I1).
@@ -131,7 +143,7 @@ final class ArisAPIDriver: ArisBrainDriver {
         let model = profile?.model(tier: tier) ?? ""
         if Self.searchesOnItsOwn(model.isEmpty ? (profile?.quick ?? "") : model) { gate.markUntrusted() }
         return [Self.line(["type": "ask", "system": instructions, "text": prompt, "model": model.isEmpty ? (profile?.quick ?? "") : model,
-                           "functions": relay ? [String]() : functions, "relay": relay, "maxRounds": Self.maxRounds,
+                           "functions": relay ? [String]() : functions, "relay": relay, "maxRounds": maxRounds,
                            "images": sent.map { ["mime": $0.format.rawValue, "data": $0.base64, "label": $0.label] }])]
     }
 
@@ -180,7 +192,10 @@ final class ArisAPIDriver: ArisBrainDriver {
     }
 
     static let offListStop = "API 브레인이 허용되지 않은 도구를 써서 멈췄어요."
-    static let roundsStop = "API 브레인이 도구를 너무 여러 번 써서 멈췄어요. 다시 물어봐 주세요."
+    static let roundsStop = "API 브레인이 이번 질문에 쓸 수 있는 도구 횟수를 다 써서 멈췄어요. 여기까지 한 일은 그대로 있어요. 이어서 하려면 다시 말해 주세요."
+    /// The helper's words when a turn's time budget ran out (ArisAPIHelper.scheduleDeadline).
+    static let turnTimeUp = "the turn took too long"
+    static let timeStop = "API 브레인이 이번 질문에 쓸 수 있는 시간을 다 써서 멈췄어요. 여기까지 한 일은 그대로 있어요. 이어서 하려면 다시 말해 주세요."
     static let sealedStop = "화면을 본 API 브레인이 허용되지 않은 도구를 써서 멈췄어요."
     /// The same lines for a request in English (ArisGateWords.lines says them; fourth VM run, bug 4: the Korean line
     /// under an English request).
@@ -191,14 +206,15 @@ final class ArisAPIDriver: ArisBrainDriver {
 
     static let stopsInEnglish: [String: String] = [
         offListStop: "The API model used a tool it isn't allowed, so I stopped.",
-        roundsStop: "The API model used tools too many times, so I stopped. Please ask again.",
+        roundsStop: "The API model used up this question's tool calls, so I stopped. What it did so far stays done; ask again to go on.",
+        timeStop: "The API model used up this question's time, so I stopped. What it did so far stays done; ask again to go on.",
         sealedStop: "After seeing the screen, the API model used a tool it isn't allowed, so I stopped.",
     ]
 
     private func request(_ object: [String: Any]) -> [ArisBrainEvent] {
         guard inTurn, let id = object["id"] as? String, let name = object["name"] as? String else { return [.abort(Self.offListStop)] }
         let round = object["round"] as? Int ?? Int.max
-        guard round <= Self.maxRounds else { return [.abort(Self.roundsStop)] }
+        guard round <= maxRounds else { return [.abort(Self.roundsStop)] }
         // One id once a turn, and at most eight calls a round.
         guard seenIds.insert(id).inserted else { return [.abort(Self.offListStop)] }
         roundCalls[round, default: 0] += 1
@@ -218,15 +234,18 @@ final class ArisAPIDriver: ArisBrainDriver {
             return [.abort(handsFree ? ArisHandsFree.askAgainLine : Self.offListStop)]
         }
         let command = ArisAPICatalog.command(tools: tools, argv: argv)
-        // The sealed process: only a command the sealed Claude may run (its list, the user's app reads, the services).
-        if sealed, !ArisSealedTools.allows(argv, memory: !handsFree) {
+        // The one gate entry (ArisCapabilityGate): the sealed process's list, a teammate's scopes, then this
+        // conversation's gate, in that order.
+        let decision: ArisAPIGateDecision
+        switch ArisCapabilityGate.decide(argv, tools: tools, turn: .api(gate, sealed: sealed, handsFree: handsFree, scopes: scopes)) {
+        case .stop:
             return [.abort(handsFree ? ArisHandsFree.askAgainLine : Self.sealedStop)]
-        }
-        // A teammate's call outside what it may use: refused, never asked.
-        if let scopes, !ArisTeammateScope.allows(toolsArguments: argv, scopes: scopes) {
-            return [.send(Self.line(["type": "deny", "id": id, "reason": ArisTeammateScope.refusalLine(ArisTeammateScope.needed(forTools: argv).map { $0.subtracting(scopes) })])),
-                    .audit(String(decoding: (try? JSONSerialization.data(withJSONObject: ["action": command, "risk": "never (outside the teammate's scopes)"],
-                                                                         options: .sortedKeys)) ?? Data("{}".utf8), as: UTF8.self))]
+        case .refused(let reason, let audit):
+            return [.send(Self.line(["type": "deny", "id": id, "reason": reason])), .audit(audit)]
+        case .api(let judged):
+            decision = judged
+        case .handOff, .hook, .trust:
+            return [.abort(Self.offListStop)]
         }
         calls[id] = argv
         // A desktop type or set-value's text goes on aris-tools' stdin (only its own functions carry one; the generic
@@ -236,7 +255,7 @@ final class ArisAPIDriver: ArisBrainDriver {
         }
         let seen: [ArisBrainEvent] = [.tools([ArisAgentStream.ToolCall(name: "Bash", command: command)]),
                                       .status(ArisAgentStatus.forCommand(command, tools: tools))]
-        switch gate.judge(command) {
+        switch decision {
         case .allow(let audit):
             return seen + [.send(allowLine(id, argv)), .audit(audit)]
         case .deny(let audit, let reason):
@@ -273,11 +292,16 @@ final class ArisAPIDriver: ArisBrainDriver {
             return .abort(Self.roundsStop)
         case .context:
             return .failure(ArisAPIFailureWords.line(.tooLong, title: title, english: false))
+        case .timeout where said == ArisAPIDriver.turnTimeUp:
+            // The turn's own time budget, not the provider: said as such (it read as "can't reach the server").
+            return .abort(Self.timeStop)
         case .network, .timeout:
             ArisFixTurns.shared.note(.retry)
             return .failure(ArisAPIFailureWords.line(.unreachable, title: title, english: false))
         default:
-            return .failure("\(title): \(String(said.prefix(ArisBrainFailure.longest)))")
+            // Never the service's own words (they can carry part of a key, or a request id): a plain line.
+            let known = ArisAPIError.Kind(rawValue: kind)
+            return .failure(ArisAPIFailureWords.line(ArisAPIFailureWords.kind(known) ?? .other, title: title, english: false))
         }
     }
 

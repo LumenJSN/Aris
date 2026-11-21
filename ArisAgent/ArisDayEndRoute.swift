@@ -2,14 +2,15 @@
 //  ArisDayEndRoute.swift
 //  aris-agent
 //
-//  POST /dayend {"from": <seconds>, "to": <seconds>, "day"?: <seconds>, "now"?: <seconds>}
-//    ->  {"schedules": [{"title", "at", "every"?, "once"?}], "today"?: [{"title", "at", "state", "once"?}]}
+//  POST /dayend {"from": <seconds>, "to": <seconds>, "day"?: <seconds>, "now"?: <seconds>, "record"?: true}
+//    ->  {"schedules": [{"title", "at", "every"?, "once"?}], "today"?: [{"title", "at", "state", "once"?}], "record"?: {…}}
 //  The one part of the notch's day-end summary (ArisDayEnd, "오늘 정리해 줘") the sandboxed app can't read itself:
 //  which of Aris's schedules will run tomorrow (`from` up to `to`), and when first; and, when the app also names the
 //  day being wrapped up (`day`, its first second; it ends at `from`), which were due in it and how each went by `now`:
-//  done, failed, running, or pending (missed, or its time still ahead). Only titles, times and that one word leave
-//  here, never a job's prompt. Reading only: nothing is run, changed or logged. Only the Aris app itself may ask
-//  (main.swift's isAppItself). The summary is written by the app from facts alone, so no AI is told anything about it
+//  done, failed, running, or pending (missed, or its time still ahead). With `record: true` (the day in review, F5) and
+//  Core 2's record kept, also the record's digest of that day: counts by kind, never a line (ArisRecordDigest). Only
+//  titles, times, that one word and those counts leave here, never a job's prompt. Reading only: nothing is run,
+//  changed or logged. Only the Aris app itself may ask (main.swift's isAppItself). The summary is written by the app from facts alone, so no AI is told anything about it
 //  and none is needed for it.
 //
 
@@ -78,7 +79,7 @@ enum ArisDayEndRoute {
             switch job.rule {
             case .every: return nil
             case .once(let date): at = date; once = true
-            case .daily, .weekly: at = ArisSchedule.next(job.rule, after: day.addingTimeInterval(-1), calendar: calendar)
+            case .daily, .weekly, .weekdays, .everyDays, .everyWeeks, .monthly: at = ArisSchedule.next(job.rule, after: day.addingTimeInterval(-1), calendar: calendar)
             }
             guard let at, at >= day, at < end else { return nil }
             let ran = job.lastRun.map { $0 >= day && $0 <= max(now, end) } ?? false
@@ -95,7 +96,9 @@ enum ArisDayEndRoute {
         return (Date(timeIntervalSince1970: day), Date(timeIntervalSince1970: now))
     }
 
-    static func body(jobs: [ArisScheduledJob], from: Date, to: Date, calendar: Calendar, today: (day: Date, now: Date)? = nil) -> Data {
+    /// `record`: the record's digest of the day (`record: true` in the request, Core 2 on): counts only, never a line.
+    static func body(jobs: [ArisScheduledJob], from: Date, to: Date, calendar: Calendar, today: (day: Date, now: Date)? = nil,
+                     record: ArisRecordDigest? = nil) -> Data {
         let listed = runs(jobs, from: from, to: to, calendar: calendar).map { run -> [String: Any] in
             var item: [String: Any] = ["title": run.title, "at": run.at.timeIntervalSince1970]
             if let every = run.every { item["every"] = every }
@@ -110,13 +113,23 @@ enum ArisDayEndRoute {
                 return item
             }
         }
+        if let record { answer["record"] = record.json }
         return (try? JSONSerialization.data(withJSONObject: answer, options: [.sortedKeys])) ?? Data("{}".utf8)
+    }
+
+    /// The record's digest for the day a request names, when it asks (`record: true`) and the record is kept (Core 2).
+    static func digest(_ object: [String: Any], today: (day: Date, now: Date)?, recordOn: Bool, state: () -> ArisRecordState,
+                       loggedUndone: () -> Set<String> = { [] }) -> ArisRecordDigest? {
+        guard object["record"] as? Bool == true, recordOn, let today else { return nil }
+        return ArisRecordDigest.make(state(), from: today.day, to: today.now, loggedUndone: loggedUndone())
     }
 
     /// The answer for the schedules stored under `home`; nil for a request that names no proper window.
     static func answer(_ object: [String: Any], home: String, calendar: Calendar = .current) -> Data? {
         guard let window = window(object) else { return nil }
+        let today = day(object, from: window.from)
         return body(jobs: ArisScheduleStore.load(file: ArisScheduleStore.file(home: home)), from: window.from, to: window.to, calendar: calendar,
-                    today: day(object, from: window.from))
+                    today: today, record: digest(object, today: today, recordOn: ArisTrustSwitch.isOn(), state: { ArisRecordJournal.state(home: home) },
+                                         loggedUndone: { ArisRecord.loggedUndone(ArisActivityBridge.objects(ArisActivityBridge.defaultLog)) }))
     }
 }

@@ -267,12 +267,12 @@ private func legacyWiringTests() {
           && wake.contains("self.wakeListenFailed(listener)\n        }\n"),
           "older engine: a turn, a dictation and a wake check say why when the engine can't hear")
     let builder = legacySource("Aris/components/Settings/ArisSettingsBuilder.swift")
-    check(builder.contains("id: \"voice.engine\"") && builder.contains("ArisListenEngineWords.rowTitle"), "settings: 목소리 · 언어 shows 듣기 엔진")
+    check(builder.contains("ArisListenEngineWords.rowTitle"), "settings: 듣기 shows 듣기 엔진")
     var s = ArisSettingsSnapshot()
-    check(!ArisSettingsBuilder.sections(.voice, s).flatMap(\.rows).contains { $0.id == "voice.engine" }, "settings: no engine row in a still picture")
+    check(ArisSettingsBuilder.engineLine(s) == nil, "settings: no engine line in a still picture")
     s.listenEngine = ArisListenEngineWords.settingsLine(engine: .legacy, place: .onDevice, osMajor: 15, forced: false)
-    let row = ArisSettingsBuilder.sections(.voice, s).flatMap(\.rows).first { $0.id == "voice.engine" }
-    check(row?.title == "듣기 엔진" && row?.desc == "기기 안 Apple 음성 인식 (macOS 15)", "settings: the row says the engine in use")
+    // Option A: nothing to change there, so it is a status line under the 듣기 card, not a row.
+    check(ArisSettingsBuilder.engineLine(s) == "듣기 엔진 · 기기 안 Apple 음성 인식 (macOS 15)", "settings: the status line says the engine in use")
     check(legacySource("Aris/components/Settings/ArisLiveSettings.swift").contains("s.listenEngine = ArisHearingShown.line()"), "settings: the live window reads it")
     let names = ["ArisListenEngine", "ArisRecognizer", "ArisSpeechEngines", "ArisListenFeed"].map { legacySource("Aris/private/Aris/\($0).swift").lowercased() }
     check(names.allSatisfy { !$0.isEmpty && !$0.contains("voice" + "os") && !$0.contains("wispr") && !$0.contains("superwhisper") },

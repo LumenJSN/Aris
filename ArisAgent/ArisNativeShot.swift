@@ -12,6 +12,9 @@ import Foundation
 import ScreenCaptureKit
 
 enum ArisNativeShot {
+    /// The error a look's picture that couldn't be taken carries (the controller asks macOS about Screen Recording again).
+    static let failedCode = "CAPTURE_FAILED"
+
     /// ScreenCaptureKit needs the window server's connection made (an AppKit app's own start makes it).
     private static let prepared: Void = {
         if Thread.isMainThread { _ = NSApplication.shared } else { DispatchQueue.main.sync { _ = NSApplication.shared } }

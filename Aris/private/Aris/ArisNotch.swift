@@ -48,9 +48,15 @@ enum ArisNotch {
 
     /// How long the turn's end leaves the answer up before the notch may go: its reading time, except after a hand-off
     /// (the line was said, the pill takes over) and a dictation.
-    static func endWait(handedOff: Bool, dictation: Bool, reply: String) -> Duration {
-        handedOff || dictation ? .zero : readingTime(for: reply)
+    /// `undo`: the turn's answer says what an undo did or why it didn't: a short line that is the only word of it, so it
+    /// stays at least `undoStay` (ninth VM run, item 7: with the pointer elsewhere it was gone before it was read).
+    static func endWait(handedOff: Bool, dictation: Bool, reply: String, undo: Bool = false) -> Duration {
+        if handedOff || dictation { return .zero }
+        return undo ? max(readingTime(for: reply), undoStay) : readingTime(for: reply)
     }
+
+    /// The least an undo's answer stays up after Aris stops talking.
+    static let undoStay: Duration = .seconds(6)
 
     /// The pointer on the notch keeps the answer up a while (longestHover), but not after a hand-off.
     static func waitsForHover(handedOff: Bool) -> Bool { !handedOff }

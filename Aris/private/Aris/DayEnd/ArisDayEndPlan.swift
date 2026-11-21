@@ -115,14 +115,29 @@ enum ArisDayEndPlan {
 
     // MARK: - Waiting for the user
 
-    /// The parked 확인 대기 cards first (oldest first, as their chips are), then a question about to be asked.
-    static func waiting(_ facts: ArisDayEndFacts) -> [ArisDayEnd.Waiting] {
+    /// The parked 확인 대기 cards first (oldest first, as their chips are), then a question about to be asked, then a
+    /// coding session that waits for the user (its number, its folder and what it waits for: never its own words).
+    static func waiting(_ facts: ArisDayEndFacts, english: Bool = false) -> [ArisDayEnd.Waiting] {
         let cards = facts.cards.map { card -> ArisDayEnd.Waiting in
             let action = card.action.trimmingCharacters(in: .whitespacesAndNewlines)
             return ArisDayEnd.Waiting(id: "card:" + card.id, title: action.isEmpty || action == card.title ? card.title : "\(action) · \(card.title)", card: card.id)
         }
         let asking = facts.jobs.filter { $0.outcome == .asking }.map { ArisDayEnd.Waiting(id: "ask:" + $0.id, title: $0.title) }
-        return cards + asking
+        let sessions = facts.sessions.filter { $0.state.isLive && $0.state.needsUser }.map { session in
+            ArisDayEnd.Waiting(id: "session:" + session.id, title: sessionTitle(session, english: english))
+        }
+        return cards + asking + sessions
+    }
+
+    /// "3번 · aris-jv-world · 권한을 기다려요", "#3 · aris-jv-world · waiting for permission".
+    static func sessionTitle(_ session: ArisFleetSession, english: Bool, home: String = NSHomeDirectory()) -> String {
+        let what: String
+        switch session.state {
+        case .waitingPermission: what = english ? "waiting for permission" : "권한을 기다려요"
+        case .failed: what = english ? "stopped on an error" : "오류로 멈췄어요"
+        default: what = english ? "has a question" : "답을 기다려요"
+        }
+        return [english ? "#\(session.number)" : "\(session.number)번", session.project(home: home), what].joined(separator: " · ")
     }
 
     // MARK: - Tomorrow
@@ -158,15 +173,38 @@ enum ArisDayEndPlan {
         return (String(summary[..<colon.lowerBound]), String(summary[colon.upperBound...]))
     }
 
+    /// The record's lines for a timer set and one turned off (ArisLocalReply, the timer's own button, the setup's
+    /// practice going away).
+    static let timerOffLine = "타이머 끔"
+
+    /// The timer lines that are no work done: every "타이머 끔", and the timer each one turned off before it rang
+    /// (VM run 2026-11-19, D5: the setup's practice timer, cancelled with the setup, was listed as done). A cancel pairs
+    /// with the latest timer set before it that was still running then.
+    static func cancelledTimers(_ rows: [ArisActivityItem]) -> Set<String> {
+        var dropped: Set<String> = [], running: [ArisActivityItem] = []
+        for row in rows.sorted(by: { $0.date < $1.date }) {
+            if row.summary == timerOffLine {
+                dropped.insert(row.id)
+                running.removeAll { set in ArisActivityWords.timerLength(set.summary).map { set.date.addingTimeInterval($0) <= row.date } ?? false }
+                if let set = running.popLast() { dropped.insert(set.id) }
+            } else if row.summary.hasPrefix("타이머: ") || row.summary == "뽀모도로" {
+                running.append(row)
+            }
+        }
+        return dropped
+    }
+
     /// Today's lines of the activity record that no planned row stands for, and the to-dos ticked off today that
-    /// weren't due, newest first, each in the card's language. Something undone again isn't work done.
+    /// weren't due, newest first, each in the card's language. Something undone again isn't work done, nor is a timer
+    /// turned off before it rang.
     static func extras(_ facts: ArisDayEndFacts, span: ArisDaySpan, now: Date, planned: [ArisDayEnd.Item], english: Bool) -> [ArisDayEnd.Extra] {
         let handed = Set(planned.filter { $0.kind == .job || $0.kind == .routine }.map { key($0.title) })
         let ticked = facts.todos.filter { todo in todo.completed.map { span.isToday($0, now: now) } ?? false }
         let tickedTitles = Set(ticked.map { key($0.title) })
         let loose = ticked.filter { todo in todo.due.map { $0 >= span.tomorrow } ?? true }
+        let cancelled = cancelledTimers(facts.activity ?? [])
         let lines = (facts.activity ?? []).filter { row in
-            guard span.isToday(row.date, now: now), !row.undone else { return false }
+            guard span.isToday(row.date, now: now), !row.undone, !cancelled.contains(row.id) else { return false }
             let line = parts(row.summary)
             if line.lead == pushLead { return false }
             // A to-do Aris ticked off is the to-do itself, planned or not.

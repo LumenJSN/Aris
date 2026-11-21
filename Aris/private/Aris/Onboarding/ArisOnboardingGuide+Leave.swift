@@ -4,8 +4,9 @@
 //
 //  What is left in front when the setup's window closes (ArisSetupLeave decides; these are the AppKit calls). The
 //  setup sends the user to System Settings for Accessibility and Screen Recording, and after Finish that window was
-//  what they were left looking at (VM run 2026-11-11, bug 5). A System Settings the setup started, and the user has not
-//  gone back to since, is hidden as the window closes (Aris is sandboxed and can't quit another app; hidden, it is off
+//  what they were left looking at (VM run 2026-11-11, bug 5). A System Settings the setup sent the user to (started by
+//  it, or already running and brought forward by it: sixth VM run, item 8), and the user has not gone back to since,
+//  is hidden as the window closes (Aris is sandboxed and can't quit another app; hidden, it is off
 //  the screen and still open in the Dock), and the app the user last had comes forward. Anything else is left as it is.
 //
 
@@ -15,6 +16,9 @@ import os
 private let log = Logger(subsystem: "com.lumenjsn.aris", category: "onboarding")
 
 extension ArisOnboardingGuide {
+    /// How long after the window goes System Settings is looked at again (macOS's own activation has settled by then).
+    static let settleHide: TimeInterval = 0.6
+
     /// System Settings, if it is running.
     private static var systemSettings: NSRunningApplication? {
         NSWorkspace.shared.runningApplications.first { app in
@@ -77,12 +81,28 @@ extension ArisOnboardingGuide {
         guard plan.hidesSettings else { return }
         let asked = settings?.hide() ?? false
         // hide() answers before the app is hidden (it said "hidden: false" for a System Settings that then was): the
-        // log line is written from what the app says a moment later.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        // log line is written from what the app says a moment later. As the window goes macOS may hand the screen to
+        // the app that was active before Aris, and activating a hidden app shows it again (fourth VM run: System
+        // Settings was back in front after Start): one that came back by then is hidden again.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.settleHide) {
+            if let settings, !settings.isTerminated, !settings.isHidden { _ = settings.hide() }
             log.notice("setup closing: System Settings (opened by the setup, not used since) hidden: \(settings?.isHidden ?? asked, privacy: .public)")
         }
         handBackTo = plan.activates
         leave.done()
+        keepLeave()
+    }
+
+    /// Accessibility came on and the setup is in front again: the System Settings window the setup opened for it is put
+    /// out of the way at once (hidden: Aris is sandboxed and can't close another app's window), only when the setup
+    /// started it and the user hasn't used it since (ArisSetupLeave.planOnGranted). Screen Recording keeps it: macOS's
+    /// own Quit & Reopen question is shown there.
+    func putAwaySettings() {
+        let settings = Self.systemSettings
+        guard leave.planOnGranted(runningPid: settings?.processIdentifier).hidesSettings else { return }
+        _ = settings?.hide()
+        log.notice("setup: System Settings (opened by the setup for Accessibility) put away")
+        leave.putAway()
         keepLeave()
     }
 

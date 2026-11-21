@@ -199,7 +199,7 @@ struct ArisSettingsButton: View {
                     ArisLineIcon(trailingSymbol, size: 12, stroke: 2.25)
                 }
             }
-            .font(.system(size: 12, weight: kind == .ghost || kind == .danger ? .medium : .semibold))
+            .font(.system(size: 12, weight: drawn == .ghost || drawn == .danger ? .medium : .semibold))
             .foregroundStyle(ink)
             .padding(.horizontal, small ? 10 : 12)
             .frame(minWidth: minWidth, minHeight: small ? 26 : 30, maxHeight: small ? 26 : 30)
@@ -217,8 +217,11 @@ struct ArisSettingsButton: View {
         .fixedSize()
     }
 
+    /// How it is drawn: a red button that can't be pressed is drawn plain (ArisSettingButtonKind.drawn).
+    private var drawn: ArisSettingButtonKind { ArisSettingButtonKind.drawn(kind, enabled: enabled) }
+
     private var ink: Color {
-        switch kind {
+        switch drawn {
         case .ghost, .select: hovering ? palette.buttonTextHover : palette.buttonText
         case .primary: palette.primaryInk
         case .danger: palette.red
@@ -227,7 +230,7 @@ struct ArisSettingsButton: View {
     }
 
     private var fill: AnyShapeStyle {
-        switch kind {
+        switch drawn {
         case .ghost, .select: AnyShapeStyle(palette.buttonFill)
         case .primary: AnyShapeStyle(hovering ? palette.primaryHover : palette.primary)
         case .danger: AnyShapeStyle(hovering ? palette.redFillHover : palette.redFill)
@@ -236,7 +239,7 @@ struct ArisSettingsButton: View {
     }
 
     private var border: Color {
-        switch kind {
+        switch drawn {
         case .ghost, .select: hovering ? palette.buttonBorderHover : palette.buttonBorder
         case .primary: hovering ? palette.primaryHover : palette.primary
         case .danger: palette.redBorder
@@ -294,6 +297,8 @@ struct ArisShortcutCapsButton: View {
     let label: String
     /// False for a key that can't be none (the dictation key): there is nothing to clear.
     var clearable = true
+    /// False: dimmed and inert, as ArisSwitch is (받아쓰기 쓰기 off).
+    var enabled = true
     let toggle: () -> Void
     let clear: () -> Void
     @State private var hovering = false
@@ -330,6 +335,8 @@ struct ArisShortcutCapsButton: View {
             .accessibilityValue(recording ? w("키를 기다리는 중") : caps.isEmpty ? w("없음") : caps.joined(separator: " "))
         }
         .onHover { hovering = $0 }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.5)
     }
 }
 

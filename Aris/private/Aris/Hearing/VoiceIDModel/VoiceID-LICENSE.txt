@@ -1,0 +1,19 @@
+ArisVoiceFBank.mlmodelc and ArisVoiceEmbedding.mlmodelc (Aris's on-device speaker embedding, F1 "the owner's voice")
+
+These are FBank.mlmodelc and Embedding.mlmodelc of FluidInference/speaker-diarization-coreml
+(https://huggingface.co/FluidInference/speaker-diarization-coreml, artifact snapshot
+1ed7a662fdc7109e36d822db793ee6eebdaf8594), unchanged except for their folder names. weight.bin SHA-256:
+  Embedding 99356b2985b8d43880a657024d941d450b38820451ccff903f76ed4e52d1868b
+  FBank     9e83fdd3ea78064b078069e4d9141603c61c47a27fd19e7e3142ff7476f8db36
+
+They are Core ML conversions by Fluid Inference of the speaker embedding of pyannote's
+speaker-diarization-community-1 (https://huggingface.co/pyannote/speaker-diarization-community-1), a WeSpeaker
+ResNet34 (Wang et al., "Wespeaker: A research and production oriented speaker embedding learning toolkit",
+ICASSP 2023). Fluid Inference converted the PyTorch components to Core ML, introduced fixed and enumerated input
+shapes, applied mixed-precision storage, and separated the FBank frontend from the embedding backend.
+
+Licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+Attribution: pyannote (CNRS), WeSpeaker, Fluid Inference. These files are modified Core ML conversions.
+
+Aris runs them on the Mac only. No audio, vector or score is sent anywhere.

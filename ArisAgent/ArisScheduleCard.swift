@@ -79,6 +79,32 @@ enum ArisScheduleCard {
             let minutes = max(ArisSchedule.minimumEvery, seconds) / 60
             guard minutes % 60 == 0 else { return "every \(minutes) minutes" }
             return minutes == 60 ? "every hour" : "every \(minutes / 60) hours"
+        case .weekdays(let days, let hour, let minute):
+            return "\(englishDays(days)) at \(clock(hour, minute))"
+        case .everyDays(let count, let hour, let minute, _): return "every \(count) days at \(clock(hour, minute))"
+        case .everyWeeks(let count, let weekday, let hour, let minute, _):
+            return "every \(count) weeks on \((1...7).contains(weekday) ? weekdays[weekday - 1] : "the same day") at \(clock(hour, minute))"
+        case .monthly(let day, let hour, let minute):
+            return "monthly on the \(ordinal(day)) at \(clock(hour, minute))" + (day > 28 ? " (or the month's last day)" : "")
         }
+    }
+
+    /// "every weekday", "on weekends", "every Monday, Wednesday and Friday".
+    static func englishDays(_ days: [Int]) -> String {
+        switch ArisSchedule.weekdayList(days) {
+        case "평일": return "every weekday"
+        case "주말": return "on weekends"
+        default:
+            let names = Set(days).filter { (1...7).contains($0) }.sorted { ($0 + 5) % 7 < ($1 + 5) % 7 }.map { weekdays[$0 - 1] }
+            guard names.count > 1 else { return "every " + (names.first ?? "week") }
+            return "every " + names.dropLast().joined(separator: ", ") + " and " + names.last!
+        }
+    }
+
+    /// "1st", "2nd", "3rd", "11th", "22nd".
+    static func ordinal(_ number: Int) -> String {
+        let tens = number % 100, ones = number % 10
+        let suffix = (11...13).contains(tens) ? "th" : ones == 1 ? "st" : ones == 2 ? "nd" : ones == 3 ? "rd" : "th"
+        return "\(number)\(suffix)"
     }
 }

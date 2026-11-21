@@ -3,7 +3,7 @@
 //  Aris
 //
 //  When the day-end summary (ArisDayEnd) comes. Asked for: "오늘 정리해 줘", "하루 마감", "오늘 뭐 했어?", "wrap up my
-//  day", "what did you do today", and nothing else in the sentence ("오늘 받은 메일 정리해 줘" and "오늘 한 일 메일로
+//  day", "what did you do today", "what did I do today", and nothing else in the sentence ("오늘 받은 메일 정리해 줘" and "오늘 한 일 메일로
 //  보내 줘" ask the AI for something else). Offered: once in the evening, the way the morning brief picks its moment
 //  (a set hour, the user at the Mac after it, never twice a day), and only as a chip. Foundation only, so it is tested.
 //
@@ -21,7 +21,7 @@ enum ArisDayEndAsk {
         #"\bwrap(?:ping)?[ -]?up (?:my |the |our |this )?(?:day|today)\b"#,
         #"\b(?:day[ -]?end|end[ -]of[ -](?:the[ -])?day|daily) (?:summary|wrap[ -]?up|recap|report)\b"#,
         #"\b(?:day|today)(?:'s|s)? ?(?:wrap[ -]?up|summary|recap)\b"#,
-        #"\bwhat (?:did|have) (?:you|we|aris|everyone|the team|you all|you guys) (?:do|done|get done|got done|finish|finished) today\b"#,
+        #"\bwhat (?:did|have) (?:i|you|we|aris|everyone|the team|you all|you guys) (?:do|done|get done|got done|finish|finished) today\b"#,
         #"\b(?:summari[sz]e|recap|sum up) (?:my |the |our )?(?:day|today)\b"#,
         // "close out my day", "end my day": the day itself is closed ("end the day's meeting early" names something else).
         #"\b(?:close out|close|end|finish up) (?:my |the |our )day\b(?!')"#,

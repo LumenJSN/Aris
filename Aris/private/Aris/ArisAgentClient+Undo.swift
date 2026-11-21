@@ -19,8 +19,8 @@ extension ArisAgentClient {
     /// and what the helper's 409 said the card must show: `echo`, or the detail of the card shown (`shown`) when that
     /// is the 409's summary itself (the 한 일 tab's card). The agent checks it (ArisUndoSteps.request).
     /// Sent with this app's pid and start time, as every /confirm is: only the app itself may undo (ArisPeer).
-    static func undo(id: String? = nil, confirmed: Bool = false, shown: ArisConfirmation? = nil, echo: String? = nil) async -> ArisUndoOutcome {
-        var body = ArisUndoSteps.request(id: id, confirmed: confirmed, echo: echo ?? shown?.detail)
+    static func undo(id: String? = nil, confirmed: Bool = false, shown: ArisConfirmation? = nil, echo: String? = nil, unit: Bool = false) async -> ArisUndoOutcome {
+        var body = ArisUndoSteps.request(id: id, confirmed: confirmed, echo: echo ?? shown?.detail, unit: unit)
         body["pid"] = Int(ProcessInfo.processInfo.processIdentifier)
         if let started { body["started"] = started }
         // macOS may be asking aris-agent for a folder meanwhile (QA BUG-17): longer than the agent's own minute.
@@ -66,7 +66,7 @@ extension ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(body))
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               let status = (response as? HTTPURLResponse)?.statusCode else { return nil }
         return (status, data)
     }

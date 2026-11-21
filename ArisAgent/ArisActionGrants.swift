@@ -23,6 +23,9 @@ final class ArisActionGrants: @unchecked Sendable {
     /// The agent's own undo runs of a to-do's entry: each lets one to-do reopen or remove by id through (the app asked
     /// for the undo), until it is used, its run of aris-tools returns, or it is `lifetime` old.
     private var undoRuns: [(id: UUID, until: Date)] = []
+    /// Core 2's record undo of one to-do: a grant for exactly that undo write's key (`todo|remove|id=…`), single-use,
+    /// never any other to-do's (ArisMindItemUndo).
+    private var boundUndos: [(id: UUID, key: String, until: Date)] = []
 
     /// A grant for each calendar or to-do write in a shell command the gate let run.
     func mint(command: String, tools: String, now: Date = Date()) {
@@ -63,7 +66,24 @@ final class ArisActionGrants: @unchecked Sendable {
     /// `lifetime` for any to-do reopen or removal by id: security review 3, L4).
     func dropUndo(_ id: UUID?) {
         guard let id else { return }
-        lock.withLock { undoRuns = undoRuns.filter { $0.id != id } }
+        lock.withLock {
+            undoRuns = undoRuns.filter { $0.id != id }
+            boundUndos = boundUndos.filter { $0.id != id }
+        }
+    }
+
+    /// A grant for exactly one undo write (`key`, ArisActionGrant.isBoundUndoKey: a to-do's, or an event's removal by
+    /// uid); nil for any other key. Dropped
+    /// with `dropUndo` when the run returns.
+    @discardableResult
+    func mintUndo(exactly key: String, now: Date = Date()) -> UUID? {
+        guard ArisActionGrant.isBoundUndoKey(key) else { return nil }
+        let id = UUID()
+        lock.withLock {
+            boundUndos = boundUndos.filter { $0.until > now }
+            boundUndos.append((id, key, now.addingTimeInterval(Self.lifetime)))
+        }
+        return id
     }
 
     /// How many undo grants are still good (for the tests).
@@ -81,6 +101,11 @@ final class ArisActionGrants: @unchecked Sendable {
                 return (true, used.outside)
             }
             grants[key] = nil
+            boundUndos = boundUndos.filter { $0.until > now }
+            if let index = boundUndos.firstIndex(where: { $0.key == key }) {
+                boundUndos.remove(at: index)
+                return (true, false)
+            }
             undoRuns = undoRuns.filter { $0.until > now }
             if ArisActionGrant.isUndoKey(key), !undoRuns.isEmpty {
                 undoRuns.removeFirst()

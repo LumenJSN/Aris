@@ -37,4 +37,12 @@ enum ArisRemindersAccess {
     static func asksAgain(fresh: Status, answeredThisRun: Bool) -> Bool {
         fresh == .notAsked && answeredThisRun
     }
+
+    /// A request from a turn the user is in front of (a to-do added or the list read by voice or typing) when macOS
+    /// was never asked: the permission layer says its one line of why and raises macOS's dialog first, then the request
+    /// goes on (VM run 2026-11-19, A3: "access is off" and a Settings button, the dialog only after that button). Never
+    /// during the side panels' demo, never after a no, never when this run already has macOS's answer.
+    static func asksFirst(fresh: Status, answeredThisRun: Bool, demo: Bool) -> Bool {
+        !demo && fresh == .notAsked && !answeredThisRun
+    }
 }

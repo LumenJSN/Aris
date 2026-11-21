@@ -212,6 +212,11 @@ final class ArisDropModel: ObservableObject {
         for url in urls where known[url.path]?.hold == .secretName { look(at: url, allowed: true) }
     }
 
+    /// A drop with nothing Aris can take (no file, text, link or picture): said on the notch, never lost silently.
+    func refused(english: Bool = ArisUIWords.english) {
+        say(ArisDropCopy.unreadable(english: english))
+    }
+
     private func say(_ line: String) {
         notice = line
         noticeClock?.cancel()

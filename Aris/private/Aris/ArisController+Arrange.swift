@@ -18,7 +18,7 @@ extension ArisController {
         let acknowledgement = intent.acknowledgement(korean: korean) ?? ""
         async let failure = ArisAgentClient.arrange(app: app, count: count)
         stats?.firstSound(at: .now)
-        session = session.answering(acknowledgement)
+        setSession(session.answering(acknowledgement))
         await speak { await self.speaker.speak(acknowledgement) }
         let message = await failure
         // Stopped while the windows were laid out: the notch is not this turn's any more (audit turn-2).
@@ -26,14 +26,14 @@ extension ArisController {
         guard let message else {
             // Done: the notch says so in the past tense (QA BUG-14), without saying it a second time.
             let done = intent.doneLine(korean: korean) ?? acknowledgement
-            session = session.answering(done)
+            setSession(session.answering(done))
             return done
         }
         log.error("arrange failed: \(message, privacy: .public)")
         // macOS's and aris-tools' own English never reaches the reply (QA BUG-13).
         let why = ArisIntent.arrangeFailure(message, app: app, korean: korean)
         let reply = korean ? "창을 나누지 못했어요. \(why)" : "I couldn't lay out the windows. \(why)"
-        session = session.answering(reply)
+        setSession(session.answering(reply))
         await speak { await self.speaker.speak(reply) }
         return reply
     }

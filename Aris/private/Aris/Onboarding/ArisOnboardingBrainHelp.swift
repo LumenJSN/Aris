@@ -30,6 +30,9 @@ extension ArisOnboardingBrainRows {
         case unreachable
         /// It answered: no AI is set up on this Mac (not `none`: the page holds an optional of this).
         case nothing
+        /// It answered: the only thing here is a key that is saved and whose check failed (tenth VM run, item 12: the
+        /// page said "the key is saved, but it didn't answer" and this press then said "no AI is set up").
+        case keyNotAnswering
         /// These are set up now and were not at the last look.
         case found([ArisBrain])
         /// Nothing changed; these are set up.
@@ -53,6 +56,25 @@ extension ArisOnboardingBrainRows {
     static let copiedShown: Duration = .seconds(2)
 }
 
+extension ArisOnboardingBrainRows.Checked {
+    /// What the press found, said truthfully while a key saved in this setup has failed its check (and has not passed
+    /// since): that key is no AI yet, and with nothing else set up the page says the key is saved and didn't answer,
+    /// never that no AI is set up.
+    func withKeyTrouble(_ trouble: Bool) -> Self {
+        guard trouble else { return self }
+        switch self {
+        case .nothing: return .keyNotAnswering
+        case .found(let brains):
+            let others = brains.filter { $0 != .api }
+            return others.isEmpty ? .keyNotAnswering : .found(others)
+        case .same(let brains):
+            let others = brains.filter { $0 != .api }
+            return others.isEmpty ? .keyNotAnswering : .same(others)
+        case .unreachable, .keyNotAnswering: return self
+        }
+    }
+}
+
 // MARK: - The page's words
 
 extension ArisSetupWords {
@@ -71,6 +93,9 @@ extension ArisSetupWords {
                        "I couldn't check just now: Aris's helper didn't answer. Press it again in a moment.", english)
         case .nothing:
             return say("방금 확인했어요. 아직 이 Mac에 준비된 AI가 없어요.", "Checked just now: no AI is set up on this Mac yet.", english)
+        case .keyNotAnswering:
+            return say("방금 다시 해 봤어요. 키는 저장돼 있는데 아직 답을 받지 못했어요. 키를 확인해서 다시 붙여 넣어 주세요.",
+                       "Tried it again just now: the key is saved, but it still didn't answer. Check it and paste it again.", english)
         case .found(let brains):
             let list = brains.map(names).joined(separator: ", ")
             return say("방금 확인했어요. 새로 준비된 AI: \(list)", "Checked just now. Newly ready: \(list)", english)

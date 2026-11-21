@@ -31,7 +31,8 @@ func run(_ program: String, _ arguments: [String]) -> String {
 /// (ArisBoundedRun: every AppleScript has one, so a hung app can't hang the turn); past it the status is
 /// ArisBoundedRun.timedOutStatus.
 func runCapturing(_ program: String, _ arguments: [String], limit: TimeInterval? = nil) -> (status: Int32, printed: String, complaint: String) {
-    guard let result = ArisBoundedRun.capture(program, arguments, limit: limit ?? ArisBoundedRun.defaultLimit(for: program)) else {
+    guard let result = ArisBoundedRun.capture(program, arguments, limit: limit ?? ArisBoundedRun.defaultLimit(for: program),
+                                              atLimit: automationWait(program, arguments)) else {
         fail("couldn't run \(program)")
     }
     return (result.status, result.printed, result.complaint)
@@ -41,8 +42,27 @@ func runCapturing(_ program: String, _ arguments: [String], limit: TimeInterval?
 /// time) instead of osascript's "0:52: execution error: … (-1743)". `missing`: what a "can't get that" error means here.
 @discardableResult
 func appleScript(_ script: String, app: String = "the app", missing: String? = nil) -> String {
-    let (status, printed, complaint) = runCapturing("/usr/bin/osascript", ["-e", script])
-    if status == ArisBoundedRun.timedOutStatus { fail(ArisBoundedRun.timeoutLine(app: app)) }
+    appleScript(script, app: app, missing: missing, found: nil) ?? ""
+}
+
+/// The same, for a script whose result can be read back without sending anything again (`found`: whether what it was
+/// to make is there now, nil when that can't be read). Nil: the script didn't finish in its time but what it was to
+/// make is there, so it went through (eleventh VM run, P11: the note was made, the reply said Notes hadn't answered).
+/// The script is run once, whatever happens.
+func appleScript(_ script: String, app: String, missing: String? = nil, found: (() -> Bool?)?) -> String? {
+    let arguments = ["-e", script]
+    // macOS's answer as the script goes, for what is said if it doesn't finish.
+    let before = automationStates(of: arguments), started = Date()
+    let (status, printed, complaint) = runCapturing("/usr/bin/osascript", arguments)
+    if status == ArisBoundedRun.timedOutStatus {
+        if let found, ArisPermissionWait.lateOutcome(found: found()) == .done { return nil }
+        // Stopped while macOS was still asking him (or right after his no): said as that, never as an app that didn't answer.
+        let states = automationStates(of: arguments)
+        if let line = ArisPermissionWait.automationTimeoutLine(app: app, before: before, states: states, waited: Date().timeIntervalSince(started)) {
+            fail(line, fix: states.contains(.denied) ? .pane(.automation) : nil)
+        }
+        fail(ArisBoundedRun.timeoutLine(app: app))
+    }
     guard status == 0 else { fail(ArisActions.appleScriptProblem(complaint, app: app, missing: missing), fix: ArisToolFix.appleScript(complaint)) }
     return printed.trimmingCharacters(in: .whitespacesAndNewlines)
 }
@@ -97,6 +117,8 @@ func message(_ args: [String]) {
     if ArisActions.isHandle(who) {
         handle = who
     } else {
+        // A name is looked up in Contacts by Apple Events: asked once at the first use in a turn the user is in front of.
+        automationGate("com.apple.AddressBook", app: "Contacts", feature: .findContact, lead: "\(ArisMessageResult.notSentLead) ")
         let (status, listed, complaint) = runCapturing("/usr/bin/osascript", ["-e", ArisActions.contactScript(who)], limit: 10)
         if status == ArisBoundedRun.timedOutStatus { fail("\(ArisMessageResult.notSentLead) Contacts didn't answer, so \(who) couldn't be looked up. Nothing was sent.") }
         guard status == 0 else {
@@ -107,12 +129,21 @@ func message(_ args: [String]) {
         }
         handle = picked.value
     }
+    // Sending has no other way than Messages' Apple Events: asked once at the first use, never from a background job.
+    automationGate("com.apple.MobileSMS", app: "Messages", feature: .sendMessages, lead: "\(ArisMessageResult.notSentLead) ")
     let sent = ArisMessageSend.deliver(handle: handle, service: ArisMessageSend.service(for: handle, threads: conversations)) { service, limit in
         sendAndWatch(handle: handle, text: text, service: service, database: database, limit: limit)
     }
     let result = ArisMessageSend.result(sent.attempt, to: who, service: sent.service)
     if result.ok { logActivity(ArisActSummary.messageSent(to: who), undo: nil) }
-    if result.ok { print(result.line) } else { fail(result.line) }
+    // Handed to Messages but not checkable for want of Full Disk Access: said so (ArisMessageResult), with the pane that
+    // gives it, so the next send can be checked.
+    if result.ok { print(result.line) } else { fail(result.line, fix: sent.attempt == .unchecked ? diskAccessFix(database) : nil) }
+}
+
+/// Full Disk Access's pane when Messages' history can't be opened for want of it; nil for any other reason.
+private func diskAccessFix(_ database: String) -> ArisFix? {
+    do { _ = try ArisLocalDatabase(path: database); return nil } catch { return ArisToolFix.store(error) }
 }
 
 /// Hands the message to Messages on `service`, then watches Messages' database for it for at most `limit` seconds.
@@ -132,13 +163,13 @@ private func sendAndWatch(handle: String, text: String, service: ArisMessageSend
 /// The open Claude's message: the agent decides it (the countdown for the user's dictated words, their card otherwise) and
 /// sends it on their yes; what it says is printed, as `mcp` and `aside` do.
 func askAgentToSend(to: String, text: String, turn: String) -> Never {
-    askAgent(route: "message-tool", body: ["turn": turn, "to": to, "text": text])
+    askAgent(route: "message-tool", body: mindPassed(["turn": turn, "to": to, "text": text], environment: ProcessInfo.processInfo.environment))
 }
 
 /// A Claude's write, send or thing opened (ArisHandOff): the agent judges it as Codex's same command, asks the user on a
 /// card when that says to, and runs it itself; what that printed is printed here.
 func askAgentToAct(words: [String], turn: String) -> Never {
-    askAgent(route: "action-tool", body: ["turn": turn, "words": words])
+    askAgent(route: "action-tool", body: mindPassed(["turn": turn, "words": words], environment: ProcessInfo.processInfo.environment))
 }
 
 /// Posts a handed-off call to the agent and ends with its answer: its output printed, its status this program's.
@@ -154,7 +185,7 @@ private func askAgent(route: String, body: [String: Any]) -> Never {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
     request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-    let configuration = URLSessionConfiguration.ephemeral
+    let configuration = ArisNoStore.configuration()
     configuration.timeoutIntervalForRequest = wait
     configuration.timeoutIntervalForResource = wait
     let done = DispatchSemaphore(value: 0)
@@ -224,7 +255,13 @@ func openFolder(_ args: [String]) {
 func shortcut(_ args: [String]) {
     let name = args.joined(separator: " ")
     guard !name.isEmpty else { fail("usage: shortcut <name>") }
-    let printed = run("/usr/bin/shortcuts", ["run", name])
+    // A shortcut has a limit too (ArisBoundedRun.shortcutLimit): stopped there, it is told as stopped, never as ran.
+    let (status, output, complaint) = runCapturing("/usr/bin/shortcuts", ["run", name])
+    if status == ArisBoundedRun.timedOutStatus { fail(ArisBoundedRun.shortcutStoppedLine(name)) }
+    guard status == 0 else {
+        fail(complaint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "the shortcut \"\(name)\" failed" : complaint)
+    }
+    let printed = output.trimmingCharacters(in: .whitespacesAndNewlines)
     print(printed.isEmpty ? "ran \(name)" : printed)
 }
 
@@ -236,9 +273,22 @@ func remind(_ args: [String]) {
     if let at, due == nil { fail(ArisActions.noSuchDay(at) ?? "--at takes \"YYYY-MM-DD HH:MM\"") }
     let text = words.joined(separator: " ")
     guard !text.isEmpty else { fail("usage: remind <text> [--at \"YYYY-MM-DD HH:MM\"]") }
+    let added = "reminder added: \(text)" + (due.map { " (due \(ArisActions.stamp($0)))" } ?? "")
+    // Through the app's EventKit (one Reminders permission, Aris's, asked once at the first use), the same add as
+    // `todo add` with the time as its due (jv-prompts); Reminders' own scripting only when Aris may already control it.
+    let reply = todosReply(ArisActions.remindRequest(text: text, at: at))
+    if let reply, reply["ok"] as? Bool == true {
+        logActivity(ArisActSummary.reminderAdded(text), undo: nil)
+        return print(added)
+    }
+    // Refused for anything but the missing permission (no approval, an unreadable time): said as the app said it.
+    if let reply, !ArisActions.isRemindersNoAccess(reply["message"] as? String) { fail(reply["message"] as? String ?? "couldn't add it") }
+    guard automationAlreadyGranted(ArisActions.remindersBundle) else {
+        fail(reply?["message"] as? String ?? "the notch app didn't answer (is Aris running?), so the reminder wasn't added")
+    }
     appleScript(ArisActions.reminderScript(text: text, due: due), app: "Reminders", missing: "Reminders couldn't add it")
     logActivity(ArisActSummary.reminderAdded(text), undo: nil)
-    print("reminder added: \(text)" + (due.map { " (due \(ArisActions.stamp($0)))" } ?? ""))
+    print(added)
 }
 
 func addEvent(_ args: [String]) {
@@ -262,13 +312,17 @@ func addEvent(_ args: [String]) {
     // (QA BUG-16 inverted, BUG-53 retest). Without the app's grant (or the app), Calendar's own scripting adds it.
     var asked: [String: Any] = ["op": "add", "title": title, "start": startText ?? "", "minutes": minutes]
     if let calendar { asked["calendar"] = calendar }
-    if let reply = askEvents(asked), reply["noAccess"] as? Bool != true {
+    let reply = askEvents(asked)
+    if let reply, reply["noAccess"] as? Bool != true {
         let line = reply["line"] as? String ?? "no answer"
         guard reply["ok"] as? Bool == true else { fail(line) }
         if let uid = reply["uid"] as? String, !uid.isEmpty { logActivity("일정 추가: \(title)", undo: .deleteEvent(id: uid)) }
         print(line)
         return
     }
+    // Calendar's own scripting only when Aris may already control Calendar: it never raises macOS's Automation
+    // dialog (jv-prompts). Otherwise what the app said (its fixed no-access line), or that it didn't answer.
+    guard automationAlreadyGranted(calendarBundle) else { fail(reply?["line"] as? String ?? "The Aris app didn't answer, so nothing was added. Tell the user Aris needs to be running.") }
     // New events go to the user's default calendar for new events when none is named or saved (QA BUG-16: the first writable
     // one was a calendar he doesn't look at).
     let into = calendar ?? defaultEventCalendar()
@@ -299,8 +353,12 @@ func defaultEventCalendar() -> String? {
 func useCalendar(_ args: [String]) {
     let name = args.joined(separator: " ")
     guard !name.isEmpty else { fail("usage: use-calendar <name>") }
-    let names = appleScript("tell application \"Calendar\" to get name of calendars").components(separatedBy: ", ")
+    // The app's EventKit names them (and which take new events); Calendar's scripting only as its fallback.
+    let (names, writable) = calendarNames()
     guard names.contains(name) else { fail("no calendar called \(name); there are: \(names.joined(separator: ", "))") }
+    // A read-only calendar would only make every later add fail.
+    let canAdd = writable.map { $0.contains(name) ? "true" : "false" } ?? appleScript(ArisActions.calendarWritableScript(name), app: "Calendar")
+    if let refusal = ArisActions.readOnlyCalendarRefusal(name, writable: canAdd) { fail(refusal) }
     do {
         try JSONEncoder().encode(CalendarChoice(calendar: name)).write(to: calendarFile, options: .atomic)
     } catch {

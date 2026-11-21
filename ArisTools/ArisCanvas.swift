@@ -107,4 +107,54 @@ enum ArisCanvas {
     static func problem(status: Int) -> String {
         status == 401 ? "Canvas refused the token (expired or deleted?)" : status == 0 ? "Canvas didn't answer" : "Canvas didn't answer (\(status))"
     }
+
+    // MARK: - The fetch (ArisCanvasCommand)
+
+    /// One request's limit. It used to be 10 s, and every way a request can end without an HTTP answer was said as
+    /// the same "Canvas didn't answer" with the reason dropped (the owner's agent.log, 2026-11-19, while the host
+    /// answered): a busy school's planner can take longer, and a Mac just awake has no network for a moment. The
+    /// callers give `aris-tools canvas` 20 s in all.
+    static let requestTimeout: TimeInterval = 15
+    /// Every page within this (under the callers' 20 s for the whole command); a page past it is left unread.
+    static let allPagesWithin: TimeInterval = 18
+    /// The most of the planner's pages read (100 items each; a full term's announcements can pass 100).
+    static let maxPages = 5
+    /// A failure this quick that may pass (the network coming back after sleep) is tried once more, a second later.
+    static let retryWithin: TimeInterval = 4
+
+    /// Why no HTTP answer came, from URLSession's error: said, never dropped.
+    static func problem(noAnswer code: URLError.Code?, host: String) -> String {
+        switch code {
+        case .timedOut?: return "Canvas didn't answer within \(Int(requestTimeout)) seconds (\(host) may be slow right now)"
+        case .notConnectedToInternet?, .networkConnectionLost?, .dataNotAllowed?: return "Canvas couldn't be reached: no network connection"
+        case .cannotFindHost?, .dnsLookupFailed?: return "Canvas couldn't be reached: \(host) wasn't found (check the school's address)"
+        case .cannotConnectToHost?: return "Canvas couldn't be reached: \(host) refused the connection"
+        case .secureConnectionFailed?, .serverCertificateUntrusted?, .serverCertificateHasBadDate?, .serverCertificateNotYetValid?,
+             .serverCertificateHasUnknownRoot?, .clientCertificateRejected?, .clientCertificateRequired?:
+            return "Canvas couldn't be reached: the secure connection to \(host) failed (a proxy or a network filter?)"
+        case let other?: return "Canvas didn't answer (\(other.rawValue))"
+        case nil: return "Canvas didn't answer"
+        }
+    }
+
+    /// Whether a request that got no answer is tried once more: a quick failure of the network that may pass.
+    static func retries(_ code: URLError.Code?, elapsed: TimeInterval) -> Bool {
+        guard elapsed < retryWithin, let code else { return false }
+        return [.notConnectedToInternet, .networkConnectionLost, .dnsLookupFailed, .cannotFindHost, .cannotConnectToHost].contains(code)
+    }
+
+    /// The planner's next page from its `Link` header, only on the school's own host over https (the token goes with
+    /// it, so never anywhere else).
+    static func nextPage(link: String?, host: String) -> URL? {
+        guard let link else { return nil }
+        for part in link.split(separator: ",") {
+            let pieces = part.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
+            guard pieces.count >= 2, pieces.dropFirst().contains(where: { $0.replacingOccurrences(of: " ", with: "") == "rel=\"next\"" }),
+                  pieces[0].hasPrefix("<"), pieces[0].hasSuffix(">") else { continue }
+            guard let url = URL(string: String(pieces[0].dropFirst().dropLast())), url.scheme == "https",
+                  url.host?.lowercased() == host.lowercased(), url.port == nil || url.port == 443, url.user == nil else { return nil }
+            return url
+        }
+        return nil
+    }
 }

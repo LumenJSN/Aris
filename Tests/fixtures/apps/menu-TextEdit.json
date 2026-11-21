@@ -1,0 +1,9 @@
+{"menus":[
+ {"title":"TextEdit","items":[{"title":"About TextEdit"},{"title":"Settings…","key":",","modifiers":0},{"title":"Services","items":[{"title":"Make New Sticky Note","key":"Y","modifiers":1}]},{"title":"Hide TextEdit","key":"H","modifiers":0},{"title":"Quit TextEdit","key":"Q","modifiers":0}]},
+ {"title":"File","items":[{"title":"New","key":"N","modifiers":0},{"title":"Open…","key":"O","modifiers":0},{"title":"Open Recent","items":[{"title":"Clear Menu"}]},{"title":"Close","key":"W","modifiers":0},{"title":"Save…","key":"S","modifiers":0},{"title":"Duplicate","key":"S","modifiers":1},{"title":"Rename…"},{"title":"Export as PDF…"},{"title":"Print…","key":"P","modifiers":0}]},
+ {"title":"Edit","items":[{"title":"Undo Typing","key":"Z","modifiers":0},{"title":"Redo","key":"Z","modifiers":1,"enabled":false},{"title":"Cut","key":"X","modifiers":0},{"title":"Copy","key":"C","modifiers":0},{"title":"Paste","key":"V","modifiers":0},{"title":"Select All","key":"A","modifiers":0},{"title":"Find","items":[{"title":"Find…","key":"F","modifiers":0},{"title":"Find and Replace…","key":"F","modifiers":2}]},{"title":"Spelling and Grammar","items":[{"title":"Check Spelling While Typing","checked":true}]}]},
+ {"title":"Format","items":[{"title":"Font","items":[{"title":"Bold","key":"B","modifiers":0},{"title":"Italic","key":"I","modifiers":0},{"title":"Underline","key":"U","modifiers":0}]},{"title":"Make Plain Text","key":"T","modifiers":1},{"title":"Wrap to Page"}]},
+ {"title":"View","items":[{"title":"Actual Size","key":"0","modifiers":0},{"title":"Zoom In","key":".","modifiers":1},{"title":"Zoom Out","key":",","modifiers":1},{"title":"Show Toolbar","key":"T","modifiers":2},{"title":"Enter Full Screen","key":"F","modifiers":4}]},
+ {"title":"Window","items":[{"title":"Minimize","key":"M","modifiers":0},{"title":"Zoom"},{"title":"Bring All to Front"}]},
+ {"title":"Help","items":[{"title":"TextEdit Help","key":"?","modifiers":0}]}
+]}

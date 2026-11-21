@@ -66,6 +66,8 @@ final class ArisBoard {
               let entry = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return log.error("board: couldn't read board.json")
         }
+        // Taken: aris-tools tells the board as shown only once the file is gone (ArisAppAck).
+        try? FileManager.default.removeItem(at: Self.file)
         if entry["close"] as? Bool == true { return close() }
         guard let markdown = entry["markdown"] as? String else { return }
         show(.board(markdown), on: entry["screen"] as? String ?? "here")
@@ -126,6 +128,7 @@ final class ArisBoard {
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        ArisRecordingPrivacy.follow(panel)
         return panel
     }
 }

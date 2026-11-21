@@ -96,7 +96,9 @@ enum ArisReceiptWords {
             return name.isEmpty ? say("휴지통으로 옮김", "Moved to the Trash") : say("\(name) 휴지통으로", "Moved \(name) to the Trash")
         default:
             if label.hasPrefix("볼륨") { return say("볼륨 바꿈", "Changed the volume") }
-            return shown
+            // Any other line (Core 2's record: "앱 열기: TextEdit") in the UI's language (fifth VM run, D3: an English
+            // UI's chip read "앱 열기: TextEdit").
+            return english ? ArisUndoWords.clean(ArisActivityWords.english(summary), limit: lineLimit) : shown
         }
     }
 

@@ -47,8 +47,11 @@ struct ArisReceipt: Equatable {
         single.map { ArisReceiptWords.line($0.summary, english: english) } ?? ArisReceiptWords.count(acts.count, english: english)
     }
 
-    /// The log's own lines, for the tooltip: what exactly, when the words are short.
-    var detail: String { acts.map { ArisUndoWords.clean($0.summary) }.joined(separator: "\n") }
+    /// The log's own lines, for the tooltip: what exactly, when the words are short; in the UI's language (D3).
+    var detail: String { detail(english: ArisUIWords.english) }
+    func detail(english: Bool) -> String {
+        acts.map { ArisUndoWords.clean(english ? ArisActivityWords.english($0.summary) : $0.summary) }.joined(separator: "\n")
+    }
 
     /// The turn's acts among the log's rows: main Aris's own (the conversation's, or the app's own change; never a
     /// background job's or a teammate's), logged since the turn began, not undone, and not already on an earlier
@@ -122,6 +125,9 @@ struct ArisReceiptClock: Equatable {
     /// A line that says an undo did not happen stays this long: it is the only place that says so, and five seconds
     /// were easy to miss (final check on a new Mac: an undo that failed looked like a receipt that just went away).
     static let failedStay: TimeInterval = 15
+    /// A line that offers an undo stays this long: the chip is the only way to take the act back, and five seconds were
+    /// gone before it was read (eleventh VM run, R5, C3b). Never less than an undo's own answer stays (ArisNotch.undoStay).
+    static let undoStay: TimeInterval = 10
     static let tick: TimeInterval = 0.25
     static let longestHover: TimeInterval = 30
 
@@ -138,8 +144,10 @@ struct ArisReceiptClock: Equatable {
 
     var isOver: Bool { isOver(failed: false) }
 
-    /// `failed`: the line says why an undo did not happen.
-    func isOver(failed: Bool) -> Bool { counted >= (failed ? Self.failedStay : Self.stay) || hovered >= Self.longestHover }
+    /// `failed`: the line says why an undo did not happen. `offersUndo`: the line has its undo chip.
+    func isOver(failed: Bool, offersUndo: Bool = false) -> Bool {
+        counted >= (failed ? Self.failedStay : offersUndo ? Self.undoStay : Self.stay) || hovered >= Self.longestHover
+    }
 }
 
 /// The receipt's state from one turn to the next.
@@ -199,6 +207,15 @@ struct ArisReceiptDesk: Equatable {
         var next = self
         next.line = line
         return next
+    }
+
+    /// The setup is over: its practice's line goes (the timer it names was cancelled with the setup, so its 되돌리기
+    /// has nothing left to undo: VM run 2026-11-18 left "✓ Set a timer · Undo" up) and the practice turn's log is never
+    /// read again. A line whose undo is out stays until that ends.
+    func puttingAwaySetup() -> ArisReceiptDesk {
+        guard line?.stage != .undoing else { return self }
+        let shown = line?.receipt.acts.map(\.id) ?? []
+        return ArisReceiptDesk(began: nil, earlier: Array((earlier + shown).suffix(Self.earlierLimit)))
     }
 
     /// Its time is up.

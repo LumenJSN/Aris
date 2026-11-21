@@ -12,6 +12,7 @@
 import AppKit
 import AVFoundation
 import Combine
+import Defaults
 import SwiftUI
 
 @MainActor
@@ -49,7 +50,7 @@ final class ArisAIServicesLive {
     private var w: ArisSettingsWording { .make(page: .ai, english: ArisUILanguage.english) }
 
     private static let transport: ArisAITransport = { request in
-        guard let (data, response) = try? await URLSession.shared.data(for: request), let status = (response as? HTTPURLResponse)?.statusCode else { return nil }
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request), let status = (response as? HTTPURLResponse)?.statusCode else { return nil }
         return (data, status)
     }
 
@@ -105,6 +106,10 @@ final class ArisAIServicesLive {
         ArisBrainSetup.shared.$ready.receive(on: DispatchQueue.main).sink { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshChoices() }
         }.store(in: &watching)
+        // 다른 AI로 넘기기 turned on or off: the card's "안 되면 …" line follows.
+        Defaults.publisher(.arisBrainFallback, options: []).receive(on: DispatchQueue.main).sink { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshChoices() }
+        }.store(in: &watching)
         // A sign-in finished in Terminal, a voice installed in System Settings: read again when Aris comes forward.
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification).sink { [weak self] _ in
             MainActor.assumeIsolated {
@@ -118,7 +123,14 @@ final class ArisAIServicesLive {
     /// The keys, the Whisper models and the download, then the choices that follow from them.
     private func refreshLocal() {
         model.state.elevenKey = ArisElevenLabs.loadKey().map(ArisKeyFile.masked)
+        model.state.hearKeys = ["soniox", "openai-stt"].reduce(into: [:]) { held, holder in
+            held[holder] = ArisAICatalogue.appKeys[holder].flatMap(ArisKeyFile.load).map(ArisKeyFile.masked)
+        }
         model.state.jevKey = ArisKeyFile.load(ArisRouter.keyName).map(ArisKeyFile.masked)
+        for provider in ArisDecisionProviders.all where provider.id != "jev" {
+            model.state.decisionKeys[provider.id] = ArisKeyFile.load(provider.keyName).map(ArisKeyFile.masked)
+            model.state.decisionSetup[provider.id] = ArisDeciders.setup(provider.id)
+        }
         model.state.whisperInstalled = Set(ArisSpeechModel.allCases.filter(ArisWhisper.installed).map(\.rawValue))
         let downloader = ArisModelDownloader.shared
         let percent = downloader.state.percent
@@ -148,6 +160,7 @@ final class ArisAIServicesLive {
         // shown as chosen (the rule 대화's 기본으로 답하는 AI follows). Nothing is stored or changed by this.
         choices.think = ArisBrainChoice.shown(choices.think, stored: ArisBrainSetup.stored, ready: ArisBrainSetup.shared.ready)
         model.state.thinkStored = nil
+        model.state.fallbackOn = ArisBrainFallbackSetting.isOn()
         if let pending = pendingThink {
             var shown = model.state
             shown.choices.think = pending
@@ -309,6 +322,20 @@ final class ArisAIServicesLive {
                 refreshLocal()
                 if let problem { fail(problem) } else { toast("TypeSafe 키를 키체인에서 지웠어요") }
             }
+        case .openDecisionKey(let id):
+            model.state.ui.decisionOpen = id
+            model.state.ui.decisionError = nil
+        case .cancelDecisionKey: closeDecisionKey()
+        case .saveDecisionKey(let id, let key): saveDecisionKey(id, key)
+        case .clearDecisionKey(let id):
+            guard let provider = ArisDecisionProviders.provider(id) else { return }
+            Task {
+                let problem = await keys.delete(provider.keyName)
+                refreshLocal()
+                if let problem { fail(problem) } else { toast("\(ArisAIServicesBuilder.decisionName(id)) 키를 키체인에서 지웠어요") }
+            }
+        case .commit(.decisionModel(let id), let text): storeDecision(ArisDeciders.modelKey(id), text)
+        case .commit(.decisionAddress(let id), let text): storeDecision(ArisDeciders.addressKey(id), text)
         case .preview: togglePreview()
         case .sample(let id, let url): toggleSample(id, url)
         case .commit(.model(let id), let text):
@@ -374,7 +401,7 @@ final class ArisAIServicesLive {
                 await store(.whisperModel(id))
                 await ArisWhisper.shared.prepare()
             }
-        case .model, .voice:
+        case .model, .voice, .router:
             if kind == .voice, id == "library" { openLibrary(); return }
             if kind == .voice, id == "link" { model.sheet = .link(ArisAILinkState()); return }
             guard let change = ArisAIServicesBuilder.change(kind, picked: id, in: model.state) else { return }
@@ -423,6 +450,18 @@ final class ArisAIServicesLive {
             }
             return
         }
+        // A recogniser's own key (Soniox, OpenAI's transcription) stays in the app's Keychain, like ElevenLabs'.
+        if let account = ArisAICatalogue.appKeys[holder] {
+            switch ArisKeyFile.check(raw) {
+            case .failure(let problem): model.state.ui.keyError[holder] = problem.message
+            case .success(let key):
+                if let failure = keys.save(account, key) { model.state.ui.keyError[holder] = failure; return }
+                closeKey(holder)
+                refreshLocal()
+                toast("\(ArisAICatalogue.keyName(holder, in: model.state)) API 키를 저장했어요")
+            }
+            return
+        }
         // An API brain's key goes to aris-agent once (it checks the shape and keeps it in the Keychain).
         let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { model.state.ui.keyError[holder] = ArisKeyFile.Problem.empty.message; return }
@@ -448,13 +487,38 @@ final class ArisAIServicesLive {
         await ArisBrainSetup.shared.refresh()
         guard !result.ok, !result.message.isEmpty else { return }
         // The name as it is, aris-agent's line in the page's wording.
-        toast("\(ArisAICatalogue.keyName(id, in: model.state)): \(w(result.message))")
+        fail("\(ArisAICatalogue.keyName(id, in: model.state)): \(w(result.message))")
     }
 
     private func closeKey(_ holder: String) {
         model.state.ui.keyOpen.remove(holder)
         model.state.ui.keyError[holder] = nil
         model.drafts["key:" + holder] = nil
+    }
+
+    private func closeDecisionKey() {
+        if let id = model.state.ui.decisionOpen { model.drafts["decision:" + id] = nil }
+        model.state.ui.decisionOpen = nil
+        model.state.ui.decisionError = nil
+    }
+
+    /// A decision model's key into the Keychain, as TypeSafe's is (a server of the owner's own may have a short one).
+    private func saveDecisionKey(_ id: String, _ raw: String) {
+        guard let provider = ArisDecisionProviders.provider(id) else { return }
+        switch provider.needsKey ? ArisKeyFile.check(raw) : ArisKeyFile.checkOwn(raw) {
+        case .failure(let problem): model.state.ui.decisionError = problem.message
+        case .success(let key):
+            if let failure = keys.save(provider.keyName, key) { model.state.ui.decisionError = failure; return }
+            closeDecisionKey()
+            refreshLocal()
+            toast("\(ArisAIServicesBuilder.decisionName(id)) API 키를 저장했어요")
+        }
+    }
+
+    /// A decision model's model id or address: a preference (never a secret); cleared when the field is emptied.
+    private func storeDecision(_ key: String, _ text: String) {
+        if text.isEmpty { UserDefaults.standard.removeObject(forKey: key) } else { UserDefaults.standard.set(text, forKey: key) }
+        refreshLocal()
     }
 
     private func saveJev(_ raw: String) {
@@ -483,6 +547,12 @@ final class ArisAIServicesLive {
             return
         }
         let name = ArisAICatalogue.keyName(holder, in: model.state)
+        if let account = ArisAICatalogue.appKeys[holder] {
+            let problem = await keys.delete(account)
+            refreshLocal()
+            if let problem { fail(problem) } else { toast("\(name) 키를 키체인에서 지웠어요") }
+            return
+        }
         if let problem = await ArisAgentClient.removeAPIBrain(holder) { fail(problem); return }
         model.state.models[holder] = nil
         await reloadAgent()
@@ -576,6 +646,10 @@ final class ArisAIServicesLive {
         case .loadModels: Task { await loadConnectionModels() }
         case .save(let force): Task { await saveConnection(force: force) }
         case .useShipped: Task { await useShipped() }
+        case .replaceKey:
+            guard case .connect(var draft)? = model.sheet else { return }
+            draft.replacing = true
+            model.sheet = .connect(draft)
         case .searchLibrary:
             librarySearch?.cancel()
             librarySearch = Task { [weak self] in
@@ -658,7 +732,7 @@ final class ArisAIServicesLive {
     private func useShipped() async {
         guard var draft = connectDraft(), let id = draft.shipped, let preset = model.state.preset(id), !draft.busy else { return }
         var key: String?
-        if preset.needsKey, model.state.profile(id)?.hasKey != true {
+        if preset.needsKey, model.state.profile(id)?.hasKey != true || draft.replacing {
             let typed = draft.key.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !typed.isEmpty else {
                 draft.errors = ["key": "API 키를 붙여 넣어 주세요"]
@@ -676,13 +750,37 @@ final class ArisAIServicesLive {
             model.sheet = .connect(now)
             return
         }
+        // A new key is checked before the sheet closes: one that doesn't work keeps the sheet open with why, on its field
+        // (twelfth VM run: the replace sheet closed on a refused key and only a toast said so).
+        if key != nil {
+            let result = await ArisAgentClient.testAPIBrain(id, model: nil)
+            if !result.ok, !result.message.isEmpty, var now = connectDraft() {
+                now.busy = false
+                now.errors = ["key": w(result.message)]
+                model.sheet = .connect(now)
+                await reloadAgent()
+                await ArisBrainSetup.shared.refresh()
+                return
+            }
+        }
         model.sheet = nil
         pendingThink = nil
         agentActive = id
         UserDefaults.standard.set("api", forKey: ArisAIPrefKey.brain)
         await reloadAgent()
         await ArisBrainSetup.shared.refresh()
-        if key != nil { await verify(id) }
+    }
+
+    /// The "API 키 넣기" chip (ArisFixModel): straight onto the field that replaces the key of the service that thinks.
+    func replaceThinkingKey() {
+        start()
+        Task {
+            // The services may not have been read yet (Settings not opened before): asked first, then the sheet.
+            if ArisAIConnect.replacingKey(think: model.state.choices.think, in: model.state) == nil { await reloadAgent() }
+            guard let draft = ArisAIConnect.replacingKey(think: model.state.choices.think, in: model.state) else { return }
+            model.menu = nil
+            model.sheet = .connect(draft)
+        }
     }
 
     private func removeConnection(_ preset: ArisAIPreset) async {

@@ -10,17 +10,19 @@
 //  writes whole and Finder's folder names have their English; the user's own words (a message, a file's name, a to-do)
 //  stay as they are, and so does a line this table doesn't know. The words are aris-agent's own where it has them
 //  (ArisGateWords, which now writes most cards in English itself for an English request): this is what is left to
-//  draw (an editable card's field labels, a "앞으로 이건 그냥 할까?" card's rows, the event, connector and file cards). A request with no words (an undo from the panel)
-//  follows the Mac's language. Foundation only (tested).
+//  draw (an editable card's field labels, a "앞으로 이건 그냥 할까?" card's rows, the event, connector and file cards). Every card follows the UI's language (third VM
+//  run, D4), not the request's. Foundation only (tested).
 //
 
 import Foundation
 
 enum ArisCardEnglish {
-    /// The card is drawn in English: the request has words and none of them Korean; with no request, the UI's language.
+    /// The card is drawn in the UI's language, whatever language the request was in (third VM run, D4: an English UI
+    /// drew a Korean request's lesson card with 취소 / 허용, a Korean UI an English request's with Cancel / Allow). The user's
+    /// own words on it (a message, a file's name, a to-do, a lesson's name) stay as he wrote them. `request` is kept for
+    /// the callers' sake; it no longer decides.
     static func isEnglish(request: String, uiEnglish: Bool = ArisUIWords.english) -> Bool {
-        guard !request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return uiEnglish }
-        return !hasHangul(request)
+        uiEnglish
     }
 
     static func hasHangul(_ text: String) -> Bool {
@@ -31,14 +33,46 @@ enum ArisCardEnglish {
     static func title(_ korean: String) -> String {
         guard hasHangul(korean) else { return korean }
         if let known = titles[korean] { return known }
+        // The helper's own desktop card ("Finder에서 누르기").
+        if let desktop = desktopTitle(korean) { return desktop }
         // Several commands on one card, or a noun and what is done to it.
         let pieces = korean.components(separatedBy: " · ")
-        if pieces.count > 1 { return pieces.map { titles[$0] ?? verbs[$0] ?? title($0) }.joined(separator: " · ") }
+        // The trust gate's verb ("바꾸기 · TextEdit": fifth VM run, D3) is the gate's own word too.
+        if pieces.count > 1 { return pieces.map { titles[$0] ?? verbs[$0] ?? gateVerb($0) ?? wholeFolderTitle($0) ?? title($0) }.joined(separator: " · ") }
+        // The gate's verb alone (tenth VM run, cap10/C2-showall.jpg: "지우기" over an English card).
+        if let verb = gateVerb(korean) { return verb }
         for (pattern, english) in titlePatterns {
             if let value = capture(pattern, in: korean) { return english.replacingOccurrences(of: "%@", with: titles[value] ?? verbs[value] ?? value) }
         }
         return korean
     }
+
+    /// A whole folder's card title (ArisAskPlan.folderCard): "폴더 통째로 지우기" → "Whole folder: Delete".
+    static func wholeFolderTitle(_ korean: String) -> String? {
+        let lead = "폴더 통째로 "
+        guard korean.hasPrefix(lead), let verb = gateVerb(String(korean.dropFirst(lead.count))) else { return nil }
+        return "Whole folder: " + verb
+    }
+
+    /// What a path is, as the gate's cards say it (ArisPathKind.word, ArisBroadTarget.holds), in English.
+    static func pathKinds(_ row: String) -> String {
+        var english = row
+        // The old path's card line too (ArisCardWords.wholeFolderLine; twelfth VM run: "This is the whole folder: 안의 항목 3개가 함께 옮겨져요").
+        for (pattern, template) in [(#"폴더 전체\(항목 (\d+)개\)"#, "$1 items inside"), (#"폴더 \(항목 (\d+)개\)"#, "Folder ($1 items)"),
+                                    (#"^안의 항목 1개가 함께 옮겨져요$"#, "the 1 item inside goes with it"), (#"^안의 항목 (\d+)개가 함께 옮겨져요$"#, "the $1 items inside go with it"),
+                                    (#"^안의 항목 수는 읽지 못했어요$"#, "its items couldn't be counted")] {
+            english = english.replacingOccurrences(of: pattern, with: template, options: .regularExpression)
+        }
+        for (korean, word) in [("폴더 전체(항목 수를 읽지 못했어요)", "its items couldn't be counted"), ("폴더 (항목 수를 읽지 못했어요)", "Folder (couldn't count its items)"),
+                               ("지금 없는 경로", "nothing is there now"), ("파일인지 폴더인지 읽지 못한 것", "I couldn't tell whether it is a file or a folder"),
+                               ("없는 경로", "Nothing there"), ("종류를 읽지 못했어요", "Couldn't tell file or folder")] {
+            english = english.replacingOccurrences(of: korean, with: word)
+        }
+        return english
+    }
+
+    /// The trust gate's verb in English ("바꾸기" → "Change"), nil when it is none.
+    static func gateVerb(_ korean: String) -> String? { gateVerbs.first { $0.korean == korean }?.english }
 
     /// A row's label: "받는 사람" → "To".
     static func label(_ korean: String) -> String { labels[korean] ?? korean }
@@ -49,13 +83,25 @@ enum ArisCardEnglish {
     /// what is done in which window. Everything else stays as it is: a note's lines, a to-do, the text to type.
     static func detail(_ korean: String, title: String) -> String {
         guard hasHangul(korean) else { return korean }
+        // An undo's card shows the activity log's own line: its kind is said as the side notch says it.
+        if let undo = undoRow(korean, title: title) { return undo }
         let files = fileTitles.contains(title), desktop = desktopTitles.contains(title) || title.hasPrefix("창 ") || title.hasPrefix("앱 ")
         // A to-do's or a note's lines are the user's own words: none of them is taken for one of the agent's lines.
         let own = ownWordsTitles.contains(title)
         // Codex's own computer-use cards: an app it will work in ("Safari 사용"), a chat it will send in ("엄마에서 보내기").
         let usesApp = title.hasSuffix(" 사용") || title.contains(" 사용 · "), sendsInChat = title.hasSuffix("에서 보내기")
+        // The trust gate's own cards (ArisAskPlan: "지우기 · TextEdit", "글 바꾸기 · TextEdit"): its rows are its words.
+        let gate = gateVerbs.contains { title == $0.korean || title.hasPrefix($0.korean + " · ") }
+        // A card that carries the gate's own sentences under another title (a replay's step card) quotes as the gate does.
+        let carriesGate = !own && korean.components(separatedBy: "\n").contains { gateRow($0, verbs: false) != nil }
         return korean.components(separatedBy: "\n").enumerated().map { index, row -> String in
+            // The gate's own rows wherever they are (a replay's step card carries them under its own title: fifth VM
+            // run, D2), its quotes as English writes them (M4: 「…」).
+            if gate || !own, let english = gateRow(row, verbs: gate) { return quotes(english) }
+            if gate || carriesGate, row.hasPrefix("「"), row.hasSuffix("」") { return quotes(row) }
             if !own || row == "빈 메모", let known = lines[row] { return known }
+            // The helper's own desktop card's rows (its window, its target with the role's word, what a yes also covers).
+            if !own, !gate, let known = desktopRow(row) { return known }
             for (prefix, english) in leads where row.hasPrefix(prefix) { return english + row.dropFirst(prefix.count) }
             let parts = row.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
             if parts.count == 2, let known = labels[parts[0].trimmingCharacters(in: .whitespaces)] {
@@ -85,6 +131,66 @@ enum ArisCardEnglish {
             return row
         }.joined(separator: "\n")
     }
+
+    /// The trust gate's verbs (ArisAskPlan.verb), as its cards start a call's line with them.
+    static let gateVerbs: [(korean: String, english: String)] = [
+        ("스크립트 실행", "Run a script"), ("글 바꾸기", "Replace text"), ("보내기", "Send"), ("결제", "Pay"), ("올리기", "Post"), ("지우기", "Delete"),
+        ("실행", "Run"), ("바꾸기", "Change"), ("보기", "Look"), ("하지 않기", "Don't"),
+    ]
+
+    /// Where what Aris read came from (ArisContentSource.kindWords), in English.
+    private static let sourceKinds: [(String, String)] = [
+        ("웹 페이지", "web page"), ("명령 출력", "command output"), ("앱 화면", "app window"), ("파일", "file"), ("메일", "mail"), ("메시지", "message"),
+        ("메모", "note"), ("서비스", "service"), ("화면", "screen"),
+    ]
+
+    /// One row of the trust gate's card in English (fourth VM run, D8: a replay's "Delete" card said "읽은 내용(앱 화면
+    /// TextEdit)이 제안한 일이에요." under an English UI); nil when it is no row of its own words (then the general
+    /// rules go on: a labelled row's label, the user's own words as they are).
+    /// `verbs`: the row may start with the gate's verb (a gate card's call line); on any other card only the gate's
+    /// whole sentences are its words, never a line that happens to start like one (a message's own words).
+    static func gateRow(_ row: String, verbs: Bool = true) -> String? {
+        if let source = capture(#"^읽은 내용\((.+)\)이 제안한 일이에요\.$"#, in: row) {
+            var english = source.replacingOccurrences(of: " · 배운 단계", with: " · a taught step")
+            for (korean, word) in sourceKinds where english.hasPrefix(korean + " ") {
+                english = word + english.dropFirst(korean.count)
+                break
+            }
+            return "Suggested by what was read (\(english))."
+        }
+        if let counts = try? NSRegularExpression(pattern: #"^지워지는 글 \((\d+)자, (\d+)줄\):$"#),
+           let match = counts.firstMatch(in: row, range: NSRange(row.startIndex..., in: row)),
+           let characters = Range(match.range(at: 1), in: row), let rows = Range(match.range(at: 2), in: row) {
+            return "Erases (\(row[characters]) characters, \(row[rows]) line\(row[rows] == "1" ? "" : "s")):"
+        }
+        if let more = capture(#"^외 (\d+)건$"#, in: row) { return "and \(more) more" }
+        // Tenth VM run: the label when no value came from what was read, and a whole folder's card.
+        if row == "말씀하신 내용에서 이 일을 해 달라는 말은 찾지 못해서 여쭤봐요." { return "I didn't find a request for this in what you said, so I'm asking." }
+        if row.hasPrefix("폴더 전체예요: ") { return "This is the whole folder: " + pathKinds(String(row.dropFirst("폴더 전체예요: ".count))) }
+        if row == "이 폴더에 이번 한 번만이에요. 다음에는 다시 물어봐요." { return "This yes is for this folder, this once. I'll ask again next time." }
+        for lead in ["폴더 (항목 ", "없는 경로: ", "종류를 읽지 못했어요: "] where row.hasPrefix(lead) { return pathKinds(row) }
+        if row.hasPrefix(alwaysLead) { return "Say “always” and I won't ask about just this again: " + row.dropFirst(alwaysLead.count) }
+        guard verbs else { return nil }
+        var numbered = "", rest = Substring(row)
+        if let number = capture(#"^(\d+\. )"#, in: row) {
+            numbered = number
+            rest = rest.dropFirst(number.count)
+        }
+        for (korean, english) in gateVerbs where rest == korean || rest.hasPrefix(korean + " ") {
+            // What a path is, when the line says it ("지우기 파일 /…", "지우기 폴더 (항목 5개) /…").
+            let after = String(rest.dropFirst(korean.count))
+            let named = after.hasPrefix(" 파일 /") || after.hasPrefix(" 파일 ~") ? " file" + after.dropFirst(" 파일".count) : pathKinds(after)
+            return numbered + english + named
+        }
+        return nil
+    }
+
+    /// The gate's 「…」 around what it quotes, as English writes quotes (fifth VM run, M4).
+    static func quotes(_ row: String) -> String {
+        row.replacingOccurrences(of: "「", with: "“").replacingOccurrences(of: "」", with: "”")
+    }
+
+    private static let alwaysLead = "‘항상’이라고 하시면 앞으로 이것만 묻지 않아요: "
 
     /// A path as Finder names it, in English: "바탕화면 › qa-test" → "Desktop › qa-test"; "a → b" side by side.
     static func place(_ korean: String) -> String {
@@ -126,7 +232,7 @@ enum ArisCardEnglish {
         "컴퓨터 사용": "Computer use", "앞으로 이건 그냥 할까?": "Do this without asking from now on?", "Claude Code 열기": "Open Claude Code", "예약 추가": "Add a schedule",
         "예약 다시 살리기": "Bring the schedule back", "파일로 저장": "Save as a file",
         "설정 파일 수정": "Edit settings file", "Mac 재시동": "Restart Mac", "Mac 끄기": "Shut down Mac", "로그아웃": "Log out", "Mac 잠자기": "Sleep Mac",
-        "녹음": "Recording",
+        "녹음": "Recording", "글 바꾸기": "Replace text",
         "창 앞으로 가져오기": "Bring a window forward", "창 닫기": "Close a window", "창 내리기": "Minimise a window", "창 되살리기": "Restore a window",
         "창 최대화": "Maximise a window", "창 크기 바꾸기": "Resize a window", "창 목록": "List windows", "창 다루기": "Manage a window",
         "앱 앞으로 가져오기": "Bring an app forward", "앱 숨기기": "Hide an app", "앱 종료": "Quit an app", "앱 다루기": "Manage an app",
@@ -150,7 +256,8 @@ enum ArisCardEnglish {
         "캘린더": "Calendar", "이름": "Name", "참조": "Cc", "검색어": "Query", "장소": "Place", "설명": "Description", "참석자": "Attendees",
         "날짜": "Date", "마감": "Due", "대상": "Target", "위치": "Where", "저장할 것": "Saving", "시간": "Time", "키": "Keys", "단계": "Steps",
         "입력하는 글": "Text to type", "폴더": "Folder", "종류": "Kind", "앱": "App", "언제": "When", "할 일": "Does", "팀원": "Teammate",
-        "보내는 곳": "Through", "되돌릴 일": "To undo", "바깥으로 나가는 일": "Goes outside",
+        "보내는 곳": "Through", "되돌릴 일": "To undo", "바깥으로 나가는 일": "Goes outside", "파일": "File", "명령": "Command", "주소": "Address",
+        "금액": "Amount", "받는 곳": "Payee",
     ]
 
     /// Lines the agent writes whole.
@@ -180,6 +287,13 @@ enum ArisCardEnglish {
         "고친 내용은 꼭 확인받는 일이라 한 번 더 확인할게요.": "The change is something I always ask about, so I'm asking once more.",
         "받는 곳이 바뀌어서 한 번 더 확인할게요.": "Where it goes changed, so I'm asking once more.",
         "컴퓨터 소리를 녹음해요": "Records the computer's sound",
+        // A replace's card (ArisAskPlan.erasesLines).
+        "지워질 글을 미리 읽지 못했어요. 허용하면 넣기 직전에 다시 읽어서, 못 보신 글이 있으면 멈추고 보여 드려요. 그때도 읽을 수 없으면 있던 글이 보지 못한 채 지워질 수 있어요.":
+            "I couldn't read the text this would erase. If you allow it, I read again right before typing and stop to show you any text you haven't seen. If it still can't be read then, what is there may be erased unseen.",
+        "새로 넣을 글은 직접 말씀하신 그대로예요.": "The new text is exactly what you said.",
+        "지금 비어 있는 칸이라 지워지는 글은 없어요": "The field is empty now, so nothing is erased",
+        "지운 글은 남겨 둬서, 되돌려 달라고 하면 다시 넣어요.": "The erased text is kept: say “undo” and I'll put it back.",
+        "지운 글을 남겨 둘 수 없어서 되돌릴 수 없어요.": "The erased text can't be kept, so this can't be undone.",
     ]
 
     /// What a line starts with, before words that stay as they are.

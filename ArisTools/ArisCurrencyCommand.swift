@@ -27,11 +27,13 @@ func currency(_ args: [String]) {
 
 /// The card from a fresh quote, kept in `file` for the next call; ends the program with a plain line when there is none.
 private func currencyFetched(_ request: ArisCurrency.Request, keptIn file: URL) -> [String: Any] {
-    var reached = false
+    var reached = false, limited = false
     let quote = ArisCurrency.quote(from: request.from, to: request.to) { symbol in
-        stockDecode({ ArisStock.chartURL(symbol: symbol, host: $0) }, as: ArisCurrency.ChartReply.self, reached: &reached)
+        stockDecode({ ArisStock.chartURL(symbol: symbol, host: $0) }, as: ArisCurrency.ChartReply.self, reached: &reached, limited: &limited)
     }
     guard let quote else {
+        // Yahoo's 429 is "too many requests just now", never "no such rate".
+        if limited { fail("the rate service is busy right now (Yahoo answered 429: too many requests); try again in a minute") }
         fail(reached ? "no rate found for \(request.from) to \(request.to): check the two currencies (ISO codes like CNY, CAD, or their names)"
              : "the rate service didn't answer (offline?); try again in a moment")
     }

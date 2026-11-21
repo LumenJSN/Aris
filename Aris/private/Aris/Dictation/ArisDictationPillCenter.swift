@@ -3,11 +3,14 @@
 //  Aris
 //
 //  The live side of the dictation pill: it reads the dictation (ArisController's stage, ArisDictationState's
-//  hands-free, finishing, copied words and error line), the app in front (its screen, whether it is full screen, its
-//  icon), the lock screen and the setting, turns them into one ArisDictationPillDisplay (ArisDictationPillRules), and
+//  hands-free, finishing, copied words and error line), the app in front (its screen, whether it is full
+//  screen), the lock screen and the setting, turns them into one ArisDictationPillDisplay (ArisDictationPillRules), and
 //  keeps the panel on the screen being typed on, at its bottom centre above a showing Dock. The panel takes the pointer
 //  only while it is on the pill, so everything around it stays the front app's; with nothing to show for 12 s the panel
-//  is parked (ordered out) and nothing watches the pointer.
+//  is parked (ordered out) and nothing watches the pointer. As the reference pill does, the hover follows the pointer
+//  at once on the pill and 10 / 6 around it (12 more once grown), then holds 100 ms (ArisDictationPillRules.HoverLock),
+//  so an edge that flickers never jolts it; a size change turned back mid-way takes only the share it covered
+//  (ArisDictationPillRules.Reversal).
 //
 
 import AppKit
@@ -29,7 +32,7 @@ extension Defaults.Keys {
 
 /// Whether the pill takes dictation on this Mac now (every macOS the app runs on can dictate: ArisListenEngine).
 enum ArisDictationPillGate {
-    static var on: Bool { Defaults[.arisDictationPill] }
+    static var on: Bool { ArisDictationSwitch.pillOn(dictation: Defaults[.arisDictationOn], pill: Defaults[.arisDictationPill]) }
 }
 
 @MainActor
@@ -43,19 +46,23 @@ final class ArisDictationPillCenter: ObservableObject {
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var monitors: [Any] = []
     private var parkTask: Task<Void, Never>?
-    private var typedHoldTask: Task<Void, Never>?
     private var copyFeedbackTask: Task<Void, Never>?
 
+    /// The pointer on the pill as drawn (the panel takes it; the copied words stay up under it).
     private var hovered = false
+    /// The pointer's hover as the pill follows it (at once, then held 100 ms).
+    private var hoverLock = ArisDictationPillRules.HoverLock()
+    private var hoverWait: Task<Void, Never>?
+    /// The size change running now, for a reversal's shortening.
+    private var reversal = ArisDictationPillRules.Reversal()
+    /// The level's state across redraws: it starts over with each dictation.
+    let level = ArisDictationPillLevel()
     private var screenLocked = false
-    private var front: (screen: NSScreen?, fullScreen: Bool, icon: NSImage?) = (nil, false, nil)
+    private var front: (screen: NSScreen?, fullScreen: Bool) = (nil, false)
     /// The screen a running dictation is on: it stays there until it ends.
     private var dictationScreen: NSScreen?
     private var stage = ArisDictationPillRules.Stage.none
-    private var listeningSince: ContinuousClock.Instant?
-    private var recordingSeconds = 0.0
     private var dictationCount = 0
-    private var typedHold = false
     private var recoveredClosed = false
     private var started = false
 
@@ -75,7 +82,7 @@ final class ArisDictationPillCenter: ObservableObject {
             state.$copied.map { _ in () }.eraseToAnyPublisher(),
             state.$pillError.map { _ in () }.eraseToAnyPublisher(),
             state.$refusal.map { _ in () }.eraseToAnyPublisher(),
-            state.$fromPill.map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.arisDictationOn, options: []).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.arisDictationPill, options: []).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.arisDictationPillIdle, options: []).map { _ in () }.eraseToAnyPublisher(),
         ]
@@ -84,12 +91,15 @@ final class ArisDictationPillCenter: ObservableObject {
             .sink { [weak self] in MainActor.assumeIsolated { self?.refresh() } }
             .store(in: &watches)
         let workspace = NSWorkspace.shared.notificationCenter
-        observe(workspace, NSWorkspace.didActivateApplicationNotification) { $0.frontChanged() }
         observe(workspace, NSWorkspace.activeSpaceDidChangeNotification) { $0.frontChanged() }
-        observe(NotificationCenter.default, NSApplication.didChangeScreenParametersNotification) { $0.frontChanged() }
-        let distributed = DistributedNotificationCenter.default()
-        observe(distributed, Notification.Name("com.apple.screenIsLocked")) { $0.setLocked(true) }
-        observe(distributed, Notification.Name("com.apple.screenIsUnlocked")) { $0.setLocked(false) }
+        // The front app, the displays and the lock, as ArisWorld hears them (one observer for every feature).
+        ArisWorld.shared.subscribe([.frontApp, .displays, .screen]) { [weak self] change, _ in
+            switch change {
+            case .frontApp, .displays: self?.frontChanged()
+            case .screenLocked(let locked): self?.setLocked(locked)
+            default: break
+            }
+        }
         screenLocked = ArisController.screenIsAwayNow()
         frontChanged()
         log.notice("dictation pill: \(ArisDictationPillGate.on ? "on" : "off", privacy: .public)")
@@ -109,7 +119,7 @@ final class ArisDictationPillCenter: ObservableObject {
 
     // MARK: - The app in front
 
-    /// The front app's frontmost window: its screen, whether it covers it, and the app's icon.
+    /// The front app's frontmost window: its screen and whether it covers it.
     private func frontChanged() {
         let app = NSWorkspace.shared.frontmostApplication
         let own = app?.processIdentifier == ProcessInfo.processInfo.processIdentifier
@@ -118,8 +128,8 @@ final class ArisDictationPillCenter: ObservableObject {
         let screen = window.flatMap { ArisDictationPillRules.screenIndex(for: $0, screens: screens.map(\.frame)) }.map { screens[$0] }
             ?? Self.pointerScreen() ?? NSScreen.main
         let full = screen.map { ArisDictationPillRules.isFullScreen(window: window, screen: $0.frame) } ?? false
-        // Aris's own windows (Settings) keep the last app's place and icon.
-        front = own ? (front.screen ?? screen, front.fullScreen, front.icon) : (screen, full, app?.icon)
+        // Aris's own windows (Settings) keep the last app's place.
+        front = own ? (front.screen ?? screen, front.fullScreen) : (screen, full)
         refresh()
     }
 
@@ -161,20 +171,24 @@ final class ArisDictationPillCenter: ObservableObject {
         let copiedWords = next == .typed && state.copied && !recoveredClosed ? state.lastText : nil
         let inputs = ArisDictationPillRules.Inputs(
             enabled: ArisDictationPillGate.on, showIdle: Defaults[.arisDictationPillIdle], screenLocked: screenLocked, fullScreen: front.fullScreen, stage: next,
-            handsFree: state.locked, hovered: hovered, recovered: copiedWords, error: state.pillError ?? state.refusal,
-            typedHold: typedHold)
+            handsFree: state.locked, hovered: hoverLock.shown, recovered: copiedWords, error: state.pillError ?? state.refusal)
         let phase = ArisDictationPillRules.phase(inputs)
         var shown = display
+        // The size's move: 0.1 s, or the share covered when it turns back; set only when the phase changes, so a
+        // refresh mid-move keeps it.
+        if phase != display.phase {
+            reversal = reversal.changing(to: phase, at: Self.clock())
+            shown.sizeDuration = reversal.duration
+        }
         shown.phase = phase
         if phase.shown { shown.drawn = phase }
-        shown.appIcon = front.icon
-        shown.fromPill = state.fromPill
-        shown.recordingSeconds = recordingSeconds
         shown.dictation = dictationCount
+        shown.pointerOn = hovered
         shown.english = ArisUIWords.english
         shown.light = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua
         let key = ArisDictationKey.Choice.current.name(english: shown.english)
         shown.hint = ArisDictationPillWords.hint(english: shown.english, key: key)
+        shown.finishHint = ArisDictationPillWords.finishHint(english: shown.english, key: key)
         // The copied words stay up while the pointer is on them (as the notch's card did).
         if inputs.enabled { state.cardHovered = copiedWords != nil && hovered }
         if shown != display { display = shown }
@@ -186,28 +200,14 @@ final class ArisDictationPillCenter: ObservableObject {
         switch new {
         case .listening:
             dictationCount += 1
-            listeningSince = .now
-            recordingSeconds = 0
+            level.reset()
             recoveredClosed = false
             dictationScreen = front.screen
-        case .writing:
-            if let since = listeningSince { recordingSeconds = Double((ContinuousClock.now - since) / .milliseconds(1)) / 1000 }
-        case .typed:
-            // The ring fills and holds 100 ms, then the pill goes back to the sliver (copied words show at once).
-            typedHold = true
-            typedHoldTask?.cancel()
-            typedHoldTask = Task { [weak self] in
-                try? await Task.sleep(for: ArisDictationPillRing.completeHold)
-                guard !Task.isCancelled, let self else { return }
-                self.typedHold = false
-                self.refresh()
-            }
         case .none:
-            typedHold = false
             dictationScreen = nil
-            listeningSince = nil
             if old != .none, ArisDictationState.shared.fromPill { ArisDictationState.shared.fromPill = false }
-        case .cleaning:
+        case .writing, .cleaning, .typed:
+            // Typed: straight back to the sliver, as the reference pill does (copied words show at once).
             break
         }
     }
@@ -225,6 +225,7 @@ final class ArisDictationPillCenter: ObservableObject {
             updatePointer()
         } else {
             hovered = false
+            clearHover()
             stopPointerWatch()
             panel?.ignoresMouseEvents = true
             guard parkTask == nil, panel?.isVisible == true else { return }
@@ -274,17 +275,53 @@ final class ArisDictationPillCenter: ObservableObject {
         monitors = []
     }
 
-    /// The panel takes the pointer only on the pill.
+    /// Seconds on a steady clock (the hover's hold and a reversal's timing).
+    private static func clock() -> Double { ProcessInfo.processInfo.systemUptime }
+
+    /// The panel takes the pointer only on the pill. The hover follows the pointer on the pill and around it
+    /// (ArisDictationPillRules.pointerRect), held 100 ms after each change.
     private func updatePointer() {
         guard let panel, panel.isVisible else { return }
         let phase = display.phase
-        let rect = ArisDictationPillRules.pillRect(display.size).offsetBy(dx: panel.frame.minX, dy: panel.frame.minY)
+        let origin = CGPoint(x: panel.frame.minX, y: panel.frame.minY)
+        let rect = ArisDictationPillRules.pillRect(display.size).offsetBy(dx: origin.x, dy: origin.y)
         let on = phase.shown && rect.contains(NSEvent.mouseLocation)
         if panel.ignoresMouseEvents == on { panel.ignoresMouseEvents = !on }
-        if on != hovered {
+        let zone = ArisDictationPillRules.pointerRect(phase, size: display.size).offsetBy(dx: origin.x, dy: origin.y)
+        let wasShown = hoverLock.shown
+        point(at: phase.shown && zone.contains(NSEvent.mouseLocation))
+        if on != hovered || hoverLock.shown != wasShown {
             hovered = on
             refresh()
         }
+    }
+
+    /// Tells the hover where the pointer is, and waits for its hold's end when it has one.
+    private func point(at on: Bool) {
+        guard on != hoverLock.pointer else { return }
+        schedule(hoverLock.point(on, at: Self.clock()))
+    }
+
+    private func schedule(_ due: Double?) {
+        hoverWait?.cancel()
+        hoverWait = nil
+        guard let due else { return }
+        hoverWait = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, due - Self.clock())))
+            guard !Task.isCancelled, let self else { return }
+            self.hoverWait = nil
+            let was = self.hoverLock.shown
+            let next = self.hoverLock.expire(at: Self.clock())
+            if self.hoverLock.shown != was { self.refresh() }
+            if next != nil { self.schedule(next) }
+        }
+    }
+
+    /// Nothing to hover (the pill went away): no hold, no hover.
+    private func clearHover() {
+        hoverWait?.cancel()
+        hoverWait = nil
+        hoverLock.clear()
     }
 
     // MARK: - Actions
@@ -323,6 +360,6 @@ struct ArisDictationPillHost: View {
     @ObservedObject var center: ArisDictationPillCenter
 
     var body: some View {
-        ArisDictationPillView(display: center.display, audio: ArisController.shared.audioLevel, actions: center.actions)
+        ArisDictationPillView(display: center.display, audio: ArisController.shared.audioLevel, level: center.level, actions: center.actions)
     }
 }

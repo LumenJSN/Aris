@@ -37,6 +37,10 @@ struct ArisCountdownEnd: Equatable {
     var stopped: String? = nil
     /// That line is said in English (the card was drawn in English).
     var stoppedEnglish = false
+    /// An action's countdown, not a message's (ArisConfirmation.action): its line says it is being done or wasn't.
+    var action = false
+    /// Nobody answered the card (it waited for a press and none came): its note says so, never "취소했어요".
+    var unanswered = false
 }
 
 struct ArisSession: Equatable {
@@ -49,6 +53,9 @@ struct ArisSession: Equatable {
     private(set) var reply = ""
     /// What the AI did this turn, in order; one step per tool. Kept, done, under the answer (the activity tags).
     private(set) var steps: [ArisStep] = []
+    /// While the turn waits on macOS's own permission dialog: why Aris asks, shown in the turn under the steps (VM run
+    /// 2026-11-19, A3). Any next state of the turn leaves it out.
+    private(set) var waitingNote: String?
     /// What the AI is doing right now: the running step, else the last one.
     var status: String { (steps.first { !$0.done } ?? steps.last)?.label ?? "" }
 
@@ -104,6 +111,23 @@ struct ArisSession: Equatable {
                            steps: own == nil ? next + [ArisStep(label: status, id: steps.count)] : next, countdownEnd: countdownEnd)
     }
 
+    /// The turn waits on macOS's permission dialog: its step (`step`, running) and why (`reason`). Only while thinking.
+    func waitingForPermission(step: String, reason: String) -> ArisSession {
+        guard phase == .thinking else { return self }
+        var next = working(step)
+        next.waitingNote = reason
+        return next
+    }
+
+    /// The dialog was answered: the reason goes and the waiting step is done; the turn goes on.
+    func permissionAnswered() -> ArisSession {
+        guard waitingNote != nil else { return self }
+        var next = self
+        next.waitingNote = nil
+        next.steps = steps.map { ArisStep(label: $0.label, done: true, failed: $0.failed, id: $0.id) }
+        return next
+    }
+
     /// The tools of the steps still running: what a no on the card drops (`answered(allowed: false)`).
     var runningTools: Set<String> { Set(steps.filter { !$0.done }.map { ArisStep.tool(of: $0.label) }) }
 
@@ -142,10 +166,10 @@ struct ArisSession: Equatable {
     }
 
     /// A dictated message's countdown ran out or was stopped: its card says whether the message went.
-    func counted(sent: Bool) -> ArisSession {
+    func counted(sent: Bool, unanswered: Bool = false) -> ArisSession {
         guard let question, question.countdown else { return self }
         var next = self
-        next.countdownEnd = ArisCountdownEnd(to: question.title, message: question.detail, sent: sent)
+        next.countdownEnd = ArisCountdownEnd(to: question.title, message: question.detail, sent: sent, action: question.action, unanswered: unanswered && !sent)
         return next
     }
 
@@ -191,6 +215,16 @@ struct ArisSession: Equatable {
 
     func done() -> ArisSession {
         ArisSession(phase: .idle, heard: heard, reply: reply, steps: finishedSteps, settledCard: settledCard || question != nil)
+    }
+
+    /// The next turn replaced this one: the step it cut off goes, never ticked, and its card goes with it; what had
+    /// finished stays until the new turn writes its own state (VM run on ce0683cd: a trash step cut off by its card's
+    /// cancel showed "Moving to the Trash ✓" under the next turn's answer).
+    func replaced() -> ArisSession {
+        var next = self
+        next.steps = steps.filter { $0.done || $0.failed }
+        next.question = nil
+        return next
     }
 
     /// The user stopped the work from its tag: `line` says where it stopped (ArisStopLine). What had finished keeps its

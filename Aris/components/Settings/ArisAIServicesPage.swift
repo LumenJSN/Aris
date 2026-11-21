@@ -2,95 +2,108 @@
 //  ArisAIServicesPage.swift
 //  Aris
 //
-//  설정 › AI 서비스 as the owner picked it (mockup ai-services-D, without its summary sentence): 생각, then 음성 with 듣기 and
-//  말하기, each a card whose first row names who does the job and changes it from a dropdown; under it the model, the
-//  voice, and a row that appears only when something is missing or coming in. Sections sit 32 apart, cards 16, rows 20
-//  inside. Below them: 연결된 서비스 (folded, as the mockup's row), and the
-//  settings this page had that the mockup has no place for. It draws ArisAIPage; nothing here knows where a choice is kept.
+//  The AI parts of Aris와 말하기 (settings-ia option A). AI · 모델: the 답하는 AI card (mockup ai-services-D's 생각 card),
+//  its login line, the slots for the model per role and 다른 AI로 넘기기 (other branches' rows: ArisSettingsViewSlots),
+//  짧은 명령, then 연결된 서비스 folded. 듣기 and 목소리: the hearing and speaking cards, each with the page's own rows
+//  in the same card under a hairline. Sections sit 32 apart, cards 16, rows 20 inside.
+//  It draws ArisAIPage; nothing here knows where a choice is kept.
 //
 
 import SwiftUI
 
-struct ArisAIServicesPage: View {
+/// AI · 모델's body under its title.
+struct ArisAIThinkPart: View {
     @Environment(\.arisPalette) private var palette
     @Environment(\.arisWords) private var w
     @Environment(\.arisSettingsFlash) private var flash
+    @Environment(\.arisSettingsFolds) private var folds
     @ObservedObject var model: ArisAIServicesModel
-    /// The page's rows as the builder lists them (ArisSettingsBuilder.services): the ones this view doesn't draw itself
-    /// (연결된 서비스, 다른 앱을 다루는 방식, 팀원의 두뇌) are drawn as every other page draws them.
+    /// The part's sections as the builder lists them (ArisSettingsBuilder.services).
     let sections: [ArisSettingSection]
+    /// Other branches' views, drawn in their places when they are in (ArisSettingsViewSlots).
+    var models: AnyView?
 
-    /// The tags this view draws itself (ArisSettingsIndex finds them; a search scrolls to them).
-    static let ownSections: Set<String> = ["ai.think", "ai.voice", "ai.keys"]
     static let servicesSection = "ai.services"
 
     var body: some View {
         let page = model.page
         VStack(alignment: .leading, spacing: 0) {
-            heading("생각").id("ai.think")
-            ArisAICardView(card: page.think, model: model).id("ai.brain").arisFlash("ai.brain").padding(.top, ArisSettingsMetrics.headingGap).modifier(ArisRise(index: 2))
-            if let line = page.thinkLine { quiet(line) }
+            ArisAICardView(card: page.think, model: model).id("ai.brain").arisFlash("ai.brain")
+            if let line = page.thinkLine { ArisAIQuietLine(text: line) }
             if let login = page.login {
                 ArisAILoginRow(line: login, model: model).id("ai.brainLogin").arisFlash("ai.brainLogin", radius: 10).padding(.top, 12).padding(.horizontal, 4)
             }
-            ArisAIJevRow(line: page.jev, model: model).id("ai.jev").arisFlash("ai.jev", radius: 10).padding(.top, 12).padding(.horizontal, 4)
-
-            HStack(alignment: .center, spacing: 8) {
-                heading("음성")
-                Text(w("듣기와 말하기는 따로 골라요")).font(.system(size: 12)).foregroundStyle(palette.desc)
-                Spacer(minLength: 8)
-                ArisAIIconButton(title: "같은 회사로 맞추기", trailing: "chevron.down", small: true) { model.toggle(.both, anchor: $0) }
+            // jv-models: 역할별 모델 (ArisModelChoiceSection), 16 under the card.
+            if let models { models.id(ArisSettingsViewSlots.models).arisFlash(ArisSettingsViewSlots.models).padding(.top, ArisSettingsMetrics.sectionGap) }
+            // 안 될 때 › 다른 AI로 넘기기 (ArisSettingsSlots.fallback): the builder's own row, drawn as any page draws it.
+            if let fallback = sections.first(where: { $0.id == ArisSettingsViewSlots.fallback }) {
+                ArisSettingsPageView(sections: [fallback]).padding(.top, ArisSettingsMetrics.sectionGap)
             }
-            .padding(.top, 32).id("ai.voice")
-            ArisAICardView(card: page.hear, model: model).id("ai.hear").arisFlash("ai.hear").padding(.top, ArisSettingsMetrics.headingGap).modifier(ArisRise(index: 3))
-            ArisAICardView(card: page.speak, model: model).id("ai.speak").arisFlash("ai.speak").padding(.top, 16).modifier(ArisRise(index: 4))
-            if let line = page.voiceLine { quiet(line) }
-
-            services.padding(.top, 32).modifier(ArisRise(index: 5))
-            let rest = sections.filter { !Self.ownSections.contains($0.id) && $0.id != Self.servicesSection }
-            if !rest.isEmpty { ArisSettingsPageView(sections: rest).padding(.top, 16) }
-            if !page.savedKeys.isEmpty { ArisAISavedKeys(keys: page.savedKeys, model: model).id("ai.savedKeys").padding(.top, 16) }
+            ArisSectionTitle(text: w("빠른 명령")).padding(.top, ArisSettingsMetrics.sectionGap)
+            ArisAIJevRow(line: page.jev, router: page.router, model: model).id("ai.jev").arisFlash("ai.jev", radius: 18).padding(.top, 12)
+            services.padding(.top, ArisSettingsMetrics.sectionGap)
         }
         .onAppear { unfold(flash) }
         .onChange(of: flash) { _, target in unfold(target) }
     }
 
-    private func heading(_ text: String) -> some View {
-        ArisSectionTitle(text: w(text))
-    }
-
-    /// A small line under a card ("안 되면 …"): 12 pt, the faintest ink, 8 above, 4 in.
-    private func quiet(_ text: String) -> some View {
-        Text(w.dotted(text)).font(.system(size: 12)).foregroundStyle(palette.ink3).padding(.top, 8).padding(.horizontal, 4)
-    }
-
-    /// 연결된 서비스: the mockup's one row; pressed, it unfolds the logins, Composio and the MCP servers under it.
+    /// 연결된 서비스: one line; pressed, it unfolds the AIs' logins and usage and Claude Code's budget. Open or closed is
+    /// remembered with the window's other folds.
     @ViewBuilder
     private var services: some View {
-        let open = model.state.ui.servicesOpen
+        let open = folds.open.contains(Self.servicesSection)
         let section = sections.first { $0.id == Self.servicesSection }
         VStack(alignment: .leading, spacing: 0) {
-            ArisFoldRow(symbol: "powerplug", title: "연결된 서비스", desc: "Composio · 내 MCP 서버", open: open) { model.perform(.toggleServices) }
-            if open, let section {
-                Rectangle().fill(palette.hairline).frame(height: 1)
-                if let note = section.note {
-                    Text(ArisKoreanText.keepAll(w(note))).font(.system(size: 12)).foregroundStyle(palette.desc).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, ArisSettingsMetrics.rowInset).padding(.vertical, 14)
+            VStack(alignment: .leading, spacing: 0) {
+                ArisFoldRow(symbol: section?.fold?.symbol ?? "powerplug", title: section?.fold?.title ?? "연결된 서비스",
+                            desc: section?.fold?.desc ?? "", open: open) { folds.set(Self.servicesSection, open: !open) }
+                if open, let section {
                     Rectangle().fill(palette.hairline).frame(height: 1)
+                    ArisAIFoldedRows(rows: ArisAIServicesBuilder.serviceRows(section.rows, read: model.state.servicesRead).map(w.row))
                 }
-                ArisAIFoldedRows(rows: ArisAIServicesBuilder.serviceRows(section.rows, read: model.state.servicesRead).map(w.row))
             }
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .arisCard()
+            .id(Self.servicesSection)
+            .arisFlash(Self.servicesSection)
+            if let note = section?.note { ArisFineLine(text: w(note)).padding(.top, ArisSettingsMetrics.fineGap) }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .arisCard()
-        .id(Self.servicesSection)
-        .arisFlash(Self.servicesSection)
     }
 
     /// A search that lands on a folded row opens the fold first.
     private func unfold(_ target: ArisSettingsFlashTarget?) {
-        guard let id = target?.id, !model.state.ui.servicesOpen, id.hasPrefix("ai.mcp") || id.hasPrefix("ai.service") else { return }
-        model.perform(.toggleServices)
+        guard let id = target?.id, id.hasPrefix("ai.service") || id == "aris.claudeBudget" else { return }
+        folds.set(Self.servicesSection, open: true)
+    }
+}
+
+/// 듣기 or 목소리: the job's card with the page's own rows (쓰는 언어, 말하기 속도) in it under a hairline, then its small
+/// lines (the hearing engine as plain status, the part's note).
+struct ArisAIJobPart: View {
+    let card: ArisAICard
+    @ObservedObject var model: ArisAIServicesModel
+    /// The card's own tag ("ai.hear", "ai.speak").
+    let tag: String
+    let rows: [ArisSettingItem]
+    var lines: [String] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ArisAICardView(card: card, model: model, extra: rows).id(tag).arisFlash(tag)
+            ForEach(lines, id: \.self) { ArisAIQuietLine(text: $0) }
+        }
+    }
+}
+
+/// A small line under a card ("안 되면 …", the hearing engine): 12 pt, the faintest ink, 8 above, 4 in.
+struct ArisAIQuietLine: View {
+    @Environment(\.arisPalette) private var palette
+    @Environment(\.arisWords) private var w
+    let text: String
+
+    var body: some View {
+        Text(ArisKoreanText.keepAll(w.dotted(text))).font(.system(size: 12)).foregroundStyle(palette.ink3).fixedSize(horizontal: false, vertical: true)
+            .padding(.top, ArisSettingsMetrics.fineGap).padding(.horizontal, ArisSettingsMetrics.fineInset)
     }
 }
 
@@ -125,6 +138,8 @@ struct ArisAICardView: View {
     @Environment(\.arisWords) private var w
     let card: ArisAICard
     @ObservedObject var model: ArisAIServicesModel
+    /// The page's own rows drawn in the same card after the job's (쓰는 언어 under 듣기, 말하기 속도 under 목소리).
+    var extra: [ArisSettingItem] = []
 
     var body: some View {
         // The row about what's missing sits under the model and above the voice.
@@ -136,6 +151,11 @@ struct ArisAICardView: View {
                 ArisAIRowView(row: row, job: card.job, model: model)
             }
             if voiceAt == card.rows.count, let need = card.need { ArisAINeedRow(need: need, model: model) }
+            ForEach(extra) { row in
+                ArisInsetHairline()
+                ArisSettingRowView(item: row).padding(ArisSettingsMetrics.rowInset).frame(minHeight: ArisSettingsMetrics.rowMinHeight)
+                    .id(row.id).arisFlash(row.id, radius: 0)
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .arisCard()
@@ -190,7 +210,8 @@ struct ArisAIRowView: View {
         case .select(let kind, let face):
             ArisAISelect(face: face, label: row.title, expanded: model.menu?.kind == kind) { model.toggle(kind, anchor: $0) }
         case .fixed(let name):
-            Text(w.dotted(name)).font(.system(size: 14)).foregroundStyle(palette.desc)
+            // Nothing to choose here: said as plain status (#19), not dressed as a value that could be changed.
+            ArisSaid(text: w.dotted(name))
         case .field(let field, let text, let placeholder):
             ArisAICommitField(field: field, stored: text, placeholder: placeholder, model: model)
         }
@@ -198,22 +219,24 @@ struct ArisAIRowView: View {
 }
 
 /// A typed model name: saved on return, or when the field is left.
-private struct ArisAICommitField: View {
+struct ArisAICommitField: View {
     @Environment(\.arisWords) private var w
     let field: ArisAIField
     let stored: String
     let placeholder: String
+    var label = "모델 이름"
+    var width: CGFloat = 200
     @ObservedObject var model: ArisAIServicesModel
     @State private var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {
-        ArisAITextField(placeholder: placeholder, text: $text, mono: true, width: 200) { commit() }
+        ArisAITextField(placeholder: placeholder, text: $text, mono: true, width: width) { commit() }
             .focused($focused)
             .onAppear { text = stored }
             .onChange(of: stored) { _, next in if !focused { text = next } }
             .onChange(of: focused) { _, now in if !now { commit() } }
-            .accessibilityLabel(w("모델 이름"))
+            .accessibilityLabel(w(label))
     }
 
     private func commit() {
@@ -302,38 +325,56 @@ struct ArisAILoginRow: View {
     }
 }
 
-/// 짧은 명령 빨리 알아듣기 (TypeSafe Jev): one line under the 생각 card, at least 32 tall.
+/// 짧은 명령 빨리 알아듣기: a card of its own under the 생각 card (VM run 2026-11-18). Its dropdown picks who understands
+/// the quick commands (자동, Jev, a connected API profile), the line under it says what that costs and what it sees,
+/// and TypeSafe's key keeps its own line while Jev may be the one.
 struct ArisAIJevRow: View {
     @Environment(\.arisPalette) private var palette
     @Environment(\.arisWords) private var w
     let line: ArisAIJevLine
+    let router: ArisAIRouterLine
     @ObservedObject var model: ArisAIServicesModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                switch line {
-                case .off:
-                    title("짧은 명령 빨리 알아듣기")
-                    Text(w("짧은 말을 AI보다 먼저 알아듣는 작은 모델(TypeSafe Jev) · 없어도 돼요")).font(.system(size: 12)).foregroundStyle(palette.desc).frame(maxWidth: .infinity, alignment: .leading)
-                    ArisSettingsButton(title: "API 키 추가", small: true) { model.perform(.openJev) }
-                case .on(let masked):
-                    title("짧은 명령 빨리 알아듣기")
-                    (Text(w("TypeSafe Jev · 켜짐 · ")).font(.system(size: 12)) + Text(masked).font(.system(size: 12, design: .monospaced)))
-                        .foregroundStyle(palette.desc).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                    ArisSettingsButton(title: "지우기", small: true) { model.perform(.clearJev) }
-                case .editing:
-                    title("TypeSafe API 키").padding(.trailing, 4)
-                    ArisAITextField(placeholder: "TypeSafe API 키", text: model.draft("jev"), secure: true, autofocus: true) { save() }
-                    ArisSettingsButton(title: "저장", kind: .primary, small: true) { save() }
-                    ArisSettingsButton(title: "취소", small: true) { model.perform(.cancelJev) }
-                }
+                title("짧은 명령 빨리 알아듣기").frame(maxWidth: .infinity, alignment: .leading)
+                ArisAISelect(face: router.face, label: "짧은 명령 빨리 알아듣기", expanded: model.menu?.kind == .router) { model.toggle(.router, anchor: $0) }
             }
             .frame(minHeight: 32)
+            Text(w.dotted(router.line)).font(.system(size: 12)).foregroundStyle(palette.desc).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+            if router.jevKey { key }
+            if let decision = router.decision { ArisAIDecisionRows(line: decision, model: model) }
             if case .editing(let error?) = line {
                 Text(w(error)).font(.system(size: 12)).foregroundStyle(palette.red)
             }
         }
+        .padding(ArisSettingsMetrics.rowInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .arisCard()
+    }
+
+    /// TypeSafe's key: add it, see it masked and take it out, or type it.
+    private var key: some View {
+        HStack(spacing: 8) {
+            switch line {
+            case .off:
+                title("TypeSafe 키")
+                Text(w.dotted("짧은 말을 AI보다 먼저 알아듣는 작은 모델(TypeSafe) · 없어도 돼요")).lineLimit(1).font(.system(size: 12)).foregroundStyle(palette.desc).frame(maxWidth: .infinity, alignment: .leading)
+                ArisSettingsButton(title: "API 키 추가", small: true) { model.perform(.openJev) }
+            case .on(let masked):
+                title("TypeSafe 키")
+                (Text(w("TypeSafe · 켜짐 · ")).font(.system(size: 12)) + Text(masked).font(.system(size: 12, design: .monospaced)))
+                    .foregroundStyle(palette.desc).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                ArisSettingsButton(title: "지우기", small: true) { model.perform(.clearJev) }
+            case .editing:
+                title("TypeSafe API 키").padding(.trailing, 4)
+                ArisAITextField(placeholder: "TypeSafe API 키", text: model.draft("jev"), secure: true, autofocus: true) { save() }
+                ArisSettingsButton(title: "저장", kind: .primary, small: true) { save() }
+                ArisSettingsButton(title: "취소", small: true) { model.perform(.cancelJev) }
+            }
+        }
+        .frame(minHeight: 32)
     }
 
     private func title(_ text: String) -> some View {
@@ -353,21 +394,45 @@ struct ArisAISavedKeys: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(keys.enumerated()), id: \.element.holder) { index, key in
+            ForEach(Array(model.keyRows.rows(saved: keys).enumerated()), id: \.element.key.holder) { index, row in
+                let key = row.key
                 if index > 0 { ArisInsetHairline() }
                 HStack(spacing: 12) {
                     ArisLineIcon("key", size: 20).foregroundStyle(palette.icon).frame(width: 20, height: 20)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(w("\(key.name) API 키")).font(.system(size: 14, weight: .medium)).foregroundStyle(palette.title)
-                        (Text(w("키체인에 저장됨")).font(.system(size: 12)) + Text(key.masked.map { " · " + $0 } ?? "").font(.system(size: 12, design: .monospaced)))
-                            .foregroundStyle(palette.desc)
+                        switch row.mode {
+                        case .saved:
+                            (Text(w("키체인에 저장됨")).font(.system(size: 12)) + Text(key.masked.map { " · " + $0 } ?? "").font(.system(size: 12, design: .monospaced)))
+                                .foregroundStyle(palette.desc)
+                        case .confirming:
+                            Text(w(ArisSavedKeyRows.ask)).font(.system(size: 12)).foregroundStyle(palette.desc)
+                        case .cleared:
+                            Text(w(ArisSavedKeyRows.cleared)).font(.system(size: 12)).foregroundStyle(palette.desc)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    ArisSettingsButton(title: "지우기", kind: .danger, small: true) { model.perform(.removeKey(key.holder)) }
+                    switch row.mode {
+                    case .saved:
+                        // A first press only asks; nothing is cleared yet.
+                        ArisSettingsButton(title: "지우기", kind: .danger, small: true) { model.keyRows.ask(key.holder) }
+                    case .confirming:
+                        // 취소 sits where 지우기 was: a second press at the same place takes the ask back.
+                        ArisSettingsButton(title: "정말 지우기", kind: .danger, small: true) {
+                            if model.keyRows.confirm(key.holder) { model.perform(.removeKey(key.holder)) }
+                        }
+                        ArisSettingsButton(title: "취소", small: true) { model.keyRows.cancel() }
+                    case .cleared:
+                        // The row keeps its height and its place, with nothing to press.
+                        ArisSettingsButton(title: "지우기", kind: .danger, small: true) {}.hidden().allowsHitTesting(false)
+                    }
                 }
                 .padding(ArisSettingsMetrics.rowInset)
             }
         }
+        .onAppear { model.keyRows.sync(keys) }
+        .onChange(of: keys) { _, now in model.keyRows.sync(now) }
+        .onDisappear { model.keyRows.reset() }
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .arisCard()
     }

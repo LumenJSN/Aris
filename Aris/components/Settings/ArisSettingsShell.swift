@@ -72,7 +72,6 @@ struct ArisSettingsShell<Page: View>: View {
     /// when its entrance plays.
     private var column: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if nav.page == .team { ArisFaceStageView().padding(.bottom, 22).modifier(ArisRise(index: 0)) }
             title.padding(.bottom, ArisSettingsMetrics.titleGap).modifier(ArisRise(index: 1))
             page().id(nav.page).modifier(ArisPageSwap(animated: !entering && !still && !nav.byKey))
         }
@@ -100,7 +99,13 @@ struct ArisSettingsShell<Page: View>: View {
         ScrollViewReader { proxy in
             // The mark a page's opening scrolls to sits at the very top of the content, above the column's own inset.
             ScrollView { column.background(alignment: .top) { Color.clear.frame(height: 1).id(Self.top) } }
+            .coordinateSpace(name: ArisSettingsScrollSpace.name)
             .scrollIndicators(.never)
+            // The box's height: scrolled to the end, the last part is the one in view (ArisSettingsSpy).
+            .background(GeometryReader { box in
+                Color.clear.onAppear { ArisSettingsSpyModel.shared.box = box.size.height }
+                    .onChange(of: box.size.height) { _, next in ArisSettingsSpyModel.shared.box = next }
+            })
             .mask(VStack(spacing: 0) {
                 LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 20)
                 Rectangle()
@@ -112,6 +117,8 @@ struct ArisSettingsShell<Page: View>: View {
             // 13 pages opened part-way down (final check on a new Mac). A jump to a row (nav.flash) has the last word.
             .onChange(of: nav.page) { _, page in
                 entering = false
+                ArisSettingsSpyModel.shared.reset()
+                nav.inView = page.parts.first?.id
                 proxy.scrollTo(Self.top, anchor: .top)
                 Task { @MainActor in
                     for wait in ArisSettingsPageTop.again {
@@ -119,6 +126,16 @@ struct ArisSettingsShell<Page: View>: View {
                         guard ArisSettingsPageTop.stillScrolls(opened: page, shown: nav.page, jumping: nav.flash != nil) else { return }
                         proxy.scrollTo(Self.top, anchor: .top)
                     }
+                }
+            }
+            // A part link in the sidebar: the part's top to the page's top (the first part: the page's own top), on the
+            // house curve; the mark stays on it while the page moves.
+            .onChange(of: nav.jump) { _, target in
+                guard let target else { return }
+                ArisSettingsSpyModel.shared.holdUntil = Date().addingTimeInterval(0.5)
+                let first = nav.page.parts.first?.id == target.id
+                withAnimation(ArisSettingsMotion.reduced || still ? nil : ArisSettingsMotion.house(0.34)) {
+                    proxy.scrollTo(first ? Self.top : target.id, anchor: .top)
                 }
             }
             .onChange(of: nav.flash) { _, target in

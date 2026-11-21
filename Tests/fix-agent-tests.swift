@@ -517,8 +517,8 @@ private func fixAgentKeychainRead() {
 
 private func fixAgentBrainTrouble() {
     let codex = ArisBrainTrouble(brain: .codex, missing: .program)
-    check(codex.line(korean: true).contains("GPT (Codex)") && codex.line(korean: true).contains("설정 › AI 서비스") && !codex.line(korean: true).contains("is it installed")
-          && codex.line(korean: false).contains("isn't installed") && codex.line(korean: false).contains("Settings › AI services"),
+    check(codex.line(korean: true).contains("GPT (Codex)") && codex.line(korean: true).contains("설정 › Aris와 말하기 › AI · 모델") && !codex.line(korean: true).contains("is it installed")
+          && codex.line(korean: false).contains("isn't installed") && codex.line(korean: false).contains("Settings › Talking to Aris › AI · Model"),
           "no brain: a missing CLI is said in the user's language: which AI, what is missing, where to fix it")
     check(ArisBrainTrouble(brain: .api, missing: .key).line(korean: true).contains("키") && ArisBrainTrouble(brain: .api, missing: .setup).line(korean: false).contains("provider")
           && ArisBrainTrouble(brain: nil, missing: .any).line(korean: true).contains("쓸 수 있는 AI가 없어요"),
@@ -620,44 +620,45 @@ private func fixAgentResultFiles() {
     check(ArisTaskResult.numbered("a.md", 1) == "a.md" && ArisTaskResult.numbered("a.md", 2) == "a 2.md" && ArisTaskResult.numbered("메모", 3) == "메모 3", "result file: numbered before the extension")
 }
 
-// MARK: - agy-rules-7: Antigravity's rules are written by the agent itself
+// MARK: - agy-rules-7: Antigravity's rules are made by the agent itself (for its own agy's session alone: helperbugs 18)
 
 private func fixAgentAgyRules() {
     let home = FileManager.default.temporaryDirectory.appendingPathComponent("aris-fix-agent-agy-\(UUID().uuidString.prefix(8))").path
     defer { try? FileManager.default.removeItem(atPath: home) }
     let tools = home + "/.config/aris/aris-tools", folder = home + "/.config/aris/aris"
     let file = ArisAgyRules.settingsFile(home: home)
-    func settings() -> [String: Any] { ((try? Data(contentsOf: file)).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:] }
-    func rules(_ key: String) -> [String] { (settings()["permissions"] as? [String: Any])?[key] as? [String] ?? [] }
+    func session() -> [String: Any]? {
+        guard case .ready(let json) = ArisAgyRules.session(home: home, tools: tools, folder: folder) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any]
+    }
+    func rules(_ settings: [String: Any]?, _ key: String) -> [String] { (settings?["permissions"] as? [String: Any])?[key] as? [String] ?? [] }
     // agy installed after Aris, never started: no settings file at all.
-    check(ArisAgyRules.ensure(home: home, tools: tools, folder: folder) == .written && rules("allow") == ["command(\(tools))", "read_url(*)"],
-          "agy rules: with no settings file yet, the agent makes it with the rule that lets agy run aris-tools")
-    check(rules("deny").contains("command(\(tools) message)") && rules("deny").contains("command(rm)") && rules("deny").contains("read_file(\(home)/Library/Messages/*)")
-          && rules("deny").contains("read_file(\(folder)/memory.sqlite*)") && rules("deny").contains("command(.*claude-hook-token.*)"),
-          "agy rules: and with the deny rules that stand in for a risk gate")
-    check((try? String(contentsOf: file.appendingPathExtension("before-aris"), encoding: .utf8)) == "{}\n", "agy rules: what was there before Aris (nothing) is kept for the uninstall")
-    check(ArisAgyRules.ensure(home: home, tools: tools, folder: folder) == .ready, "agy rules: checked again, nothing is written when every rule is there")
+    let fresh = session()
+    check(rules(fresh, "allow") == ["command(\(tools))", "read_url(*)"] && !FileManager.default.fileExists(atPath: file.path),
+          "agy rules: with no settings file, the session gets the rule that lets agy run aris-tools, and no file is made")
+    check(rules(fresh, "deny").contains("command(\(tools) message)") && rules(fresh, "deny").contains("command(rm)") && rules(fresh, "deny").contains("read_file(\(home)/Library/Messages/*)")
+          && rules(fresh, "deny").contains("read_file(\(folder)/memory.sqlite*)") && rules(fresh, "deny").contains("command(.*claude-hook-token.*)"),
+          "agy rules: and the deny rules that stand in for a risk gate")
+    check(!FileManager.default.fileExists(atPath: file.appendingPathExtension("before-aris").path), "agy rules: nothing is kept beside a file Aris never writes")
 
-    // The user's own settings: everything of theirs is kept, Aris's rules are added after.
-    try? FileManager.default.removeItem(atPath: home + "/.gemini")
+    // The user's own settings: their rules are in the session, Aris's after them; their file is never changed.
     try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
     let own = #"{"theme":"dark","permissions":{"allow":["command(open)","command(git status)"],"deny":["command(rm)","command(my-secret-tool)"],"ask":["x"]}}"#
     try? Data(own.utf8).write(to: file)
-    check(ArisAgyRules.ensure(home: home, tools: tools, folder: folder) == .written && settings()["theme"] as? String == "dark"
-          && (settings()["permissions"] as? [String: Any])?["ask"] as? [String] == ["x"],
-          "agy rules: the user's other settings stay as they were")
-    check(rules("allow") == ["command(git status)", "command(\(tools))", "read_url(*)"] && Array(rules("deny").prefix(2)) == ["command(rm)", "command(my-secret-tool)"]
-          && rules("deny").filter { $0 == "command(rm)" }.count == 1,
+    let theirs = session()
+    check((theirs?["permissions"] as? [String: Any])?["ask"] as? [String] == ["x"] && theirs?["theme"] == nil,
+          "agy rules: the session carries only permissions, theirs included")
+    check(rules(theirs, "allow") == ["command(git status)", "command(\(tools))", "read_url(*)"] && Array(rules(theirs, "deny").prefix(2)) == ["command(rm)", "command(my-secret-tool)"]
+          && rules(theirs, "deny").filter { $0 == "command(rm)" }.count == 1,
           "agy rules: their own rules are kept in place (only the broad rules an old Aris added go), none twice")
-    check((try? String(contentsOf: file.appendingPathExtension("before-aris"), encoding: .utf8)) == own, "agy rules: their settings as they were are kept once beside the file")
-    check(ArisAgyRules.ensure(home: home, tools: tools, folder: folder) == .ready
-          && (try? String(contentsOf: file.appendingPathExtension("before-aris"), encoding: .utf8)) == own, "agy rules: the backup is never replaced by a later check")
+    check((try? String(contentsOf: file, encoding: .utf8)) == own && !FileManager.default.fileExists(atPath: file.appendingPathExtension("before-aris").path),
+          "agy rules: the user's own settings file is left exactly as it was")
 
-    // Settings Aris can't read as settings are left exactly as they are.
-    for broken in ["not json at all", #"["a list"]"#, #"{"permissions":"all"}"#, #"{"permissions":{"allow":"everything"}}"#] {
+    // Settings Aris can't read as settings are left exactly as they are, and the agy starts sealed.
+    for broken in ["not json at all", #"["a list"]"#, #"{"permissions":"all"}"#, #"{"permissions":{"allow":"everything"}}"#, #"{"permissions":{"allow":[],"deny":"none"}}"#] {
         try? Data(broken.utf8).write(to: file)
         var failed = false
-        if case .failed = ArisAgyRules.ensure(home: home, tools: tools, folder: folder) { failed = true }
+        if case .failed = ArisAgyRules.session(home: home, tools: tools, folder: folder) { failed = true }
         check(failed && (try? String(contentsOf: file, encoding: .utf8)) == broken, "agy rules: a file that isn't settings Aris knows is never clobbered (\(broken.prefix(24)))")
     }
     check(ArisAgyRules.merged(["permissions": ["allow": ArisAgyRules.allow(tools: tools), "deny": ArisAgyRules.deny(tools: tools, folder: folder, home: home)]],

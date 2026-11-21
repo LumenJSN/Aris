@@ -179,7 +179,10 @@ private struct ArisAIConnectSheet: View {
                         ArisAITextField(placeholder: key.placeholder, text: binding("key"), secure: true, autofocus: true) { model.performSheet(.useShipped) }
                     }
                 } else if saved {
-                    Text(w("저장된 API 키를 그대로 써요")).font(.system(size: 12)).foregroundStyle(palette.ink3)
+                    HStack(spacing: 10) {
+                        Text(w("저장된 API 키를 그대로 써요")).font(.system(size: 12)).foregroundStyle(palette.ink3)
+                        ArisAIQuickChip(title: w("키 바꾸기"), picked: false) { model.performSheet(.replaceKey) }
+                    }
                 }
             case .custom(let fields, let control, let hint, let tone):
                 ForEach(fields, id: \.id) { field in

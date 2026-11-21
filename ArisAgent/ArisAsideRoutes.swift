@@ -20,9 +20,11 @@ extension ArisRunnerMCPTurn: ArisAsideTurn {
     func asideRunning(_ brief: String) { runner.asideRunning(ArisAside.runningStatus(brief, english: asideEnglish)) }
     func asideWaiting(_ status: String) { runner.asideRunning(status) }
     func asideEnded() { runner.asideEnded() }
+    func asideFinished(answered: Bool) { runner.asideFinished(answered: answered) }
     var asideOwnData: Bool { runner.ownScheduleNamedNow }
     /// The user's request for the turn is English (the same switch as computer use's cards: ArisDesktopCopy).
     var asideEnglish: Bool { ArisDesktopCopy.isEnglish(request) }
+    var asideRequest: String { request }
 }
 
 /// An agy job's turn (the owner, 2026-11-08): agy's own web search has no gate, so whatever the runner saw, the job counts
@@ -42,6 +44,7 @@ final class ArisAgyJobAsideTurn: ArisAsideTurn {
     var asideLive: Bool { turn.asideLive }
     var asideOwnData: Bool { turn.asideOwnData }
     var asideEnglish: Bool { turn.asideEnglish }
+    var asideRequest: String { turn.asideRequest }
     func takeOutsideText() { turn.takeOutsideText() }
     func ask(_ card: ArisMCPCard, answer: @escaping (ArisMCPAnswer) -> Void) { turn.ask(card, answer: answer) }
     func judgeRead(_ call: ArisReadCall, done: @escaping (ArisReadVerdict) -> Void) { done(.blocked(.undecided)) }
@@ -50,6 +53,7 @@ final class ArisAgyJobAsideTurn: ArisAsideTurn {
     func asideRunning(_ brief: String) { turn.asideRunning(brief) }
     func asideWaiting(_ status: String) { turn.asideWaiting(status) }
     func asideEnded() { turn.asideEnded() }
+    func asideFinished(answered: Bool) { turn.asideFinished(answered: answered) }
 }
 
 extension ArisRelayMCPTurn: ArisAsideTurn {
@@ -59,9 +63,17 @@ extension ArisRelayMCPTurn: ArisAsideTurn {
     func asideWaiting(_ status: String) { quiet(status) }
     func asideEnded() {}
     var asideEnglish: Bool { ArisDesktopCopy.isEnglish(request) }
+    var asideRequest: String { request }
 }
 
 enum ArisAsideRoutes {
+    /// POST /aside-ready: whether Aside's command-line tool is on this Mac (paths only, no run), so the app can say at
+    /// once that a website job can't start rather than hand it to a job that fails later (twelfth VM run, A1).
+    static func ready(on connection: NWConnection, home: String = FileManager.default.homeDirectoryForCurrentUser.path) {
+        let installed = ArisAside.locate(home: home, signed: { _ in true }) != .missing
+        respond(connection, "200 OK", ArisMCPRoutes.json(["installed": installed]))
+    }
+
     /// The most of a brief the route reads (ArisAside.brief refuses past its own limit).
     static let maxBody = 16_384
 
@@ -88,6 +100,7 @@ enum ArisAsideRoutes {
                 return refuse("not from the brain's own process")
             }
             let turn = ArisRunnerMCPTurn(runner: runner, handsFree: now.handsFree, screen: now.screen, credential: credential)
+            turn.standIn = ArisMindPasses.standIn(object, turn: credential, key: ArisMindPassKey.asideKey(brief: brief))
             let outcome = agyJob ? ArisAsideTool.answer(brief, turn: ArisAgyJobAsideTurn(turn), critical: true, deps: deps)
                 : ArisAsideTool.answer(brief, turn: turn, critical: runner.mcpCritical(), deps: deps)
             reply("200 OK", ArisMCPRoutes.json(["status": Int(outcome.status), "output": outcome.output]))

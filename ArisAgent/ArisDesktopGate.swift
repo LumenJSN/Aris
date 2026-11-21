@@ -17,7 +17,9 @@
 //  (ArisRiskPolicy.computerUseIsNever), System Settings' permission, account and profile
 //  panes (the rest of it is an ordinary app), a password field, typing or screen reads while secure input is on, the
 //  Apple menu, Recent Items, Services, an app's own Quit item (`desktop app quit` asks instead), logging out, and a
-//  file panel aimed at a protected place; browsers go to Aside. Pure.
+//  file panel aimed at a protected place. A browser (decision 2, 2026-11-18; it went to Aside): its reads run as any
+//  app's; every action asks on the user's card each time, naming the page's host, never kept; a sign-in form's field or
+//  button only when their words ask to sign in, and never typing into a password field. Pure.
 //
 
 import Foundation
@@ -106,6 +108,7 @@ enum ArisDesktopGate {
                                           "com.apple.notificationcenterui", "com.apple.WindowManager", "com.apple.Spotlight"]
     static let quitSystemRefusal = "Refused: Aris never quits the system's own apps (Finder, the Dock, the login window, the menu bar)."
     static let settingsRefusal = "Refused: Aris never acts in System Settings' Privacy & Security, Users & Groups, passwords or profiles panes (permissions, accounts, device management). Ask the user to do it there."
+    static let browserSignInRefusal = "Refused: that is part of a sign-in form, and Aris touches one only when the user's own words ask to sign in. Ask the user."
     static let placeRefusal = "Refused: that file or folder is one Aris never picks in a file panel (its own folders, keys, startup files, secrets)."
 
     static func decide(_ request: ArisDesktopRequest, target: ArisDesktopTarget, context: ArisDesktopContext, remembered: Bool,
@@ -118,7 +121,6 @@ enum ArisDesktopGate {
             if ArisMCPPolicy.hidesCharacters(request.app ?? "") { return .refuse(hiddenRefusal) }
             return .ask(remember: false)
         }
-        if target.browser { return .refuse(ArisRiskPolicy.browserRefusal + ": websites go to Aside, never desktop control of a browser.") }
         switch request.verb.kind {
         case .read:
             // A look at the pixels while a password field is up could read it (I6).
@@ -132,6 +134,15 @@ enum ArisDesktopGate {
             if context.job, request.bringsForward { return .refuse(jobRefusal) }
             let words = [request.text, request.path, request.button, request.field, request.name, request.select, request.target].compactMap { $0 } + request.keys
             if words.contains(where: ArisMCPPolicy.hidesCharacters) { return .refuse(hiddenRefusal) }
+            // A browser (decision 2): every action is the user's card, every time, never kept; a sign-in form only on their
+            // words asking to sign in (a password field is never typed into, above).
+            if target.browser {
+                let named = [element?.label, element?.roleDescription, request.target, request.button, request.field].compactMap { $0 }
+                if element?.isSecure == true || named.contains(where: ArisBrowserActs.namesSignIn), !ArisBrowserActs.asksForSignIn(context.request) {
+                    return .refuse(browserSignInRefusal)
+                }
+                return .ask(remember: false)
+            }
             if request.verb == .menuClick, let path = request.path {
                 if refusesMenu(path, app: target.name) { return .refuse(menuRefusal) }
                 // One of the system's own apps: nothing that names quitting is ever clicked there.
@@ -185,6 +196,11 @@ enum ArisDesktopGate {
             // its name ("발표 종료 후 보기"): always the card (I8).
             if let named = request.verb == .menuClick ? request.path : request.verb == .dialogClick ? request.button : nil,
                ArisRiskPolicy.mentionsRiskyStep(named) || mentionsQuit(named) { return .ask(remember: false) }
+            // A payment step anywhere (a "결제하기" or "Buy now" button, field or menu): the user's card every time, never kept,
+            // whatever an earlier yes for the app said (decision 1).
+            if [element?.label, request.target, request.button, request.path, request.name].compactMap({ $0 }).contains(where: ArisPaymentSteps.names) {
+                return .ask(remember: false)
+            }
             // A pane not told for sure (another one, a sheet, unreadable rows): the card every time, never kept.
             if target.settings, context.settingsPane != .safe { return .ask(remember: false) }
             // Finder whose folder can't be read: the card every time, never kept.
@@ -487,13 +503,16 @@ enum ArisDesktopCard {
     /// (its raw value, read for the card: I1). `send`: the action may send it.
     /// `paste`: in a sending app, the clipboard's text a paste would put in. `unnamedDocument`: a file panel the user's words
     /// named no app or document for. `english`: the whole card in English (audit desk-11), else Korean.
-    static func card(_ request: ArisDesktopRequest, target: ArisDesktopTarget, element: ArisDesktopElement?, window: String? = nil,
+    /// `host`: a browser's page host (decision 2: the card names the site; "" when it couldn't be read), nil for any
+    /// other app.
+    static func card(_ request: ArisDesktopRequest, target: ArisDesktopTarget, element: ArisDesktopElement?, window: String? = nil, host: String? = nil,
                      composer: String? = nil, send: Bool = false, blindField: Bool = false, blindSend: String? = nil, searchFocus: String? = nil,
                      paste: String? = nil, unnamedDocument: Bool = false, remember: Bool, wiped: Bool, mayRaise: Bool = false, english: Bool = false) -> ArisMCPCard {
         // One line in the card's language.
         let say = { (korean: String, inEnglish: String) in english ? inEnglish : korean }
         let empty = say("(비어 있음)", "(empty)")
         var lines: [String] = []
+        if let host { lines.append(say("사이트: ", "Site: ") + (host.isEmpty ? say("주소를 읽지 못했어요 (확인해 주세요)", "couldn't read the address (check it)") : host)) }
         if let window { lines.append(ArisDesktopCopy.windowLine(window, english: english)) }
         if let element {
             let name = shown(String(element.label.prefix(80)))

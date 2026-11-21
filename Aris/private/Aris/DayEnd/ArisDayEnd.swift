@@ -120,6 +120,10 @@ struct ArisDayEndFacts: Equatable {
     var routines: [Routine] = []
     /// The to-dos the user put off until tomorrow from this list today (ArisDayEndKept): they stay on it, marked 넘겼어요.
     var moved: Set<String> = []
+    /// With the day in review on (ArisRecapSwitch): the record's digest of the day (nil when there is none) and the
+    /// coding sessions on this Mac (those that wait for the user are rows of their own under 내 확인).
+    var record: ArisRecordDigest? = nil
+    var sessions: [ArisFleetSession] = []
 }
 
 struct ArisDayEnd: Equatable {
@@ -212,7 +216,7 @@ struct ArisDayEnd: Equatable {
         let span = ArisDaySpan(now: now, calendar: calendar)
         let time = { (date: Date) in ArisUIDates.time(date, english: english, calendar: calendar, locale: locale) }
         let planned = ArisDayEndPlan.planned(facts, span: span, now: now, time: time)
-        let waiting = ArisDayEndPlan.waiting(facts)
+        let waiting = ArisDayEndPlan.waiting(facts, english: english)
         let later = ArisDayEndPlan.tomorrow(facts, span: span, english: english, time: time)
         let extras = ArisDayEndPlan.extras(facts, span: span, now: now, planned: planned, english: english)
         let counts = Counts(planned: planned.count, done: planned.filter { $0.state == .done }.count,

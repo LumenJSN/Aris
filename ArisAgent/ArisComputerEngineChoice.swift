@@ -4,7 +4,8 @@
 //
 //  The one seam for which engine works other apps' windows (ArisComputerEngine). The app stores the user's pick and
 //  sends it with each question; here it is what the Codex driver (its plugin, its prompt) and the desktop controller's
-//  poor-tree advice read. Peekaboo until told otherwise, and whenever Codex isn't installed. Every brain but Codex keeps
+//  poor-tree advice read. Aris's own engine (ArisComputerEngine.standard, the app's default too) until the app says
+//  otherwise, and whenever Codex is picked but isn't installed. Every brain but Codex keeps
 //  `aris-tools desktop`, since Codex's computer use only runs inside Codex; with Codex picked, a window with nothing for
 //  accessibility goes to Codex (a job).
 //
@@ -13,7 +14,7 @@ import Foundation
 
 enum ArisComputerEngineChoice {
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var picked = ArisComputerEngine.peekaboo
+    nonisolated(unsafe) private static var picked = ArisComputerEngine.standard
 
     /// The engine in force now.
     static var current: ArisComputerEngine {

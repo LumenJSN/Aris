@@ -250,7 +250,7 @@ final class ArisMCPHTTP: NSObject, ArisMCPTransport, URLSessionDataDelegate {
     private let headers: [String: String]
     private let queue = DispatchQueue(label: "com.lumenjsn.aris.mcp.http")
     private lazy var session: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = ArisNoStore.configuration()
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.urlCache = nil

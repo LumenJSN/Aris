@@ -22,13 +22,13 @@ extension ArisController {
     /// Reads the rate, shows the card under the line and says it. Nil when the turn was stopped meanwhile.
     func answerCurrency(_ ask: ArisCurrencyAsk, heard: String, korean: Bool) async -> String? {
         log.notice("currency: \(ask.from, privacy: .public) to \(ask.to, privacy: .public), answered here")
-        session = session.working(ArisUIWords.status(ArisCurrencyCopy.checking))
+        setSession(session.working(ArisUIWords.status(ArisCurrencyCopy.checking)))
         let values = await ArisAgentClient.cardValues(path: "currency", body: ["ask": ask.words], timeout: 25)
         guard !Task.isCancelled else { return nil }
         guard let card = ArisCurrencyCard.answering(ask, values: values) else {
             log.error("currency: no rate for \(ask.from, privacy: .public) to \(ask.to, privacy: .public)")
             // The tag goes with it: nothing was checked, so nothing is ticked.
-            session = session.thinking()
+            setSession(session.thinking())
             let reply = ArisCurrencyCopy.noRate(korean: korean)
             await sayLocal(reply, heard: heard)
             return reply

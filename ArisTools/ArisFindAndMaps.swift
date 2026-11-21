@@ -48,6 +48,18 @@ enum ArisFindQuery {
         return query
     }
 
+    /// The items directly in the searched folder whose names hold every word (any case), for when Spotlight has nothing:
+    /// a folder Spotlight hasn't indexed (a new Mac, a VM) was told as missing (twelfth VM run: "임시폴더12" on the
+    /// Desktop, "not found" while it was there). `names`: the folder's own item names.
+    static func directMatches(_ words: String, names: [String]) -> [String] {
+        guard let text = cleaned(words) else { return [] }
+        let wanted = text.split(whereSeparator: \.isWhitespace).prefix(maxWords).map { $0.lowercased().precomposedStringWithCanonicalMapping }
+        return names.filter { name in
+            let folded = name.lowercased().precomposedStringWithCanonicalMapping
+            return !name.hasPrefix(".") && wanted.allSatisfy { folded.contains($0) }
+        }.sorted()
+    }
+
     /// The folder to search: `folder` (~ and links resolved) when it is a real folder inside `home` that may be listed
     /// (iCloud Drive and its folders too) and isn't protected; the home folder when none was given; nil when the folder
     /// isn't allowed.

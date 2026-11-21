@@ -353,7 +353,7 @@ private func screenNeedWiringTests() {
     let see = screenNeedSource("Aris/private/Aris/ArisController+See.swift")
     check(see.contains("if attempted || taken != nil {"), "wiring: the turn log gets a capture entry only when a capture was tried")
     let controller = screenNeedSource("Aris/private/Aris/ArisController.swift")
-    check(controller.contains("if !images.isEmpty {\n            // Defence in depth: the agent says so too, but an image turn is outside content from here on.\n            untrustedTurn = true\n            screenConversation = true"),
+    check(controller.contains("if !images.isEmpty {\n            // Defence in depth: the agent says so too, but an image turn is outside content from here on.\n            state.untrustedTurn = true\n            screenConversation = true"),
           "wiring: only a turn that really carries an image is outside content in the app")
 }
 

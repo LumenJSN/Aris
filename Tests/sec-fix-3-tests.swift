@@ -151,7 +151,7 @@ private func secFix3UndoGrant() {
           "sec3 L4: dropping one undo's grant leaves another undo's alone")
     grants.dropUndo(second)
     let agent = s3Source("ArisAgent/main.swift")
-    check(agent.contains("undoGrant = arguments != nil && ArisActivityBridge.undoWritesTodo(ofEntry: object[\"id\"] as? String) ? ArisActionGrants.shared.mintUndo() : nil")
+    check(agent.contains("} else if ArisActivityBridge.undoWritesTodo(ofEntry: entry) {\n                undoGrant = ArisActionGrants.shared.mintUndo()")
           && agent.contains("ArisActionGrants.shared.dropUndo(undoGrant)") && agent.components(separatedBy: "mintUndo()").count == 2,
           "sec3 L4: wiring: /undo mints only for a to-do's undo that will run, and drops the grant when the tool returns")
 }
@@ -196,10 +196,10 @@ private func secFix3UndoWords() {
           "sec3 I5: a failed undo's reason (it can hold a title or a file name) is logged private")
 }
 
-/// L2: a click on a card's yes counts only once the card has been still on screen for ArisCardTiming.clickHold.
+/// L2: a click on a card's yes counts only once the card has been still on screen for ArisCardHold.hold (one second; seventh VM run, item 3: one named constant).
 private func secFix3CardHold() {
     typealias H = ArisCardHold
-    let hold = ArisCardTiming.clickHold
+    let hold = ArisCardHold.hold
     let up = H().shown("a", at: 100)
     check(!up.clickCounts(card: "a", at: 100) && !up.clickCounts(card: "a", at: 100 + hold - 0.01) && up.clickCounts(card: "a", at: 100 + hold),
           "sec3 L2: a click on yes within the hold of the card being put up is ignored; after it, it counts")
@@ -218,9 +218,9 @@ private func secFix3CardHold() {
     }
     check(placed.framed(card: "gone", frame.offsetBy(dx: 0, dy: 90), at: 150) == placed,
           "sec3 L2: the frame of a card that is going away is not this card's")
-    check(!placed.shown("a", at: 200).clickCounts(card: "a", at: 200.5) && placed.shown("a", at: 200).clickCounts(card: "a", at: 200 + hold),
+    check(!placed.shown("a", at: 200).clickCounts(card: "a", at: 200 + hold - 0.01) && placed.shown("a", at: 200).clickCounts(card: "a", at: 200 + hold),
           "sec3 L2: a second card put up with the same id starts its own hold (a double click can't answer both)")
-    check(!placed.shown("b", at: 200).clickCounts(card: "a", at: 300) && !placed.shown("b", at: 200).clickCounts(card: "b", at: 200.5),
+    check(!placed.shown("b", at: 200).clickCounts(card: "a", at: 300) && !placed.shown("b", at: 200).clickCounts(card: "b", at: 200 + hold - 0.01),
           "sec3 L2: the next card's hold is its own, and the card before it takes no click any more")
     check(H().following("b", at: 5) == H().shown("b", at: 5) && placed.following("a", at: 500) == placed && placed.following(nil, at: 500) == H(),
           "sec3 L2: a card put up by any path gets a hold, the same card keeps its own, and no card clears it")
@@ -232,17 +232,17 @@ private func secFix3CardHold() {
           "sec3 L2: only a yes by click waits: No and Cancel, the Y and N keys, typed and spoken answers need no hold")
     let controller = s3Source("Aris/private/Aris/ArisController.swift")
     let gate = controller.range(of: "if ArisCardHold.applies(allow: allow, source: source), !ArisCardStill.shared.clickCounts(card: question.id) {")
-    let taken = controller.range(of: "        typedAnswer = allow\n        cardAnswerSource = source")
+    let taken = controller.range(of: "        cardAnswerSource = source\n        kernel.answerCard(question.id, allow: allow)")
     check(gate != nil && taken != nil && gate!.upperBound < taken!.lowerBound
           && controller.contains("if session.question?.id != oldValue.question?.id { ArisCardStill.shared.follow(session.question?.id) }"),
           "sec3 L2: wiring: the answer is not taken before the hold is asked, and the hold follows the session's card")
-    check(s3Source("Aris/private/Aris/ArisController+Tasks.swift").contains("session = session.asking(ask)\n        // Its click hold starts now, also when the card before it had the same id (ArisCardHold).\n        ArisCardStill.shared.shown(ask.id)")
+    check(s3Source("Aris/private/Aris/ArisController+Tasks.swift").contains("setSession(session.asking(ask))\n        // Its click hold starts now, also when the card before it had the same id (ArisCardHold).\n        ArisCardStill.shared.shown(ask.id)")
           && s3Source("Aris/private/Aris/ArisController+Countdown.swift").contains("ArisCardStill.shared.shown(ask.id)"),
           "sec3 L2: wiring: both ways a card is put up (the question, the countdown) start its hold")
     let card = s3Source("Aris/private/Aris/Home/ArisConfirmCard.swift"), countdown = s3Source("Aris/private/Aris/Home/ArisConfirmCard+Countdown.swift")
     let live = s3Source("Aris/private/Aris/Home/ArisCardStill.swift")
-    check(card.contains(".opacity(ready && !held ? 1 : Self.restOpacity)") && card.contains(".animation(Self.wakeEase, value: held)") && card.contains(".cardStill(question.id)")
-          && countdown.contains(".opacity(held ? Self.restOpacity : 1)") && countdown.contains(".cardStill(question.id)"),
+    check(card.contains(".opacity(!ready ? Self.restOpacity : held ? Self.heldOpacity : 1)") && card.contains(".animation(Self.holdEase, value: held)") && card.contains(".cardStill(question.id)")
+          && countdown.contains(".opacity(held ? Self.heldOpacity : 1)") && countdown.contains(".animation(Self.holdEase, value: held)") && countdown.contains(".cardStill(question.id)"),
           "sec3 L2: wiring: the yes button (허용, and the countdown's 보내기) is drawn at rest until the hold is over, and the card reports its frame")
     // (The countdown's own ring is drawn against the clock in its file; the hold adds no clock and no repeat anywhere.)
     check([card, live].allSatisfy { !$0.contains("repeatForever") && !$0.contains("TimelineView") && !$0.contains("autoreverses") } && live.contains("self.ready = card")
@@ -297,10 +297,11 @@ private func secFix3Leftovers() {
     for (line, said) in korean.sorted(by: { $0.key < $1.key }) {
         check(W.doneLine(line, korean: true) == said, "leftover: undo reply, Korean: \(line) → \(W.doneLine(line, korean: true))")
     }
-    let english = ["할 일 추가: buy milk": "Undid “buy milk” (To-do added).", "할 일 완료: buy milk": "Undid “buy milk” (To-do done).", "옮김: a.pdf → Docs": "Undid “a.pdf → Docs” (Moved).",
-                   "새 폴더: qa-1111": "Undid “qa-1111” (New folder).", "휴지통으로: a.pdf": "Undid “a.pdf” (To the Trash).", "일정 추가: Lunch": "Undid “Lunch” (Event added).",
-                   "예약: standup (매일 09:00)": "Undid “standup” (Scheduled).", "예약 취소: standup (매일 09:00)": "Undid “standup” (Schedule cancelled).",
-                   "변환: 3개 → PNG": "Undid “3 → PNG” (Converted).", "타이머: 5분": "Undid “5 min” (Timer).", "볼륨 40": "Undid “Volume 40”.", "볼륨 올림": "Undid “Volume up”."]
+    // Eighth VM run, item 6: said as what was taken back ("I took back the to-do “buy milk”."), not as a log line.
+    let english = ["할 일 추가: buy milk": "I took back the to-do “buy milk”.", "할 일 완료: buy milk": "I took back the to-do “buy milk”.", "옮김: a.pdf → Docs": "I took back the move “a.pdf → Docs”.",
+                   "새 폴더: qa-1111": "I took back the new folder “qa-1111”.", "휴지통으로: a.pdf": "I took back the move to the Trash “a.pdf”.", "일정 추가: Lunch": "I took back the event “Lunch”.",
+                   "예약: standup (매일 09:00)": "I took back the schedule “standup”.", "예약 취소: standup (매일 09:00)": "I took back the schedule “standup”.",
+                   "변환: 3개 → PNG": "I took back the conversion “3 → PNG”.", "타이머: 5분": "I took back the timer “5 min”.", "볼륨 40": "I took back “Volume 40”.", "볼륨 올림": "I took back “Volume up”."]
     for (line, said) in english.sorted(by: { $0.key < $1.key }) {
         check(W.doneLine(line, korean: false) == said, "leftover: undo reply, English: \(line) → \(W.doneLine(line, korean: false))")
     }
@@ -310,7 +311,7 @@ private func secFix3Leftovers() {
               return said.hasPrefix("‘것’ ") && said.hasSuffix(" 되돌렸어요.") && !said.contains("할을") && !said.contains("으로를")
           },
           "leftover: every kind in the activity table has its own noun in the Korean undo reply")
-    check(W.doneLine("할 일 추가: 보고서 (최종)", korean: true) == "‘보고서 (최종)’ 할 일을 되돌렸어요." && W.doneLine("새 폴더: qa (2)", korean: false) == "Undid “qa (2)” (New folder).",
+    check(W.doneLine("할 일 추가: 보고서 (최종)", korean: true) == "‘보고서 (최종)’ 할 일을 되돌렸어요." && W.doneLine("새 폴더: qa (2)", korean: false) == "I took back the new folder “qa (2)”.",
           "leftover: only a schedule's time in brackets is left out of the reply; a title's own brackets stay")
 
     typealias M = ArisMicChoice
@@ -392,7 +393,7 @@ private func secFix3VM4() {
           && !N.pointerAway(free: false, measured: true, onNotch: false) && N.pointerAway(free: true, measured: false, onNotch: true),
           "vm4 bug 1: the pointer counts as away only when nothing holds the notch and it is not found on it; unmeasured, the hover's own word stands")
     let behaviour = s3Source("Aris/private/Notch/ArisNotchRoot+Behaviour.swift")
-    let reading = behaviour.range(of: "ArisNotch.endWait(handedOff: handedOff, dictation: controller.endedDictation, reply: controller.session.reply)"), free = behaviour.range(of: "ArisNotch.pointerAway(free: mayCloseAutomatically,")
+    let reading = behaviour.range(of: "ArisNotch.endWait(handedOff: handedOff, dictation: controller.endedDictation, reply: controller.session.reply"), free = behaviour.range(of: "ArisNotch.pointerAway(free: mayCloseAutomatically,")
     check(reading != nil && free != nil && reading!.upperBound < free!.lowerBound && behaviour.contains("switch ArisNotch.ending(openedNotch: opened, isOpen: isOpen, handedOff: handedOff).whenFree(pointerAway: away) {"),
           "vm4 bug 1: wiring: decided at the turn's end, after the answer's reading time and the card's wait")
 
@@ -409,8 +410,8 @@ private func secFix3VM4() {
     let late = ArisSession.ignoresStatus(ArisAgentStatus.longJob(minutes: 1), declined: waiting.runningTools) ? declined : declined.working(ArisAgentStatus.longJob(minutes: 1))
     check(late.answering("안 할게요.").steps.isEmpty, "vm4 bug 2: so “OK, I won't convert it.” comes with no ticked “Converting…” chip")
     let controller = s3Source("Aris/private/Aris/ArisController.swift"), runner = s3Source("ArisAgent/ArisAgentRunner.swift")
-    check(controller.contains("guard !ArisSession.ignoresStatus(ArisUIWords.status(status), declined: declinedTools) else { break }")
-          && controller.contains("declinedTools = allow ? [] : declinedTools.union(waiting)")
+    check(controller.contains("guard !ArisSession.ignoresStatus(ArisUIWords.status(status), declined: state.declinedTools) else { break }")
+          && s3Source("Aris/private/Aris/Routing/ArisBrainTurnState.swift").contains("declinedTools = allow ? [] : declinedTools.union(waiting)")
           && runner.contains("if ArisAgentStatus.beatsLongJob(cardWaiting: cardWaiting) {"),
           "vm4 bug 2: wiring: the app leaves such a line out until a later yes, and the helper's beat asks whether a card waits")
 
@@ -479,7 +480,9 @@ private func secFix3VM4() {
     check(W.nothingRecent(korean: false) == "There's nothing recent to undo. Older changes can be undone from the Activity tab." && W.nothingRecent(korean: true).contains("한 일 탭"),
           "vm4 bug 5: with only older changes it says there is nothing recent and points at the Activity tab")
     let undo = s3Source("Aris/private/Aris/ArisController+Undo.swift")
-    check(undo.contains("let candidates = undoable.filter { $0.date >= reach }") && undo.contains("guard !candidates.isEmpty || undoable.isEmpty else { return await undoSay(ArisUndoWords.nothingRecent(korean: korean)) }")
+    // Third VM run, D3: the picker reads every change in that reach (ArisUndoWords.reach(_:since:kind:)), and with only
+    // older undoable ones says there is nothing recent.
+    check(undo.contains("switch ArisUndoWords.reach(changes, since: reach, kind: kind) {") && undo.contains("return await undoSay(older ? ArisUndoWords.nothingRecent(korean: korean)")
           && controller.contains("if conversationBeganAt == nil { conversationBeganAt = Date() }") && controller.contains("conversationBeganAt = nil"),
           "vm4 bug 5: wiring: the typed undo picks within that reach, and the conversation's start is kept and let go with it")
 
@@ -523,7 +526,7 @@ private func secFix3VM4() {
     check(ArisActivityTab.jobTip("대화", english: true) == "Conversation" && ArisActivityTab.jobTip("대화", english: false) == "대화" && ArisActivityTab.jobTip("블랙홀 자료 정리", english: true) == "블랙홀 자료 정리"
           && s3Source("Aris/private/Aris/Side/ArisActivityView.swift").contains(".help(ArisActivityTab.jobTip(item.job))"),
           "vm4 smaller: an Activity row's tooltip says “Conversation” on an English Mac; a job's own title stays")
-    check(controller.contains(#"log.notice("sent to aris-agent for \(brain.rawValue, privacy: .public) (\(tier.rawValue, privacy: .public))")"#) && !controller.contains(#"log.notice("asking \("#),
+    check(s3Source("Aris/private/Aris/Routing/ArisController+TurnRuns.swift").contains(#"log.notice("sent to aris-agent for \(brain.rawValue, privacy: .public) (\(tier.rawValue, privacy: .public))")"#) && !controller.contains(#"log.notice("asking \("#),
           "vm4 smaller: the log says the request was sent to the helper, not that an AI is being asked, before the helper has decided")
 }
 

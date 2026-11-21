@@ -78,6 +78,11 @@ final class ArisSpeaker {
     /// room's tail, which ArisEchoGuard.tail adds).
     private(set) var isPlaying = false
     private(set) var stoppedAt: ContinuousClock.Instant?
+    /// This line plays through the duplex engine's player (arisDuplexAudio), so its echo is cancelled; nil: `engine`.
+    private var duplexVoice: ArisDuplexVoice?
+    /// Aris's voice is (or its next line would be) heard by the echo canceller: the barge-in watch may stay armed on
+    /// the speakers (ArisBargeIn.cancelledMode).
+    var voiceIsEchoCancelled: Bool { duplexVoice != nil || (ArisDuplexSwitch.isOn && ArisDuplexAudio.voiceWouldBeCancelled) }
     /// What Aris said within ArisEchoMemory.lasts.
     var recentlySaid: [String] { echo.recent(at: ProcessInfo.processInfo.systemUptime) }
     init() {
@@ -259,6 +264,7 @@ final class ArisSpeaker {
         restoring = nil
         duckedAt = .now
         player.volume = ArisDucking.duckedVolume
+        duplexVoice?.volume = ArisDucking.duckedVolume
     }
 
     /// They stopped: back to full over a second, once it has been down long enough.
@@ -272,6 +278,7 @@ final class ArisSpeaker {
             while !Task.isCancelled {
                 let elapsed = ContinuousClock.now - start
                 self?.player.volume = ArisDucking.volume(restoringFor: elapsed)
+                self?.duplexVoice?.volume = ArisDucking.volume(restoringFor: elapsed)
                 if elapsed >= ArisDucking.restoreTime {
                     self?.duckedAt = nil
                     return
@@ -293,6 +300,7 @@ final class ArisSpeaker {
         cloud = nil
         synthesizer.stopSpeaking(at: .immediate)
         player.stop()
+        endDuplexVoice(stopping: true)
         onLevel?(0)
         meter.set(0)
         // Cut off: what was already in the output still plays out (its tail is waited for as after any end).
@@ -372,6 +380,20 @@ final class ArisSpeaker {
         if duckedAt == nil { player.volume = 1 }
         progress.start(generation)
         isPlaying = true
+        // Through the duplex engine when it runs with something listening (the canceller then has this line), else the
+        // voice's own engine as before. Never asked with the switch off.
+        if ArisDuplexSwitch.isOn, duplexVoice == nil {
+            duplexVoice = ArisDuplexVoice.begin(meter: meter, onLevel: onLevel)
+            if duckedAt != nil { duplexVoice?.volume = ArisDucking.duckedVolume }
+        }
+    }
+
+    /// The duplex line is over (`stopping`: cut off now, its scheduled buffers dropped).
+    private func endDuplexVoice(stopping: Bool) {
+        guard let duplexVoice else { return }
+        if stopping { duplexVoice.stop() }
+        duplexVoice.end()
+        self.duplexVoice = nil
     }
 
     /// Schedules one buffer of the speak() `voice` (a generation); an empty buffer means the voice has sent
@@ -380,6 +402,20 @@ final class ArisSpeaker {
         guard finished != nil, voice == generation else { return }
         guard buffer.frameLength > 0 else {
             if progress.wroteAll() { resume() }
+            return
+        }
+        if let duplexVoice {
+            progress.schedule()
+            let scheduled = duplexVoice.play(buffer) { [weak self] in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        if self.progress.played(voice) { self.resume() }
+                    }
+                }
+            }
+            // The duplex engine stopped under the line: the rest of it is dropped, as when the old output changes.
+            if !scheduled { resume() }
             return
         }
         guard prepare(for: buffer.format) else { return resume() }
@@ -452,6 +488,7 @@ final class ArisSpeaker {
     private func resume() {
         guard let continuation = finished else { return }
         finished = nil
+        endDuplexVoice(stopping: false)
         onLevel?(0)
         meter.set(0)
         if isPlaying { stoppedAt = .now }

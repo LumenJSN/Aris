@@ -673,8 +673,8 @@ private func fxReplyCeilingTests() {
     check(get(bytes: 2_000_000, most: ArisStock.mostReplyBytes) == .tooLong, "review-7 L10: two megabytes that never said their length are dropped as they grow")
     check(get(bytes: 2_000_000, saysLength: true, most: ArisStock.mostReplyBytes) == .tooLong, "review-7 L10: two megabytes that said so are dropped before any is read")
     check(get(bytes: 100_000, saysLength: true, most: ArisStock.mostReplyBytes) == .ok(Data(repeating: 0x20, count: 100_000)), "review-7 L10: a long day under the ceiling is read")
-    check(get(status: 404, bytes: 2_000_000, most: ArisStock.mostReplyBytes) == .refused && get(status: 429, bytes: 10, most: ArisStock.mostReplyBytes) == .refused,
-          "review-7 L10: anything but a 200 is refused, its body unread")
+    check(get(status: 404, bytes: 2_000_000, most: ArisStock.mostReplyBytes) == .refused && get(status: 429, bytes: 10, most: ArisStock.mostReplyBytes) == .limited,
+          "review-7 L10: anything but a 200 is refused, its body unread (a 429 as too many requests: helperbugs 13)")
     check(get(bytes: 10, fails: true, most: ArisStock.mostReplyBytes) == .unreachable, "review-7 L10: no connection is no answer")
     check(ArisStock.mostReplyBytes >= 10 * 40_000 && ArisStock.mostReplyBytes <= 1_048_576, "review-7 L10: the ceiling is generous for a day's chart and still small: \(ArisStock.mostReplyBytes)")
 }

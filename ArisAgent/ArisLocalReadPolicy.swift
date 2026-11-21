@@ -56,11 +56,24 @@ enum ArisLocalReadPolicy {
 
     /// Whether aris-agent (and so every command its AIs run) has Full Disk Access, for the settings and onboarding
     /// row: the system TCC database (no one's content) is opened and closed at once, nothing read. Never prompts.
-    static func hasDiskAccess(probe: String = "/Library/Application Support/com.apple.TCC/TCC.db") -> Bool {
-        let fd = open(probe, O_RDONLY)
-        guard fd >= 0 else { return false }
+    /// That file opens without Full Disk Access when System Integrity Protection's file protection is off (a VM, a
+    /// developer's Mac), and so does every folder only Full Disk Access opens (VM runs 2026-11-18, D6, and 2026-11-19):
+    /// then macOS's own decision for Aris is read from that database (`decision`, ArisTCCReading), and what can't be
+    /// read is never "allowed". With SIP on (the user's Mac) the open alone decides, as before.
+    static func hasDiskAccess(probe: String = ArisTCCReading.systemDatabase, filesProtected: Bool = ArisSystemIntegrity.protectsFiles,
+                              decision: () -> Bool? = { ArisTCCReading.allowed(service: ArisTCCReading.diskService, clients: ArisTCCReading.clients,
+                                                                               database: ArisTCCReading.systemDatabase) }) -> Bool {
+        guard opens(probe, flags: O_RDONLY) == 0 else { return false }
+        if filesProtected { return true }
+        return decision() ?? false
+    }
+
+    /// 0 when `path` opens (closed at once), else the errno.
+    private static func opens(_ path: String, flags: Int32) -> Int32 {
+        let fd = open(path, flags | O_NONBLOCK)
+        guard fd >= 0 else { return errno }
         close(fd)
-        return true
+        return 0
     }
 
     /// Whether a command line runs one of the private reads (messages, mail, notes, Obsidian), in any segment.
@@ -91,3 +104,15 @@ enum ArisLocalReadPolicy {
     /// starts marked, so the open Claude's reads and web calls go to the read judge.
     static func marksTurn(untrusted: Bool, outsideConversation: Bool) -> Bool { untrusted || outsideConversation }
 }
+
+/// System Integrity Protection, as the kernel has it now.
+enum ArisSystemIntegrity {
+    /// CSR_ALLOW_UNRESTRICTED_FS: set when SIP's file protection is off.
+    private static let unrestrictedFiles: UInt32 = 1 << 1
+
+    /// Its file protection is on (csr_check answers 0 when the thing asked for is allowed, that is, unprotected).
+    static var protectsFiles: Bool { csrCheck(unrestrictedFiles) != 0 }
+}
+
+@_silgen_name("csr_check")
+private func csrCheck(_ mask: UInt32) -> Int32

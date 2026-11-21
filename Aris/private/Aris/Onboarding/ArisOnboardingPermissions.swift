@@ -42,7 +42,7 @@ struct ArisPermissionsPage: View {
                         .padding(.top, 12)
                 }
                 VStack(spacing: 12) {
-                    ForEach(ArisPermissionCard.allCases, id: \.self) { card in
+                    ForEach(model.cards, id: \.self) { card in
                         ArisPermissionCardView(card: card, state: model.state(card), palette: palette, reduced: guide.reduced,
                                                note: card == .screen ? model.captureNote.map { ArisSetupWords.captureNote($0) } : nil,
                                                allow: { guide.allow(card) }, later: { guide.later(card) })

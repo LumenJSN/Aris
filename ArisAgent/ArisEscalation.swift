@@ -20,8 +20,8 @@ struct ArisActionScope: Codable, Hashable {
     let target: String
 }
 
-/// What main Aris can never approve on its own (spec §5). `money` is refused, and only when the action definitely
-/// pays. `mailSend` (it definitely sends mail) is the user's card every time when the card shows all of the mail, and
+/// What main Aris can never approve on its own (spec §5). `money` (only when the action definitely pays) is the user's own
+/// card every time (decision 1, 2026-11-18: it was refused): never judged, learned, granted or counted down. `mailSend` (it definitely sends mail) is the user's card every time when the card shows all of the mail, and
 /// refused when it can't (audit gate-9). `permanentDelete` and `uncertain` (a word or program that only looks like
 /// money or a send) go to the user. None of them is ever learned, judged or covered by a standing permission.
 enum ArisHardLine: String, Codable {
@@ -68,7 +68,32 @@ enum ArisEscalationVerdict: Equatable {
 }
 
 enum ArisEscalation {
-    static let moneyReason = "돈이 드는 일은 할 수 없어요"
+    /// The rule for money in words (the why answers): a payment is never made without their yes on its own card.
+    static let moneyReason = "결제는 할 때마다 카드에서 직접 ‘네’라고 하셔야 해요"
+    /// A payment after outside text that his own words didn't name in full (the content rule, as in Core 2).
+    static let paymentContentReason = "읽은 내용 뒤의 결제라, 금액과 받는 곳을 직접 말씀해 주셔야 해요. (A payment after outside text needs you to name the amount and payee.)"
+
+    /// A payment's facts from its typed arguments (the money rule's tool, its JSON): the amounts and payees a card shows.
+    static func paymentFacts(tool: String, arguments: [String: Any]) -> ArisCallFacts {
+        ArisCallFacts(capability: tool, arguments: ArisKeyArguments.extract(arguments, capability: "pay." + tool), registeredPayment: true)
+    }
+
+    /// Whether the user's words of this turn name every amount and payee of the payment, and there is at least one of each.
+    static func paymentNamed(_ facts: ArisCallFacts, request: String) -> Bool {
+        let amounts = facts.values(.amount), payees = facts.values(.payee) + facts.values(.recipient)
+        guard !amounts.isEmpty, !payees.isEmpty else { return false }
+        return (amounts + payees).allSatisfy { ArisGrounding.contains(request, $0) || ArisGrounding.contains(request, $0.filter(\.isNumber)) }
+    }
+
+    /// The lines a payment's card opens with: who is paid and how much, in full, or that it couldn't be read.
+    static func paymentLines(_ facts: ArisCallFacts) -> [String] {
+        let payees = Array(Set(facts.values(.payee) + facts.values(.recipient))).sorted(), amounts = Array(Set(facts.values(.amount))).sorted()
+        return ["받는 곳: " + (payees.isEmpty ? "읽지 못했어요 (확인해 주세요)" : payees.joined(separator: ", ")),
+                "금액: " + (amounts.isEmpty ? "읽지 못했어요 (확인해 주세요)" : amounts.joined(separator: ", "))]
+    }
+
+    /// Said first on a payment's card (decision 1): it runs only on his explicit yes, for this one payment.
+    static let paymentLine = "결제예요. 직접 ‘네’라고 하셔야만, 이번 한 번만 해요. (A payment: only your explicit yes, for this one.)"
     /// Said when a mail send can't be shown whole on a card (a mail program, a draft sent by its id).
     static let mailReason = "내용을 카드에 다 보여 줄 수 없는 메일은 보내지 않아요"
 
@@ -76,10 +101,19 @@ enum ArisEscalation {
     /// The user always decides; otherwise a standing permission, then main Aris's judgement.
     /// `judgement`: nil when main Aris wasn't asked (or couldn't answer). `showsMail`: a mail send whose card shows its
     /// recipient, subject and whole text (ArisMailCard.shows).
+    /// `payment`: a payment's facts (its amount and payee from the typed arguments, `paymentFacts`), and whether the user's
+    /// own words of this turn named both (`paymentNamed`).
     static func decide(scope: ArisActionScope, approvable: Bool, hardLine: ArisHardLine?, tainted: Bool,
-                       standing: Set<ArisActionScope>, judgement: ArisJudgement?, showsMail: Bool = false) -> ArisEscalationVerdict {
+                       standing: Set<ArisActionScope>, judgement: ArisJudgement?, showsMail: Bool = false,
+                       payment: ArisCallFacts? = nil, paymentNamed: Bool = false) -> ArisEscalationVerdict {
         switch hardLine {
-        case .money: return .refuse(moneyReason)
+        // A payment (decision 1): the user's own card, each time, before any grant or judgement below; the same rule as
+        // Core 2's (ArisTrustPolicy.payment): refused when outside text came in and his own words didn't name its
+        // amount and payee, and when its card couldn't show exactly what is paid.
+        case .money:
+            if let payment, let why = ArisTrustPolicy.unreadablePayment(payment) { return .refuse(why) }
+            if tainted, !paymentNamed { return .refuse(paymentContentReason) }
+            return .askUser("a payment")
         // The user's own card, each time: before any grant or judgement below, so neither can ever stand in for them.
         case .mailSend: return showsMail ? .askUser("a mail send") : .refuse(mailReason)
         case .permanentDelete: return .askUser("permanent delete")
@@ -108,7 +142,15 @@ enum ArisEscalation {
     /// Any other card is unchanged. The card keeps everything else it had: its rows to edit, its yes word, what it is
     /// about (it used to be made anew without them; no card that reaches here carries them today, but one that did
     /// would have lost its editable rows).
-    static func card(for ask: ArisConfirmation, approvable: Bool, hardLine: ArisHardLine?, tainted: Bool) -> ArisConfirmation {
+    static func card(for ask: ArisConfirmation, approvable: Bool, hardLine: ArisHardLine?, tainted: Bool, payment: ArisCallFacts? = nil) -> ArisConfirmation {
+        // A payment's card: said to be one first with who is paid and how much, a question (never a countdown), its rows
+        // not editable, no proposal.
+        if hardLine == .money {
+            let opening = ([paymentLine] + (payment.map(paymentLines) ?? [])).joined(separator: "\n")
+            let detail = ask.detail.hasPrefix(paymentLine) ? ask.detail : opening + "\n" + ask.detail
+            return ArisConfirmation(id: ask.id, title: ask.title, detail: detail, countdown: false, spoken: ask.spoken, proposal: false,
+                                    full: ask.full.map { $0.hasPrefix(paymentLine) ? $0 : opening + "\n" + $0 }, allow: ask.allow, desktop: ask.desktop)
+        }
         guard tainted, approvable, hardLine == nil, !ask.detail.hasPrefix(taintedReason) else { return ask }
         return ArisConfirmation(id: ask.id, title: ask.title, detail: taintedReason + "\n" + ask.detail, proposal: ask.proposal,
                                 full: ask.full.map { taintedReason + "\n" + $0 }, fields: ask.fields, allow: ask.allow, memoryWrite: ask.memoryWrite,

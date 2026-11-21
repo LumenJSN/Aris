@@ -608,9 +608,9 @@ struct ArisRowControl: View {
                 if ok { ArisSaid(text: w("허용됨")) }
                 if let next { button(next) }
             }
-        case .shortcut(let name, let caps):
+        case .shortcut(let name, let caps, let enabled):
             ArisShortcutCapsButton(caps: caps, recording: handlers.recording == name, label: item.title, clearable: name != ArisDictationKey.Choice.recorderName,
-                                   toggle: { handlers.record(name) }, clear: { handlers.perform(.clearShortcut(name)) })
+                                   enabled: enabled, toggle: { handlers.record(name) }, clear: { handlers.perform(.clearShortcut(name)) })
         case .caps(let caps):
             // Raised caps say “press me”: a key that can't be changed is plain words.
             ArisFixedKey(caps: caps)

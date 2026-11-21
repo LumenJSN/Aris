@@ -27,6 +27,7 @@ final class ArisOnboardingSetupWindow: NSWindow {
         animationBehavior = .none
         title = ArisOnboardingCopy.windowTitle
         collectionBehavior = [.moveToActiveSpace]
+        ArisRecordingPrivacy.follow(self)
         let host = NSHostingView(rootView: ArisSetupRoot(guide: guide))
         host.wantsLayer = true
         host.layer?.cornerRadius = 20
@@ -147,7 +148,8 @@ struct ArisSetupContent: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .transition(.opacity)
             }
-            if guide.phase == .setup || guide.phase == .handoff {
+            // Not on the last page: nothing is left there to put off.
+            if (guide.phase == .setup || guide.phase == .handoff) && guide.page != .done {
                 Button(ArisOnboardingCopy.later) { guide.close(.later) }
                     .buttonStyle(ArisQuietButtonStyle(palette: palette, size: 13, weight: .medium))
                     .padding(.trailing, 28).padding(.bottom, 30)
@@ -190,6 +192,7 @@ struct ArisSetupPages: View {
             case .brain: ArisBrainPage(guide: guide, palette: palette).transition(.opacity)
             case .wake: ArisWakePage(guide: guide, palette: palette).transition(.opacity)
             case .dictation: ArisDictationPage(guide: guide, palette: palette).transition(.opacity)
+            case .done: ArisDonePage(guide: guide, card: guide.starCard, palette: palette).transition(.opacity)
             }
         }
         .padding(.horizontal, 48)

@@ -121,7 +121,7 @@ enum ArisUsagePricing {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let done = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var body: Data?
-        URLSession.shared.dataTask(with: request) { data, response, _ in
+        ArisNoStore.session.dataTask(with: request) { data, response, _ in
             if (response as? HTTPURLResponse)?.statusCode == 200 { body = data }
             done.signal()
         }.resume()

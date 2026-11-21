@@ -52,10 +52,12 @@ enum ArisUndoSteps {
 
     /// The body of POST /undo, before the app adds who it is (its pid and start time). `confirmed` goes only with the
     /// entry's id and the summary the helper's 409 carried: without either it is sent as a plain request.
-    static func request(id: String?, confirmed: Bool, echo: String?) -> [String: Any] {
+    static func request(id: String?, confirmed: Bool, echo: String?, unit: Bool = false) -> [String: Any] {
         let yes = confirmed && id != nil && echo != nil
         var body: [String: Any] = ["confirmed": yes]
         if let id { body["id"] = id }
+        // The whole run of a taught procedure that entry is a step of (Core 2's record), newest step first.
+        if unit, id != nil { body["unit"] = true }
         if yes, let echo { body["summary"] = echo }
         return body
     }
@@ -64,7 +66,9 @@ enum ArisUndoSteps {
     /// card must show), 403 refused, anything else failed with its reason.
     static func outcome(status: Int, reply: [String: Any]) -> ArisUndoOutcome {
         switch status {
-        case 200: return .done(reply["summary"] as? String ?? "")
+        // A taught run undone in part: what stays is said ("kept:window"), never the helper's own words.
+        // What was undone, by kind and app, and the lesson (seventh VM run, item 5): a note the reply is made from.
+        case 200: return .done(ArisUndoWords.note(reply: reply) ?? (reply["kept"] as? String).map { ArisUndoWords.keptPrefix + $0 } ?? reply["summary"] as? String ?? "")
         case 409: return .needsConfirm(id: reply["id"] as? String ?? "", summary: reply["summary"] as? String ?? "",
                                        revivesSchedule: reply["kind"] as? String == "restoreSchedule")
         case 403: return .refused

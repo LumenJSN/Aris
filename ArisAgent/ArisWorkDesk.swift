@@ -125,6 +125,13 @@ final class ArisWorkDesk: @unchecked Sendable {
     /// At launch (and after the settings page changed something): the cache fills, old episodes are compacted.
     func refresh() { queue.async { [self] in keepAndRefresh(force: true) } }
 
+    /// After a data wipe: nothing learned is given to a turn from now on (the cache is emptied at once), then the cache
+    /// is read again from the emptied file.
+    func wiped() {
+        lock.withLock { cache = ([], [], cache.on) }
+        refresh()
+    }
+
     /// Waits until everything queued so far has run (tests).
     func drain() { queue.sync {} }
 

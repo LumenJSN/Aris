@@ -132,6 +132,9 @@ enum ArisTerminalChoice {
 enum ArisTerminalPlan: Equatable {
     /// AppleScript on osascript's stdin.
     case script(String)
+    /// The launch script written to `scriptPath` (executable, 0700), then opened as a document of the app: Terminal runs
+    /// it in a new window of the account's login shell. No Apple Event leaves Aris, so macOS has nothing to ask.
+    case document(scriptPath: String, launchScript: String)
     /// A new instance of the app with these arguments; `launchScript`: the text of the script they run, written to
     /// `scriptPath` first.
     case arguments([String], scriptPath: String, launchScript: String)
@@ -162,6 +165,11 @@ enum ArisTerminalLaunch {
     /// The window that runs `command` in `terminal`. `shell`: ArisTerminalLaunch.shell's; `folder`: the private work
     /// folder (0700) the launch script goes in; `warpFolder`: Warp's own tab_configs folder; `id`: this launch's.
     static func plan(_ terminal: ArisTerminal, command: String, shell: String, folder: String, warpFolder: String, id: UUID) -> ArisTerminalPlan {
+        // Terminal runs a script opened as its document (as the quiet launch does); only iTerm2 still needs AppleScript.
+        if terminal == .terminal {
+            let path = folder + "/" + scriptFileName(id)
+            return .document(scriptPath: path, launchScript: "#!/bin/sh\n" + launchScript(command: command, shell: shell, path: path))
+        }
         if let host = terminal.scripted { return .script(ArisClaudeLaunch.script(command: command, host: host)) }
         if terminal == .warp {
             let name = ArisWarpLaunch.configName(id)

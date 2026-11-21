@@ -712,7 +712,7 @@ private func runAPIDriverTests() {
     let driver = apiDriver()
     let asked = object(driver.ask("타이머 5분", tier: .quick)[0])
     check(asked["type"] as? String == "ask" && asked["model"] as? String == "gpt-6-luna" && (asked["functions"] as? [String])?.count == ArisAPICatalog.entries.count
-          && asked["relay"] as? Bool == false && asked["maxRounds"] as? Int == 8 && (asked["system"] as? String)?.contains("`aris` function") == true,
+          && asked["relay"] as? Bool == false && asked["maxRounds"] as? Int == ArisAPIDriver.roundBudget && (asked["system"] as? String)?.contains("`aris` function") == true,
           "api driver: a question carries the system prompt, the tier's model and every function")
     check(object(driver.ask("x", tier: .work)[0])["model"] as? String == "gpt-6.1-sol", "api driver: work and critical turns use the strong model")
     check(driver.opening().isEmpty, "api driver: nothing configures the helper's address or key over the pipe (it reads its own profile)")
@@ -754,8 +754,8 @@ private func runAPIDriverTests() {
     _ = driver.ask("q", tier: .quick)
     if case .abort? = driver.read(#"{"type":"tool_request","id":"t3","name":"timer","arguments":"{bad","round":1}"#).first {} else { check(false, "api driver: malformed arguments stop the turn") }
     _ = driver.ask("q", tier: .quick)
-    if case .abort(let line)? = driver.read(toolRequest("t4", "timer", ["minutes": 1], round: 9)).first {
-        check(line == ArisAPIDriver.roundsStop, "api driver: a ninth round stops the turn")
+    if case .abort(let line)? = driver.read(toolRequest("t4", "timer", ["minutes": 1], round: ArisAPIDriver.roundBudget + 1)).first {
+        check(line == ArisAPIDriver.roundsStop, "api driver: a round past the turn's budget stops the turn")
     } else { check(false, "api driver: rounds cap") }
 
     // One id once a turn; at most eight calls a round; a search model is outside text from its first round.
@@ -1058,14 +1058,14 @@ private func runAPIWireTests() {
     long.stop()
 
     // The round cap in the helper too.
-    let loops = FakeAPIServer((0..<10).map { round in
+    let loops = FakeAPIServer((0..<(ArisAPIDriver.roundBudget + 2)).map { round in
         FakeReply.sse([chatChunk(["tool_calls": [["index": 0, "id": "loop\(round)", "function": ["name": "timer", "arguments": #"{"minutes":1}"#]]]], finish: "tool_calls"), "[DONE]"])
     })
     let looping = APIWire(driver: apiDriver("openai", base: loops.base))
     looping.ask("q")
-    looping.wait(15)
-    check(looping.events.contains { if case .abort(let line) = $0 { return line == ArisAPIDriver.roundsStop }; return false } && looping.ran.count == 8,
-          "api wire: at most eight rounds of tools in a turn, then it stops")
+    looping.wait(30)
+    check(looping.events.contains { if case .abort(let line) = $0 { return line == ArisAPIDriver.roundsStop }; return false } && looping.ran.count == ArisAPIDriver.roundBudget,
+          "api wire: at most the turn's budget of rounds of tools, then it stops")
     loops.stop()
 
     // The provider's own web search taints the turn.
@@ -1098,8 +1098,8 @@ private func runAPIWireTests() {
     let turnStarted = Date()
     slowTurn.ask("q")
     slowTurn.wait(6)
-    check(Date().timeIntervalSince(turnStarted) < 3 && slowTurn.events.contains { if case .failure = $0 { return true }; return false },
-          "api wire: a turn past its wall-clock limit ends, however its rounds go")
+    check(Date().timeIntervalSince(turnStarted) < 3 && slowTurn.events.contains { if case .abort(let line) = $0 { return line == ArisAPIDriver.timeStop }; return false },
+          "api wire: a turn past its wall-clock limit ends, however its rounds go, and says its time ran out")
     dripping.stop()
 
     // Its aris-tools children end with the turn, and get only the environment they need.

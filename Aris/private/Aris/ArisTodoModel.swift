@@ -141,6 +141,14 @@ final class ArisTodoModel: ObservableObject {
         return .saved(title: saved.title, id: saved.id)
     }
 
+    /// A turn's first use of Reminders: the line of why in the turn, macOS's own dialog, and its answer, before the
+    /// request is tried (ArisRemindersAccess.asksFirst). Only a turn the user is in front of calls this (never a
+    /// routine's step, a click or a watcher).
+    func askFirstIfNeverAsked() async {
+        guard reminders.asksFirst(demo: demo.isOn) else { return }
+        _ = await ArisPermissionCenter.shared.require(.reminders)
+    }
+
     // Reminders is changed off the main actor (ArisReminderStore), so a change is awaited; the list here follows it
     // as soon as it is back, not a hop later through the publisher.
     @discardableResult
@@ -197,19 +205,8 @@ final class ArisTodoModel: ObservableObject {
         if let reply = await ArisAgentClient.todos("hide", id: due.id) { withAnimation(.easeInOut(duration: 0.28)) { self.due = reply.due } }
     }
 
-    /// What "<…> 다 했어" names: one open reminder of yours, else one Canvas deadline (which is only hidden).
-    enum Finishable: Equatable {
-        case reminder(ArisTodoItem)
-        case deadline(ArisDue)
-
-        /// As a card shows it. A deadline's title is other people's words: it is shown to the user, never remembered.
-        var shown: String {
-            switch self {
-            case .reminder(let item): return item.title
-            case .deadline(let due): return due.title
-            }
-        }
-    }
+    /// What "<…> 다 했어" names (ArisTodoFinishable, in ArisTodos.swift so the turn's funnel can carry it).
+    typealias Finishable = ArisTodoFinishable
 
     /// The open item those words name exactly (ArisTodoMatch.named): nil when they name none or several, which is
     /// the AI's to settle, or when the turn was stopped while the lists were read.
@@ -268,8 +265,13 @@ final class ArisTodoModel: ObservableObject {
         guard alert == nil, !demo.isOn else { return }
         var shown = Set(UserDefaults.standard.stringArray(forKey: Self.shownKey) ?? [])
         let now = Date()
-        // Canvas deadlines and your own dated to-dos alike.
-        let deadlines = due + items.compactMap { item in item.due.map { ArisDue(id: ArisTodoWords.ownPrefix + item.id, course: ArisTodoWords.own(), title: item.title, at: $0, url: nil) } }
+        // Canvas deadlines and your own dated to-dos alike. A to-do with a day and no time is due at that day's end, and
+        // alerts on its own day only (ArisDeadlineDate: it used to alert at midnight a day early).
+        let deadlines = due + items.compactMap { item -> ArisDue? in
+            guard let day = item.due, ArisDeadlineDate.mayAlert(day, hasTime: item.hasTime, now: now) else { return nil }
+            return ArisDue(id: ArisTodoWords.ownPrefix + item.id, course: ArisTodoWords.own(), title: item.title,
+                           at: ArisDeadlineDate.deadline(day, hasTime: item.hasTime), url: nil)
+        }
         guard let (next, kind) = deadlines.lazy.compactMap({ due in ArisDueAlert.pending(for: due, now: now, shown: shown).map { (due, $0) } }).first else { return }
         shown.insert(ArisDueAlert.key(next, kind))
         // Keys of deadlines long gone are let go.

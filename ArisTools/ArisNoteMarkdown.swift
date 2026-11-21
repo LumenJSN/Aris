@@ -42,7 +42,9 @@ enum ArisNoteMarkdown {
     static func plan(_ markdown: String) -> Plan? {
         var lines = newlines(markdown).components(separatedBy: .newlines).prefix(lineCount * 2)
             .map { String(clean($0).prefix(lineLength)).trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && !$0.hasPrefix("```") }.prefix(lineCount)[...]
+            // A list mark with nothing after it ("- [ ]", "-") is no item: it was written into the note as "[ ]"
+            // (eleventh VM run: `note --markdown '회의 안건 정리\n- [ ] '`).
+            .filter { !$0.isEmpty && !$0.hasPrefix("```") && !isEmptyItem($0) }.prefix(lineCount)[...]
         guard let first = lines.first else { return nil }
         let title = words(first.replacingOccurrences(of: #"^#{1,6}\s*"#, with: "", options: .regularExpression))
         guard !title.isEmpty else { return nil }
@@ -175,6 +177,10 @@ enum ArisNoteMarkdown {
         if line.range(of: #"^[-*+•]\s+\S"#, options: .regularExpression) != nil { return .bullets }
         if line.range(of: #"^\d{1,3}[.)]\s+\S"#, options: .regularExpression) != nil { return .numbered }
         return nil
+    }
+
+    static func isEmptyItem(_ line: String) -> Bool {
+        line.range(of: #"^([-*+•]|\d{1,3}[.)])?\s*(\[[ xX]?\])?$"#, options: .regularExpression) != nil
     }
 
     private static func itemWords(_ line: String) -> String {

@@ -63,6 +63,8 @@ final class ArisSidePanels: ObservableObject {
     private var windows: [Edge: ArisSideWindow] = [:]
     private var pointerWatch: Timer?
     private var clickWatch: [Any] = []
+    /// The pointer-moved monitors, while a side has a tab to show (watchMoves).
+    private var moveWatch: [Any] = []
     private var layers: [Edge: ArisSideLayers] = [:]
     private var watching: [AnyCancellable] = []
     private var screenID: CGDirectDisplayID?
@@ -113,17 +115,8 @@ final class ArisSidePanels: ObservableObject {
         // Hops onto the main actor instead of assuming it: assumeIsolated in this timer crashed twice at launch
         // (SIGSEGV in the executor check, macOS 26.0, 2026-11-01).
         startPointerWatch()
-        // Pointer moves are acted on at once; the timer carries the rest and linger clocks while anything is showing,
-        // and stops when nothing is (idle CPU), to be started again by the next move.
-        clickWatch += [
-            NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { _ in
-                MainActor.assumeIsolated { ArisSidePanels.shared.pointerMoved() }
-            } as Any,
-            NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
-                MainActor.assumeIsolated { ArisSidePanels.shared.pointerMoved() }
-                return event
-            } as Any,
-        ]
+        // Pointer moves are watched only while a side has a tab to show (tabsChanged: watchMoves).
+        watchMoves()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { ArisSidePanels.shared.place() }
         }
@@ -230,6 +223,7 @@ final class ArisSidePanels: ObservableObject {
         ArisUsageModel.shared.tabsChanged(hidden: hiddenTabs)
         ArisClipboardHotKey.setEnabled(ArisSideTabWork.takesClipboardKey(hidden: hiddenTabs))
         ArisRightPanelHotKey.setEnabled(ArisSideTabWork.takesRightKey(hidden: hiddenTabs))
+        if !windows.isEmpty { watchMoves() }
         dotsMayHaveChanged()
     }
 
@@ -303,8 +297,33 @@ final class ArisSidePanels: ObservableObject {
     private var lastActivity = Date()
 
     private func pointerMoved() {
+        // Far from every side edge with nothing showing, a move matters to no side: nothing runs for it.
+        guard ArisSideEdgeRules.moveMatters(pointer: NSEvent.mouseLocation, screens: NSScreen.screens.map(\.frame), busy: hasClocksRunning,
+                                            reach: ArisGlass.sideSize.width + Self.gutter) else { return }
         startPointerWatch()
         checkPointer()
+    }
+
+    /// Pointer moves are acted on at once; the timer carries the rest and linger clocks while anything is showing,
+    /// and stops when nothing is (idle CPU), to be started again by the next move. The move monitors are installed
+    /// only while a side has a tab to show; with every tab off nothing watches the pointer.
+    private func watchMoves() {
+        let wanted = ArisSideEdgeRules.watchesMoves(sidesOn: Edge.allCases.filter { !isOff($0) }.count)
+        guard wanted == moveWatch.isEmpty else { return }
+        guard wanted else {
+            moveWatch.forEach(NSEvent.removeMonitor)
+            moveWatch = []
+            return
+        }
+        moveWatch = [
+            NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { _ in
+                MainActor.assumeIsolated { ArisSidePanels.shared.pointerMoved() }
+            },
+            NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
+                MainActor.assumeIsolated { ArisSidePanels.shared.pointerMoved() }
+                return event
+            },
+        ].compactMap { $0 }
     }
 
     private func startPointerWatch() {
@@ -346,9 +365,6 @@ final class ArisSidePanels: ObservableObject {
             let inPopover = popover.contains(edge) && pointer.inPopover
             let near = pointer.atEdge || pointer.onSliver
             nearSince[edge] = near ? (nearSince[edge] ?? now) : nil
-            // Take the pointer at the edge too: the trackpad's haptic only plays for the
-            // window under the pointer, so with clicks passing through, the tap below went to another app and was lost.
-            setIgnoresMouse(edge, !(near || inPopover))
             if (settlingUntil[edge] ?? .distantPast) <= now {
                 // Where another display continues past this edge the pointer may only be crossing: the sliver (and
                 // its tap) waits until it has rested here.
@@ -356,6 +372,10 @@ final class ArisSidePanels: ObservableObject {
                                                           restedFor: now.timeIntervalSince(nearSince[edge] ?? now))
                 setRevealed(edge, comesOut || inPopover)
             }
+            // The pointer is taken only on what shows (the sliver once out, the popover); along the bare edge clicks
+            // reach the app below (they were swallowed down the whole side's height).
+            setIgnoresMouse(edge, !ArisSideEdgeRules.closedTakesMouse(revealed: revealed.contains(edge), onSliver: pointer.onSliver,
+                                                                      inPopover: inPopover))
             // The popover: after a rest on the sliver; gone a moment after the pointer leaves both.
             if pointer.onSliver {
                 awayFromPopoverSince[edge] = nil
@@ -607,6 +627,7 @@ final class ArisSideWindow: NSPanel, ArisKeyPanel {
         isMovable = false
         hidesOnDeactivate = false
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        ArisRecordingPrivacy.follow(self)
     }
 
     /// Always (its buttons take the first click); a field typed in also brings Aris forward (ArisPanelKeys).

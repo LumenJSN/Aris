@@ -13,7 +13,10 @@ enum ArisDayEndSetting {
     static let id = "aris.dayEnd"
 
     /// The row's words, written in Korean as every row of the settings pages is (the settings catalog has their English).
-    static let title = "저녁에 오늘 정리 알려주기"
+    /// It starts with 하루 정리, so a search for it finds the row that offers the summary first (VM run 2026-11-18: only
+    /// the day in review's row, 하루 정리를 자세히 말하기, came up).
+    static let title = "하루 정리를 저녁에 알려주기"
+    static let formerTitle = "저녁에 오늘 정리 알려주기"
     static let detail = "저녁 6시가 지나 Mac을 쓰고 있으면 노치 아래에 작은 칩으로 한 번 알려줘요. 소리는 내지 않고, 전할 게 없는 날은 건너뛰어요. “오늘 정리해 줘”라고 하면 언제든 볼 수 있어요."
     static let keywords = "오늘 정리, 하루 마감, 하루 정리, 저녁, 요약, 한 일, 확인 대기, 내일, 데이 엔드, wrap up"
 
@@ -21,5 +24,6 @@ enum ArisDayEndSetting {
         ArisSettingItem(id: id, icon: .symbol("moon.stars"), title: title, desc: detail, control: .toggle(.dayEndOffer, on))
     }
 
-    static let entry = ArisSettingsEntry(id: id, page: .aris, title: title, keywords: keywords.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+    static let entry = ArisSettingsEntry(id: id, page: .aris, title: title, keywords: keywords.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) },
+                                         formerly: [formerTitle])
 }

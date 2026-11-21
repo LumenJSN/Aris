@@ -21,6 +21,24 @@ enum ArisCardRevise {
         return change
     }
 
+    /// A change the fast model read out of a reply (ArisCardIntent's revise): the field by its name on the card and the
+    /// new value in the owner's own words, put through the very rules a spoken change is read by ("내일" becomes "내일로").
+    /// Nil when the rules can't read it, the field is not one of the card's, or nothing would change.
+    static func apply(field name: String?, value: String?, fields: [ArisCardField], values: [String: String], now: Date,
+                      calendar: Calendar) -> [String: String]? {
+        let open = fields.filter { !$0.fixed }
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty,
+              let field = open.first(where: { ArisCardIntent.plain($0.label, limit: ArisCardIntent.maxFieldName) == name }) ?? (open.count == 1 ? open.first : nil)
+        else { return nil }
+        let said: String
+        switch field.role {
+        case .time: said = value + "로"
+        case .text: said = "내용은 " + value + "로 바꿔"
+        case .recipient: said = "받는 사람 " + value + "로 바꿔"
+        }
+        return parse(said, fields: [field], values: values, now: now, calendar: calendar)
+    }
+
     /// The ending that asks for a change: 로/으로, then perhaps 바꿔 (줘).
     private static let ask = #"\s*(?:(?:바꿔|해|고쳐|옮겨|미뤄|변경해|수정해)\s*(?:줘|주세요|줄래|요)?)?$"#
 
@@ -126,11 +144,18 @@ struct ArisCardListening: Equatable {
     static let yesHold: Double = 2
 
     private(set) var text = ""
-    /// How much of the transcript a change already used.
+    /// How much of the transcript a change (or a change that could not be made) already used.
     private(set) var used = 0
     private(set) var spoken = ArisSpokenAnswer()
     /// When the last spoken change was made.
     private(set) var changedAt: Double?
+    /// The fast model's reading of exactly these words (ArisCardIntent): a no, or a yes that counts as a spoken yes does.
+    private(set) var judged: Judged?
+
+    struct Judged: Equatable {
+        let words: String
+        let allow: Bool
+    }
 
     /// What was said since the last change, without the words that only finish asking for it ("7시로… 해 줘").
     var rest: String {
@@ -148,9 +173,36 @@ struct ArisCardListening: Equatable {
     }
 
     /// Yes, no or nothing yet, as ArisSpokenAnswer says, but never a yes that began within `yesHold` of a change.
+    /// Words the model read count the same way: its no at once, its yes only where a spoken yes may count, once the
+    /// words held still, never within `yesHold` of a change, and only while they are still exactly the words it read.
     func answer(at now: Double, voiceYes: Bool) -> Bool? {
-        guard let answer = spoken.answer(at: now, voiceYes: voiceYes) else { return nil }
+        guard let answer = spoken.answer(at: now, voiceYes: voiceYes) else {
+            guard let judged, judged.words == rest, !rest.isEmpty else { return nil }
+            guard judged.allow else { return false }
+            return voiceYes && heldStill(at: now) && yesMayCount ? true : nil
+        }
         return answer && !yesMayCount ? nil : answer
+    }
+
+    /// The words since the last change have held still as long as a spoken yes must.
+    func heldStill(at now: Double) -> Bool { !rest.isEmpty && now - spoken.since >= ArisSpokenAnswer.stableFor }
+
+    /// The model read the words as they stand now as a yes or a no.
+    func judging(allow: Bool) -> ArisCardListening {
+        var next = self
+        next.judged = Judged(words: rest, allow: allow)
+        return next
+    }
+
+    /// The answer once listening stopped, `final` being the last transcript: the answer so far, else the final words'
+    /// own. A yes that is the model's stands only if the final transcript has no no (then it is a no) and no negation
+    /// (then it is no answer): the last, better transcript can only take such a yes away.
+    func settled(_ final: String, at now: Double, voiceYes: Bool) -> Bool? {
+        guard let live = answer(at: now, voiceYes: voiceYes) else { return self.final(final, at: now, voiceYes: voiceYes) }
+        guard live, let judged, judged.words == rest, spoken.answer(at: now, voiceYes: voiceYes) == nil else { return live }
+        let last = heard(final, at: now).rest
+        if ArisAnswerWords.matches(last, ArisAnswerWords.no) { return false }
+        return ArisAnswerWords.matches(last, ArisAnswerWords.negation) ? nil : true
     }
 
     /// The last words when listening stopped: a no, or a yes as `answer` allows it.
@@ -178,6 +230,16 @@ struct ArisCardListening: Equatable {
         next.used = text.count
         next.spoken = ArisSpokenAnswer()
         next.changedAt = now
+        return next
+    }
+}
+
+extension ArisCardListening {
+    /// Words that asked for a change the card could not make: they are done with, and what follows is heard on its own.
+    func passed() -> ArisCardListening {
+        var next = self
+        next.used = text.count
+        next.spoken = ArisSpokenAnswer()
         return next
     }
 }

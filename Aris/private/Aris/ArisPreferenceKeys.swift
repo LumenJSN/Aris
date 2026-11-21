@@ -11,9 +11,12 @@ import Foundation
 
 extension Defaults.Keys {
     /// What answers while nothing is stored; a new install is given one that is set up here (ArisBrainSetup).
-    static let arisBrain = Key<String>("arisBrain", default: ArisBrain.codex.rawValue)
+    static let arisBrain = Key<String>("arisBrain", default: ArisBrain.standard.rawValue)
     /// Who works other apps' windows (ArisComputerEngine): Aris's own unless the user picks Peekaboo or Codex's.
-    static let arisComputerEngine = Key<String>(ArisComputerEngine.preferenceKey, default: ArisComputerEngine.aris.rawValue)
+    static let arisComputerEngine = Key<String>(ArisComputerEngine.preferenceKey, default: ArisComputerEngine.standard.rawValue)
+    /// 다른 AI로 넘기기: off, only the chosen brain answers (aris-agent's ArisBrainFallback); on, another AI takes a turn
+    /// while the chosen one is out of its limit or missing. Sent with every question and warm-up.
+    static let arisBrainFallback = Key<Bool>(ArisBrainFallbackSetting.preferenceKey, default: false)
     /// Off on a new install (the guide asks); an install from before keeps it on (ArisFirstRun pins it at launch).
     static let arisWakeWord = Key<Bool>("arisWakeWord", default: false)
     static let arisCircleGesture = Key<Bool>("arisCircleGesture", default: true)

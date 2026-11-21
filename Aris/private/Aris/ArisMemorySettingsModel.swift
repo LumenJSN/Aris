@@ -33,6 +33,16 @@ final class ArisMemorySettingsModel: ObservableObject {
     private var workTimer: Task<Void, Never>?
     /// 저장된 단계 (the agent's saved desktop steps).
     @Published private(set) var savedSteps: [ArisSavedStepsItem]?
+    /// A taught procedure being renamed (its row's key), the name typed so far, and why the last 저장 didn't take.
+    @Published private(set) var renaming: String?
+    @Published var renameText = ""
+    @Published private(set) var renameProblem: ArisSavedStepsSettingsRows.RenameProblem?
+    /// The saved request whose 지우기 waits for its second press (정말 지우기), which lapses after 5 s (fifth VM run, M1:
+    /// it was gone at the first press).
+    @Published private(set) var confirmingForget: String?
+    private var forgetTimer: Task<Void, Never>?
+    /// When 정말 지우기 came up.
+    private var confirmingSince: Date?
 
     func reload() async {
         let reply = await ArisAgentClient.memories()
@@ -64,10 +74,76 @@ final class ArisMemorySettingsModel: ObservableObject {
         if let now = await ArisAgentClient.setWorkMemory(on) { workOn = now } else { await reloadWork() }
     }
 
+    /// 지우기 on a saved request: the first press asks (its row says it can't be undone and offers 취소 and 정말 지우기),
+    /// the second forgets it. As 배운 것 모두 지우기 asks.
+    func forgetSavedStepsPressed(key: String) async -> Bool {
+        // 정말 지우기 comes up under the pointer, where 지우기 was: a press on it this soon is the same double-click, not a
+        // second decision, and does nothing (sixth VM run, item 6b).
+        if confirmingForget == key, !ArisSavedStepsSettingsRows.confirmCounts(since: confirmingSince, now: Date()) { return false }
+        guard confirmingForget == key else {
+            confirmingForget = key
+            confirmingSince = Date()
+            forgetTimer?.cancel()
+            forgetTimer = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                if self?.confirmingForget == key { self?.confirmingForget = nil }
+            }
+            return false
+        }
+        cancelForgetSavedSteps()
+        return await forgetSavedSteps(key: key)
+    }
+
+    func cancelForgetSavedSteps() {
+        forgetTimer?.cancel()
+        confirmingForget = nil
+    }
+
+    /// The saved steps, asked for as the settings window opens (not only with 기억's page), so a search that lands on
+    /// them finds their rows there (sixth VM run, item 3).
+    func loadSavedSteps() async {
+        guard savedSteps == nil else { return }
+        savedSteps = await ArisAgentClient.savedSteps()
+    }
+
     func forgetSavedSteps(key: String) async -> Bool {
         let removed = await ArisAgentClient.forgetSavedSteps(key: key)
+        if renaming == key { endRename() }
         savedSteps = await ArisAgentClient.savedSteps()
         return removed
+    }
+
+    /// 이름 바꾸기 on a taught procedure's row: its field opens with the name it has; pressed again, it closes.
+    func startRename(key: String) {
+        guard renaming != key else { return endRename() }
+        renaming = key
+        renameText = savedSteps?.first { $0.key == key }?.request ?? ""
+        renameProblem = nil
+    }
+
+    /// 저장: the name as typed goes to the helper; the field closes once it took it (or nothing changed).
+    func saveRename(key: String) async -> Bool {
+        let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard renaming == key, !name.isEmpty else { return false }
+        if name == savedSteps?.first(where: { $0.key == key })?.request {
+            endRename()
+            return false
+        }
+        let said = await ArisAgentClient.renameSavedSteps(key: key, name: name)
+        guard let said, said.renamed else {
+            renameProblem = said?.taken == true ? .taken : .failed
+            return false
+        }
+        endRename()
+        savedSteps = await ArisAgentClient.savedSteps()
+        return true
+    }
+
+    private func endRename() {
+        renaming = nil
+        renameText = ""
+        renameProblem = nil
     }
 
     func forgetLesson(id: Int) async -> Bool {

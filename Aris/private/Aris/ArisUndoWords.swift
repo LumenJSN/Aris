@@ -45,12 +45,100 @@ enum ArisUndoWords {
         return "Your Mac is asking whether Aris may use the \(name.map { $0.1 + " folder" } ?? "folder"). Allow it and I'll carry on."
     }
 
+    /// The 200 reply's note when a taught run was undone in part (ArisUndoSteps.outcome): "kept:window", "kept:other".
+    static let keptPrefix = "kept:"
+
+    /// What a taught run's undo did and what stays (fourth VM run, D7: after a replay that made a new document, "되돌려"
+    /// refused everything); nil when the note isn't one.
+    static func keptLine(_ note: String, korean: Bool) -> String? {
+        let kept = parse(note).map { $0.kept } ?? (note.hasPrefix(keptPrefix) ? String(note.dropFirst(keptPrefix.count)) : nil)
+        guard let kept else { return nil }
+        if kept == "window" {
+            return korean ? "입력한 글은 지웠어요. 새 문서는 그대로 있어요." : "I removed the text I typed. The new document stays open."
+        }
+        return korean ? "되돌릴 수 있는 건 되돌렸어요. 나머지 단계는 그대로 있어요." : "I undid what can be undone. The other steps stay as they are."
+    }
+
+    // MARK: - What was undone, named (seventh VM run, item 5)
+
+    /// The 200 reply's note when it says what was undone ("undid": "typed\t<app>" or "restored\t<app>" per line) or
+    /// the lesson it was part of: "undo-note:" and the fields as JSON. Nil when it says neither (the note is as before).
+    static let notePrefix = "undo-note:"
+
+    struct Note: Equatable {
+        var kept: String?
+        /// What came back: the kind ("typed", "restored") and the app.
+        var undid: [Undid]
+        var lesson: String?
+    }
+
+    struct Undid: Equatable {
+        let kind: String
+        let app: String
+    }
+
+    static func note(reply: [String: Any]) -> String? {
+        let undid = (reply["undid"] as? String).map { $0.split(separator: "\n").map(String.init) } ?? []
+        let lesson = reply["lesson"] as? String
+        guard !undid.isEmpty || lesson != nil else { return nil }
+        var fields: [String: Any] = ["undid": undid]
+        if let kept = reply["kept"] as? String { fields["kept"] = kept }
+        if let lesson { fields["lesson"] = lesson }
+        guard let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) else { return nil }
+        return notePrefix + String(decoding: data, as: UTF8.self)
+    }
+
+    static func parse(_ note: String) -> Note? {
+        guard note.hasPrefix(notePrefix), let object = (try? JSONSerialization.jsonObject(with: Data(note.dropFirst(notePrefix.count).utf8))) as? [String: Any] else { return nil }
+        let undid = (object["undid"] as? [String] ?? []).compactMap { code -> Undid? in
+            let parts = code.split(separator: "\t", maxSplits: 1).map(String.init)
+            guard parts.count == 2, ["typed", "restored"].contains(parts[0]), !parts[1].isEmpty else { return nil }
+            return Undid(kind: parts[0], app: clean(parts[1], limit: 60))
+        }
+        return Note(kept: object["kept"] as? String, undid: undid, lesson: (object["lesson"] as? String).map { clean($0, limit: 60) })
+    }
+
+    /// The reply after an undo: what was undone, named as what it was ("Removed the text I typed in TextEdit for “줄
+    /// 추가”."), then what stays; a note that names nothing is said as before (keptLine, else the entry's own line).
+    static func doneReply(_ note: String, summary: String, korean: Bool) -> String {
+        guard let parsed = parse(note), !parsed.undid.isEmpty else { return keptLine(note, korean: korean) ?? doneLine(summary, korean: korean) }
+        var seen: [Undid] = []
+        for item in parsed.undid where !seen.contains(item) { seen.append(item) }
+        let said = seen.map { undidLine($0, lesson: parsed.lesson, korean: korean) }.joined(separator: " ")
+        switch parsed.kept {
+        case "window"?: return said + (korean ? " 새 문서는 그대로 있어요." : " The new document stays open.")
+        case let kept? where !kept.isEmpty: return said + (korean ? " 나머지 단계는 그대로 있어요." : " The other steps stay as they are.")
+        default: return said
+        }
+    }
+
+    static func undidLine(_ item: Undid, lesson: String?, korean: Bool) -> String {
+        ArisJournalWords.textUndone(app: item.app, restored: item.kind == "restored", lesson: lesson, english: !korean)
+    }
+
     /// The line for a failed undo, from the agent's reason: Aris's own words, never the reason as it came.
     static func failure(_ reason: String, korean: Bool) -> String {
         let said = reason.lowercased()
         func line(_ ko: String, _ en: String) -> String { korean ? ko : en }
         // Already Aris's own Korean (the app's "지금은 대화 중이에요…"): as it is.
         if korean, !reason.isEmpty, reason.replacingOccurrences(of: "Mac", with: "").range(of: "[A-Za-z]{3,}", options: .regularExpression) == nil { return reason }
+        // Text put into an app (fourth VM run, D7: "되돌리지 못했어요." with no reason): why, in words.
+        if said.contains("isn't available in this helper") {
+            return line("그 일을 되돌리는 기능이 아직 켜지지 않았어요. Aris를 다시 연 뒤 해 주세요.", "Undo for that isn't ready yet. Reopen Aris and try again.")
+        }
+        if said.contains("was edited after aris") {
+            return line("그 뒤로 글이 바뀌었거나 창이 닫혀서, 글은 그대로 뒀어요.", "The text was edited since, or its window was closed, so I left it as it is.")
+        }
+        if said.contains("already back as it was") || said.contains("already gone from") {
+            return line("입력했던 글은 이미 없어요.", "The text I typed is already gone.")
+        }
+        if said.contains("isn't open any more") { return line("앱이 닫혀서 글은 그대로 뒀어요.", "The app is closed, so I left its text as it is.") }
+        if said.contains("more than one place") { return line("같은 글이 여러 곳에 있어서 그대로 뒀어요.", "That text is in more than one place, so I left it as it is.") }
+        if said.contains("didn't let aris") { return line("앱이 글을 고치게 해 주지 않아서 그대로 뒀어요.", "The app didn't let me change its text, so I left it as it is.") }
+        if said.contains("changed the text differently") { return line("앱이 글을 다르게 바꿨어요. 확인해 주세요.", "The app changed the text differently. Please check it.") }
+        if said.contains("needs accessibility") { return line("손쉬운 사용 권한이 있어야 글을 되돌릴 수 있어요.", "I need Accessibility to take the text back.") }
+        if said.contains("kept copy") { return line("지웠던 글의 사본이 없어져서 되살릴 수 없어요.", "The copy of the erased text is gone, so it can't be put back.") }
+        if said.contains("isn't one aris can take back") { return line("그 글은 되돌릴 수 없어요.", "That text can't be undone.") }
         if said.contains("didn't answer") || said.contains("in time") || said.contains("timed out") {
             return line("되돌리는 데 시간이 너무 걸려서 멈췄어요. Mac이 폴더 접근을 물었다면 허용한 뒤 다시 해 주세요.",
                         "Undoing took too long, so I stopped. If your Mac asked about a folder, allow it and try again.")
@@ -82,13 +170,90 @@ enum ArisUndoWords {
         /// Its undo needs a yes of its own from aris-agent (it deletes an event Aris made, or brings a removed
         /// schedule back): the helper asks about it itself (ArisUndoSteps).
         let asks: Bool
+        /// A taught procedure's run (its record session): its steps are one change, undone together, newest first.
+        var unit: String?
 
-        init(id: String, summary: String, action: String?, asks: Bool = false) {
+        init(id: String, summary: String, action: String?, asks: Bool = false, unit: String? = nil) {
             self.id = id
             self.summary = summary
             self.action = action
             self.asks = asks
+            self.unit = unit
         }
+    }
+
+    /// One change as the activity list has it (the old log's rows and Core 2's record's, by time).
+    struct Change: Equatable {
+        let id: String
+        let date: Date
+        let summary: String
+        let action: String?
+        let asks: Bool
+        let undoable: Bool
+        var unit: String?
+        /// Nothing of the user's to take back (ArisActivityItem.passOver): a bare "되돌려" walks past it.
+        var passOver = false
+    }
+
+    /// What "되돌려" reaches (third VM run, D3: after a replay it offered a to-do from minutes earlier, because the
+    /// replay's typing had no undo and the list skipped every change that couldn't be undone).
+    enum Reach: Equatable {
+        /// Undo this (a unit: every undoable step of the run, newest first).
+        case undo(Candidate, newest: Candidate?, doubt: Bool)
+        /// The newest change can't be undone: said, and nothing older is taken instead.
+        case cannot(String)
+        /// Nothing of the kind named among the undoable ones (the two newest offered in words).
+        case noneOfKind([Candidate])
+        case nothing
+    }
+
+    /// The changes since `reach`, newest first, a taught procedure's run made one change. A bare "되돌려" takes the
+    /// newest change, and when that one can't be undone it says so instead of reaching past it; a kind named ("만든 거")
+    /// takes the newest undoable change of that kind, as before. What changed nothing of his (an app opened, what is
+    /// left of a run already undone) is no change: it is walked past to the change before it (fifth VM run, D6), and
+    /// the card names that change.
+    static func reach(_ changes: [Change], since reach: Date, kind: String?) -> Reach {
+        let recent = changes.filter { $0.date >= reach }.sorted { $0.date > $1.date }
+        var merged: [(change: Change, candidate: Candidate?)] = []
+        var index = 0
+        while index < recent.count {
+            let change = recent[index]
+            guard let unit = change.unit else {
+                index += 1
+                // No change of his: walked past.
+                if change.passOver, !change.undoable { continue }
+                merged.append((change, change.undoable ? Candidate(id: change.id, summary: change.summary, action: change.action, asks: change.asks) : nil))
+                continue
+            }
+            var steps: [Change] = []
+            while index < recent.count, recent[index].unit == unit {
+                steps.append(recent[index])
+                index += 1
+            }
+            // A run whose every step left is no change of his: walked past.
+            if steps.allSatisfy({ $0.passOver && !$0.undoable }) { continue }
+            let undoable = steps.filter(\.undoable)
+            let candidate = undoable.first.map { newest in
+                Candidate(id: newest.id, summary: undoable.map(\.summary).joined(separator: ", "), action: newest.action,
+                          asks: undoable.contains(where: \.asks), unit: unit)
+            }
+            merged.append((steps[0], candidate))
+        }
+        guard let newest = merged.first else { return .nothing }
+        let candidates = merged.compactMap(\.candidate)
+        guard let kind else {
+            guard let candidate = newest.candidate else { return .cannot(newest.change.summary) }
+            return .undo(candidate, newest: candidate, doubt: false)
+        }
+        let (entry, doubt) = pick(candidates, kind: kind)
+        guard let entry else { return candidates.isEmpty ? .nothing : .noneOfKind(candidates) }
+        return .undo(entry, newest: candidates.first, doubt: doubt)
+    }
+
+    /// The newest change can't be undone: said, and nothing older is offered in its place.
+    static func cannotLine(_ summary: String, korean: Bool) -> String {
+        korean ? "방금 한 일(\(shown(summary, korean: true)))은 되돌릴 수 없어요. 그 전 일은 한 일 탭에서 골라 되돌릴 수 있어요."
+            : "What I just did (\(shown(summary, korean: false))) can't be undone. Earlier changes can be undone from the Activity tab."
     }
 
     /// The kind the user's words name: "만든/추가한/저장한/보낸 거" made, "지운/삭제한/취소한/버린 거" removed, "옮긴 거" moved; nil for a
@@ -185,10 +350,12 @@ enum ArisUndoWords {
     static func doneLine(_ summary: String, korean: Bool) -> String {
         let summary = shown(summary, korean: korean)
         let parts = summary.components(separatedBy: ": ")
-        guard parts.count >= 2 else { return korean ? "‘\(summary)’ 되돌렸어요." : "Undid “\(summary)”." }
+        guard parts.count >= 2 else { return korean ? "‘\(summary)’ 되돌렸어요." : "I took back “\(summary)”." }
         let label = parts[0], rest = parts.dropFirst().joined(separator: ": ")
         let title = scheduleLabels.contains(label) ? rest.replacingOccurrences(of: #"\s*\([^)]*\)$"#, with: "", options: .regularExpression) : rest
-        guard korean else { return "Undid “\(title)” (\(label))." }
+        // In English as in Korean: what was taken back, named as the thing it is (eighth VM run, item 6: "Undid “run8
+        // 물 사기” (To-do added)." read like a log line).
+        guard korean else { return englishNouns[label].map { "I took back the \($0) “\(title)”." } ?? "I took back “\(title)” (\(label))." }
         let noun = doneNouns[label] ?? label
         return "‘\(title)’ \(noun)\(ArisUndoWords.objectParticle(noun)) 되돌렸어요."
     }
@@ -204,6 +371,16 @@ enum ArisUndoWords {
         "집 위치": "집 위치", "변환": "변환", "합침": "합친 것", "나눔": "나눈 것", "압축": "압축", "창 배치": "창 배치", "타이머": "타이머",
         "메시지 보냄": "메시지", "미리 알림 추가": "미리 알림", "메모 저장": "메모", "기억함": "기억", "기억 지움": "기억 지운 것",
         "기본 캘린더": "기본 캘린더", "메일 답장 초안": "메일 답장 초안",
+    ]
+
+    /// The same in English, by the kind as ArisActivityWords says it. A kind not here is named by its own words.
+    static let englishNouns: [String: String] = [
+        "To-do added": "to-do", "To-do done": "to-do", "To-do removed": "to-do", "Moved to tomorrow": "to-do", "Event added": "event",
+        "Event deleted": "event", "Event changed": "event", "Scheduled": "schedule", "Schedule cancelled": "schedule", "Moved": "move",
+        "Renamed": "rename", "New folder": "new folder", "To the Trash": "move to the Trash", "Home": "home location", "Converted": "conversion",
+        "Merged": "merge", "Split": "split", "Made smaller": "compression", "Windows arranged": "window arrangement", "Timer": "timer",
+        "Message sent": "message", "Reminder added": "reminder", "Note saved": "note", "Remembered": "memory", "Memories cleared": "memory clearing",
+        "Default calendar": "default calendar", "Mail reply drafted": "mail reply draft",
     ]
 
     /// 을 after a final consonant, 를 after a vowel (Hangul); 를 otherwise.

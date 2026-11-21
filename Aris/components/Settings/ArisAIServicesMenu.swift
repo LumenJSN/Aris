@@ -154,7 +154,9 @@ private struct ArisAIMenuPanel: View {
                 switch entry {
                 case .group(let title):
                     // DropdownMenuLabel: 12/600, upper case, .05 em apart, gray-500 / gray-400, 12 × 8.
-                    Text(w.dotted(title)).font(.system(size: ArisMenuLook.labelFont, weight: .semibold)).textCase(.uppercase)
+                    Text(w.dotted(title)).font(.system(size: ArisMenuLook.labelFont, weight: .semibold))
+                        // Upper case is the English label's look; a Korean one keeps "Mac" as written ("MAC 밖으로").
+                        .textCase(w.pageEnglish ? .uppercase : nil)
                         .tracking(ArisMenuLook.labelFont * ArisMenuLook.labelTracking).foregroundStyle(ArisMenuLook.label.color(palette.dark))
                         .padding(.horizontal, ArisMenuLook.labelPaddingH).padding(.vertical, ArisMenuLook.labelPaddingV)
                         .accessibilityAddTraits(.isHeader)
@@ -269,7 +271,9 @@ private struct ArisAIMenuRow: View {
             Button { model.pick(item.id) } label: {
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(w.dotted(item.title)).font(.system(size: 14, weight: .medium)).foregroundStyle(item.action ? palette.desc : palette.title).lineLimit(1)
+                        Text(w.dotted(item.title)).font(.system(size: 14, weight: .medium)).foregroundStyle(item.action ? palette.desc : palette.title)
+                            // A second line before it is cut ("ElevenLabs S…" beside "Needs a key": eleventh VM run).
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         if item.subtitle != nil || item.code != nil { subtitle }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

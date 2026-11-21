@@ -68,6 +68,17 @@ enum ArisTerminalOpener {
                 throw ArisTeammateLaunchError(message: ArisTeammateLauncher.terminalNotFound)
             }
             pid = found
+        case .document(let scriptPath, let launchScript):
+            guard ArisPrivateFile.prepareFolder(folder), let app = appURL(pick.terminal) else { throw ArisTeammateLaunchError(message: ArisTerminalWords.notOpened(pick.terminal)) }
+            try write(launchScript, to: scriptPath, mode: 0o700)
+            do {
+                pid = try wait(pick.terminal) { done in
+                    NSWorkspace.shared.open([URL(fileURLWithPath: scriptPath)], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration(), completionHandler: done)
+                }
+            } catch {
+                ArisTeammateLauncher.remove(URL(fileURLWithPath: scriptPath))
+                throw error
+            }
         case .arguments(let arguments, let scriptPath, let launchScript):
             guard ArisPrivateFile.prepareFolder(folder) else { throw ArisTeammateLaunchError(message: "작업 폴더를 쓸 수 없어요.") }
             try write(launchScript, to: scriptPath, mode: 0o700)

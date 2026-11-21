@@ -2,9 +2,9 @@
 //  ArisBrain.swift
 //  Aris (also built into aris-agent)
 //
-//  The AI that answers Aris's questions: Claude, Codex (the user's
-//  ChatGPT plan, the default), Antigravity (Gemini) or an API brain (any provider with a key, or a local model:
-//  ArisAPIDriver; which one is the agent's active profile). The default is set in Settings; saying
+//  The AI that answers Aris's questions: Claude (the default wherever nothing is stored: ArisBrain.standard), Codex (the
+//  user's ChatGPT plan), Antigravity (Gemini) or an API brain (any provider with a key, or a local model:
+//  ArisAPIDriver; which one is the agent's active profile). The choice is set in Settings; saying
 //  the name first ("GPT한테 물어봐, …", "ask Gemini …") picks one for that request.
 //
 
@@ -72,8 +72,11 @@ enum ArisBrain: String, CaseIterable, Sendable {
         }
     }
 
+    /// The brain while none is stored or named: the same for the app's preference, the settings page and the agent.
+    static let standard: ArisBrain = .claude
+
     static func named(_ raw: String?) -> ArisBrain {
-        raw.flatMap(ArisBrain.init(rawValue:)) ?? .claude
+        raw.flatMap(ArisBrain.init(rawValue:)) ?? standard
     }
 
     /// What each AI may be called out loud (as speech recognition writes it).
@@ -109,6 +112,16 @@ enum ArisBrain: String, CaseIterable, Sendable {
     }
 }
 
+/// 다른 AI로 넘기기 (Settings › AI · 모델), off by default: the app's preference and the field it sends to aris-agent
+/// (ArisBrainFallback there). Off, nothing starts another provider on its own.
+enum ArisBrainFallbackSetting {
+    static let preferenceKey = "arisBrainFallback"
+    /// The request field (/ask and /warm).
+    static let field = "fallback"
+
+    static func isOn(_ defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: preferenceKey) }
+}
+
 /// Who works other apps' windows, the user's pick. Aris's own engine is the default on every brain (`aris-tools desktop`:
 /// app-targeted input in the background, ArisNativeRunner; the owner, 2026-11-16: "Aris should be better than Claude's and
 /// Codex's computer use"). Peekaboo (free, downloaded on first use) and Codex's own computer use (cua_repl, its per-step
@@ -119,7 +132,10 @@ enum ArisComputerEngine: String, CaseIterable {
     /// The app's stored pick (Defaults' key, sent with every question).
     static let preferenceKey = "arisComputerEngine"
 
-    static func named(_ raw: String?) -> ArisComputerEngine { raw.flatMap(ArisComputerEngine.init(rawValue:)) ?? .aris }
+    /// The one default, for the app's stored pick, the agent before the app has said one, and an engine made in tests.
+    static let standard = ArisComputerEngine.aris
+
+    static func named(_ raw: String?) -> ArisComputerEngine { raw.flatMap(ArisComputerEngine.init(rawValue:)) ?? standard }
 
     /// What really runs: the pick when it can run here, else Aris's own.
     static func effective(picked: ArisComputerEngine, codexInstalled: Bool) -> ArisComputerEngine {

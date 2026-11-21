@@ -19,6 +19,7 @@ extension ArisOnboardingGuide {
         }
         brainKeyOpen = false
         brainKeyTrouble = nil
+        brainKeyProvider = id
         // What the last press of 다시 확인 found is no longer what is true.
         brainChecked = nil
         await ArisBrainSetup.shared.refresh()
@@ -35,5 +36,19 @@ extension ArisOnboardingGuide {
             self.brainKeyOpen = true
         }
         return nil
+    }
+
+    /// 다시 확인 while a saved key's check has failed: the key is tried again, so the page says what is true now (a key
+    /// that answers this time is an AI from here on; one that still doesn't stays "saved, not answering").
+    func retryBrainKey() async {
+        guard brainKeyTrouble != nil, let id = brainKeyProvider else { return }
+        let result = await ArisAgentClient.testAPIBrain(id, model: nil)
+        await ArisBrainSetup.shared.refresh()
+        if let said = ArisOnboardingBrainRows.keyTestTrouble(ok: result.ok, message: result.message) {
+            brainKeyTrouble = ArisSetupWords.keyNotWorking(said)
+        } else if result.ok {
+            brainKeyTrouble = nil
+            if ArisBrainSetup.shared.ready?[.api] == true { ArisBrainSetup.shared.choose(.api) }
+        }
     }
 }

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/LumenJSN/Aris/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/release-v1.2.1.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=dark" /><img alt="latest release" src="https://shieldcn.dev/badge/release-v1.2.1.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=light" /></picture></a>
+  <a href="https://github.com/LumenJSN/Aris/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/release-v1.3.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=dark" /><img alt="latest release" src="https://shieldcn.dev/badge/release-v1.3.0.svg?variant=default&amp;size=sm&amp;color=2f5bea&amp;logo=lu:Sparkle&amp;logoColor=ffffff&amp;mode=light" /></picture></a>
   <a href="https://arismac.app"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/website-arismac.app.svg?logo=lu:Globe&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="Website: arismac.app" src="https://shieldcn.dev/badge/website-arismac.app.svg?logo=lu:Globe&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture></a>
   <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/macOS-14%2B_Apple_silicon.svg?logo=apple&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="macOS 14+ on Apple silicon" src="https://shieldcn.dev/badge/macOS-14%2B_Apple_silicon.svg?logo=apple&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Swift-5.svg?logo=swift&amp;variant=secondary&amp;size=sm&amp;mode=dark" /><img alt="Swift" src="https://shieldcn.dev/badge/Swift-5.svg?logo=swift&amp;variant=secondary&amp;size=sm&amp;mode=light" /></picture>
@@ -67,8 +67,9 @@ brew trust lumenjsn/tap     # Homebrew asks you to trust a third-party tap once
 brew install --cask aris
 ```
 
-Aris is ad-hoc signed and **not notarized** (the project has no Developer ID), so the first launch is refused
-("Apple could not verify Aris"). Allow it once per download, in one of these ways:
+Aris is signed with the project's own certificate ("Aris Release (Lumen JS)", self-signed, no Team ID) and is
+**not notarized** (the project has no Developer ID), so the first launch is refused ("Apple could not verify Aris").
+Allow it once, in one of these ways:
 
 - **System Settings**: click Done, go to Privacy & Security, scroll down and click **Open Anyway** next to the Aris
   message, then confirm.
@@ -82,8 +83,17 @@ Only do this for a copy you downloaded from this repository's Releases page. The
 same app and a `SHA256SUMS` file; compare with `shasum -a 256 Aris-<version>.dmg`. The official build includes the
 onboarding's sounds and its recorded greeting.
 
-**After an update** macOS sees a new program, so grant the permissions again. If a switch in System Settings already
-shows on, turn it off and on, or remove the row with − and add Aris again.
+**Updates** arrive by themselves from 1.3 on: Aris checks this repository's latest release at launch and once a
+day, and a new version shows in the notice pill under the notch. With Settings › App › Updates › Update
+automatically on (the default) it is downloaded in the background and installed when Aris is idle (the notch and
+Settings closed, nothing running for 30 seconds), then Aris opens again; off, the
+pill offers **Update now** / **Later**. Every release is signed with the same certificate and the update itself
+with the project's update key ([Sparkle](https://sparkle-project.org)), so macOS keeps the permissions you gave and
+no "Open Anyway" is needed again.
+
+**Coming from 1.2.x** (which has no updater and was ad-hoc signed): install 1.3 by hand once, as above, and grant
+the permissions once more. If a switch in System Settings already shows on, turn it off and on, or remove the row
+with − and add Aris again. Your settings, memories and saved steps are kept.
 
 ### Build from source
 
@@ -102,6 +112,9 @@ explains every part and script.
 With ad-hoc signing every rebuild is a new program to macOS, so permissions must be granted again. To keep them, sign
 with a free "Apple Development" certificate from Xcode › Settings › Accounts:
 `SIGN_ID="Apple Development" ./Scripts/build.sh`. The project contains no team id.
+
+A build from source does not update itself: only copies signed with the release certificate do, so an official
+release never replaces your own build. To get updates, install the release instead.
 
 A build from source has no onboarding sounds (they are not in the repository, see
 [OnboardingAudio](Aris/private/Aris/Onboarding/OnboardingAudio/README.md)); the Mac's own voice speaks the greeting.
@@ -181,9 +194,12 @@ model).
   pointed at, the memory notes that apply) and the results of its steps, such as a message you asked it to read.
   That goes to the company behind your CLI or API under their terms, or stays on the Mac with a local model.
 - **Other services, only when used**: weather, stocks, maps and currency lookups, a web page you ask about,
-  ElevenLabs or OpenAI speech if you set a key, Apple's speech recognition servers on macOS 14 and 15 when your
+  ElevenLabs or OpenAI speech if you set a key, the speech recognition you choose (ElevenLabs Scribe, Soniox or
+  OpenAI hear your turn's audio when you set a key; repairing what was heard sends the words to the quick-command
+  model you picked), Apple's speech recognition servers on macOS 14 and 15 when your
   language has no on-device model (Aris says so once), and GitHub for the first-use downloads (Peekaboo, SkillSpector
-  and its Python runtime, the Whisper model).
+  and its Python runtime, the Whisper model), for the update check (this repository's latest release, at launch and
+  once a day) and for the star count on the last setup page.
 
 ## Safety model
 

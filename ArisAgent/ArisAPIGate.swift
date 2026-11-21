@@ -126,8 +126,8 @@ final class ArisAPIGate {
         let blockedByTaint = risk == .confirm && blocked && remembered
         if handsFree, judgedRead == nil { risk = ArisHandsFree.risk(risk, of: action, tools: tools) }
         if handsFree, ArisCodexDriver.readsMemory(action, tools: tools) { refuse("the user's memories are never read on a hands-free turn") }
-        if declinedThisTurn && (risk == .confirm || risk == .countdown) { refuse("the user already said no to a card this turn; nothing else that asks runs after it") }
-        if !sentForUser.isEmpty, let again = ArisEditableAction.parse(action, tools: tools), sentForUser.contains(again.arguments) { refuse("the user's changed card already did this") }
+        if declinedThisTurn && (risk == .confirm || risk == .countdown) { refuse("The owner already said no to a card this turn; nothing else that asks runs after it") }
+        if !sentForUser.isEmpty, let again = ArisEditableAction.parse(action, tools: tools), sentForUser.contains(again.arguments) { refuse("The owner's changed card already did this") }
         if risk != .never { neverWhy = nil }
         let audit = ArisCodexDriver.auditLine(action, risk: risk, raw: command, why: neverWhy)
         if risk == .auto, let judgedRead, !(handsFree && ArisCodexDriver.readsMemory(action, tools: tools)) {

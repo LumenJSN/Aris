@@ -42,9 +42,31 @@ struct ArisBrainHealth {
         return date
     }
 
-    /// The brain to ask for a request meant for `requested`: its fallback while it's out, unless that one is too.
-    func brain(for requested: ArisBrain, at now: Date = Date()) -> ArisBrain {
-        guard !isAvailable(requested, at: now), let other = requested.fallback, isAvailable(other, at: now) else { return requested }
+    /// The brain to ask for a request meant for `requested`: its fallback while it's out, unless that one is too, and
+    /// only with 다른 AI로 넘기기 on (`fallback`); off, the chosen brain is always the one asked.
+    func brain(for requested: ArisBrain, fallback: Bool, at now: Date = Date()) -> ArisBrain {
+        guard fallback, !isAvailable(requested, at: now), let other = requested.fallback, isAvailable(other, at: now) else { return requested }
         return other
+    }
+}
+
+/// 다른 AI로 넘기기 (Settings › AI · 모델, off by default): whether a turn may go to another AI on its own when the chosen
+/// one is out of its limit or not on this Mac. Off, nothing starts another provider by itself: the chosen brain answers,
+/// or says why it can't. Only the app itself turns it on (anyone else's word counts as off).
+enum ArisBrainFallback {
+    static let field = "fallback"
+
+    static func allowed(_ object: [String: Any], fromApp: Bool) -> Bool { fromApp && object[field] as? Bool == true }
+
+    /// Whether this turn goes to another brain before the chosen one is asked: only with the switch on, on a first try
+    /// that isn't one of agy's relay rounds, when the chosen one is missing or out.
+    static func switchesFirst(allowed: Bool, retried: Bool, relayRound: Int, missing: Bool, available: Bool) -> Bool {
+        allowed && !retried && relayRound == 0 && (missing || !available)
+    }
+
+    /// Whether a turn whose brain said it is out is asked again on another: only with the switch on, once, never after
+    /// a handed-off call ran (it would act twice), never in a relay round.
+    static func retriesElsewhere(allowed: Bool, retried: Bool, alreadyActed: Bool, relayRound: Int) -> Bool {
+        allowed && !retried && !alreadyActed && relayRound == 0
     }
 }

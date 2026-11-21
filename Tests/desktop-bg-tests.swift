@@ -262,7 +262,7 @@ private func bgWiringTests() {
     let live = bgSource("ArisAgent/ArisDesktopLive.swift")
     check(live.contains("native: .shared"), "wiring: the agent's engine has Aris's own engine")
     let controller = bgSource("ArisAgent/ArisDesktopController.swift")
-    check(controller.contains("engine.native!.run(arguments, context: ArisNativeContext(job: turn.isTask))"), "wiring: every call runs on it, a job's without a turn in front")
+    check(controller.contains("engine.native!.run(arguments, context: ArisNativeContext(job: turn.isTask, owner: turn.desktopOwner"), "wiring: every call runs on it, a job's without a turn in front")
     check(controller.contains("if !usesNative, installer.state != .ready"), "wiring: nothing is downloaded for Aris's own engine")
     let runner = bgSource("ArisAgent/ArisNativeRunner.swift")
     check(runner.contains("guard !context.job else"), "wiring: a background job never gets a turn in front")

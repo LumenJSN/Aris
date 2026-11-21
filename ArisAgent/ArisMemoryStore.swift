@@ -25,7 +25,7 @@ import Foundation
 import SQLite3
 
 final class ArisMemoryStore: @unchecked Sendable {
-    /// Memories kept at most: past it the least useful learned (never said) ones go first.
+    /// Memories kept at most: past it the least useful learned ones go first, and the user's own 기억해 never (trimLocked).
     static let capacity = 500
     /// Day notes per day, and how long notes and summaries stay.
     static let notesPerDay = 60
@@ -632,16 +632,26 @@ final class ArisMemoryStore: @unchecked Sendable {
                       [.int(Self.historyCapacity)])
     }
 
-    /// Past `capacity`: learned memories go first, the least weighty (ArisMemoryRecall.weight) of them; then the rest.
+    /// Past `capacity`: what Aris picked out on its own (learned) goes first, then the ones a tool wrote or an import
+    /// brought that no longer hold (an event whose day is over), then the rest of those; each group the least weighty
+    /// (ArisMemoryRecall.weight) first. What the user said themselves (기억해) never goes for room: when only those are left past
+    /// the limit they all stay, and his next 기억해 says so (pastCapacity, ArisMemoryAnswer.fullLine).
+    static func evictionOrder(_ all: [ArisMemoryRecord], now: Date) -> [ArisMemoryRecord] {
+        let rank = { (r: ArisMemoryRecord) -> Int in r.source == .learned ? 0 : r.isCurrent(at: now) ? 2 : 1 }
+        return all.filter { $0.source != .said }.sorted { a, b in
+            let ra = rank(a), rb = rank(b)
+            if ra != rb { return ra < rb }
+            return ArisMemoryRecall.weight(a, now: now) < ArisMemoryRecall.weight(b, now: now)
+        }
+    }
+
+    /// More memories than `capacity`, all of them the user's own words (nothing else is left to make room).
+    var pastCapacity: Bool { count() > Self.capacity }
+
     private func trimLocked(now: Date) {
         let all = allLocked()
         guard all.count > Self.capacity else { return }
-        let order = all.sorted { a, b in
-            let aLearned = a.source == .learned, bLearned = b.source == .learned
-            if aLearned != bLearned { return aLearned }
-            return ArisMemoryRecall.weight(a, now: now) < ArisMemoryRecall.weight(b, now: now)
-        }
-        for record in order.prefix(all.count - Self.capacity) {
+        for record in Self.evictionOrder(all, now: now).prefix(all.count - Self.capacity) {
             for id in historyIdsLocked(record.id) + [record.id] {
                 let text = queryLocked("SELECT text FROM memories WHERE id = ?", [.text(id)]).first?.first?.text
                 _ = runLocked("DELETE FROM memories WHERE id = ?", [.text(id)])

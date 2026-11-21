@@ -44,7 +44,12 @@ final class ArisRunnerMessageTurn: ArisMessageTurn {
         sealed = snapshot.sealedClaude
     }
 
-    func ask(_ card: ArisMCPCard, answer: @escaping (ArisMCPAnswer) -> Void) { runner.mcpAsk(card, credential: credential, answer: answer) }
+    /// The owner's yes on the trust gate's card for exactly this call (`arisCore2`, ArisMindPasses): its first card here.
+    var standIn: ArisMindStandIn?
+
+    func ask(_ card: ArisMCPCard, answer: @escaping (ArisMCPAnswer) -> Void) {
+        ArisMindStandIn.ask(card, standIn: standIn, audit: audit, show: { runner.mcpAsk($0, credential: credential, answer: $1) }, answer: answer)
+    }
     /// The automatic check for a conversation's handed-off write (ArisAutoHandOff); a job's is never checked.
     var auto: ArisAutoTurn? { isTask ? nil : ArisRunnerAutoTurn(runner: runner, request: request, turn: credential) }
     /// The same turn, still the same Claude, and no more outside text than when the card went up.
@@ -102,6 +107,8 @@ struct ArisMessageSnapshot {
     /// The brain is the sealed Claude (a screen-seen or hands-free turn: its hook takes a lone message, and the gate
     /// shows only the user's plain card).
     let sealedClaude: Bool
+    /// Who spoke the turn (F1), for Core 2's trust gate; not checked unless the app said.
+    var speaker: ArisTurnSpeaker = .notChecked
 }
 
 enum ArisMessageRoutes {
@@ -132,6 +139,7 @@ enum ArisMessageRoutes {
                 return refuse("not from the brain's own process")
             }
             let turn = ArisRunnerMessageTurn(runner: runner, snapshot: now, credential: credential, route: "action-tool")
+            turn.standIn = ArisMindPasses.standIn(object, turn: credential, key: ArisMindPassKey.actionKey(words: words))
             let outcome = ArisActionGate.answer(words, turn: turn, tools: ArisAgentRunner.toolsPath, home: NSHomeDirectory(), limit: limit(task: turn.isTask),
                                                 notes: ArisHandOffLedger.shared.notes(for: runner, turn: credential)) { words in
                 // As Aris itself: never the brain's environment (its turn-gate folder would hand it back here).
@@ -181,6 +189,7 @@ enum ArisMessageRoutes {
                 return refuse("not from the brain's own process")
             }
             let turn = ArisRunnerMessageTurn(runner: runner, snapshot: now, credential: credential)
+            turn.standIn = ArisMindPasses.standIn(object, turn: credential, key: ArisMindPassKey.messageKey(to: to, text: text))
             let outcome = ArisMessageGate.answer(to: to, text: text, turn: turn, tools: ArisAgentRunner.toolsPath, home: NSHomeDirectory(),
                                                  limit: limit(task: turn.isTask)) { words in
                 // As Aris itself: never the brain's environment (its turn-gate folder would route it back here).

@@ -40,7 +40,7 @@ struct ArisDesktopTarget: Equatable {
     let known: Bool
     /// Never computer use there (ArisRiskPolicy.computerUseIsNever: the installer, sign-in prompts, Aris itself).
     let never: Bool
-    /// A web browser: websites are Aside's.
+    /// A web browser: its reads run, every action is the user's card each time naming the page's host (decision 2).
     let browser: Bool
     /// Mail, chat or calls: every action there asks, with the exact text.
     let sending: Bool

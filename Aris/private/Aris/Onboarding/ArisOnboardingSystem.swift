@@ -45,9 +45,11 @@ enum ArisOnboardingSystem {
         if step == .accessibility || step == .screen { ArisPermissionGuide.shared.close() }
     }
 
-    /// Automation is checked against the Music app (Aris's own Apple Events go to music players and terminals); the
-    /// answer is kept, since asking TCC blocks.
+    /// Automation is checked against the Music app (Aris's own Apple Events go to music players and terminals), only
+    /// read, never asked (jv-prompts: macOS asks for each app at its first real use, after the feature's line of why);
+    /// the answer is kept, since reading TCC blocks, and read again off the main thread.
     private static var automation: ArisGrant = .undecided
+    private static var automationRead = Date.distantPast
     private static let automationTarget = "com.apple.Music"
     /// aris-agent's Full Disk Access as the agent last said (the app is sandboxed and can't tell on its own); asked
     /// again at most every 3 s while the guide polls.
@@ -72,9 +74,11 @@ enum ArisOnboardingSystem {
         // No prompt to answer: either on or not yet.
         case .accessibility: return AXIsProcessTrusted() ? .granted : .undecided
         case .screen: return CGPreflightScreenCaptureAccess() ? .granted : .undecided
-        case .calendar: return events(EKEventStore.authorizationStatus(for: .event))
-        case .reminders: return events(EKEventStore.authorizationStatus(for: .reminder))
-        case .automation: return automation
+        case .calendar: return events(ArisEventGrants.shared.status(.events))
+        case .reminders: return events(ArisEventGrants.shared.status(.reminders))
+        case .automation:
+            refreshAutomation()
+            return automation
         case .fullDisk:
             refreshDiskAccess()
             return diskAccess
@@ -93,7 +97,8 @@ enum ArisOnboardingSystem {
         case .screen: ArisPermissionGuide.shared.show(.screen)
         case .calendar: await ArisCalendarStore.shared.requestAccess()
         case .reminders: await ArisReminders.shared.requestAccess()
-        case .automation: automation = await askAutomation()
+        // No dialog here: Music's Automation is asked when Music is first driven (ArisScriptedPlayer), once.
+        case .automation: automation = await readAutomation()
         case .fullDisk: openSettings(.fullDisk)
         case .login: break
         }
@@ -124,15 +129,18 @@ enum ArisOnboardingSystem {
         return modifiers + [key == " " || key.isEmpty ? "Space" : key]
     }
 
-    /// macOS's Automation dialog for Music; off the main thread (AEDeterminePermissionToAutomateTarget blocks).
-    private static func askAutomation() async -> ArisGrant {
+    /// What macOS says about Aris driving Music, never asking (ArisAutomationAccess); off the main thread, since
+    /// AEDeterminePermissionToAutomateTarget blocks. Music not running reads as not decided.
+    private static func readAutomation() async -> ArisGrant {
         let target = automationTarget
-        return await Task.detached(priority: .userInitiated) {
-            let descriptor = NSAppleEventDescriptor(bundleIdentifier: target)
-            guard let desc = descriptor.aeDesc else { return ArisGrant.undecided }
-            let status = AEDeterminePermissionToAutomateTarget(desc, typeWildCard, typeWildCard, true)
-            return ArisGrant.automation(status: status)
-        }.value
+        return await Task.detached(priority: .utility) { ArisGrant.automation(ArisAutomationAccess.state(of: target)) }.value
+    }
+
+    /// Reads it again at most every 3 s while something shows it (the diagnostics, a card's poll).
+    private static func refreshAutomation() {
+        guard Date().timeIntervalSince(automationRead) >= 3 else { return }
+        automationRead = Date()
+        Task { @MainActor in automation = await readAutomation() }
     }
 
     private static func av(_ status: AVAuthorizationStatus) -> ArisGrant {

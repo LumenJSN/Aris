@@ -45,7 +45,7 @@ enum ArisSessionLive {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = ArisNoStore.configuration()
         configuration.timeoutIntervalForRequest = timeout
         configuration.timeoutIntervalForResource = timeout
         let done = DispatchSemaphore(value: 0)
@@ -211,6 +211,13 @@ enum ArisSessionLive {
         guard !IsSecureEventInputEnabled() else { return .secureInput }
         guard let reached = reach(target) else { return .focusMoved }
         return reached.submit()
+    }
+
+    /// Escape in the proven place (fleet.interrupt).
+    static func escape(_ target: ArisSessionTarget) -> ArisSessionStop? {
+        guard !IsSecureEventInputEnabled() else { return .secureInput }
+        guard let reached = reach(target) else { return .focusMoved }
+        return reached.escape()
     }
 
     /// The send is over: whatever was changed to reach the session is put back.

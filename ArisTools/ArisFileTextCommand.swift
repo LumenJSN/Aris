@@ -23,8 +23,12 @@ private func textOfFile(_ path: String, kind: ArisFileText.Kind) -> String? {
             }
             return read
         }
+    // HTML and web archives without AppKit's importer, which fetches their remote resources (ArisHTMLFileText).
+    case .rich where ArisHTMLFileText.handles(path): text = ArisHTMLFileText.text(path: path)
     case .rich: text = (try? NSAttributedString(url: url, options: [:], documentAttributes: nil))?.string
     case .plain: text = (try? String(contentsOf: url, encoding: .utf8)) ?? (try? String(contentsOf: url, encoding: .utf16))
+    // Excel, PowerPoint and HWPX: their zip's XML (ArisOfficeText).
+    case .office: text = ArisOfficeText.text(ofFile: path, limit: ArisFileText.perFile + 1_000)
     }
     let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return trimmed.isEmpty ? nil : trimmed

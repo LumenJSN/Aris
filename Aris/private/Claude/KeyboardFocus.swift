@@ -74,6 +74,9 @@ enum KeyboardFocus {
         // Typing just before the card came counts toward the quiet the keyboard needs.
         let sinceKey = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
         cardKeys = ArisCardKeys(presentedAt: now, lastKeyAt: sinceKey.isFinite ? now - sinceKey : nil)
+        // The card may name Y and N for as long as the tap takes them.
+        let since = now
+        ArisCardKeyReach.shared.update(now: since) { $0.tapSince = since }
     }
 
     static func releaseCard() {
@@ -85,6 +88,7 @@ enum KeyboardFocus {
         cardSource = nil
         cardTapUnsafe = nil
         cardKeys = nil
+        ArisCardKeyReach.shared.update(now: now) { $0.tapSince = nil }
         // A Y or N still held when the card went: it was a letter after all.
         if let held = heldKey { resend([held]) }
         heldKey = nil
@@ -171,10 +175,13 @@ enum KeyboardFocus {
 
     private static func setMonitor(_ on: Bool) {
         if let existing = monitor { NSEvent.removeMonitor(existing); monitor = nil }
+        ArisCardKeyReach.shared.update(now: now) { $0.panelArmed = on }
         guard on else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             // Only while Aris is the active app do keys reach a card (the follow-up's LOW): never a guess behind another app.
-            guard KeyboardTextInput.answersCardKey(arisActive: NSApp.isActive),
+            // And only the keyboard's own keys, as the session tap takes them: a key another process posted answers
+            // nothing here (no card of Aris's or Claude's, no countdown) and goes on as any key.
+            guard KeyboardTextInput.answersCardKey(arisActive: NSApp.isActive, sourcePid: ArisPanelKeys.sourcePid(event)),
                   event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
                   !event.isARepeat,
                   // Typing an "Other…" answer: keys belong to the text field. The read-only answer, selected, doesn't

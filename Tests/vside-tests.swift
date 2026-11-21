@@ -272,7 +272,7 @@ private func vsideHistoryRestoreTests() {
           "history restore: a history saved before cards were kept still reads, and its rows show as their words and answer")
     let controller = vsideSource("Aris/private/Aris/ArisController.swift")
     let resume = controller.components(separatedBy: "func resume(_ entry: ArisHistoryEntry) {").dropFirst().first?.components(separatedBy: "\n    }\n").first ?? ""
-    check(resume.contains("session = .parked(heard: shown.heard, reply: shown.reply)") && resume.contains("ArisWidgetModel.shared.restore(ArisHistoryRestore.card(of: entry), reply: shown.reply)")
+    check(resume.contains("setSession(.parked(heard: shown.heard, reply: shown.reply))") && resume.contains("ArisWidgetModel.shared.restore(ArisHistoryRestore.card(of: entry), reply: shown.reply)")
           && resume.contains("NotificationCenter.default.post(name: .arisHistoryRestored, object: nil)") && resume.contains("restored = shown"),
           "history restore: wiring: a pressed row puts the turn, its card and when it was in the notch and asks the notch to open")
     check(!resume.contains("startListening()") && !resume.contains("listenHandsFree()") && !controller.contains("resumedFrom"),

@@ -33,13 +33,14 @@ extension ArisController {
             inboxAgain = true
             return
         }
-        inboxDelivery = Task { [weak self] in
+        // The inbox serves no turn: its delivery carries no turn's id, whoever nudged it.
+        inboxDelivery = ArisTurnScope.outside { Task { [weak self] in
             repeat {
                 self?.inboxAgain = false
                 await self?.deliverInboxOnce()
             } while self?.inboxAgain == true && !Task.isCancelled
             self?.inboxDelivery = nil
-        }
+        } }
     }
 
     private func deliverInboxOnce() async {
@@ -47,6 +48,8 @@ extension ArisController {
         log.notice("inbox: \(items.count, privacy: .public) item(s)")
         for item in items {
             guard !Task.isCancelled else { return }
+            // A handed-out job's end (or its card), followed by its id after its stream was gone (ArisTaskFollowing).
+            if item.jobId != nil, await deliverJobItem(item) { continue }
             if let ask = item.confirmation {
                 // Asked by a task of its own, so a question nobody answers (it waits in 확인 대기) never holds up the
                 // results after it. It is acknowledged there, once settled.
@@ -67,9 +70,11 @@ extension ArisController {
         Task { [weak self] in
             defer { desk.endInbox(item.id) }
             guard let self else { return }
-            switch await self.settleCard(ask, title: item.title, job: nil, handsFree: false, streamEnded: { false }) {
+            switch await self.settleCard(ask, title: item.title, job: nil, asked: nil, handsFree: false, streamEnded: { false }) {
             case .answered(let result):
                 if result == .refused { log.error("inbox: an answer was refused") }
+                // A followed job's card: the job goes on in the helper.
+                if let job = item.jobId, self.jobs.first(where: { $0.id == job })?.isFinished == false { self.setState(job, .running(step: "")) }
                 if result.acknowledges { await ArisAgentClient.acknowledge([item.id]) }
             case .gone:
                 await ArisAgentClient.acknowledge([item.id])

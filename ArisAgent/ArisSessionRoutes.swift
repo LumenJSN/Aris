@@ -2,7 +2,7 @@
 //  ArisSessionRoutes.swift
 //  aris-agent
 //
-//  POST /session-tool {"turn", "words"}: `aris-tools session list|send …` from inside a brain's turn (Codex, the open
+//  POST /session-tool {"turn", "words"}: `aris-tools session list|status|send|interrupt|answer|start|stop …` (ArisFleetCalls, then ArisSessionSend) from inside a brain's turn (Codex, the open
 //  and the sealed Claude, the API brain's helper), checked exactly as /aside-tool is: the turn's credential, and the
 //  caller's process inside that brain's own process tree. agy's relay runs `session …` lines here directly (relayed).
 //  ArisSessionSend answers with what aris-tools prints: {"status", "output"}.
@@ -13,7 +13,7 @@ import Network
 
 enum ArisSessionRoutes {
     static func tool(_ object: [String: Any], on connection: NWConnection, agentPort: UInt16, deps: ArisSessionDeps = ArisSessionLive.deps,
-                     reply: @escaping (String, Data) -> Void) {
+                     fleet: ArisFleetDeps = ArisFleetLive.deps, reply: @escaping (String, Data) -> Void) {
         let refuse = { (why: String) in
             ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(["answer": "refused (\(why))", "question": "session-tool"]), key: "session")
             reply("403 Forbidden", ArisMCPRoutes.json(["status": 1, "output": "aris-tools session works only inside an Aris turn."]))
@@ -33,15 +33,19 @@ enum ArisSessionRoutes {
                 return refuse("not from the brain's own process")
             }
             let turn = ArisRunnerMCPTurn(runner: runner, handsFree: now.handsFree, screen: now.screen, credential: credential)
-            let outcome = ArisSessionSend.answer(words, turn: turn, deps: deps)
+            // The fleet's verbs first (status, interrupt, answer, start, stop, and list and send by a spoken name); the
+            // old send by folder or id if it isn't one.
+            let outcome = ArisFleetCalls.answer(words, turn: turn, deps: fleet, session: deps) ?? ArisSessionSend.answer(words, turn: turn, deps: deps)
             reply("200 OK", ArisMCPRoutes.json(["status": Int(outcome.status), "output": outcome.output]))
         }
     }
 
     /// One `session …` line of agy's aris-run block: the same send, card and checks.
-    static func relayed(_ words: [String], turn: ArisDesktopTurn, deps: ArisSessionDeps = ArisSessionLive.deps) -> String {
+    static func relayed(_ words: [String], turn: ArisDesktopTurn, deps: ArisSessionDeps = ArisSessionLive.deps,
+                        fleet: ArisFleetDeps = ArisFleetLive.deps) -> String {
         let rest = Array(words.dropFirst())
         guard ArisSessionCall.isCall(rest) else { return ArisSessionSend.usage }
-        return String(ArisSessionSend.answer(rest, turn: turn, deps: deps).output.prefix(ArisAgyRelay.maxResult))
+        let outcome = ArisFleetCalls.answer(rest, turn: turn, deps: fleet, session: deps) ?? ArisSessionSend.answer(rest, turn: turn, deps: deps)
+        return String(outcome.output.prefix(ArisAgyRelay.maxResult))
     }
 }

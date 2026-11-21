@@ -317,25 +317,29 @@ private func ringArcTests() {
 /// 설정 › 대화 › Claude Code: the ring's mode and the daily budget, and that a search finds them.
 private func usageSettingsTests() {
     var s = ArisSettingsSnapshot()
-    let fresh = ArisSettingsBuilder.sections(.aris, s).first { $0.id == "aris.claude" }
-    check(fresh?.heading == "Claude Code" && fresh?.grouped == true && fresh?.rows.map(\.id) == ["aris.claudeRing", "aris.claudeBudget"],
-          "settings: 대화 has a Claude Code card with the ring's mode and the daily budget")
+    // Option A: the ring is a notch display (모양 › 노치); the budget is in AI · 모델's 연결된 서비스.
+    let ringRow = ArisSettingsBuilder.sections(.notch, s).flatMap(\.rows).first { $0.id == "aris.claudeRing" }
+    let fresh = ringRow.map { ArisSettingSection(id: "aris.claude", rows: [$0]) }
+    check(ringRow != nil && ArisSettingsBuilder.sections(part: "talk.ai", s).first { $0.id == "ai.services" }?.rows.contains { $0.id == "aris.claudeBudget" } == true,
+          "settings: the ring's mode is in 모양 › 노치 and the daily budget in AI · 모델's 연결된 서비스")
+    check(ArisSettingsBuilder.sections(part: "talk.ai", s).first { $0.id == "ai.services" }?.rows.last?.id == "aris.claudeConnect",
+          "settings: Claude Code 연결 follows the budget in 연결된 서비스")
     let modes = [ArisSettingOption(id: "fiveHour", title: "5시간"), ArisSettingOption(id: "sevenDay", title: "주간"), ArisSettingOption(id: "auto", title: "자동")]
     check(fresh?.rows.first?.control == .choice(.claudeRing, modes, selected: "fiveHour") && fresh?.rows.first?.title == "귀에 보일 사용량"
           && fresh?.rows.first?.desc == "닫힌 노치 귀의 고리가 5시간 한도를 보여 줘요", "settings: a fresh install shows the 5-hour limit, as the ring always did")
     func ring(_ mode: String) -> ArisSettingItem? {
         s.claudeRing = mode
-        return ArisSettingsBuilder.sections(.aris, s).flatMap(\.rows).first { $0.id == "aris.claudeRing" }
+        return ArisSettingsBuilder.sections(.notch, s).flatMap(\.rows).first { $0.id == "aris.claudeRing" }
     }
     check(ring("sevenDay")?.control == .choice(.claudeRing, modes, selected: "sevenDay") && ring("sevenDay")?.desc == "닫힌 노치 귀의 고리가 주간 한도를 보여 줘요"
           && ring("auto")?.control == .choice(.claudeRing, modes, selected: "auto") && ring("auto")?.desc == "5시간과 주간 중 더 많이 쓴 쪽을 보여 줘요",
           "settings: the row's line says what the picked mode shows")
     check(ring("junk")?.control == .choice(.claudeRing, modes, selected: "fiveHour"), "settings: an unknown saved mode reads as 5시간")
     check(modes.map(\.id) == ClaudeRingMode.allCases.map(\.rawValue), "settings: the segments are the ring's three modes, in order")
-    let budget = fresh?.rows.last
+    let budget = ArisSettingsBuilder.sections(part: "talk.ai", s).flatMap(\.rows).first { $0.id == "aris.claudeBudget" }
     check(budget?.control == .custom("claudeBudget") && budget?.title == "API 키로 쓸 때 하루 예산", "settings: the budget row draws its own field, switch and quick amounts")
-    check(ArisSettingsIndex.entry("aris.claudeRing")?.page == .aris && ArisSettingsIndex.entry("aris.claudeBudget")?.page == .aris
+    check(ArisSettingsIndex.entry("aris.claudeRing")?.page == .look && ArisSettingsIndex.entry("aris.claudeBudget")?.page == .talk
           && ArisSettingsIndex.search("예산").first?.id == "aris.claudeBudget" && ArisSettingsIndex.search("귀에 보일").first?.id == "aris.claudeRing"
           && ArisSettingsIndex.search("클로드 코드").map(\.id).contains("aris.claudeRing"), "settings: a search finds both rows")
-    check(ArisSettingsLayout.blocks(fresh ?? ArisSettingSection(id: "", rows: [])).count == 1, "settings: both rows share one card")
+    check(ArisSettingsLayout.blocks(fresh ?? ArisSettingSection(id: "", rows: [])).count == 1, "settings: the ring is one row card")
 }

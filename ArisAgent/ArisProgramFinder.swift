@@ -8,6 +8,7 @@
 //  launcher that begins `#!/usr/bin/env node` died at once (audit cli-paths-8, mcp-4).
 //
 //  The user's own PATH is asked for once, from their login shell as a terminal starts it, with a time limit, and kept.
+//  It is asked in the background (at the agent's start): no lookup ever waits on the shell.
 //  The folders Aris always knew are looked in first and stay first on a child's PATH, so nothing that was found
 //  before is found anywhere else now; the shell's folders only add what was missing.
 //
@@ -27,22 +28,76 @@ enum ArisLoginPath {
 
     /// The tests' folders (no shell is started); nil for the user's own.
     nonisolated(unsafe) static var override: [String]?
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var kept: (folders: [String], asked: Bool, at: Date)?
+    /// The user's own: their shell, asked in the background; what it found is kept on disk too (aris-tools and the gate
+    /// treat these folders as protected places, security review M4).
+    static let shared = Lookup(shell: { userShell() }, limit: limit, retryAfter: retryAfter) { answer in
+        ArisProtectedPlaces.keepLoginFolders(answer, home: FileManager.default.homeDirectoryForCurrentUser.path)
+    }
 
-    /// The folders, asked for once and kept; none when the shell couldn't be asked (the known folders still work).
+    /// The folders as they are known now; none until the shell has answered (the known folders still work). Never
+    /// waits on the shell: it is started once, off the caller's queue (a lookup on the server queue held every
+    /// request up to the shell's 5 s limit), and asked again only after a shell that couldn't answer.
     static var folders: [String] {
         if let override { return override }
-        return lock.withLock {
-            if let kept, kept.asked || Date().timeIntervalSince(kept.at) < retryAfter { return kept.folders }
-            let answer = ask(shell: userShell(), timeout: limit)
-            if answer == nil {
-                FileHandle.standardError.write(Data("aris-agent: the login shell's PATH couldn't be read; only the usual folders are searched\n".utf8))
+        return shared.folders()
+    }
+
+    /// Asks the shell now, in the background: called at the agent's start, so its PATH is there by the first question.
+    static func warm() {
+        if override == nil { shared.start() }
+    }
+
+    /// One user's login-shell PATH: asked at most once at a time, off the caller's queue, and kept.
+    final class Lookup: @unchecked Sendable {
+        private let shell: () -> String
+        private let limit: TimeInterval
+        private let retryAfter: TimeInterval
+        private let keep: ([String]) -> Void
+        private let lock = NSLock()
+        private let queue = DispatchQueue(label: "aris.login-path", qos: .utility)
+        private var kept: (folders: [String], asked: Bool, at: Date)?
+        private var running = false
+
+        init(shell: @escaping () -> String, limit: TimeInterval, retryAfter: TimeInterval, keep: @escaping ([String]) -> Void = { _ in }) {
+            self.shell = shell
+            self.limit = limit
+            self.retryAfter = retryAfter
+            self.keep = keep
+        }
+
+        /// What is known now (none before the first answer). A shell that couldn't answer is asked again after
+        /// `retryAfter`, in the background too.
+        func folders(now: Date = Date()) -> [String] {
+            lock.withLock {
+                if let kept, kept.asked || now.timeIntervalSince(kept.at) < retryAfter { return kept.folders }
+                startLocked()
+                return kept?.folders ?? []
             }
-            kept = (answer ?? [], answer != nil, Date())
-            // Kept on disk too: aris-tools and the gate treat these folders as protected places (security review M4).
-            if let answer { ArisProtectedPlaces.keepLoginFolders(answer, home: FileManager.default.homeDirectoryForCurrentUser.path) }
-            return answer ?? []
+        }
+
+        /// Starts the shell unless it already answered or is being asked.
+        func start() {
+            lock.withLock { if kept == nil { startLocked() } }
+        }
+
+        /// Waits until a running ask has answered (the tests).
+        func settle() { queue.sync {} }
+
+        private func startLocked() {
+            guard !running else { return }
+            running = true
+            queue.async { [self] in
+                let answer = ArisLoginPath.ask(shell: shell(), timeout: limit)
+                if answer == nil {
+                    FileHandle.standardError.write(Data("aris-agent: the login shell's PATH couldn't be read; only the usual folders are searched\n".utf8))
+                }
+                // On disk before anyone is given the folders.
+                if let answer { keep(answer) }
+                lock.withLock {
+                    kept = (answer ?? [], answer != nil, Date())
+                    running = false
+                }
+            }
         }
     }
 

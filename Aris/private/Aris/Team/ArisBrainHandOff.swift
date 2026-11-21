@@ -282,7 +282,7 @@ extension ArisBrainHandOff {
     static func missingLine(_ target: ArisHandOffTarget, ready: [String: Bool]?, api: APIState?, korean: Bool,
                             english: Bool = ArisUIWords.english) -> String? {
         // The sentence in the request's language, the path as the settings window names it (ArisSettingsPath).
-        let place = ArisSettingsPath.path(.ai, english: english)
+        let place = ArisSettingsPath.path(.ai, "답하는 AI", english: english)
         switch target {
         case .teammate:
             return nil

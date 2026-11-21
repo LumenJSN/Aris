@@ -21,21 +21,23 @@ extension ArisController {
         guard session.phase != .listening, session.phase != .thinking else { return }
         // The same quiet that ends a spoken conversation ends a typed one (startListening's rule), so a typed session
         // starts afresh too.
-        if let lastTurnAt, ContinuousClock.now - lastTurnAt > Self.conversationLasts { endConversation() }
+        endConversationIfLongAgo()
         let overAnswer = notchShowsAnswerNow() // before anything changes what the notch shows
-        turn?.cancel()
+        // A new turn: the one before is over (its task cancelled, its late writes dropped).
+        let opened = openTurn(.typed)
         // The cancelled turn's last streamed piece must not land in this one.
         dropPendingAnswer()
         speaker.stop()
         stats = ArisTurnStats(startedAt: .now)
+        startTypedTurnClock(opened)
         turnHandsFree = again && turnHandsFree
         // Files given to Aris are what "이거" means: no screenshot (BUG-23).
         if ArisPendingFiles.carriesFiles(text) { seeEnded() } else { seeTyped(notchShowsAnswer: overAnswer) }
-        session = ArisSession().listening().hearing(text).thinking()
+        setSession(ArisSession().listening().hearing(text).thinking(), from: opened)
         guard session.phase == .thinking else { return seeEnded() }
         let heard = session.heard
         // On the onboarding's 물어보기 a typed turn is a practice turn too, and anywhere else never one (QA follow-up).
         practiceTurn = onboardingTalk == .practice
-        turn = Task { await answer(heard, typed: true) }
+        ArisTurnScope.within(opened) { turn = Task { await answer(heard, typed: true) } }
     }
 }

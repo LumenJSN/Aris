@@ -33,6 +33,8 @@ final class ArisPreview {
     var notch: ((Bool) -> Void)?
 
     func watch() {
+        // Never in the public release: nothing listens for the file or the notification (ArisPreviewGate).
+        guard ArisPreviewGate.here else { return }
         // What a first ⌥Space will run into (reading these never prompts).
         let mic = AVCaptureDevice.authorizationStatus(for: .audio).rawValue
         let speech = SFSpeechRecognizer.authorizationStatus().rawValue
@@ -102,7 +104,10 @@ final class ArisPreview {
         }
         if state.hasPrefix("intent:") {
             let text = String(state.dropFirst(7))
-            Task {
+            // A turn of its own, so the next one cancels it and nothing it writes late lands on that one.
+            aris.startTurn(.preview) {
+                // Its own prompt from a clean session, as a typed turn has: never the last turn's words and steps.
+                aris.setSession(ArisSession().listening().hearing(text).thinking())
                 aris.silentSpeech = true
                 await aris.answer(text)
                 aris.silentSpeech = false
@@ -149,49 +154,49 @@ final class ArisPreview {
         stream?.invalidate()
         stream = nil
         switch state {
-        case "listening": aris.session = ArisSession().listening()
-        case "listening-words": aris.session = ArisSession().listening().hearing(Self.heard)
-        case "thinking": aris.session = ArisSession().listening().hearing(Self.heard).thinking().working("캘린더 확인하는 중")
+        case "listening": aris.setSession(ArisSession().listening())
+        case "listening-words": aris.setSession(ArisSession().listening().hearing(Self.heard))
+        case "thinking": aris.setSession(ArisSession().listening().hearing(Self.heard).thinking().working("캘린더 확인하는 중"))
         case "confirm":
-            aris.session = ArisSession().listening().hearing(Self.heard).thinking()
-                .asking(ArisConfirmation(id: "preview", title: "메시지 보내기", detail: "받는 사람: 엄마\n내용: 오늘 조금 늦어요"))
+            aris.setSession(ArisSession().listening().hearing(Self.heard).thinking()
+                .asking(ArisConfirmation(id: "preview", title: "메시지 보내기", detail: "받는 사람: 엄마\n내용: 오늘 조금 늦어요")))
         case "answer":
-            aris.session = ArisSession().listening().hearing(Self.heard).thinking()
-                .answering("내일 오후 3시에 ‘팀 회의’를 캘린더에 넣었어요. 엄마한테는 “오늘 조금 늦어요”라고 보냈어요.")
+            aris.setSession(ArisSession().listening().hearing(Self.heard).thinking()
+                .answering("내일 오후 3시에 ‘팀 회의’를 캘린더에 넣었어요. 엄마한테는 “오늘 조금 늦어요”라고 보냈어요."))
         case "answer-stream": streamAnswer()
         // Three steps 1.5 s apart (each tag entering, the one before landing its check), then a markdown answer.
         case "answer-steps": streamAnswer(Self.markdownAnswer, steps: ["캘린더 확인하는 중", "메시지 준비 중", "웹 검색 중"], stepEvery: 1.5)
         case "confirm-long":
-            aris.session = ArisSession().listening().hearing(Self.heard).thinking().working("메시지 준비 중")
-                .asking(ArisConfirmation(id: "preview", title: "메시지 보내기", detail: Self.longConfirmDetail))
+            aris.setSession(ArisSession().listening().hearing(Self.heard).thinking().working("메시지 준비 중")
+                .asking(ArisConfirmation(id: "preview", title: "메시지 보내기", detail: Self.longConfirmDetail)))
         case "confirm-cut":
             let body = String(repeating: "회의 자료 정리해서 내일까지 공유할게요. ", count: 8)
-            aris.session = ArisSession().listening().hearing(Self.heard).thinking().working("Notion 작업 중")
+            aris.setSession(ArisSession().listening().hearing(Self.heard).thinking().working("Notion 작업 중")
                 .asking(ArisConfirmation(id: "preview", title: "Notion · notion-create-comment",
                                          detail: "대상: 1a2b…9z8y\n내용: \(body.prefix(119))… (+\(body.count - 119)자)",
-                                         full: "대상: 1a2b3c4d5e6f7g8h9z8y\n내용: \(body)"))
+                                         full: "대상: 1a2b3c4d5e6f7g8h9z8y\n내용: \(body)")))
         case "proposal":
-            aris.session = ArisSession().listening().hearing(Self.heard).thinking().working("메시지 준비 중")
-                .asking(ArisConfirmation(id: "preview", title: "앞으로 이건 그냥 할까?", detail: "종류: message\n앱: aris-tools\n대상: 엄마", proposal: true))
+            aris.setSession(ArisSession().listening().hearing(Self.heard).thinking().working("메시지 준비 중")
+                .asking(ArisConfirmation(id: "preview", title: "앞으로 이건 그냥 할까?", detail: "종류: message\n앱: aris-tools\n대상: 엄마", proposal: true)))
         case "parked":
-            aris.session = .parked(heard: Self.heard, reply: "내일 오후 3시에 ‘팀 회의’를 캘린더에 넣었어요. 엄마한테는 “오늘 조금 늦어요”라고 보냈어요.")
+            aris.setSession(.parked(heard: Self.heard, reply: "내일 오후 3시에 ‘팀 회의’를 캘린더에 넣었어요. 엄마한테는 “오늘 조금 늦어요”라고 보냈어요."))
         // The long answer, finished and no longer spoken: 닫기 alone, and 답 열기 under it.
         case "answer-done":
-            aris.session = ArisSession().listening().hearing(Self.heard).thinking().answering(Self.longAnswer).done()
+            aris.setSession(ArisSession().listening().hearing(Self.heard).thinking().answering(Self.longAnswer).done())
         // Words over two lines: the prompt card collapsed under its fade (tap to open it all).
         case "prompt-long":
-            aris.session = ArisSession().listening().hearing(Self.longHeard).thinking()
-                .answering("내일 오후 3시에 ‘팀 회의’를 3층 큰 회의실에 잡고 초대장을 보냈어요. 엄마한테는 “오늘 조금 늦어요, 저녁은 먼저 드세요”라고 보냈어요.")
+            aris.setSession(ArisSession().listening().hearing(Self.longHeard).thinking()
+                .answering("내일 오후 3시에 ‘팀 회의’를 3층 큰 회의실에 잡고 초대장을 보냈어요. 엄마한테는 “오늘 조금 늦어요, 저녁은 먼저 드세요”라고 보냈어요."))
         // The composer under a parked answer with one to four typed lines (it stops growing at three).
         case _ where state.hasPrefix("composer-"):
-            aris.session = .parked(heard: Self.heard, reply: "내일 오후 3시에 ‘팀 회의’를 캘린더에 넣었어요.")
+            aris.setSession(.parked(heard: Self.heard, reply: "내일 오후 3시에 ‘팀 회의’를 캘린더에 넣었어요."))
             let count = Int(state.dropFirst("composer-".count)) ?? 0
             let draft = (0..<count).map { "\($0 + 1)번째 줄: 내일 회의 자료도 같이 보내 줘" }.joined(separator: "\n")
             // After the composer is on screen to hear it.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 NotificationCenter.default.post(name: ArisComposer.previewDraft, object: draft)
             }
-        default: aris.session = ArisSession()
+        default: aris.setSession(ArisSession())
         }
     }
 
@@ -330,7 +335,7 @@ final class ArisPreview {
     /// every `stepEvery` seconds, before the first token.
     private func streamAnswer(_ answer: String = ArisPreview.longAnswer, steps: [String] = ["캘린더 확인하는 중"], stepEvery: TimeInterval = 0) {
         let aris = ArisController.shared
-        aris.session = ArisSession().listening().hearing(Self.heard).thinking().working(steps[0])
+        aris.setSession(ArisSession().listening().hearing(Self.heard).thinking().working(steps[0]))
         let tokens = Self.tokens(answer)
         let ticksPerStep = Int((stepEvery / 0.04).rounded())
         var ticks = 0
@@ -340,7 +345,7 @@ final class ArisPreview {
             MainActor.assumeIsolated {
                 ticks += 1
                 if ticksPerStep > 0, ticks < ticksPerStep * steps.count {
-                    if ticks % ticksPerStep == 0 { aris.session = aris.session.working(steps[ticks / ticksPerStep]) }
+                    if ticks % ticksPerStep == 0 { aris.setSession(aris.session.working(steps[ticks / ticksPerStep])) }
                     return
                 }
                 guard next < tokens.count else {

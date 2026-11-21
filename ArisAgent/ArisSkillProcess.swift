@@ -113,7 +113,7 @@ final class ArisSkillDownloader: NSObject, ArisSkillDownloading, URLSessionDataD
     private var limits: [Int: (max: Int, hosts: Set<String>, progress: (Int) -> Void)] = [:]
     private var failures: [Int: String] = [:]
     private lazy var session: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = ArisNoStore.configuration()
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 300
         configuration.httpAdditionalHeaders = ["User-Agent": "Aris-skills", "Accept": "*/*"]

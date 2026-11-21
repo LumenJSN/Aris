@@ -345,7 +345,8 @@ enum ArisSpeakable {
             // A piece of a tag cut where the stream was split ("<sa" before the line's words): never read.
             .replacingOccurrences(of: #"(?i)</?s(?:a(?:y)?)?(?![a-z>])"#, with: " ", options: .regularExpression)
             .replacingOccurrences(of: #"https?://\S+"#, with: " ", options: .regularExpression)
-        let spoken = withoutData(unlinked)
+        // A date written as digits is said as a date (ArisSpeakableDates).
+        let spoken = ArisSpeakableDates.natural(withoutData(unlinked))
             .replacingOccurrences(of: #"[^\p{L}\p{N}\s.,!?~…'"()%]{4,}"#, with: " ", options: .regularExpression)
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)

@@ -122,8 +122,8 @@ extension ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(body))
-        // URLSession.shared: its sockets live in this process, which is what ArisPeer's socket check reads.
-        guard let (data, response) = try? await URLSession.shared.data(for: request), let status = (response as? HTTPURLResponse)?.statusCode else {
+        // ArisNoStore.session: its sockets live in this process, which is what ArisPeer's socket check reads.
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request), let status = (response as? HTTPURLResponse)?.statusCode else {
             return .failure(MCPProblem(text: "Aris 에이전트가 답하지 않아요."))
         }
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]

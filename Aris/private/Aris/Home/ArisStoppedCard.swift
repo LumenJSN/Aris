@@ -93,6 +93,13 @@ struct ArisStoppedCard: View {
 
     private var buttons: some View {
         HStack(spacing: 8) {
+            // A click on 그래도 하기 that came during the hold wasn't taken: said here for a moment.
+            if still.refused == question.id {
+                Text(ArisConfirmWords.notYet(english: english))
+                    .font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(2).minimumScaleFactor(0.85).fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.animation(.easeOut(duration: 0.2)))
+            }
             Spacer(minLength: 0)
             Button { ArisController.shared.answerQuestion(true) } label: {
                 Text(ArisStoppedCopy.anyway(english: english)).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.38))

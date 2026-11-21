@@ -146,16 +146,13 @@ struct ArisSkillsOffCard: View {
 /// The 스킬 기능 switch beside the page's title (the shell's accessory), once the feature is on or being set up: while
 /// it is off the page's one card is the way to turn it on, and a second control for the same thing would say it twice.
 struct ArisSkillsSwitch<Source: ArisSkillsSource>: View {
-    @Environment(\.arisPalette) private var palette
-    @Environment(\.arisWords) private var w
     @ObservedObject var model: Source
 
     var body: some View {
         let on = model.status.enabled
-        HStack(spacing: 8) {
-            Text(w("스킬 기능")).font(.system(size: 12, weight: .medium)).foregroundStyle(palette.title)
-            ArisSwitch(isOn: on, label: "스킬 기능") { on ? model.turnOff() : model.turnOn(saying: true) }
-        }
+        // The switch alone: the page's title beside it already says what it turns on (a second 스킬 기능 read twice, VM
+        // run 2026-11-18); its accessibility label still names it.
+        ArisSwitch(isOn: on, label: "스킬 기능") { on ? model.turnOff() : model.turnOn(saying: true) }
     }
 }
 

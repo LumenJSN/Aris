@@ -25,7 +25,9 @@ enum ArisLoginItem {
             if on {
                 try SMAppService.mainApp.register()
                 if SMAppService.mainApp.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
-            } else if SMAppService.mainApp.status != .notRegistered {
+            } else if [.enabled, .requiresApproval].contains(SMAppService.mainApp.status) {
+                // Only what is on (or waiting for approval) is taken off: unregistering an app macOS doesn't list
+                // (.notFound) fails with "Operation not permitted" (VM run 2026-11-18, the uninstall's log).
                 try SMAppService.mainApp.unregister()
             }
             return true

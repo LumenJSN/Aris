@@ -140,7 +140,7 @@ func runNotifyCardTests() {
     check(notify.contains("announce(recheck: .seconds(ArisNoticeGate.recheck), when: { center.mayShow })")
           && notify.contains("try? await Task.sleep(for: .seconds(ArisNoticeGate.settle))") && notify.contains("guard self.isPause(present: false), center.mayShow"),
           "notify gate: a card waits its turn and a pause, the notch closed, settles 800 ms and looks again")
-    check(notify.contains("self.session = .parked(heard: notice.title, reply: parking)"), "notify history: the notch keeps the news as its parked answer, as before")
+    check(notify.contains("self.setSession(.parked(heard: notice.title, reply: parking))"), "notify history: the notch keeps the news as its parked answer, as before")
     for file in ["ArisNotice.swift", "ArisNoticePill.swift", "ArisNoticeQueue.swift", "ArisNoticeRoute.swift", "ArisNoticeCenter.swift",
                  "ArisNoticePillView.swift", "ArisController+Notice.swift", "ArisNoticeWords.swift"] {
         let text = notifySource("Aris/private/Aris/Notice/" + file)

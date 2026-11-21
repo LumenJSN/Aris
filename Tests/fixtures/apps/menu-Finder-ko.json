@@ -1,0 +1,9 @@
+{"menus":[
+ {"title":"Finder","items":[{"title":"Finder에 관하여"},{"title":"설정…","key":",","modifiers":0},{"title":"휴지통 비우기…","key":"⌫","modifiers":1}]},
+ {"title":"파일","items":[{"title":"새로운 Finder 윈도우","key":"N","modifiers":0},{"title":"새로운 폴더","key":"N","modifiers":1},{"title":"새로운 탭","key":"T","modifiers":0},{"title":"열기","key":"O","modifiers":0},{"title":"윈도우 닫기","key":"W","modifiers":0},{"title":"정보 가져오기","key":"I","modifiers":0},{"title":"이름 변경"},{"title":"복제","key":"D","modifiers":0},{"title":"휴지통으로 이동","key":"⌫","modifiers":0},{"title":"찾기","key":"F","modifiers":0}]},
+ {"title":"편집","items":[{"title":"실행 취소","key":"Z","modifiers":0},{"title":"복사","key":"C","modifiers":0},{"title":"붙여넣기","key":"V","modifiers":0},{"title":"모두 선택","key":"A","modifiers":0}]},
+ {"title":"보기","items":[{"title":"아이콘으로","key":"1","modifiers":0,"checked":true},{"title":"목록으로","key":"2","modifiers":0},{"title":"사이드바 보기","key":"S","modifiers":2},{"title":"경로 막대 보기","key":"P","modifiers":2}]},
+ {"title":"이동","items":[{"title":"뒤로","key":"[","modifiers":0},{"title":"다운로드","key":"L","modifiers":2},{"title":"응용 프로그램","key":"A","modifiers":1},{"title":"홈","key":"H","modifiers":1}]},
+ {"title":"윈도우","items":[{"title":"최소화","key":"M","modifiers":0},{"title":"확대/축소"}]},
+ {"title":"도움말","items":[{"title":"macOS 도움말"}]}
+]}

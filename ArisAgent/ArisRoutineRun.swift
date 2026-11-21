@@ -252,6 +252,13 @@ final class ArisRoutineChain {
     static func routine(forPrompt prompt: String, in routines: [ArisRoutine]) -> ArisRoutine? {
         ArisRoutineIntent.scheduled(prompt, routines: routines)
     }
+
+    /// Of `jobs`, the schedules whose job is to run `routine` (read against all of the user's `routines`, so a schedule for
+    /// another routine of a like name is never taken), a stopped one too: its delete card names them and they go with it.
+    static func schedules(running routine: ArisRoutine, routines: [ArisRoutine], in jobs: [ArisScheduledJob]) -> [ArisScheduledJob] {
+        let all = routines.contains { $0.id == routine.id } ? routines : routines + [routine]
+        return jobs.filter { ($0.nextRun != nil || $0.stopped == true) && Self.routine(forPrompt: $0.prompt, in: all)?.id == routine.id }
+    }
 }
 
 /// "방금 한 걸 루틴으로 저장해 줘": the user's last requests. The app's context carries its last few turns ("- user: …"), but

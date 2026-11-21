@@ -116,6 +116,7 @@ final class ArisPermissionGuide {
         // No window shadow: on a clear, rounded panel macOS drew it as a grey box outline around the card (third VM run).
         panel.hasShadow = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        ArisRecordingPrivacy.follow(panel)
         let host = NSHostingView(rootView: ArisPermissionGuideView(model: model, onClose: { [weak self] in self?.close() }))
         host.frame = panel.contentRect(forFrameRect: panel.frame)
         panel.contentView = host

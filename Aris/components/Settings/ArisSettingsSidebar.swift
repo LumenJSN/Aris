@@ -17,7 +17,15 @@ import SwiftUI
 final class ArisSettingsNav: ObservableObject {
     static let shared = ArisSettingsNav()
 
-    @Published var page: ArisSettingsPage = .aris
+    @Published var page: ArisSettingsPage = .talk
+    /// The part of the open page in view (the sidebar marks it), as the page reports it while it scrolls.
+    @Published var inView: String?
+    /// A part the sidebar asked to scroll to: its top goes to the top of the page, nothing lights.
+    @Published private(set) var jump: ArisSettingsFlashTarget?
+    /// The 팀원 or 스킬 sheet that is open ("team", "skills"), and the row in it a link named.
+    @Published var sheetPart: String?
+    /// When a link last chose where the window opens (a page or a row): the window opening right after it keeps that.
+    private var linkedAt: Date?
     /// A sheet or popover a page opens by itself (the preview harness): "language" or "voice".
     @Published var sheet: String?
     @Published var query = ""
@@ -50,11 +58,51 @@ final class ArisSettingsNav: ObservableObject {
         if flash?.token == token { flash = nil }
     }
 
-    /// Opens `page` and, with `anchor`, scrolls to that setting and highlights it.
+    /// Opens `page` and, with `anchor`, scrolls to that setting and highlights it. An anchor that names a row that
+    /// moved lands on its new row (ArisSettingsParts.landing), on that row's own page; one inside the 팀원 or 스킬
+    /// sheet opens the sheet on it.
     func go(_ page: ArisSettingsPage, anchor: String? = nil, byKey: Bool = false) {
         self.byKey = byKey
-        self.page = page
-        if let anchor { flash = ArisSettingsFlashTarget(id: anchor, token: (flash?.token ?? 0) + 1) }
+        linkedAt = Date()
+        let landing = anchor.map(ArisSettingsParts.landing)
+        self.page = landing.flatMap(ArisSettingsNav.page(of:)) ?? page
+        guard let landing else { return }
+        if let sheet = ArisSettingsNav.sheet(of: landing) { sheetPart = sheet }
+        flash = ArisSettingsFlashTarget(id: landing, token: (flash?.token ?? 0) + 1)
+    }
+
+    /// Opens the page that holds `anchor` (a row or a part) and lands on it.
+    func go(anchor: String, byKey: Bool = false) {
+        go(ArisSettingsNav.page(of: ArisSettingsParts.landing(anchor)) ?? page, anchor: anchor, byKey: byKey)
+    }
+
+    /// The page a row or a part is on: its part's page, or nil for an id no part knows.
+    static func page(of anchor: String) -> ArisSettingsPage? {
+        if let part = ArisSettingsParts.part(anchor) { return part.page }
+        // The permissions' section is no part and no row: its page is its rows' (tenth VM run: a press on "… 권한이 더
+        // 필요해요" found no page for it and did nothing unless that page was already open).
+        if anchor == ArisSettingsCaption.permissionsAnchor { return ArisSettingsCaption.permissionsPage }
+        return ArisSettingsIndex.entry(anchor)?.page ?? ArisSettingsParts.holding(anchor)?.page
+    }
+
+    /// The sheet a row is drawn in, when it is one the 팀원 or 스킬 sheet draws itself.
+    static func sheet(of anchor: String) -> String? {
+        ArisSettingsParts.sheetAnchors[anchor]
+    }
+
+    /// The sidebar's part link: the page scrolls the part's top to its top, and the part is marked at once.
+    func jump(to part: String) {
+        inView = part
+        jump = ArisSettingsFlashTarget(id: part, token: (jump?.token ?? 0) + 1)
+    }
+
+    /// The window is opening: on Aris와 말하기's AI · 모델, unless a link just chose the page (ArisSettingsOpening).
+    func opening(now: Date = Date()) {
+        defer { linkedAt = nil }
+        guard !ArisSettingsOpening.keepsLink(linkedAt: linkedAt, now: now) else { return }
+        byKey = false
+        page = .talk
+        inView = ArisSettingsParts.all.first?.id
     }
 }
 
@@ -80,7 +128,7 @@ struct ArisSettingsSidebar: View {
 
     /// In the English window a setting is found by its English name too.
     private var results: [ArisSettingsIndex.Match] {
-        ArisSettingsIndex.matches(nav.query, among: searchable, alias: w.frameEnglish ? { .init(title: w.of($0.page, $0.title), page: w.frame($0.page.title)) } : nil)
+        ArisSettingsIndex.matches(nav.query, among: searchable, alias: w.frameEnglish ? { ArisSettingsIndex.english($0, w) } : nil)
     }
 
     var body: some View {
@@ -141,7 +189,7 @@ struct ArisSettingsSidebar: View {
 
     /// The list's height as laid out: measured while it scrolls, the pages' own height in a still drawing.
     private var listedHeight: CGFloat {
-        listHeight > 0 ? listHeight : (showsPages ? CGFloat(ArisSidebarMetrics.pagesHeight()) : 0)
+        listHeight > 0 ? listHeight : (showsPages ? CGFloat(ArisSidebarMetrics.pagesHeight(open: nav.page)) : 0)
     }
 
     private var showsPages: Bool { nav.query.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -149,7 +197,7 @@ struct ArisSettingsSidebar: View {
     /// Whether the end fades now, for a box `box` tall with the list's top at `listTop` in it.
     private func fades(listHeight: CGFloat, box: CGFloat, listTop: CGFloat) -> Bool {
         let top = Double(listTop)
-        let chosen = showsPages ? ArisSidebarMetrics.rowSpan(nav.page).map { (top: $0.top + top, bottom: $0.bottom + top) } : nil
+        let chosen = showsPages ? ArisSidebarMetrics.rowSpan(nav.page, open: nav.page).map { (top: $0.top + top, bottom: $0.bottom + top) } : nil
         return ArisSidebarMetrics.fades(listHeight: Double(listHeight), boxHeight: Double(box), listTop: top, chosen: chosen)
     }
 
@@ -177,7 +225,7 @@ struct ArisSettingsSidebar: View {
                 .help(helperFix.title)
                 .accessibilityHint(helperFix.title)
         } else if ArisSettingsCaption.asksForPermissions(status) {
-            Button { nav.go(.control, anchor: ArisSettingsCaption.permissionsAnchor) } label: { greetingRow }
+            Button { nav.go(anchor: ArisSettingsCaption.permissionsAnchor) } label: { greetingRow }
                 .buttonStyle(.plain)
                 .help(w.frame("권한 설정 열기"))
         } else if ArisSettingsCaption.asksForAICheck(status), let aiFix {
@@ -186,9 +234,9 @@ struct ArisSettingsSidebar: View {
                 .help(aiFix.title)
                 .accessibilityHint(aiFix.title)
         } else if ArisSettingsCaption.asksForAI(status) {
-            Button { nav.go(.ai, anchor: ArisSettingsCaption.brainAnchor) } label: { greetingRow }
+            Button { nav.go(anchor: ArisSettingsCaption.brainAnchor) } label: { greetingRow }
                 .buttonStyle(.plain)
-                .help(w.frame("AI 서비스 열기"))
+                .help(w.frame("AI · 모델 열기"))
         } else if let lacking = ArisSettingsCaption.prerequisite(status) {
             // Something the install lacks: the line wraps, and what to do about it is under the pointer.
             greetingRow.help(ArisPrerequisites.full(lacking))
@@ -264,7 +312,7 @@ struct ArisSettingsSidebar: View {
         let entry = results[index].entry
         nav.query = ""
         searching = false
-        nav.go(entry.page, anchor: entry.id, byKey: byKey)
+        nav.go(anchor: entry.id, byKey: byKey)
     }
 
     private var found: some View {
@@ -280,21 +328,57 @@ struct ArisSettingsSidebar: View {
 
     // MARK: pages
 
-    private var pages: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(ArisSettingsGroup.allCases, id: \.self) { group in
-                Text(w.frame(group.rawValue)).font(.system(size: ArisSidebarMetrics.groupLabelSize, weight: .semibold)).foregroundStyle(palette.groupLabel)
-                    .frame(height: ArisSidebarMetrics.groupLabel)
-                    .padding(.horizontal, ArisSidebarMetrics.rowLeading).padding(.top, group == ArisSettingsGroup.allCases.first ? ArisSidebarMetrics.firstGroupTop : ArisSidebarMetrics.groupTop)
-                    .padding(.bottom, ArisSidebarMetrics.groupBottom)
-                    .accessibilityAddTraits(.isHeader)
-                VStack(spacing: ArisSidebarMetrics.rowGap) {
-                    ForEach(group.pages) { page in
-                        ArisNavItem(page: page, current: nav.page == page, isNew: ArisSettingsIndex.showsNew(page, seen: nav.seen)) { nav.go(page) }
+    private var pages: some View { ArisSidebarPages(nav: nav) }
+}
+
+/// The four pages, and under the open one its parts (option A): a part link scrolls its part to the top, and the part
+/// in view is marked as the page scrolls. Its own view, so the offscreen checks can measure it as drawn.
+struct ArisSidebarPages: View {
+    @ObservedObject var nav: ArisSettingsNav
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: ArisSidebarMetrics.rowGap) {
+            ForEach(ArisSettingsPage.allCases) { page in
+                ArisNavItem(page: page, current: nav.page == page, isNew: ArisSettingsIndex.showsNew(page, seen: nav.seen)) { nav.go(page) }
+                if page == nav.page && !page.parts.isEmpty {
+                    VStack(alignment: .leading, spacing: ArisSidebarMetrics.partGap) {
+                        ForEach(page.parts) { part in
+                            ArisPartLink(title: part.title, current: (nav.inView ?? page.parts.first?.id) == part.id) { nav.jump(to: part.id) }
+                        }
                     }
+                    .padding(.top, ArisSidebarMetrics.partsTop).padding(.bottom, ArisSidebarMetrics.partsBottom)
                 }
             }
         }
+    }
+}
+
+/// A part of the open page in the sidebar: 30 tall, r10, 13 / 500, its words where the pages' names start; idle .5,
+/// the part in view .9 on the sidebar's own faint fill (no glass: that is the page's). Its colour eases over 200 ms.
+private struct ArisPartLink: View {
+    @Environment(\.arisPalette) private var palette
+    @Environment(\.arisWords) private var w
+    let title: String
+    let current: Bool
+    let go: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: go) {
+            Text(w.frame(title)).font(.system(size: ArisSidebarMetrics.partLabelSize, weight: .medium)).lineLimit(1).minimumScaleFactor(ArisSidebarMetrics.partLabelScale)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundStyle(current ? palette.navOn : hovering ? palette.navHover : palette.navIdle)
+                .padding(.leading, ArisSidebarMetrics.partLeading).padding(.trailing, ArisSidebarMetrics.partTrailing)
+                .frame(height: ArisSidebarMetrics.partRow)
+                .background(RoundedRectangle(cornerRadius: ArisSidebarMetrics.partRadius, style: .continuous).fill(current ? palette.navFill : .clear))
+                .contentShape(RoundedRectangle(cornerRadius: ArisSidebarMetrics.partRadius, style: .continuous))
+                .animation(.easeInOut(duration: 0.2), value: current)
+                .animation(.easeInOut(duration: 0.2), value: hovering)
+        }
+        .buttonStyle(ArisPressScale(scale: ArisPressScale.measured))
+        .onHover { hovering = $0 }
+        .accessibilityLabel(w.frame(title))
+        .accessibilityAddTraits(current ? .isSelected : [])
     }
 }
 
@@ -473,7 +557,7 @@ private struct ArisSearchResultRow: View {
                     // A long name takes a second line (in English: "Look at the screen w…").
                     Text(w.of(entry.page, entry.title)).font(.system(size: 13, weight: .medium)).foregroundStyle(palette.navOn).lineLimit(2)
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                    Text(w.frame(entry.page.title) + (why.map { " · " + $0 } ?? "")).font(.system(size: 11)).foregroundStyle(palette.ink3).lineLimit(1)
+                    Text(w.frame(entry.page.title) + " · " + w.frame(entry.part.title) + (why.map { " · " + $0 } ?? "")).font(.system(size: 11)).foregroundStyle(palette.ink3).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }

@@ -17,6 +17,10 @@ enum ArisCaptureSharing {
 
     static func type(demo shown: Bool) -> NSWindow.SharingType { shown ? demo : hidden }
 
+    /// The windows that follow "Hide from screen recording" (the notch, the pill, the side panels, the reader, the
+    /// guides, Settings): out of captures when it is on, as usual when off.
+    static func recording(hidden: Bool) -> NSWindow.SharingType { hidden ? .none : .readWrite }
+
     /// The ad session records over a borderless `.floating` window: a demo's window must sit above it.
     static func drawsAbove(_ level: NSWindow.Level, backdrop: NSWindow.Level = .floating) -> Bool {
         level.rawValue > backdrop.rawValue

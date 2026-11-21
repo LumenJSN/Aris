@@ -3,7 +3,7 @@
 //  Aris
 //
 //  The recovered words' card (nowhere took them; they are on the clipboard), drawn to ArisDictationPillRecoveredLayout:
-//  it stands where the pill stands, grows out of an 80 × 30 pill to the size that fits its words, and leaves with a
+//  it stands where the pill stands, grows out of the 98 × 30 writing pill to the size that fits its words, and leaves with a
 //  fade and a small shrink (ArisDictationPillView's transition). The header says the words are copied and how to paste
 //  them; the words are the copy target. Its colours follow the system's appearance (the pill itself is always dark).
 //
@@ -27,8 +27,9 @@ struct ArisDictationPillRecoveredTokens {
     let hoverStrong: Color
     let shadow: Color
 
+    /// Dark: the pill's own black in its #30302f line (ArisDictationPillLook).
     static let dark = ArisDictationPillRecoveredTokens(
-        fill: Color(.sRGB, red: 20 / 255, green: 20 / 255, blue: 24 / 255, opacity: 0.86), line: .white.opacity(0.12),
+        fill: ArisDictationPillLook.fill, line: ArisDictationPillLook.line,
         text: .white.opacity(0.94), secondary: .white.opacity(0.56), tertiary: .white.opacity(0.38),
         hover: .white.opacity(0.08), hoverStrong: .white.opacity(0.14), shadow: .black.opacity(0.38))
     static let light = ArisDictationPillRecoveredTokens(
@@ -92,7 +93,8 @@ struct ArisDictationPillRecoveredCard: View {
                 .clipShape(shape)
                 .shadow(color: tokens.shadow, radius: 16, y: 12)
             }
-            .overlay { shape.strokeBorder(tokens.line, lineWidth: 0.5).allowsHitTesting(false) }
+            // The pill's 1 px line in the dark; a hairline in the light.
+            .overlay { shape.strokeBorder(tokens.line, lineWidth: light ? 0.5 : ArisDictationPillRules.lineWidth).allowsHitTesting(false) }
             .contentShape(shape)
             .animation(reduceMotion ? nil : growCurve, value: fit.size)
             .onAppear(perform: open)

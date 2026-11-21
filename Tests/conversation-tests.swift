@@ -307,8 +307,8 @@ private func conversationPromptTests() {
     let prompts = [("claude", ArisAgentPrompt.system(tools: "/t")), ("codex", ArisAgentPrompt.system(tools: "/t", notion: true, gated: true)),
                    ("agy", ArisAgentPrompt.system(tools: "/t", gated: false)), ("sealed", ArisAgentPrompt.sealed(tools: "/t"))]
     for (name, prompt) in prompts {
-        check(prompt.contains(ArisAgentPrompt.handOutRule) && prompt.contains("10 seconds") && prompt.contains("\"jobs\""),
-              "prompt (\(name)): anything over about 10 s goes out as a job")
+        check(prompt.contains(ArisAgentPrompt.handOutRule) && prompt.contains("a few seconds of tools") && prompt.contains("\"jobs\""),
+              "prompt (\(name)): anything needing more than a few seconds of tools goes out as a job")
     }
     let task = ArisAgentPrompt.system(tools: "/t", gated: true, task: true)
     check(!task.contains(ArisAgentPrompt.handOutRule) && !task.contains("\"jobs\""), "prompt (task): a background job never hands work on")
@@ -330,17 +330,17 @@ private func handOutPlanTests() {
           && one[0].provenance.fields.isEmpty && !one[0].cleanContext && one[0].request == words,
           "hand-out (clean): one clone job is the user's words, titled from them, sent with no untrusted flag")
     let several = P.plan([spec("a", .clone), spec("b", .teammate("claude-code"))], turn: clean)
-    check(several.count == 2 && several.allSatisfy { $0.provenance.fields["untrusted"] == true && $0.brain == .codex && $0.request == words }
+    check(several.count == 2 && several.allSatisfy { $0.provenance.fields["untrusted"] == true && $0.brain == .claude && $0.request == words }
           && several[1].turn == "t1" && several[0].spec.prompt.hasPrefix("brief: a") && several[0].spec.prompt.contains("“\(words)”"),
           "hand-out (clean): several jobs go as the model wrote them, untrusted, and a clean turn still vouches")
-    // C2: any unclean turn: every job untrusted on Codex, clean context, the conversation's claims sent.
+    // C2: any unclean turn: every job untrusted on the turn's own brain (jv-polish), clean context, the conversation's claims sent.
     for (name, turn) in [("screen", P.Turn(words: words, brain: .claude, turnId: "t1", untrustedTurn: true)),
                          ("screen conversation", P.Turn(words: words, brain: .claude, turnId: "t1", screenConversation: true)),
                          ("outside text", P.Turn(words: words, brain: .antigravity, turnId: "t1", outsideConversation: true))] {
         for specs in [[], [spec("x", .clone)], [spec("x", .clone), spec("y", .teammate("claude-code"))]] {
             let plans = P.plan(specs, turn: turn)
             check(!plans.isEmpty && plans.allSatisfy { plan in
-                plan.brain == .codex && plan.provenance.fields["untrusted"] == true && plan.request == words && plan.cleanContext && plan.turn == nil
+                plan.brain == turn.brain && plan.provenance.fields["untrusted"] == true && plan.request == words && plan.cleanContext && plan.turn == nil
                     && plan.spec.title.hasPrefix(ArisHandoff.title(of: words))
                     && plan.provenance.fields["screenConversation"] == (turn.screenConversation ? true : nil)
                     && plan.provenance.fields["outsideConversation"] == (turn.outsideConversation ? true : nil)

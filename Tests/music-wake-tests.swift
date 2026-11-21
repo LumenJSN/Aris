@@ -139,9 +139,9 @@ private func musicWakeStrictTests() {
           "strict: music read wins the reason over playback")
     let wake = musicSource("Aris/private/Aris/ArisController+Wake.swift")
     check(wake.contains("let near = !sure && !playing && ArisWakeDoubt.nearAllowed(") && wake.contains("let again = !playing && ArisWakeDoubt.secondChance(")
-          && wake.contains("guard ArisWakeStrict.textWakes(music: heardMusic, playing: playing) else {"),
+          && wake.contains("guard ArisWakeStrict.textWakes(trained: trained, music: heardMusic, playing: playing, recognizer: recognizerNamed, whisper: true) else {"),
           "strict: a candidate that isn't sure gets no near spelling and no second chance over music or playback (and no text wake: handsfree-wake)")
-    check(wake.contains("guard self.wakeListener === listener, !playing else { return }") && wake.contains("guard !heardMusic, self.wakeListener === listener else { return }"),
+    check(wake.contains("ArisWakeStrict.textWakes(trained: trained, music: heardMusic, playing: playing, recognizer: true, whisper: whisperNamed) else { return }"),
           "strict: the recognizer alone never wakes Aris over music or playback (Whisper must hear the name)")
     check(musicSource("Aris/private/Aris/ArisController+WakeEvidence.swift").contains("ArisOtherAudio.macPlays(nowPlaying: ArisNowPlaying.shared.isPlaying, outputLevel: outputMeter.level,"),
           "strict: this Mac plays: Now Playing, a call, or real sound on the meter (ArisOtherAudio.macPlays)")
@@ -325,6 +325,10 @@ private func spoken(_ text: String, voice: String) -> [Float]? {
     say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
     say.arguments = ["-v", voice, "-o", file.path, text]
     guard (try? say.run()) != nil else { return nil }
+    // The speech service can stall for good (it held a whole suite for 90 minutes once); a line takes a second or two.
+    let limit = Date().addingTimeInterval(30)
+    while say.isRunning, Date() < limit { Thread.sleep(forTimeInterval: 0.05) }
+    if say.isRunning { say.terminate() }
     say.waitUntilExit()
     guard say.terminationStatus == 0, let audio = try? AVAudioFile(forReading: file),
           let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false),
@@ -402,7 +406,7 @@ private func musicWakeWiringTests() {
     let falseWake = musicSource("Aris/private/Aris/ArisController+FalseWake.swift")
     // The request never runs before the decision: the gate sits before the turn turns to thinking and answer().
     let gate = controller.range(of: "if let end = await wakeEvidenceAtEnd(said: text) { return closeWakeTurnQuietly(end) }")
-    let thinking = controller.range(of: "session = session.hearing(gesture?.display(text) ?? text).thinking()")
+    let thinking = controller.range(of: "setSession(session.hearing(gesture?.display(text) ?? text).thinking())")
     let answer = controller.range(of: "await answer(gesture == nil ? session.heard : text, gesture: gesture)")
     check(gate != nil && thinking != nil && answer != nil && gate!.lowerBound < thinking!.lowerBound && thinking!.lowerBound < answer!.lowerBound,
           "wiring: a borderline wake's request runs only after its evidence, before anything is routed or asked")

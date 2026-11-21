@@ -58,6 +58,13 @@ struct ArisNoticeAction: Equatable, Sendable {
         case openDue(ArisDue)
         /// A Claude Code session's terminal brought forward (TerminalFocus); its notice is dismissed.
         case focusClaude(sessionId: String)
+        /// A new version of Aris: download and install it now, or not now (ArisUpdater).
+        case installUpdate, laterUpdate
+        /// A permission that is off: its System Settings pane (ArisPermissionCenter; the drag panel for the two lists
+        /// that have one).
+        case permissionPane(ArisPermission)
+        /// A switch turned on that this copy of Aris sees only after it reopens: quit and open again, one press.
+        case relaunchApp
     }
 
     let title: String
@@ -88,10 +95,12 @@ struct ArisNotice: Equatable, Identifiable, Sendable {
     /// What a click on its body does (a deadline opens, a Claude Code notice brings its terminal forward). Nil: nothing,
     /// as a card's body did nothing.
     var tap: ArisNoticeAction.Role?
+    /// An update downloading or installing: a quiet bar at the line's right, 0 to 1. Nil: none.
+    var progress: Double?
 
     init(id: UUID = UUID(), key: String? = nil, kind: ArisNoticeKind, source: ArisNoticeSource = .aris, title: String, body: String,
          subtitle: String? = nil, actions: [ArisNoticeAction] = [], posted: Date = Date(), showsWithin: TimeInterval? = nil,
-         showsFor: TimeInterval? = nil, tap: ArisNoticeAction.Role? = nil) {
+         showsFor: TimeInterval? = nil, tap: ArisNoticeAction.Role? = nil, progress: Double? = nil) {
         self.id = id
         self.key = key
         self.kind = kind
@@ -104,6 +113,7 @@ struct ArisNotice: Equatable, Identifiable, Sendable {
         self.showsWithin = showsWithin
         self.showsFor = showsFor
         self.tap = tap
+        self.progress = progress.map { min(1, max(0, $0)) }
     }
 
     /// Whether it waited too long to be shown at `now`.

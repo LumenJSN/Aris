@@ -10,8 +10,14 @@ import Foundation
 
 enum ArisTurnLog {
     static let textLimit = 80
-    private static let textFields: Set<String> = ["heard", "apple", "whisper", "path", "tier", "outcome"]
-    private static let numberFields: Set<String> = ["understoodMs", "firstSoundMs", "totalMs", "confirms", "declined"]
+    private static let textFields: Set<String> = ["heard", "apple", "whisper", "path", "tier", "outcome", "endCase"]
+    /// The turn's stage clock (ArisStageClock.fieldNames, held equal by the tests): each stage in ms since the key or the
+    /// wake word, and the gaps the latency targets name.
+    static let stageFields: Set<String> = ["firstVoiceAtMs", "voiceEndAtMs", "plausibleEndAtMs", "firmEndAtMs", "transcriptFinalAtMs",
+                                           "requestSentAtMs", "firstDeltaAtMs", "firstSentenceAtMs", "firstAudioAtMs",
+                                           "speechEndToRequestMs", "speechEndToAudioMs"]
+    private static let numberFields: Set<String> = Set(["understoodMs", "firstSoundMs", "totalMs", "confirms", "declined",
+                                                        "speculations", "speculationsCancelled"]).union(stageFields)
 
     /// The fields worth keeping; nil when none are.
     static func clean(_ line: [String: Any]) -> [String: Any]? {

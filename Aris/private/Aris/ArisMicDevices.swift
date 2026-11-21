@@ -76,6 +76,9 @@ enum ArisMicDevices {
     /// says so). Throws ArisMicPaused when the plan is to open nothing (the wake word with only a headset's).
     @discardableResult
     static func pin(_ engine: AVAudioEngine, for use: ArisMicUse) throws -> (id: UInt32, transport: ArisAudioDevice.Transport)? {
+        // An engine of its own is about to open: the duplex engine (arisDuplexAudio) lets go first, so the two never
+        // hold the microphone together. Nothing with the switch off.
+        if ArisDuplexSwitch.isOn { ArisDuplexAudio.legacyMicOpening() }
         switch plan(for: use) {
         case .none:
             return nil
@@ -99,6 +102,7 @@ enum ArisMicDevices {
     /// 호출어 녹음's AirPods group (the user asked for that microphone on purpose, for the seconds of a take): the engine on
     /// the first headset's microphone; nil when no headset with a microphone is connected.
     static func pinHeadset(_ engine: AVAudioEngine) -> (id: UInt32, transport: ArisAudioDevice.Transport)? {
+        if ArisDuplexSwitch.isOn { ArisDuplexAudio.legacyMicOpening() }
         guard let headset = all().first(where: { $0.hasInput && $0.transport == .bluetooth }), let unit = engine.inputNode.audioUnit else { return nil }
         var device = headset.id
         guard AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &device, UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr else { return nil }

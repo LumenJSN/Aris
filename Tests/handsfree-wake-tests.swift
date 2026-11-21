@@ -49,12 +49,15 @@ private func handsFreeAdmitTests() {
     check(realCalls.allSatisfy { S.admits(playing: true, score: $0, threshold: owner) }, "admit: over playback the real calls wake Aris")
     check(musicWakes.allSatisfy { !S.admits(playing: true, score: $0, threshold: owner) },
           "admit: over playback no music false wake gets as far as a check (15.00, 16.27, 16.34 included)")
-    check(!S.admits(playing: true, score: nil, threshold: nil), "admit: over playback, without a voice print nothing wakes Aris")
+    check(S.admits(playing: true, score: nil, threshold: nil), "admit: over playback, without a voice print the two listeners decide (jv-wake)")
     check(musicWakes.allSatisfy { S.admits(playing: false, score: $0, threshold: owner) } && S.admits(playing: false, score: nil, threshold: nil),
           "admit: with nothing playing everything is as before")
-    check(!S.textWakes(music: true, playing: false) && !S.textWakes(music: false, playing: true) && !S.textWakes(music: true, playing: true),
+    let oneText = [(true, false), (false, true)]
+    check(oneText.allSatisfy { r, w in [(true, false), (false, true), (true, true)].allSatisfy { m, p in
+              !S.textWakes(trained: true, music: m, playing: p, recognizer: r, whisper: w) && !S.textWakes(trained: false, music: m, playing: p, recognizer: r, whisper: w) } },
           "admit: over music or playback Whisper's or the recognizer's text alone never wakes Aris")
-    check(S.textWakes(music: false, playing: false), "admit: in a quiet room the text path wakes as before")
+    check(oneText.allSatisfy { r, w in S.textWakes(trained: true, music: false, playing: false, recognizer: r, whisper: w) },
+          "admit: in a quiet room the text path wakes as before")
 }
 
 // MARK: - The evidence: the voice print decides, Whisper only vetoes
@@ -139,7 +142,8 @@ private func handsFreeWiringTests() {
           "wiring: a conversation's follow-up is not hands-free either")
     check(wake.contains("ArisWakeStrict.admits(playing: playing, score: score, threshold: threshold)"),
           "wiring: over playback the check turns a weak print away before anything listens")
-    check(wake.contains("ArisWakeStrict.textWakes(music: heardMusic, playing: playing)"), "wiring: the Whisper path never wakes over music")
+    check(wake.contains("ArisWakeStrict.textWakes(trained: trained, music: heardMusic, playing: playing, recognizer: recognizerNamed, whisper: true)"),
+          "wiring: the Whisper path never wakes over music alone")
     check(wake.contains("strongPrint: ArisWakeStrict.isStrong(score: score, threshold: threshold)"), "wiring: the evidence knows the print")
     check(controller.contains("if ArisWakeStrict.pausesMusic(lap: wakeLap), oldValue != wakeLap, turnByWakeWord { pauseMusic() }"),
           "wiring: the music pauses when the wake's lap is heard")

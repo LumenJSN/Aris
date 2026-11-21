@@ -677,7 +677,8 @@ private func runWebFetchTests() {
     let text = ArisWebFetch.text(fromHTML: html)
     check(text.contains("제목") && text.contains("A & B <3> \"q\" 's' 가") && text.contains("둘째") && !text.contains("alert") && !text.contains("color")
           && !text.contains("hidden") && !text.contains("<p>"), "web fetch: a page becomes its text (no scripts, styles, comments or tags)")
-    check(ArisWebFetch.text(fromHTML: String(repeating: "가 ", count: 10_000)).count <= ArisWebFetch.maxText + 40, "web fetch: a long page is cut")
+    check(ArisWebFetch.text(fromHTML: String(repeating: "가 ", count: 30_000)).count <= ArisWebFetch.maxText + 120
+          && ArisWebFetch.text(fromHTML: String(repeating: "가 ", count: 30_000)).hasPrefix("[truncated"), "web fetch: a long page is cut, and says so first")
     for zeros in ["http://010.0.0.1/", "http://0127.0.0.1/", "http://8.8.8.08/"] {
         check(ArisWebFetch.checkURL(zeros) == nil, "web fetch (I2): an octet with a leading zero is refused (\(zeros))")
     }

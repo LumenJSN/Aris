@@ -81,7 +81,7 @@ private func keyTests() {
     ArisKeyFile.secureStore = { $0 == "elevenlabs-key" ? "from-keychain" : nil }
     check(ArisKeyFile.load("elevenlabs-key") == "from-keychain", "key: the Keychain is read first")
     ArisKeyFile.secureStore = saved
-    check(ArisKeyFile.names == ["elevenlabs-key", "typesafe-key"], "key: the two keys the settings page manages")
+    check(ArisKeyFile.names == ["elevenlabs-key", "typesafe-key", "soniox-key", "openai-key"], "key: the keys the app keeps in the Keychain (ElevenLabs, TypeSafe, and the Soniox and OpenAI recognisers')")
     // A deleted key never comes back from an old file: the tombstone stops the fallback and the migration.
     check(ArisKeyFile.resolve(keychain: "k-chain", tombstoned: false, file: { "k-file" }) == "k-chain", "key: the Keychain wins")
     check(ArisKeyFile.resolve(keychain: nil, tombstoned: false, file: { "k-file" }) == "k-file", "key: an unmigrated file is the fallback")
@@ -173,6 +173,8 @@ private func appDataTests() {
 private final class Effects {
     var trashed: [URL] = []
     var trashFails = false
+    var keychainDeleted: [String] = []
+    var keychainFails: Set<String> = []
     var bootedOut = false
     var reopened = 0
     var later: [() -> Void] = []
@@ -212,7 +214,8 @@ private func dataRouteTests() {
         let effects = ArisDataRoute.Effects(trash: { url in if fx.trashFails { throw CocoaError(.fileWriteNoPermission) }; fx.trashed.append(url) },
                                             bootout: { fx.bootedOut = true }, reopenLog: { fx.reopened += 1 },
                                             later: { fx.later.append($0) }, bundleId: { _ in appBundleId }, audit: { fx.audits.append($0) },
-                                            log: { fx.logged.append($0) })
+                                            log: { fx.logged.append($0) },
+                                            deleteKeychain: { service in fx.keychainDeleted.append(service); return !fx.keychainFails.contains(service) })
         return ArisDataRoute.handle(object, places: places, appBundle: bundle, effects: effects)
     }
 
@@ -318,8 +321,8 @@ private func dataRouteTests() {
     _ = chmod(runtime.path, 0o555)
     let keep = call(["op": "uninstall", "confirm": "제거", "keepData": "no"], bundle: app)
     let steps = json(keep.body)["steps"] as? [[String: Any]] ?? []
-    check(keep.status == 200 && json(keep.body)["done"] as? Bool == true && steps.map { $0["step"] as? String ?? "" } == ["app", "hooks", "antigravity", "link", "launchAgent", "skills", "binaries"]
-          && steps.allSatisfy { $0["ok"] as? Bool == true }, "data route: uninstall reports each step's real result (\(steps))")
+    check(keep.status == 200 && steps.map { $0["step"] as? String ?? "" } == ["app", "hooks", "antigravity", "keychain", "link", "launchAgent", "helperFiles", "skills", "appFiles", "permissions", "sandbox", "binaries"]
+          && steps.allSatisfy { $0["ok"] as? Bool == true || $0["step"] as? String == "sandbox" }, "data route: uninstall reports each step's real result (\(steps))")
     check(!exists(runtime.deletingLastPathComponent()) && !exists(skillsFolder.appendingPathComponent(".incoming")) && exists(skillsFolder.appendingPathComponent("mine")),
           "data route: uninstall removes the skills runtime and what was fetched but never added; with the records kept, the user's skills stay")
     check(fx.trashed == [app] && !exists(folder.appendingPathComponent("aris-agent")) && !exists(folder.appendingPathComponent("aris-tools"))
@@ -327,6 +330,15 @@ private func dataRouteTests() {
           "data route: a malformed keepData keeps the records; the binaries and LaunchAgent go")
     check((try? FileManager.default.destinationOfSymbolicLink(atPath: places.oldLink.path)) == nil, "data route: the old folder's link is removed")
     check(fx.audits.filter { $0.hasPrefix("data: uninstall") }.count >= 7, "data route: every uninstall step is audited")
+    check(fx.keychainDeleted == ["com.lumenjsn.aris.brains", "com.lumenjsn.aris.brains.signing", "com.lumenjsn.aris.mcp",
+                                 "com.lumenjsn.aris.keys", "com.lumenjsn.aris.voiceid"],
+          "data route: uninstall deletes the helper's Keychain items by service (\(fx.keychainDeleted))")
+    check(ArisUninstallCleanup.removeKeychain { $0 != "com.lumenjsn.aris.mcp" } == ["com.lumenjsn.aris.mcp"] && ArisUninstallCleanup.removeKeychain { _ in true }.isEmpty,
+          "cleanup: a Keychain service that could not be emptied is named")
+    let keychainSource = (try? String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .appendingPathComponent("../ArisAgent/ArisUninstallCleanup.swift"), encoding: .utf8)) ?? ""
+    check(keychainSource.contains("SecItemDelete") && !keychainSource.contains("kSecReturnData") && !keychainSource.contains("kSecReturnAttributes")
+          && !keychainSource.contains("SecItemCopyMatching"), "cleanup: the Keychain items are deleted by service, never read")
     fx.later.removeFirst()()
     check(fx.bootedOut, "data route: the agent boots itself out last, after the reply")
     try? FileManager.default.removeItem(at: home)
@@ -338,7 +350,8 @@ private func dataRouteTests() {
     try? FileManager.default.createDirectory(at: allSkills, withIntermediateDirectories: true)
     let all = call(["op": "uninstall", "confirm": "제거", "keepData": false], bundle: app)
     check(!exists(allSkills.deletingLastPathComponent()), "data route: a full uninstall removes the skills too")
-    check(all.status == 200 && !exists(folder) && json(all.body)["done"] as? Bool == true, "data route: keepData false removes ~/.config/aris")
+    check(all.status == 200 && !exists(folder) && (json(all.body)["steps"] as? [[String: Any]])?.first { $0["step"] as? String == "folder" }?["ok"] as? Bool == true,
+          "data route: keepData false removes ~/.config/aris")
     let replyAudit = json(all.body)["audit"] as? [String] ?? []
     check(replyAudit.contains { $0.contains("folder ok") } && !fx.audits.contains { $0.contains("folder ok") } && fx.logged.contains { $0.contains("folder ok") },
           "data route: once the folder is gone its audit lines go to the reply and the unified log, never recreating it")
@@ -392,6 +405,18 @@ private func hookCleanupTests() {
     check(cleaned?["statusLine"] == nil && cleaned?["model"] as? String == "opus", "cleanup: Aris's status line goes, other settings stay")
     let theirs: [String: Any] = ["statusLine": ["type": "command", "command": "~/my-line.sh"], "hooks": ["Stop": [["hooks": [["type": "command", "command": "x"]]]]]]
     check(ArisUninstallCleanup.claude(theirs, arisFolders: [aris]) == nil, "cleanup: nothing of Aris's, nothing changed")
+    // The app's own install (Settings › Claude Code 연결): command hooks running the script inside Aris.app.
+    let script = "/Applications/Aris.app/Contents/Resources/aris-claude-hook.sh"
+    let commandForm: [String: Any] = [
+        "hooks": ["Stop": [["matcher": "", "hooks": [["type": "command", "command": "/bin/sh \"\(script)\" 2", "timeout": 2]]],
+                           ["matcher": "", "hooks": [["type": "command", "command": "clawd stop"]]]],
+                  "PermissionRequest": [["matcher": "", "hooks": [["type": "command", "command": "/bin/sh \"\(script)\" 130", "timeout": 130]]]]],
+        "statusLine": ["type": "command", "command": "/bin/bash \"/Applications/Aris.app/Contents/Resources/aris-claude-statusline.sh\"", "padding": 0],
+    ]
+    let commandCleaned = ArisUninstallCleanup.claude(commandForm, arisFolders: [aris])
+    let commandHooks = commandCleaned?["hooks"] as? [String: Any]
+    check((commandHooks?["Stop"] as? [[String: Any]])?.count == 1 && commandHooks?["PermissionRequest"] == nil && commandCleaned?["statusLine"] == nil,
+          "cleanup: the app's command hooks and its status line inside Aris.app go too; others' hooks stay")
     let codex: [String: Any] = ["hooks": ["Stop": [["hooks": [["type": "command", "command": "\"\(aris)/agent-hook.sh\" codex", "timeout": 5]]],
                                                    ["hooks": [["type": "command", "command": "orca stop"]]]]]]
     let codexOut = ArisUninstallCleanup.agentHooks(codex, arisFolders: [aris])

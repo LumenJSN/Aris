@@ -171,10 +171,20 @@ enum ArisNativeApps {
         if let path = call.value("--path") {
             guard !context.job else { return .failure("FOREGROUND_REFUSED", "a background job never brings a window forward") }
             let window = ArisAX.windowOf(panel) ?? panel
-            guard let turn = ArisNativeForeground.borrow(pid: pid, window: window) else { return .failure("FOREGROUND_FAILED", "the panel couldn't be brought forward") }
-            ArisNativeInput.press(5, flags: [.maskCommand, .maskShift], route: .front)
+            let turn: ArisNativeForeground
+            switch runner.front(pid: pid, window: window, context: context) {
+            case .failure(let refused): return refused
+            case .success(let made): turn = made
+            }
+            // ⌘⇧G by the key that types "g" on the layout in use (key 5 is its US place only).
+            ArisNativeInput.press(ArisNativeInput.chord("cmd+shift+g")?.key ?? 5, flags: [.maskCommand, .maskShift], route: .front)
             usleep(500_000)
-            ArisNativeInput.type(path.replacingOccurrences(of: "\\", with: "\\\\"), route: .front)
+            // With an input method on, the folder's path is pasted (it would be composed from the key codes).
+            if ArisKeyMethod.unicodeEventsTypeText(ArisKeyboardLive.state()) {
+                ArisNativeInput.type(path.replacingOccurrences(of: "\\", with: "\\\\"), route: .front)
+            } else {
+                _ = ArisNativePaste.paste(path, route: .front)
+            }
             usleep(200_000)
             ArisNativeInput.press(36, route: .front)
             usleep(500_000)
@@ -194,11 +204,13 @@ enum ArisNativeApps {
     static func windowList(_ call: ArisNativeCall) -> ArisNativeReply {
         guard let pid = pid(call) else { return .failure("APP_NOT_FOUND", "that app isn't running") }
         let focused = ArisAX.focusedWindowId(pid: pid)
-        let list = (ArisAX.value(ArisAX.app(pid), kAXWindowsAttribute as String) as? [AXUIElement] ?? []).compactMap { window -> [String: Any]? in
-            guard let id = ArisAX.windowId(window) else { return nil }
-            let frame = ArisAX.frame(window) ?? .zero
-            return ["window_id": id, "window_title": ArisAX.string(window, kAXTitleAttribute as String) ?? "",
-                    "bounds": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height], "is_frontmost": id == focused]
+        // Every window of the app: on screen, minimized, hidden or on another Space (ArisDesktopWindowMerge).
+        let list = ArisDesktopWindowMerge.live(pid: pid).map { window -> [String: Any] in
+            var entry: [String: Any] = ["window_id": window.id, "window_title": window.title ?? "", "is_frontmost": window.id == focused,
+                                        "bounds": ["x": window.frame.minX, "y": window.frame.minY, "width": window.frame.width, "height": window.frame.height],
+                                        "on_screen": window.onScreen]
+            if window.minimized { entry["minimized"] = true }
+            return entry
         }
         return ArisNativeReply(success: true, data: ["windows": list, "engine": "aris"], pid: pid)
     }

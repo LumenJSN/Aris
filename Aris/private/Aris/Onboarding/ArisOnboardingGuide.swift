@@ -92,6 +92,10 @@ final class ArisOnboardingGuide: ObservableObject {
     @Published var brainStartedEmpty = false
     /// AI 고르기: a key was saved and the helper's check of it failed; what the form says about it.
     @Published var brainKeyTrouble: String?
+    /// The provider whose key was saved in this setup (다시 확인 tries that key again while its check has failed).
+    var brainKeyProvider: String?
+    /// 준비 끝: the repository card (ArisStarCard); gh is asked once that page shows.
+    let starCard = ArisStarCardModel()
     /// The setup window's size and place on its display (ArisOnboardingStage.fit).
     @Published var fit = ArisOnboardingStage.designFit
 
@@ -285,10 +289,14 @@ final class ArisOnboardingGuide: ObservableObject {
         applyPolicy()
         notchModel?.guide = nil
         notchModel = nil
+        let wasQuitting = quitting
         reset()
         // The wake word waits for the guide's permission page (ArisWakeArm): now that the guide is gone, one turned
         // on in it (or on from before) starts listening, without waiting for a first turn to end.
         ArisController.shared.waitForWakeWordSoon()
+        // The same for the dictation and gesture keys: Input Monitoring asked for once, or the reopen card for key access
+        // given during the setup, now and not at the next launch (VM run 2026-11-18, D1). Not while quitting.
+        if !wasQuitting { ArisKeyTaps.startWhenAllowed() }
     }
 
     /// The app is quitting: mid-way that's 나중에 할게요 (Quit & Reopen after Screen Recording resumes the page).
@@ -331,6 +339,8 @@ final class ArisOnboardingGuide: ObservableObject {
         brainChecked = nil
         brainStartedEmpty = false
         brainKeyTrouble = nil
+        brainKeyProvider = nil
+        starCard.reopen()
         leave = ArisSetupLeave()
         handBackTo = nil
         quitting = false

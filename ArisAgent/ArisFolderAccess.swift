@@ -43,4 +43,15 @@ enum ArisFolderAccess {
     static func touch(_ folder: URL) -> Bool {
         (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) != nil
     }
+
+    /// 설정's answer for the folder: the touch (macOS asks the first time) where SIP guards files. With its file
+    /// protection off every folder opens with no grant (VM run 2026-11-19: "3 file folders · Allowed"), so the touch
+    /// says nothing and macOS's own decision for Aris is read instead (`decision`, ArisTCCReading); unread is no.
+    static func granted(_ folder: URL, filesProtected: Bool = ArisSystemIntegrity.protectsFiles, touch: (URL) -> Bool = touch,
+                        decision: (String) -> Bool? = { name in ArisTCCReading.allowed(service: ArisTCCReading.folderService(name), clients: ArisTCCReading.clients,
+                                                                                          database: ArisTCCReading.userDatabase) }) -> Bool {
+        let opened = touch(folder)
+        guard !filesProtected else { return opened }
+        return decision(folder.lastPathComponent) ?? false
+    }
 }

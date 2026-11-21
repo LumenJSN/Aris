@@ -98,8 +98,9 @@ enum ArisAutoOutcome: Equatable {
 }
 
 enum ArisAutoMode {
-    /// `defaults write aris-agent arisAutoCheckOff -bool true`: the whole check off, every card as before (to tell a
-    /// fault of the check from one of the gate). There is no setting for it.
+    /// `defaults write ~/Library/Preferences/com.lumenjsn.aris arisAutoCheckOff -bool true` and a restart of the helper (it
+    /// reads the app's id's plain file, never the app's container, and never a domain called aris-agent): the whole check
+    /// off, every card as before (to tell a fault of the check from one of the gate). There is no setting for it.
     static let offKey = "arisAutoCheckOff"
     nonisolated(unsafe) static var isOff: () -> Bool = { UserDefaults.standard.bool(forKey: offKey) }
 
@@ -136,7 +137,10 @@ enum ArisAutoMode {
 
     /// `argvNow`: the call as it stands when the answer arrives (nil: it is gone). The ledger's word comes back too.
     /// Only a match for the very call that was checked runs; everything else stops.
-    static func after(_ run: ArisAutoRun, ticket: ArisAutoTicket, argvNow: [String]?, book: ArisAutoBook) -> (outcome: ArisAutoOutcome, ledger: String) {
+    /// `plainlyAsked`: the user's own words name this kind of add and point at where its items are (ArisPlainAsk): an
+    /// unsure about such a call is today's card, which shows every item, never "시키지 않은 일" (eleventh VM run, K1, K2).
+    static func after(_ run: ArisAutoRun, ticket: ArisAutoTicket, argvNow: [String]?, book: ArisAutoBook,
+                      plainlyAsked: Bool = false) -> (outcome: ArisAutoOutcome, ledger: String) {
         let stop = { (why: ArisAutoStop, ledger: String) -> (ArisAutoOutcome, String) in
             book.noteStop()
             return (.stop(why), ledger)
@@ -146,6 +150,7 @@ enum ArisAutoMode {
         case .failed: return stop(.notChecked, "failed")
         case .answered(let text):
             guard let verdict = ArisAutoCheck.parse(text) else { return stop(.notChecked, "malformed") }
+            if verdict == .unsure, plainlyAsked { return stop(.notChecked, "unsure (their words ask for this kind of add: today's card)") }
             guard verdict == .match else { return stop(.notAsked, verdict.name) }
             guard book.redeem(ticket, fingerprint: argvNow.map(ArisAutoAction.fingerprint) ?? "") else {
                 return stop(.notChecked, "match not used (the call changed, or its ticket was spent)")

@@ -19,7 +19,8 @@ struct ArisNotchRoot: View {
     @ObservedObject var navigation = ArisNotchNavigation.shared
     @ObservedObject var music = ArisNowPlaying.shared
     @ObservedObject var aris = ArisNotchState.shared
-    @ObservedObject var claude = ClaudeStore.shared
+    /// What the root draws from Claude Code's store, deduplicated: a hook event that changes nothing here is not seen.
+    @ObservedObject var claudeFeed = ArisNotchClaudeState.shared
     /// The notice pill (Aris's news, deadlines, Claude Code's notices) hangs under this notch when it shows here.
     @ObservedObject var notices = ArisNoticeCenter.shared
     @ObservedObject var timer = ArisTimerModel.shared
@@ -28,19 +29,21 @@ struct ArisNotchRoot: View {
     /// Re-draws the notch when the hidden look changes (ArisDuskLookGate).
     @ObservedObject var duskLook = ArisDuskLookGate.shared
 
-    @Default(.enableGestures) var gesturesOn
-    @Default(.closeGestureEnabled) var closeGestureOn
-    @Default(.enableHorizontalMediaGestures) var mediaGesturesOn
-    @Default(.gestureSensitivity) var sensitivity
-    @Default(.enableHaptics) var hapticsOn
-    @Default(.openNotchOnHover) var openOnHover
-    @Default(.minimumHoverDuration) var hoverDelay
-    @Default(.shelfEnabled) var shelfOn
-    @Default(.sneakPeekStyles) var peekStyle
-    @Default(.cornerRadiusScaling) var cornerScaling
-    @Default(.arisMuted) var muted
+    /// The preferences it draws from, read once per change (ArisNotchPrefsState) instead of on every evaluation.
+    @ObservedObject var prefs = ArisNotchPrefsState.shared
+    var gesturesOn: Bool { prefs.current.gesturesOn }
+    var closeGestureOn: Bool { prefs.current.closeGestureOn }
+    var mediaGesturesOn: Bool { prefs.current.mediaGesturesOn }
+    var sensitivity: CGFloat { prefs.current.sensitivity }
+    var hapticsOn: Bool { prefs.current.hapticsOn }
+    var openOnHover: Bool { prefs.current.openOnHover }
+    var hoverDelay: TimeInterval { prefs.current.hoverDelay }
+    var shelfOn: Bool { prefs.current.shelfOn }
+    var peekStyle: SneakPeekStyle { prefs.current.peekStyle }
+    var cornerScaling: Bool { prefs.current.cornerScaling }
+    var muted: Bool { prefs.current.muted }
     /// 쉬는 동안 별 보이기: watched so the closed notch is drawn again the moment it is switched (starMayRest reads it).
-    @Default(.arisRestStar) var restStarShown
+    var restStarShown: Bool { prefs.current.restStarShown }
     /// For the closed notch at ArisVNotch's sizes (ArisNotchRoot+VNotch): the glass rest height, what the star tells
     /// at rest.
     @Environment(\.accessibilityReduceTransparency) var reduceTransparency
@@ -115,7 +118,7 @@ struct ArisNotchRoot: View {
     var arisTasks: Bool { closed && !hidden && (aris.hasUnfinishedTask || aris.taskJustFinished) }
     var timerShowing: Bool { closed && !hidden && timer.isRunning }
     var claudeShowing: Bool {
-        closed && !hidden && ArisNotchDecisions.claudeShowing(live: claude.isLive, sessions: claude.hasSessions, liveActivity: navigation.musicLiveActivityEnabled,
+        closed && !hidden && ArisNotchDecisions.claudeShowing(live: claudeFeed.current.isLive, sessions: claudeFeed.current.hasSessions, liveActivity: navigation.musicLiveActivityEnabled,
                                                               playing: music.isPlaying, idle: music.isPlayerIdle)
     }
     var ours: Bool { arisTurn || arisTasks || timerShowing || claudeShowing }
@@ -302,7 +305,8 @@ struct ArisNotchRoot: View {
     @ViewBuilder
     private var content: some View {
         VStack(spacing: 0) {
-            top
+            // Over the page: a tip under a header icon (who needs the user, by the </>) is drawn on top of it.
+            top.zIndex(1)
             if isOpen { page }
             if closed && !hidden && peekStyle == .standard && musicPeekHere {
                 ArisMusicPeekRow(width: notchWidth + 2 * ear)
@@ -311,7 +315,9 @@ struct ArisNotchRoot: View {
         .fixedSize(horizontal: standardPeekHere, vertical: standardPeekHere)
         .modifier(ArisGrowFrame(open: isOpen, grows: grows,
                                 minHeight: navigation.currentView == .claude ? openNotchSize.height : 0,
-                                maxHeight: [.home, .aris].contains(navigation.currentView) ? arisSurfaceMax(screenUUID: vm.screenUUID) : openNotchMaxHeight))
+                                maxHeight: ArisNotchDecisions.growMax(surfacePage: [.home, .aris].contains(navigation.currentView),
+                                                                      claudePage: navigation.currentView == .claude,
+                                                                      surfaceMax: arisSurfaceMax(screenUUID: vm.screenUUID), fixedMax: openNotchMaxHeight)))
     }
 
     @ViewBuilder

@@ -14,14 +14,6 @@ import os
 
 private let log = Logger(subsystem: "com.lumenjsn.aris", category: "turn")
 
-extension ArisJobSpec {
-    /// The same job with `request` as what it is asked: the user's words and the files they gave with them.
-    func asking(_ request: String) -> ArisJobSpec {
-        ArisJobSpec(title: title, prompt: request.trimmingCharacters(in: .whitespacesAndNewlines), assignee: assignee, cwd: cwd, appHint: appHint,
-                    brain: brain)
-    }
-}
-
 extension ArisController {
     /// A local reply: on the notch, in the history the AI reads and the 기록 list, then said. `shown`: what the notch
     /// shows and the voice reads when it isn't what is remembered (the to-do list itself, whose titles stay out of
@@ -29,15 +21,16 @@ extension ArisController {
     func sayLocal(_ reply: String, heard: String, showing shown: String? = nil) async {
         let said = shown ?? reply
         stats?.firstSound(at: .now)
-        session = session.answering(said)
+        setSession(session.answering(said))
         recordTurn(heard: heard, reply: reply)
         // Said without its way through Settings when the line has a button for that (ArisFixSpeech).
         await speak { await self.speaker.speak(ArisFixSpeech.spoken(said)) }
     }
 
     /// The time, the date, a timer request or opening an app, done; what to say about it. Nil when it is none of
-    /// these, or names an app this Mac doesn't have (the AI's, then).
-    func doOnMac(_ intent: ArisIntent, korean: Bool) async -> String? {
+    /// these, or names an app this Mac doesn't have (the AI's, then). `recorded`: a change goes in the record of what
+    /// Aris did (the day in review, undo); the setup's practice is never recorded (ArisOnboardingPractice).
+    func doOnMac(_ intent: ArisIntent, korean: Bool, recorded: Bool = true) async -> String? {
         switch intent {
         case .tellTime, .tellDate:
             return intent.acknowledgement(korean: korean)
@@ -55,13 +48,13 @@ extension ArisController {
         case .quietHours(let stored):
             return setQuietHours(stored, korean: korean)
         default:
-            return changeTimer(intent, korean: korean)
+            return changeTimer(intent, korean: korean, recorded: recorded)
         }
     }
 
     /// A spoken timer request against the timer as it is (ArisTimerChange): "타이머 멈춰" with none running says so
     /// and changes nothing.
-    private func changeTimer(_ intent: ArisIntent, korean: Bool) -> String? {
+    private func changeTimer(_ intent: ArisIntent, korean: Bool, recorded: Bool) -> String? {
         let timer = ArisTimerModel.shared
         guard let change = ArisTimerChange.plan(intent, running: timer.isRunning, paused: timer.state?.isPaused == true, korean: korean) else { return nil }
         guard change.applies else { return change.reply }
@@ -74,16 +67,19 @@ extension ArisController {
         case .addTime(let seconds): timer.add(seconds)
         default: break
         }
-        if let logged = change.logged { ArisAgentClient.logLocalChange(kind: logged.kind, summary: logged.summary) }
+        if recorded, let logged = change.logged { ArisAgentClient.logLocalChange(kind: logged.kind, summary: logged.summary) }
         return change.reply
     }
 
     /// "할 일 추가해 …": how it ended. A saved item is logged with its undo.
     func addTodo(_ item: String) async -> ArisTodoAdded {
+        // When it is due, read from the words the same way the saved item's date was (ArisTodoModel.draft(from:)), so
+        // the reply says the time it was stored with.
+        let asked = ArisTodoModel.draft(from: item)
         let outcome = await ArisTodoModel.shared.addSaying(item)
         if case .saved(let title, let id) = outcome {
             ArisAgentClient.logLocalChange(kind: "todo-add", summary: "할 일 추가: \(title)", id: id)
-            return .saved(title: title)
+            return .saved(title: title, due: asked.due, hasTime: asked.hasTime)
         }
         return outcome.told
     }
@@ -91,8 +87,10 @@ extension ArisController {
     /// "<…> 다 했어" for the open item it names: on a hands-free turn asked on a card first (naming the item), then
     /// ticked, and said from whether it was.
     func finishTodo(_ found: ArisTodoModel.Finishable, heard: String, korean: Bool) async -> String {
-        if turnHandsFree, !(await confirmHandsFree(korean ? "할 일 완료" : "Finish to-do", found.shown)) {
-            return await saidNotDone(korean: korean)
+        if turnHandsFree {
+            // Nil: the turn ended over the card; nothing is ticked, shown or said.
+            guard let yes = await confirmHandsFree(korean ? "할 일 완료" : "Finish to-do", found.shown) else { return "" }
+            if !yes { return await saidNotDone(korean: korean) }
         }
         guard !Task.isCancelled else { return "" }
         let reply: String

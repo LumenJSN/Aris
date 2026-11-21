@@ -10,6 +10,7 @@
 
 import AppKit
 import Defaults
+import os
 import KeyboardShortcuts
 import SwiftUI
 
@@ -36,7 +37,8 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
     private var activeDisplayObserver: NSObjectProtocol?
     private var modeWatch: Task<Void, Never>?
     private var lastMode: DisplayMode?
-    private var autoClose: Task<Void, Never>?
+    /// While the toggle shortcut's notch is open: a click in another app closes it (the user acted elsewhere).
+    private var clickElsewhere: Any?
 
     /// Read before the launch's Apple event is gone: a login-item launch never resumes the first-run guide.
     private var launchedAsLoginItem = false
@@ -45,6 +47,18 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         // Before anything reads a preference: an install from before keeps the wake word and the brain it ran on.
         ArisFirstRun.pinEarlierDefaults(in: .standard, stored: ArisFirstRun.storedKeys())
         launchedAsLoginItem = ArisOnboardingWatch.launchedAsLoginItem()
+        purgeLeakedHTTPCacheOnce()
+    }
+
+    /// Before any request is made: the HTTP cache an earlier build wrote (it held requests to the helper, a saved key's
+    /// among them: tenth VM run, item 1) is removed, once. The log line holds a count only.
+    private func purgeLeakedHTTPCacheOnce() {
+        let key = "didPurgeLeakedHTTPCache_v1"
+        guard !UserDefaults.standard.bool(forKey: key), let bundle = Bundle.main.bundleIdentifier,
+              let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
+        let removed = ArisNoStore.purge(caches: caches, bundle: bundle)
+        UserDefaults.standard.set(true, forKey: key)
+        Log.app.notice("removed the old HTTP cache files (\(removed, privacy: .public)); Aris keeps no HTTP cache now")
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -59,6 +73,7 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         retireOldSwitches()
         connectKeychain()
         migrateDisplayModeIfNeeded()
+        migrateHearingIfNeeded()
         startSubsystems()
         observeSystem()
         registerShortcuts()
@@ -86,8 +101,16 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         ArisOnboardingGuide.shared.showAtLaunch(loginItem: launchedAsLoginItem)
         // An Aris.app with no helper, or a macOS too old to talk to it, is said plainly (audit no-agent-no-os-check).
         ArisPrerequisiteNotice.sayAtLaunch()
+        // A permission the features need that was on at the last launch and is off now (an update can drop them): said
+        // once, with the button to its list (ArisPermissionDrift).
+        ArisPermissionDriftLive.checkAtLaunch()
         // The helper inside this app is made the one that runs (a new Mac, a moved app, an install made the old way).
         ArisHelperInstall.shared.atLaunch()
+        // What macOS says about each permission, read now and whenever Aris comes to the front (asks nothing).
+        ArisPermissionCenter.shared.start()
+        // The public build checks for a new version at launch and every 24 hours; any other build has no updater.
+        ArisUpdater.shared.notchOpen = { [weak self] in self?.windows?.anyOpen ?? false }
+        ArisUpdater.shared.start()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -113,7 +136,7 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         ArisOnboardingGuide.shared.closeForQuit()
         windows?.cleanup()
         modeWatch?.cancel()
-        autoClose?.cancel()
+        endClickElsewhere()
     }
 
     // MARK: - Launch steps
@@ -130,6 +153,12 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         ArisKeyFile.secureStore = { ArisKeychain.read($0) }
         ArisKeyFile.isTombstoned = { ArisKeychain.isTombstoned($0) }
         Task.detached(priority: .utility) { await ArisKeychain.migrateFiles() }
+    }
+
+    /// The two "hear with Scribe" keys made one (ArisHearSource): what was in effect stays.
+    private func migrateHearingIfNeeded() {
+        ArisHearSource.migrate(.standard, facts: ArisAIStore.Facts(hasElevenKey: ArisElevenLabs.loadKey() != nil,
+                                                                    whisperLargeInstalled: ArisWhisper.installed(.large)))
     }
 
     private func migrateDisplayModeIfNeeded() {
@@ -165,6 +194,8 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         }
         // The sessions list drops a session whose terminal app has quit (audit claude-1).
         ClaudeStore.shared.runningApps = { Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)) }
+        // ... and a session whose agent's process is gone (its hooks send the pid): a signal 0 asks without touching it.
+        ClaudeStore.shared.processAlive = { pid in kill(pid, 0) == 0 || errno == EPERM }
     }
 
     private func observeSystem() {
@@ -173,9 +204,17 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         observe(app, .selectedScreenChanged) { $0.repositionWindows() }
         observe(app, .notchHeightChanged) { $0.repositionWindows() }
         observe(app, .expandedDragDetectionChanged) { $0.windows?.setupDragDetectors() }
-        let distributed = DistributedNotificationCenter.default()
-        observe(distributed, Notification.Name("com.apple.screenIsLocked")) { $0.windows?.screenLocked() }
-        observe(distributed, Notification.Name("com.apple.screenIsUnlocked")) { $0.windows?.screenUnlocked() }
+        // The lock, as ArisWorld hears it (one observer for every feature); the stall watch's beat runs only while the
+        // displays are awake.
+        ArisWorld.shared.subscribe([.screen]) { [weak self] change, _ in
+            switch change {
+            case .screenLocked(true): self?.windows?.screenLocked()
+            case .screenLocked(false): self?.windows?.screenUnlocked()
+            case .displaysAsleep(true): ArisStallWatch.shared.stop()
+            case .displaysAsleep(false): ArisStallWatch.shared.start()
+            default: break
+            }
+        }
     }
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ action: @escaping @MainActor @Sendable (ArisAppDelegate) -> Void) {
@@ -223,8 +262,9 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Opens the notch under the pointer (all displays) or the primary one, closing it again after 3 s; an open one
-    /// closes.
+    /// Opens the notch under the pointer (all displays) or the primary one; an open one closes. Opened this way it
+    /// stays until the shortcut closes it, the user clicks in another app, or its own hover rules put it away (it used
+    /// to close after 3 s, under the user's eyes).
     private func toggleNotch() {
         // The first-run guide holds the notch: the hot key brings its step back (never silently refused).
         if ArisOnboardingGuide.shared.showing { return ArisOnboardingGuide.shared.surface() }
@@ -237,15 +277,21 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         } else {
             model = windows.primaryViewModel
         }
-        autoClose?.cancel()
-        autoClose = nil
+        endClickElsewhere()
         guard model.notchState == .closed else { return model.close() }
         guard model.open() else { return }
-        autoClose = Task { [weak model] in
-            try? await Task.sleep(for: ArisLaunchRules.toggleAutoClose)
-            guard !Task.isCancelled else { return }
-            model?.close()
+        // A global monitor sees only clicks in other apps, never one on the notch itself.
+        clickElsewhere = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self, weak model] _ in
+            MainActor.assumeIsolated {
+                self?.endClickElsewhere()
+                if ArisLaunchRules.toggleClosesOnClickElsewhere(open: model?.notchState == .open) { model?.close() }
+            }
         }
+    }
+
+    private func endClickElsewhere() {
+        if let clickElsewhere { NSEvent.removeMonitor(clickElsewhere) }
+        clickElsewhere = nil
     }
 
     /// Inline style: key-down toggles the inline expansion, key-up the peek. Standard: key-down shows the peek for

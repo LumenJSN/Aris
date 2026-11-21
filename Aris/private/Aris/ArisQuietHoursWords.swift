@@ -171,7 +171,10 @@ extension ArisQuietSettingsRows {
         let options = ArisQuietHours.choices.map { ArisSettingOption(id: $0, title: ArisQuietCopy.hoursLabel($0, english: false)) }
             + [ArisSettingOption(id: ArisQuietSpan.custom, title: ArisQuietHoursCopy.customLabel)]
         let choice = ArisSettingItem(id: "aris.quietHours", icon: .symbol("moon"), title: ArisQuietCopy.hoursTitle(english: false),
-                                     desc: ArisQuietCopy.hoursDesc(english: false), control: .choice(.quietHours, options, selected: picked))
+                                     desc: ArisQuietCopy.hoursDesc(english: false),
+                                     // A dropdown, like 시작 and 끝 under it: five segments ("10pm–7am", "Custom") ran
+                                     // out of the card in English at the smallest window.
+                                     control: .menu(.quietHours, options, selected: picked))
         guard picked == ArisQuietSpan.custom, let edges = ArisQuietSpan.edges(stored) else { return [choice] }
         let menu = { (chosen: Int) in
             ArisQuietSpan.menuTimes(including: chosen).map { ArisSettingOption(id: ArisQuietSpan.clock($0), title: ArisQuietHoursCopy.menuLabel($0)) }

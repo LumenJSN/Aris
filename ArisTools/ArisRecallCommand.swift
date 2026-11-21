@@ -17,28 +17,13 @@
 import Foundation
 
 func recall(_ arguments: [String]) {
-    guard let call = ArisWorkRecallWords.parse(arguments) else { fail(ArisWorkRecallWords.usage) }
-    let store = ArisWorkStore(memory: ArisMemoryStore.at(arisFolder))
-    guard store.isOn else { return print("(learning from work is switched off in Settings › 기억: nothing is recorded or recalled)") }
-    if call.stats {
-        // Numbers only: counts of turns, steps, seconds and tokens, and each lesson's own line.
-        return print(ArisWorkStats.text(ArisWorkStats.summary(episodes: store.episodes(tainted: true, limit: ArisWorkStore.capacity), lessons: store.lessons())))
-    }
-    if let id = call.lesson {
-        guard let lesson = store.lessons(expired: true).first(where: { $0.id == id }) else { fail("no lesson L\(id)") }
-        return print(ArisWorkRecall.detail(lesson))
-    }
-    if let id = call.episode {
-        guard let episode = store.episode(id: id) else { fail("no episode E\(id)") }
-        // One from a tainted turn is shown only when it was asked for as that.
-        guard episode.clean || call.tainted else {
-            fail("E\(id) is from a turn that read outside content (\(episode.taint.mark)). `recall --id E\(id) --tainted` shows it, and this turn then counts as having read outside text.")
-        }
-        return print(ArisWorkRecall.detail(episode))
-    }
-    let all = store.episodes(tainted: call.tainted)
-    let found = ArisWorkRecall.matching(all, query: call.query)
-    let hidden = call.tainted ? 0 : ArisWorkRecall.matching(store.episodes(tainted: true), query: call.query).filter { !$0.clean }.count
-    let lessons = ArisWorkRecall.matching(store.lessons(), query: call.query)
-    print(ArisWorkRecall.index(lessons: Array(lessons.prefix(call.limit)), episodes: Array(found.prefix(call.limit)), hiddenTainted: hidden))
+    // The code the agent runs in its own process for the same call (ArisCapabilityLocal).
+    emit(ArisCapabilityLocal.recall(arguments, folder: arisFolder))
+}
+
+/// A shared command's answer as this program's: what it printed, and `fail`'s exit for a failure.
+func emit(_ output: ArisCapabilityLocal.Output) {
+    if !output.stdout.isEmpty { FileHandle.standardOutput.write(Data(output.stdout.utf8)) }
+    if !output.stderr.isEmpty { FileHandle.standardError.write(Data(output.stderr.utf8)) }
+    if output.status != 0 { exit(output.status) }
 }

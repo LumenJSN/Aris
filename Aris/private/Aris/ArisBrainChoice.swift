@@ -63,7 +63,7 @@ enum ArisBrainChoice {
     }
 
     /// The user has no brain of their own and the agent says none is set up: whatever the preference reads is only the
-    /// key's default (Codex), which nobody chose (VM run 2026-11-10, bug 7: a new Mac with no AI showed Codex as chosen
+    /// key's default (ArisBrain.standard), which nobody chose (VM run 2026-11-10, bug 7: a new Mac with no AI showed Codex as chosen
     /// and its first failure blamed GPT). Nothing is stored or changed here; only what is shown and said.
     static func nobodyChose(stored: String?, ready: [ArisBrain: Bool]?) -> Bool {
         stored.flatMap(ArisBrain.init(rawValue:)) == nil && noneReady(ready)
@@ -76,10 +76,14 @@ enum ArisBrainChoice {
 
     /// The line a failed turn shows. The agent's "<AI> isn't set up on this Mac" names the AI it was asked for; when
     /// that AI is only the default, the line says what is true for the user instead: no AI is ready here (with the same
-    /// way to Settings › AI 서비스). A brain the user stored keeps its own line, as does every other failure.
-    static func failureLine(_ line: String, stored: String?, ready: [ArisBrain: Bool]?) -> String {
-        guard nobodyChose(stored: stored, ready: ready), let trouble = ArisBrainTrouble.named(in: line), trouble.brain != nil else { return line }
-        return ArisBrainTrouble(brain: nil, missing: .any).line(korean: line == trouble.line(korean: true))
+    /// way to Settings › AI 서비스). A brain the user stored keeps its own line, as does every other failure. Any of these
+    /// lines is Aris's own, so it is said in the UI's language (`english`), whatever language the request (and so the
+    /// agent's line) was in: fourth VM run, a Korean "지금 쓸 수 있는 AI가 없어요" over the English UI's "Open Settings ›
+    /// AI services" button.
+    static func failureLine(_ line: String, stored: String?, ready: [ArisBrain: Bool]?, english: Bool) -> String {
+        guard let trouble = ArisBrainTrouble.named(in: line) else { return line }
+        guard nobodyChose(stored: stored, ready: ready), trouble.brain != nil else { return trouble.line(korean: !english) }
+        return ArisBrainTrouble(brain: nil, missing: .any).line(korean: !english)
     }
 }
 

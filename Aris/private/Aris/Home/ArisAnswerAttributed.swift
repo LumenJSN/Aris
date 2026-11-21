@@ -79,7 +79,15 @@ enum ArisAnswerAttributed {
         text.enumerateAttribute(markerTab, in: NSRange(location: 0, length: text.length), options: .reverse) { value, range, _ in
             if value != nil { plain.replaceCharacters(in: range, with: " ") }
         }
-        return (plain as String).replacingOccurrences(of: "\u{2028}", with: "\n")
+        return (plain as String).replacingOccurrences(of: "\u{2028}", with: "\n").replacingOccurrences(of: wordJoiner, with: "")
+    }
+
+    /// A number and the Korean counter written right after it stay on one line ("35일", "3시", "2개"): a word joiner
+    /// (U+2060, no width) between the digit and the syllable. Tenth VM run: a line ended on "35" and the next began
+    /// with "일 남았어요". A copy leaves the joiner out (plainText).
+    static let wordJoiner = "\u{2060}"
+    static func keptTogether(_ text: String) -> String {
+        text.replacingOccurrences(of: #"(?<=\d)(?=[가-힣])"#, with: wordJoiner, options: .regularExpression)
     }
 
     /// 21 points, or the widest marker and a gap when a number is wider ("10." is about 22.6 at 15 points).
@@ -153,7 +161,7 @@ enum ArisAnswerAttributed {
             } else if intent.contains(.emphasized) {
                 runFont = ArisFont.system(font.pointSize, weight: weight, italic: true)
             }
-            let piece = String(parsed[run.range].characters).replacingOccurrences(of: "\n", with: "\u{2028}")
+            let piece = keptTogether(String(parsed[run.range].characters)).replacingOccurrences(of: "\n", with: "\u{2028}")
             out.append(NSAttributedString(string: piece, attributes: [.font: runFont, .foregroundColor: runColor]))
         }
         return out

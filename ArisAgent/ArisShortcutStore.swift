@@ -4,7 +4,8 @@
 //
 //  Where learned shortcuts live (aris/shortcuts.json, private) and how they run:
 //  each saved command, checked again against the replayable shapes, through zsh
-//  with a short time limit. A shortcut that fails is forgotten.
+//  with a short time limit. A shortcut that fails is forgotten. Listed and deleted in 설정 › 기억 › 저장된 단계
+//  (ArisShortcutsRoute) and removed by a memory wipe (ArisDataRoute).
 //
 
 import Foundation
@@ -20,18 +21,36 @@ final class ArisShortcutStore {
         lock.withLock { load()[key] }
     }
 
+    /// Requests handled once with only replayable commands, waiting for a second time (ArisShortcuts.sighted).
+    private var seen: [String: [String]] = [:]
+
+    /// Saved the second time the same words are handled with the same commands (never one-off phrasing).
     func learn(_ commands: [String], reply: String, as key: String) {
-        let learned = ArisShortcuts.Learned(commands: commands, reply: reply, learned: ISO8601DateFormatter().string(from: Date()))
-        lock.withLock { save(ArisShortcuts.saving(learned, as: key, in: load())) }
-        FileHandle.standardError.write(Data("aris-agent: learned a shortcut (\(commands.count) command(s))\n".utf8))
+        let saved = lock.withLock { () -> Bool in
+            let sighting = ArisShortcuts.sighted(commands, as: key, seen: seen)
+            seen = sighting.seen
+            guard sighting.save else { return false }
+            let learned = ArisShortcuts.Learned(commands: commands, reply: ArisShortcuts.keptReply(reply), learned: ISO8601DateFormatter().string(from: Date()))
+            save(ArisShortcuts.saving(learned, as: key, in: load()))
+            return true
+        }
+        if saved { FileHandle.standardError.write(Data("aris-agent: learned a shortcut (\(commands.count) command(s))\n".utf8)) }
     }
 
-    func forget(_ key: String) {
+    @discardableResult
+    func forget(_ key: String) -> Bool {
         lock.withLock {
             var shortcuts = load()
-            shortcuts.removeValue(forKey: key)
+            seen.removeValue(forKey: key)
+            guard shortcuts.removeValue(forKey: key) != nil else { return false }
             save(shortcuts)
+            return true
         }
+    }
+
+    /// For 설정 › 기억 (ArisShortcutsRoute): every shortcut, and forgetting one.
+    var access: ArisShortcutsAccess {
+        ArisShortcutsAccess(all: { [self] in lock.withLock { load() } }, forget: { [self] in forget($0) })
     }
 
     /// Runs every command in order; false as soon as one is refused or fails.

@@ -794,7 +794,7 @@ private func fixDeskKeyLayoutTests() {
     check(map == ["q": 0, "a": 12, "w": 6, "z": 13], "desk-10: the layout's map is each character to the first key that types it, lowercased")
     check(!ArisKeyLayout.characterKeys.contains(36) && !ArisKeyLayout.characterKeys.contains(48) && !ArisKeyLayout.characterKeys.contains(49) && ArisKeyLayout.characterKeys.contains(10),
           "desk-10: the character keys are the main block (the ISO key too), never return, tab or space")
-    check(fixSource("ArisTools/ArisWindows.swift").contains("ArisKeyChord.parse(written, layout: ArisKeyLayout.current)")
+    check(fixSource("ArisAgent/ArisNativeInput.swift").contains("chord(text, keyboard: ArisKeyboardLive.state())")
           && fixSource("ArisAgent/ArisInsert.swift").contains("ArisKeyLayout.current(command: true)[\"v\"] ?? 9")
           && fixSource("ArisTools/ArisNoteCommand.swift").contains("ArisKeyChord.parse(key, layout: ArisKeyLayout.current)"),
           "desk-10: the keys tool, a note's keys and dictation's paste all go by the layout in use")

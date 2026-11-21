@@ -23,7 +23,8 @@ final class ArisAgentRunner {
         registry.withLock {
             // This launch's nonce in every key: a question id from an earlier run never names a runner now.
             let key = ArisLaunch.sharedKey(brain: ArisImageRouting.runnerName(brain, sealed: sealed, handsFree: handsFree), model: model)
-            if let runner = runners[key] { return runner }
+            // Its process gone (a crash, a time limit, the idle stop): the warm spare answers instead of a cold start.
+            if let runner = runners[key] { return swapIn(key, current: runner, fresh: false) ?? runner }
             let runner = ArisAgentRunner(key: key, brain: brain, driver: driver(for: brain, model: model, sealed: sealed, handsFree: handsFree))
             runners[key] = runner
             return runner
@@ -38,7 +39,11 @@ final class ArisAgentRunner {
     /// without changes: decide() then finds nobody waiting.
     static func shownMatches(_ id: String, allow: Bool, detail: String?, full: String?, edits: [String: String] = [:],
                              shown: String? = nil) -> Bool {
-        registry.withLock {
+        // A card a job waited on before the helper restarted, asked again (ArisRecoveredCards).
+        if let card = ArisRecoveredCards.shared.card(id) {
+            return ArisShownCard.matches(allow: allow, detail: detail, full: full, expectedDetail: card.detail, expectedFull: card.full, edits: edits, shown: shown)
+        }
+        return registry.withLock {
             if let proposal = proposals[id] {
                 return ArisShownCard.matches(allow: allow, detail: detail, full: full, expectedDetail: ArisEscalation.describe(proposal.scope),
                                              expectedFull: nil, edits: edits, shown: shown)
@@ -53,6 +58,7 @@ final class ArisAgentRunner {
     /// nobody is waiting for it.
     static func decide(_ id: String, allow: Bool, edits: [String: String] = [:], unanswered: Bool = false) -> Bool {
         expireParked()
+        if ArisRecoveredCards.shared.answer(id, allow: allow && !unanswered) { return true }
         if let scope = registry.withLock({ takeProposal(id) }) {
             if allow { permissions.grant(scope) }
             writeAudit(auditJSON(["answer": allow ? "yes" : "no", "question": id, "proposal": ArisEscalation.describe(scope)]), key: "gate")
@@ -64,6 +70,8 @@ final class ArisAgentRunner {
             return questions.removeValue(forKey: id)
         }) else { return false }
         runner.answered(String(id.dropFirst(runner.key.count + 1)), allow: allow, edits: edits, unanswered: unanswered)
+        // A job's card put in the inbox when its stream went (ArisTaskFollow.detach) is settled: it leaves the inbox.
+        if runner.isTask { ArisInbox.removeQuestions([id], file: ArisInbox.file(home: home)) }
         return true
     }
 
@@ -80,6 +88,7 @@ final class ArisAgentRunner {
     /// Whether `id` (as the app got it) still waits for the user: a parked card that expired never shows.
     static func isWaiting(_ id: String) -> Bool {
         expireParked()
+        if ArisRecoveredCards.shared.isWaiting(id) { return true }
         return registry.withLock {
             if let proposal = proposals[id] { return Date().timeIntervalSince(proposal.at) <= ArisApprovalQueue.lifetime }
             return questions[id] != nil
@@ -95,6 +104,8 @@ final class ArisAgentRunner {
     /// Every parked question older than a day is a no (the job carries on without it). Checked by wall clock, also
     /// whenever the app asks: a timer's day doesn't count the hours the Mac slept.
     private static func expireParked() {
+        // A card asked again after a restart expires the same way (ArisRecoveredCards).
+        ArisRecoveredCards.shared.expire()
         let expired = registry.withLock { () -> [(String, ArisAgentRunner)] in
             proposals = proposals.filter { Date().timeIntervalSince($0.value.at) <= ArisApprovalQueue.lifetime }
             return approvals.expired(now: Date()).compactMap { id in
@@ -124,12 +135,15 @@ final class ArisAgentRunner {
     /// Antigravity is sealed.
     /// `teammate`: the teammate whose job it is (its id): the log names it, and its rows show its face.
     /// `handsFree`: a hands-free job for Claude: the sealed, hands-free Claude in a process of its own (no spare).
+    /// `heardHandsFree`: the job was heard hands-free (on any brain): its brain keeps no session on disk, so it can't be
+    /// reopened after a restart (it starts again, told what was done), and it never takes a spare (whose thread is kept).
     static func task(brain requested: ArisBrain, model requestedModel: String, title: String, job: String? = nil, untrusted: Bool = false,
-                     teammate: ArisTeammate? = nil, handsFree: Bool = false, helper: String? = nil) -> ArisAgentRunner? {
+                     teammate: ArisTeammate? = nil, handsFree: Bool = false, heardHandsFree: Bool = false, helper: String? = nil,
+                     fresh: Bool = false) -> ArisAgentRunner? {
         // The AI asked for when it can run here, else the first that can. When none can, the asked one stays: its
         // first question then answers with what is missing (ArisBrainTrouble).
         let brain = ArisJobBrain.pick(requested, untrusted: untrusted, usable: ArisSealedOneShot.available) ?? requested
-        let model = brain == requested ? requestedModel : brain.model(tier: .work)
+        let model = brain == requested ? requestedModel : ArisThinking.jobModel(brain, auto: brain.model(tier: .work), choices: ArisModelChoiceBox.shared.current)
         return registry.withLock {
             if let job, jobs.isCancelled(job) { return nil }
             let runner: ArisAgentRunner
@@ -151,12 +165,20 @@ final class ArisAgentRunner {
                 runner.marksFromStart = ArisJobBrain.marksFromStart(plan.brain, untrusted: true)
             } else {
                 // A process started ahead of time (POST /warm) skips the seconds a new one takes to start.
-                runner = spares.removeValue(forKey: brain.rawValue + "/" + model) ?? newTask(brain: brain, model: model)
+                // A job taken back after a restart never takes one: it reopens its own session (`fresh`).
+                runner = (fresh || heardHandsFree ? nil : spares.removeValue(forKey: brain.rawValue + "/" + model)) ?? newTask(brain: brain, model: model)
+            }
+            if heardHandsFree || handsFree {
+                (runner.driver as? ArisClaudeDriver)?.forgetsSession = true
+                (runner.driver as? ArisCodexDriver)?.forgetsThread = true
             }
             runner.taskTitle = title
             runner.taskTeammate = teammate
             runner.taskHelper = helper
             runner.taskUntrusted = untrusted
+            runner.taskJob = job
+            runner.taskModel = model
+            runner.taskHandsFree = handsFree
             runners[runner.key] = runner
             if let job { _ = jobs.register(job, owner: runner) }
             return runner
@@ -164,7 +186,12 @@ final class ArisAgentRunner {
     }
 
     /// Background tasks by the app's job id, and the jobs cancelled this launch (guarded by `registry`).
-    nonisolated(unsafe) private static var jobs = ArisJobBook<ArisAgentRunner>()
+    nonisolated(unsafe) private static var jobs = ArisJobBook<ArisAgentRunner>(cancelledBefore: {
+        ArisTaskJournal.state(job: $0, home: FileManager.default.homeDirectoryForCurrentUser.path)?.ending == .cancelled
+    })
+
+    /// A runner of this launch has job `job` (POST /tasks).
+    static func hasJob(_ job: String) -> Bool { registry.withLock { jobs.isRunning(job) } }
 
     /// The app cancelled job `job` (POST /cancel). Always recorded, so a job whose cancel arrives first is refused when
     /// it asks; a running one is cancelled now.
@@ -172,6 +199,22 @@ final class ArisAgentRunner {
         let runner = registry.withLock { jobs.cancel(job) }
         Self.writeAudit(auditJSON(["answer": "cancelled", "question": "job " + job]), key: "app")
         runner?.cancelTask()
+        // A job that waited on a card asked again after a restart has no runner: its journal ends here.
+        if ArisRecoveredCards.shared.cancel(job: job) || runner == nil, ArisTaskJournal.state(job: job, home: home)?.isOpen == true {
+            ArisTaskJournal.append(.ended(.cancelled), job: job, home: home)
+        }
+    }
+
+    /// `aris-tools task add` (ArisTaskSteer): an instruction for running job `job`, into the turn under way when its
+    /// brain takes one (Codex's turn/steer), else held for the job's next turn.
+    static func steer(job: String, note: String) -> ArisTaskSteer.Outcome {
+        guard let runner = registry.withLock({ jobs.owner(of: job) }) else { return .notRunning }
+        let now = runner.queue.sync { () -> Bool in
+            guard runner.pending != nil, let lines = (runner.driver as? ArisSteerableDriver)?.steerLines(ArisTaskSteer.midTurnNote(note)) else { return false }
+            runner.write(lines)
+            return true
+        }
+        return now ? .steered : ArisSteerDesk.shared.hold(note, job: job)
     }
 
     /// One task process per brain and model kept started, ready for the next background task.
@@ -202,8 +245,64 @@ final class ArisAgentRunner {
 
     /// A new conversation (닫기, a long quiet, a past one picked up): every conversation runner drops what its AI
     /// remembers before its next question, so an old topic or an old web page can't leak into the new one.
+    /// A conversation runner with a warm spare (ArisFastLane) is replaced by it instead when its brain can't open a new
+    /// thread in its process (Claude Code, agy): the next question never waits for a process to start.
     static func startNewConversation() {
-        registry.withLock { Array(runners.values) }.forEach { $0.forgetConversation() }
+        registry.withLock { () -> [ArisAgentRunner] in
+            Array(runners).filter { slot, runner in runner.isTask || swapIn(slot, current: runner, fresh: true) == nil }.map(\.value)
+        }.forEach { $0.forgetConversation() }
+    }
+
+    // MARK: - The warm spare (ArisFastLane)
+
+    /// The conversation spares, by the key of the runner each stands in for (guarded by `registry`).
+    nonisolated(unsafe) private static var conversationSpares = ArisSparePool<ArisAgentRunner>()
+
+    /// /warm: the conversation runner of `brain` and `model` starts, and so does its spare.
+    static func warmConversation(brain: ArisBrain, model: String) {
+        shared(brain: brain, model: model).warm()
+        guard ArisFastLane.keepsSpare(brain) else { return }
+        registry.withLock { keepSpare(ArisLaunch.sharedKey(brain: brain.rawValue, model: model), brain: brain, model: model) }
+    }
+
+    /// Called with `registry` held: `slot` gets a started spare unless it has one ready; an unusable one is stopped.
+    private static func keepSpare(_ slot: String, brain: ArisBrain, model: String) {
+        let kept = conversationSpares.keep(slot, brain: brain, model: model, state: { $0.spareState }) { number in
+            ArisAgentRunner(key: ArisLaunch.spareKey(number, brain: brain.rawValue, model: model), brain: brain, driver: driver(for: brain, model: model))
+        }
+        kept.dropped?.stop()
+        kept.made?.warm()
+    }
+
+    /// Called with `registry` held: the spare takes `current`'s place in `slot` when ArisFastLane says so (`fresh`: the
+    /// conversation starts over; else a question is on its way), `current` is stopped and the next spare starts. Nil:
+    /// no swap. Only a conversation slot that /warm gave a spare has one.
+    private static func swapIn(_ slot: String, current: ArisAgentRunner?, fresh: Bool) -> ArisAgentRunner? {
+        guard let lane = conversationSpares.lane(slot),
+              let spare = conversationSpares.swap(slot, current: current, fresh: fresh, state: { $0.spareState }) else { return nil }
+        runners[slot] = spare
+        current?.stop()
+        FileHandle.standardError.write(Data("aris-agent: \(lane.brain.rawValue)/\(lane.model) took its warm spare (\(fresh ? "new conversation" : "its process had ended"))\n".utf8))
+        keepSpare(slot, brain: lane.brain, model: lane.model)
+        return spare
+    }
+
+    /// What the pool reads of this runner (ArisSpareState), published under its own lock as it changes on `queue`.
+    private let spareLock = NSLock()
+    private var published = ArisSpareState()
+    /// Questions handed to ask() whose turn hasn't settled on `queue` yet: busy already.
+    private var asksOnTheWay = 0
+    var spareState: ArisSpareState {
+        spareLock.withLock {
+            var state = published
+            state.busy = state.busy || asksOnTheWay > 0
+            return state
+        }
+    }
+
+    private func publishSpare() {
+        let now = ArisSpareState(alive: process != nil, busy: pending != nil, asked: askedSinceStart)
+        spareLock.withLock { published = now }
     }
 
     static func stopAll() {
@@ -218,7 +317,7 @@ final class ArisAgentRunner {
             for key in mine.keys { runners[key] = nil }
             let spare = spares.filter { $0.value.brain == brain }
             for key in spare.keys { spares[key] = nil }
-            return Array(mine.values) + Array(spare.values)
+            return Array(mine.values) + Array(spare.values) + conversationSpares.remove(brain: brain)
         }
         gone.forEach { $0.stop() }
     }
@@ -234,8 +333,10 @@ final class ArisAgentRunner {
         case .claude: return ArisClaudeDriver(model: model, tools: toolsPath, sealed: sealed && !task, task: task, handsFree: handsFree, scopes: scopes)
         case .codex:
             let engine = ArisComputerEngineChoice.current
-            let codex = ArisCodexDriver(model: model, tools: toolsPath, instructions: ArisAgentPrompt.system(tools: toolsPath, notion: true, gated: true, task: task, computerEngine: engine),
+            let notion = ArisNotionLink.isConnected
+            let codex = ArisCodexDriver(model: model, tools: toolsPath, instructions: ArisAgentPrompt.system(tools: toolsPath, notion: notion, gated: true, task: task, computerEngine: engine),
                                         webSearch: webSearch, task: task)
+            codex.notion = notion
             codex.computerEngine = engine
             codex.scopes = scopes
             return codex
@@ -243,8 +344,16 @@ final class ArisAgentRunner {
             // Any provider with a key, or a local model (the active profile, read now: a changed profile retires these
             // runners, retire(brain:)). Gated like Codex; sealed for the screen and hands-free.
             let profile = ArisAPIActive.profile()
-            let api = ArisAPIDriver(profile: profile, tools: toolsPath, sealed: sealed && !task, task: task, handsFree: handsFree,
-                                    hasKey: { profile.map { ArisAPIActive.key(for: $0) != nil || $0.preset?.needsKey == false } ?? false })
+            let hasKey = { profile.map { ArisAPIActive.key(for: $0) != nil || $0.preset?.needsKey == false } ?? false }
+            // Core 2: the Mind's own loop in `aris-agent mind-brain` (ArisMindBrain), every call through the trust gate.
+            // The fast lane is not a way around the Mind (ARCHITECTURE Part 2: one loop for every turn, which differ in
+            // budget only): a quick turn and a look-up turn take the same driver here, and the tier picks only the model
+            // and effort. A runner keeps the driver it started with, so a change of the switch retires the API and
+            // Claude runners (ArisSwitchEffects; VM run 2026-11-19: a quick runner started before Core 2 kept `api-brain`).
+            if ArisMindBrainDriver.serves(core2: ArisCore2.isOn(), sealed: sealed && !task, handsFree: handsFree, scopes: scopes) {
+                return ArisMindBrainDriver(profile: profile, task: task, hasKey: hasKey)
+            }
+            let api = ArisAPIDriver(profile: profile, tools: toolsPath, sealed: sealed && !task, task: task, handsFree: handsFree, hasKey: hasKey)
             api.scopes = scopes
             return api
         case .antigravity:
@@ -277,6 +386,26 @@ final class ArisAgentRunner {
     private var marksFromStart = false
     /// The brain process whose job file this runner wrote (removed with the process).
     private var jobFilePid: Int32?
+    /// A job's id, model and hands-free runner, its journal (ArisTaskTrail), the job's own words for it, and how it was
+    /// taken back after a restart (ArisTaskRecoveryLive), on `queue`.
+    private var taskJob: String?
+    private var taskModel = ""
+    private var taskHandsFree = false
+    private var trail: ArisTaskTrail?
+    private var jobText: String?
+    private var recovering: ArisTaskRecord.Recovery?
+    /// The turn's clock (ArisSilenceWatch), the stopped turn's leftovers (ArisTurnDrain) and the brain's stdin
+    /// (ArisInputPump), on `queue`.
+    private lazy var silence = ArisSilenceWatch(queue: queue, limits: limits)
+    /// A job's quiet limit outlasts its brain's longest silent tool call (ArisTurnLimits.job(longestSilentCall:)).
+    private var limits: ArisTurnLimits { isTask ? .job(longestSilentCall: driver.longestSilentCall) : .chat }
+    private var drain = ArisTurnDrain()
+    private var pump: ArisInputPump?
+    /// A tool call this turn may have changed something (ArisTurnSideEffects), and what those steps were.
+    private var changed = false
+    private var changedSteps: [String] = []
+    /// How the turn ends when it is not an answer or a plain failure (the journal's ending).
+    private var endingNow: ArisTaskRecord.Ending?
 
     private init(key: String, brain: ArisBrain, driver: ArisBrainDriver, isTask: Bool = false) {
         self.key = key
@@ -285,6 +414,10 @@ final class ArisAgentRunner {
         self.isTask = isTask
         // A Claude's web results need this turn's judge's yes for exactly that call (read on `queue`, where lines are read).
         (driver as? ArisClaudeDriver)?.webAllowed = { [weak self] call in self?.judgeAllowed(call) == true }
+        // Core 2's face: the trust gate's own yes for exactly that call this turn stands in for the judge's (ArisFaceDecisions).
+        (driver as? ArisClaudeDriver)?.faceAllowed = { [weak self] id, function, arguments in
+            self?.faceDecisions.take(id: id, function: function, arguments: arguments) == true
+        }
         // Codex's cua_repl and every brain's `aris-tools desktop` share one per-app memory for the conversation.
         (driver as? ArisCodexDriver)?.computerUse = computerUse
     }
@@ -296,6 +429,12 @@ final class ArisAgentRunner {
     private let desktopSteps = ArisDesktopStepCount()
     /// This turn's desktop actions, each the step it could be saved as (ArisSavedSteps), from POST /desktop-tool.
     let savedSteps = ArisSavedStepsRecorder()
+
+    /// The face's calls the trust gate let run this turn, by Claude Code's tool-use id (POST /mind-call: noteRun).
+    let faceDecisions = ArisFaceDecisions()
+
+    /// The brain is the Mind's own loop (`aris-agent mind-brain`): it asks POST /mind-call itself.
+    var isMindBrain: Bool { driver is ArisMindBrainDriver }
 
     /// The runner whose brain process carries `credential` (ARIS_MCP_TURN); nil for any other.
     /// `aside`: the caller is /aside-tool, the one route an agy job's credential reaches (ArisAside.credentialServes).
@@ -338,14 +477,13 @@ final class ArisAgentRunner {
         taintLock.withLock { lastTaint = now }
     }
 
-    /// How long one answer may take: a background task gets much longer.
-    private var answerLimit: TimeInterval { isTask ? Self.taskTimeout : Self.answerTimeout }
+    /// How long the brain may say nothing before the turn ends (ArisTurnLimits: the clock stops while a card, judge or
+    /// long job holds it); a background task gets much longer.
+    private var answerLimit: TimeInterval { limits.silence }
 
     /// Hears what the AI is doing, pieces of the answer, then the answer or what went wrong (the last call).
     typealias Listener = (ArisAgentReply) -> Void
 
-    private static let answerTimeout: TimeInterval = 120
-    private static let taskTimeout: TimeInterval = 900
     /// A question put to the user that isn't answered by then is a no (a background task's waits a day:
     /// ArisApprovalQueue.lifetime).
     /// A conversation's card waits as long as the app shows it, and a little longer (the app owns the deadline and closes
@@ -363,17 +501,16 @@ final class ArisAgentRunner {
     static var toolsPath: String { ArisAppBundle.toldTools }
 
     private let queue = DispatchQueue(label: "com.lumenjsn.aris.agent")
-    private var process: Process?
+    private var process: Process? { didSet { publishSpare() } }
     /// The sealed process's own empty folder (ArisSealedScratch), while it runs.
     private var scratch: URL?
     private var input: FileHandle?
     private var output = Data()
-    private var pending: Listener?
+    private var pending: Listener? { didSet { publishSpare() } }
     /// Called instead of `pending` when the AI is out of quota before it did anything: another AI can take it.
     private var handOff: ((String) -> Void)?
     /// The AI did something this question (ran a command, used a tool): it's not safe to hand to another AI.
     private var acted = false
-    private var timeout: DispatchWorkItem?
     private var idle: DispatchWorkItem?
     /// While a video or sound conversion runs: the next "still going" line for the notch.
     private var longJobBeat: DispatchWorkItem?
@@ -386,6 +523,8 @@ final class ArisAgentRunner {
     /// The turn's tool calls and its steps that ended with an error, for a job's report (ArisJobWork).
     private var toolCalls = 0
     private var failedSteps = 0
+    /// Aside's last run this turn: it finished with an answer (true) or came back without one (false); nil: none ran.
+    private var delegated: Bool?
     /// A tool that is not a shell command was used (a service, Aside, a skill, the desktop, a changed card run): not a
     /// card for a shell command, which `commands` and `cardAnswers` already hold (ArisSendClaim).
     private var nonShellTools = false
@@ -418,13 +557,18 @@ final class ArisAgentRunner {
     private var askedScopes: [String: ArisActionScope] = [:]
     /// The turn now was heard hands-free (on `queue`; ArisHandsFree).
     private var handsFreeTurn = false
+    /// Who spoke this turn (F1: the app's owner-voice verdict), for Core 2's trust gate.
+    private var speakerTurn = ArisTurnSpeaker.notChecked
     /// Set by startNewConversation(): the next question starts the AI on a new thread.
     private var startsOver = false
     /// The running process has been asked something: a new conversation has something to forget. A process just
     /// started (warm()) has nothing, so it's kept.
-    private var askedSinceStart = false
+    private var askedSinceStart = false { didSet { publishSpare() } }
     /// The connection the current question came on (abandon(owner:)).
     private var pendingOwner: AnyObject?
+    /// The connections the app dropped (weakly held, so a new one is never taken for an old one): a question of theirs
+    /// that had not started yet never does (on `queue`).
+    private let abandoned = NSHashTable<AnyObject>.weakObjects()
     /// The last bytes the process wrote to stderr, logged if it ends unexpectedly (ArisStderrTail), and the lines the
     /// driver read this turn but made nothing of (ArisEventDrift); both only on `queue`.
     private var stderrTail = ArisStderrTail()
@@ -446,6 +590,8 @@ final class ArisAgentRunner {
     private func rotateCredential(active: Bool) {
         let fresh = active ? ArisMCPTurnCredential.make() : ""
         credentialLock.withLock { currentTurnCredential = fresh }
+        // What the trust gate let run belongs to the turn it was decided in.
+        faceDecisions.begin(turn: fresh)
         if let credentialFile { ArisMCPTurnCredential.write(fresh, to: credentialFile) }
     }
     /// The external-service cards this turn has up (ArisMCPCards ids, on `queue`): a no when the turn ends.
@@ -487,7 +633,27 @@ final class ArisAgentRunner {
     func ask(_ prompt: String, tier: ArisTier = .quick, learnAs: String? = nil, request: String = "", untrusted: Bool = false,
              screenSeen: Bool = false, handsFree: Bool = false, images: [ArisTurnImage] = [], owner: AnyObject? = nil, ownData: Bool = false,
              whenUnavailable: ((String) -> Void)? = nil, listener: @escaping Listener) {
+        spareLock.withLock { asksOnTheWay += 1 }
+        let received = ArisTurnArrivals.shared.take(owner)
+        let speaker = ArisTurnVoices.shared.take(owner)
         queue.async { [self] in
+            defer { spareLock.withLock { asksOnTheWay -= 1 } }
+            // The app dropped this question's stream before it started (it waited on a drain): it never runs.
+            if let owner, abandoned.contains(owner) { return listener(.failure("연결이 끊겨서 답을 멈췄어요.")) }
+            // A turn that timed out is still being stopped (ArisTurnDrain): this question waits for that.
+            if drain.active {
+                // Still on its way meanwhile, so the fast lane never swaps this runner out under it. Dropped by the app
+                // while it waits (abandon(owner:)): it never starts.
+                spareLock.withLock { asksOnTheWay += 1 }
+                return drain.afterDrain(owner: owner, dropped: { [self] in
+                    spareLock.withLock { asksOnTheWay -= 1 }
+                    listener(.failure("연결이 끊겨서 답을 멈췄어요."))
+                }) { [self] in
+                    spareLock.withLock { asksOnTheWay -= 1 }
+                    ask(prompt, tier: tier, learnAs: learnAs, request: request, untrusted: untrusted, screenSeen: screenSeen, handsFree: handsFree,
+                        images: images, owner: owner, ownData: ownData, whenUnavailable: whenUnavailable, listener: listener)
+                }
+            }
             // In the user's language, and the likely reason first: a card waiting for their answer (QA retest).
             let korean = request.unicodeScalars.contains { (0xAC00...0xD7A3).contains($0.value) } || prompt.unicodeScalars.contains { (0xAC00...0xD7A3).contains($0.value) }
             guard pending == nil else { return listener(.failure(ArisAgentPrompt.busyLine(korean: korean))) }
@@ -500,10 +666,22 @@ final class ArisAgentRunner {
                 }
             }
             koreanTurn = ArisBrainFailure.korean(request: request, prompt: prompt)
+            let warm = process?.isRunning == true
             // What is missing, in the user's language and typed for the app (ArisBrainTrouble): never "(is it installed?)".
             guard runningInput() != nil else {
-                return listener(.failure(notStartedLine()))
+                let line = notStartedLine()
+                // A job that couldn't start is over: its journal says so and the registry forgets it.
+                if isTask {
+                    startTrail(request: request, prompt: prompt, tier: tier, untrusted: untrusted, screenSeen: screenSeen, handsFree: handsFree, ownData: ownData)
+                    trail?.ended(.failed, line: line)
+                    Self.registry.withLock {
+                        _ = Self.runners.removeValue(forKey: key)
+                        Self.jobs.forget(owner: self)
+                    }
+                }
+                return listener(.failure(line))
             }
+            clock = ArisTurnClock(received: received, warm: warm, effort: effortName(tier))
             pending = listener
             pendingOwner = owner
             askedSinceStart = true
@@ -513,10 +691,14 @@ final class ArisAgentRunner {
             desktopSteps.reset()
             savedSteps.start()
             acted = false
+            changed = false
+            changedSteps = []
+            endingNow = nil
             learnKey = learnAs
             commands = []
             toolCalls = 0
             failedSteps = 0
+            delegated = nil
             usedOtherTools = false
             nonShellTools = false
             nonDesktopTool = false
@@ -535,7 +717,10 @@ final class ArisAgentRunner {
             cardAnswers = ArisJobClaim.Cards()
             idle?.cancel()
             longJobDeadline = nil
-            restartTimeout(after: answerLimit)
+            silence.start { [weak self] why in self?.timedOut(why) }
+            if isTask {
+                startTrail(request: request, prompt: prompt, tier: tier, untrusted: untrusted, screenSeen: screenSeen, handsFree: handsFree, ownData: ownData)
+            }
             // The user's own words for every gate and judge; an attached file's text is outside text (ArisMemoryText.ownWords).
             self.request = ArisMemoryText.ownWords(request)
             // The whole request, with the note of the files the user gave: only for telling that one of them is being opened.
@@ -544,6 +729,11 @@ final class ArisAgentRunner {
             askedScopes = [:]
             autoLock.withLock { autoBookNow = ArisAutoBook() }
             autoStops = [:]
+            heldCards = [:]
+            checksUnderWay = [:]
+            cardGroups = [:]
+            plainCards = []
+            gathering = [:]
             // The turn before's passes take their rows now or never: none is left to mark a row of this turn.
             if !isTask { ArisAutoMarks.shared.turnBegan() }
             mcpOutsideThisTurn = false
@@ -555,6 +745,7 @@ final class ArisAgentRunner {
             driver.setRequest(request)
             driver.setHandsFree(handsFree)
             handsFreeTurn = handsFree
+            speakerTurn = isTask ? .notChecked : speaker
             screenTurn = screenSeen || !images.isEmpty
             readMemo = nil
             rotateCredential(active: true)
@@ -582,16 +773,98 @@ final class ArisAgentRunner {
 
     private var asked: Question?
     private var askedAgain = false
+    /// This turn's timing (ArisTurnClock), on `queue`.
+    private var clock: ArisTurnClock?
+
+    /// The effort a turn of `tier` thinks at on this brain, for the timing line.
+    private func effortName(_ tier: ArisTier) -> String {
+        switch brain {
+        case .claude: return ArisThinking.claudeEffort(model: modelLabel, tier: tier, task: isTask, choices: ArisModelChoiceBox.shared.current)
+        case .codex: return ArisThinking.codexEffort(tier: tier, task: isTask, choices: ArisModelChoiceBox.shared.current)
+        default: return "-"
+        }
+    }
+
+    /// The model this runner's key ends with (every key does).
+    private var modelLabel: String { String(key.split(separator: "/").last ?? "") }
     /// This turn's lines for the user are Korean (their words were), else English.
     private var koreanTurn = true
+
+    /// A job's journal for this turn (ArisTaskTrail): created on its first turn (or taken back: recovered), then
+    /// started. Off for a job the app gave no id.
+    private func startTrail(request: String, prompt: String, tier: ArisTier, untrusted: Bool, screenSeen: Bool, handsFree: Bool, ownData: Bool) {
+        guard isTask, let job = taskJob else { return }
+        if trail == nil {
+            let made = ArisTaskTrail(job: job, home: Self.home, tools: Self.toolsPath)
+            trail = made
+            if let how = recovering {
+                made.recovered(how)
+            } else {
+                made.created(title: taskTitle, request: ArisMemoryText.ownWords(request), prompt: jobText ?? ArisMemoryText.ownWords(request), brain: brain, model: taskModel,
+                             origin: ArisTaskOrigin(tier: tier.rawValue, untrusted: taskUntrusted, marked: untrusted || marksFromStart, screenSeen: screenSeen,
+                                                    handsFree: handsFree, sealedHandsFree: taskHandsFree, ownData: ownData,
+                                                    teammate: taskTeammate?.id, helper: taskHelper))
+            }
+        }
+        trail?.started()
+    }
+
+    /// The job as it was handed over, without the context block: what its journal keeps to start it again.
+    func keepJournal(jobText text: String) {
+        queue.async { [self] in jobText = text }
+    }
+
+    /// A job taken back after a restart (ArisTaskRecoveryLive): its journal goes on (no new `created`), and its brain
+    /// reopens `session` when given.
+    func recover(_ how: ArisTaskRecord.Recovery, session: String?, jobText text: String) {
+        queue.async { [self] in
+            recovering = how
+            jobText = text
+            if let session { (driver as? ArisResumableDriver)?.resume(from: session) }
+        }
+    }
+
+    /// The turn went quiet past its limit, or ran past its ceiling. A conversation's brain that can stop a turn is
+    /// asked to (its conversation is kept; ArisTurnDrain); one that can't, or doesn't within the grace, is stopped.
+    private func timedOut(_ why: ArisSilenceClock.Why) {
+        FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue) turn timed out (\(why.rawValue))\n".utf8))
+        endingNow = .timedOut
+        finish(nil, ArisBrainFailure.slowLine(brain: brain, korean: koreanTurn))
+        interruptOrStop()
+    }
+
+    /// The turn just finished for the user (timed out, or its stream dropped): a conversation's brain that can stop a turn is
+    /// asked to and keeps its process (ArisTurnDrain); one that can't, or doesn't within the grace, is stopped.
+    /// `dropTurn`: the app dropped the question (the user went on talking, and the whole of it comes next): once stopped, the
+    /// turn is also taken out of the conversation when the brain can (a turn that called a tool stays).
+    private func interruptOrStop(dropTurn: Bool = false) {
+        guard !isTask, process != nil, let stopping = (driver as? ArisInterruptibleDriver)?.interruptLines() else { return stopProcess() }
+        let generation = drain.begin(dropTurn: dropTurn)
+        write(stopping)
+        let stopped = process
+        queue.asyncAfter(deadline: .now() + ArisTurnDrain.grace) { [weak self] in
+            // Only this drain's grace: a later drain on the same process has its own.
+            guard let self, self.drain.isCurrent(generation), self.process === stopped else { return }
+            FileHandle.standardError.write(Data("aris-agent: \(self.brain.rawValue) didn't stop its turn; stopping the process\n".utf8))
+            self.stopProcess()
+        }
+    }
+
+    /// On `queue`: the stopped turn is over; what waited for it runs.
+    private func endDrain() {
+        guard drain.active else { return }
+        for work in drain.end() { queue.async(execute: work) }
+    }
 
     /// Hands the question to the running process, with the turn's marks.
     private func put(_ question: Question) {
         let opened = question.images.isEmpty ? driver.ask(question.prompt, tier: question.tier)
                                              : driver.ask(question.prompt, images: question.images, tier: question.tier)
+        (driver as? ArisClaudeDriver)?.questionStarted()
         if question.screenSeen { driver.markScreenSeen() }
         if question.untrusted || marksFromStart { driver.markUntrusted() }
         publishTaint()
+        if !opened.isEmpty { clock?.wrote() }
         write(opened)
     }
 
@@ -613,8 +886,7 @@ final class ArisAgentRunner {
             driver.setHandsFree(handsFreeTurn)
             put(question)
         case .unavailable(let message):
-            let handsOff = !acted && !isTask && handOff != nil
-            finish(nil, handsOff ? message : ArisBrainFailure.friendly(message, brain: brain, korean: koreanTurn), handingOff: handsOff)
+            limitReached(message)
         case .say(let line):
             finish(nil, line)
         }
@@ -643,6 +915,7 @@ final class ArisAgentRunner {
         }
         for id in waiting { decide(String(id.dropFirst(key.count + 1)), allow: false, as: "cancelled") }
         queue.async { [self] in
+            endingNow = .cancelled
             finish(nil, "cancelled")
             stopProcess()
             Self.registry.withLock {
@@ -654,6 +927,7 @@ final class ArisAgentRunner {
 
     func stop() {
         queue.async { [self] in
+            endingNow = .stopped
             finish(nil, "Stopped.")
             stopProcess()
         }
@@ -663,10 +937,16 @@ final class ArisAgentRunner {
     /// mid-tool), so the next question starts clean. A turn on another connection, or none, is left alone.
     func abandon(owner: AnyObject) {
         queue.async { [self] in
+            // A question of that connection still waiting on a drain (or on its way to start) never starts.
+            abandoned.add(owner)
+            for dropped in drain.drop(owner: owner) { dropped() }
             guard pending != nil, pendingOwner === owner else { return }
             FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue) turn abandoned (the app dropped the stream)\n".utf8))
             finish(nil, "연결이 끊겨서 답을 멈췄어요.")
-            stopProcess()
+            // A speculative request the app dropped because the user went on talking: the conversation stays warm for the
+            // whole question that follows (it waits for the drain, never meets "still answering"), and the cut-off
+            // question is taken out of it when the brain can, so it isn't read twice.
+            interruptOrStop(dropTurn: true)
         }
     }
 
@@ -693,7 +973,7 @@ final class ArisAgentRunner {
             return ArisMessageSnapshot(active: pending != nil, request: request, attached: attachedRequest, taint: marked ? .outsideText : driver.taint,
                                        handsFree: handsFreeTurn, critical: tierNow == .critical, scopes: taskScopes,
                                        pid: process?.processIdentifier, openClaude: claude.map { !$0.sealed && !$0.isolatedFolder } ?? false,
-                                       sealedClaude: claude?.sealed == true)
+                                       sealedClaude: claude?.sealed == true, speaker: speakerTurn)
         }
     }
 
@@ -727,6 +1007,7 @@ final class ArisAgentRunner {
                 answer(reply)
             }
             mcpCards.insert(shown.id)
+            changed = true
             usedOtherTools = true
             nonShellTools = true
             // The user was shown a card (a service's, a message's, a handed-off write's): the turn teaches memory nothing.
@@ -751,11 +1032,18 @@ final class ArisAgentRunner {
             guard pending != nil else { return }
             usedOtherTools = true
             nonShellTools = true
+            changed = true
             longJobDeadline = Date().addingTimeInterval(ArisAside.runLimit + answerLimit)
             restartTimeout(after: ArisAside.runLimit + answerLimit)
             write(driver.asideStarted())
             pending?(.status(status))
         }
+    }
+
+    /// How Aside's run ended (ArisAsideTool): with an answer, or without one. The job's report carries the last one
+    /// (ArisJobWork.delegated).
+    func asideFinished(answered: Bool) {
+        queue.async { [self] in delegated = answered }
     }
 
     /// Aside's call ended (M3): the turn's usual time limit again, from now.
@@ -899,7 +1187,11 @@ final class ArisAgentRunner {
         stderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
-            self?.queue.async { self?.stderrTail.append(chunk) }
+            // Anything on stderr is the brain saying something too: the turn's clock hears it.
+            self?.queue.async {
+                self?.stderrTail.append(chunk)
+                self?.silence.heard()
+            }
         }
         stderrTail = ArisStderrTail()
         argv = [executable.path] + arguments
@@ -926,6 +1218,8 @@ final class ArisAgentRunner {
             return nil
         }
         self.process = process
+        // On disk with its start time, so a helper that starts after this one died stops it (ArisChildLedger).
+        ArisChildLedger.shared.add(process.processIdentifier)
         // A teammate's job: its scopes also go into a job file for this very process, before it gets anything to do;
         // aris-tools finds it through its parent chain, whatever the brain does to its environment (re-review 2).
         if let scopes = taskScopes {
@@ -940,36 +1234,84 @@ final class ArisAgentRunner {
         }
         askedSinceStart = false
         self.input = stdin.fileHandleForWriting
+        // Written off this queue (ArisInputPump): a brain that stops reading never holds the runner up.
+        pump = ArisInputPump(handle: stdin.fileHandleForWriting, owner: queue) { [weak self, weak process] why in
+            self?.inputFailed(why, process: process)
+        }
         output = Data()
         write(driver.opening())
         return input
     }
 
     private func write(_ lines: [Data]) {
-        guard let input else { return }
-        do {
-            for line in lines { try input.write(contentsOf: line) }
-        } catch {
-            FileHandle.standardError.write(Data("aris-agent: couldn't write to \(brain.rawValue): \(error.localizedDescription)\n".utf8))
-            // A process that has just ended (a flag it doesn't know, an expired login) closes its pipe a moment before
-            // its end is heard: then its end says why and what happens next (endedOnItsOwn), not this write.
-            let patience = Date().addingTimeInterval(0.3)
-            while process?.isRunning == true, Date() < patience { usleep(10_000) }
-            guard process?.isRunning == true else { return }
-            finish(nil, ArisBrainFailure.unreachableLine(brain: brain, korean: koreanTurn))
-            stopProcess()
+        guard input != nil else { return }
+        pump?.write(lines)
+    }
+
+    /// On `queue`: writing to `failed`'s stdin failed (ArisInputPump).
+    private func inputFailed(_ why: String, process failed: Process?) {
+        FileHandle.standardError.write(Data("aris-agent: couldn't write to \(brain.rawValue): \(why)\n".utf8))
+        // A process that has just ended (a flag it doesn't know, an expired login) closes its pipe a moment before
+        // its end is heard: then its end says why and what happens next (endedOnItsOwn), not this write.
+        queue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, let failed, self.process === failed, failed.isRunning else { return }
+            self.finish(nil, ArisBrainFailure.unreachableLine(brain: self.brain, korean: self.koreanTurn))
+            self.stopProcess()
         }
     }
 
     private func receive(_ chunk: Data) {
         guard !chunk.isEmpty else { return }
+        silence.heard()
         output.append(chunk)
         while let newline = output.firstIndex(of: UInt8(ascii: "\n")) {
             let line = String(decoding: output[output.startIndex..<newline], as: UTF8.self)
             output.removeSubrange(output.startIndex...newline)
             ArisWorkDesk.live.sawLine(line, from: self)
+            if pending != nil { clock?.line() }
             let events = driver.read(line)
             publishTaint()
+            // A turn that timed out and is being stopped, until it says it ended: every approval it still asks for is
+            // declined (never an allow), its protocol's other replies go back, and what it still does is audited and
+            // counted as before.
+            if drain.active {
+                // The sealed Claude's rule backstop or an unchecked web result: the process is stopped, as outside a drain.
+                if ArisTurnDrain.aborts(events) {
+                    Self.writeAudit(Self.auditJSON(["answer": "stopped while its turn was being stopped (the process broke its rules)", "question": key]), key: key)
+                    stopProcess()
+                    return
+                }
+                write(ArisTurnDrain.replies(events))
+                for event in events {
+                    switch event {
+                    case .confirm(let ask): write(driver.decide(ask.id, allow: false))
+                    case .audit(let line):
+                        acted = true
+                        Self.writeAudit(line, key: key)
+                    case .tools(let calls):
+                        if calls.contains(where: { ArisTurnSideEffects.mayChange($0, tools: Self.toolsPath) }) { changed = true }
+                    default: break
+                    }
+                }
+                if drain.awaitingDrop, let answer = (driver as? ArisInterruptibleDriver)?.dropAnswer(line), answer.answered {
+                    if !answer.dropped { FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue) kept the cut-off question (no rewind)\n".utf8)) }
+                    endDrain()
+                } else if ArisTurnDrain.ends(events) {
+                    // A dropped question's turn also leaves the conversation, when it can (the grace still bounds the wait).
+                    if drain.dropsTurn, let dropping = (driver as? ArisInterruptibleDriver)?.dropLines() {
+                        drain.awaitDrop()
+                        write(dropping)
+                    } else {
+                        endDrain()
+                    }
+                }
+                continue
+            }
+            if let trail {
+                trail.session((driver as? ArisResumableDriver)?.sessionHandle)
+                trail.taint(driver.taint)
+                events.forEach(trail.saw)
+            }
             if events.isEmpty, pending != nil, let note = drift.note(line, quiet: driver.quietKinds) {
                 FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue): \(note)\n".utf8))
             }
@@ -979,7 +1321,10 @@ final class ArisAgentRunner {
             for event in events {
                 ArisWorkDesk.live.saw(event, taint: driver.taint, from: self)
                 switch event {
-                case .send(let data): write([data])
+                case .send(let data):
+                    // A question that waited for the thread to open goes out now (Codex at its start).
+                    if pending != nil { clock?.wrote() }
+                    write([data])
                 case .audit(let line):
                     acted = true
                     Self.writeAudit(line, key: key)
@@ -990,6 +1335,7 @@ final class ArisAgentRunner {
                     if !isTask { ArisAutoMarks.shared.dropWaiting() }
                     pending?(.stepFailed(label))
                 case .delta(let text):
+                    if pending != nil { clock?.delta() }
                     // Hands-free, after a read of the user's messages, mail or notes: nothing more is streamed to be spoken.
                     // After the user's changed card ran (②A): its outcome was spoken; the AI's own words aren't.
                     // While a call of its own still waits on the user's card, nothing the brain says is passed on: a claim of
@@ -1009,11 +1355,18 @@ final class ArisAgentRunner {
                 case .tools(let calls):
                     toolCalls += calls.count
                     for call in calls {
+                        if ArisTurnSideEffects.mayChange(call, tools: Self.toolsPath) {
+                            changed = true
+                            changedSteps.append(ArisTurnSideEffects.done(call, tools: Self.toolsPath))
+                        }
                         if call.name == "Bash", let command = call.command { commands.append(command) } else { usedOtherTools = true; nonShellTools = true }
                         if !(call.name == "Bash" && call.command.map { ArisDesktopHonesty.isDesktopCommand($0, tools: Self.toolsPath) } == true) { nonDesktopTool = true }
                     }
                     if calls.contains(where: { $0.command.map { ArisConvertWords.isLong(command: $0, tools: Self.toolsPath) } ?? false }) { waitForLongJob() }
                 case .result(let written):
+                    if pending != nil, let timing = clock?.answered(brain: brain.rawValue, model: modelLabel) {
+                        FileHandle.standardError.write(Data("aris-agent: \(timing)\n".utf8))
+                    }
                     // The brain answered while a call of its own still waits on the user's card (or a slow step): the turn
                     // doesn't end on it. The card stays up to its limit, and the brain gets the call's result in the same
                     // turn, once (QA retest: the turn ended 2 s into `desktop wait`, tearing the card down as a "no").
@@ -1046,6 +1399,22 @@ final class ArisAgentRunner {
                         Self.writeAudit(Self.auditJSON(["answer": "asked again (Aris's own data is never handed out)", "question": "jobs block"]), key: key)
                         restartTimeout(after: answerLimit)
                         write(driver.ask(ArisOwnDataTurn.doItHere(tools: Self.toolsPath), tier: tierNow))
+                        break
+                    }
+                    // What the user added while this job worked, on a brain that couldn't take it mid-turn (ArisTaskSteer):
+                    // asked now as the job's next turn in the same process, whose answer is the job's.
+                    let late = isTask ? (driver as? ArisSteerableDriver)?.takeLateSteer() ?? .none : .none
+                    // Claude has a note that came after its last step queued as its next turn: that turn's answer is the job's.
+                    if late == .queuedByBrain {
+                        restartTimeout(after: answerLimit)
+                        break
+                    }
+                    var dropped: [String] = []
+                    if case .dropped(let notes) = late { dropped = notes }
+                    if isTask, let job = taskJob, case let notes = dropped + ArisSteerDesk.shared.take(job: job), !notes.isEmpty {
+                        Self.writeAudit(Self.auditJSON(["answer": "asked again with \(notes.count) added instruction(s)", "question": key]), key: key)
+                        restartTimeout(after: answerLimit)
+                        write(driver.ask(ArisTaskSteer.followUp(notes), tier: tierNow))
                         break
                     }
                     // Notes it left (ArisNoteFence) are kept with where they came from, and never shown or said.
@@ -1093,7 +1462,7 @@ final class ArisAgentRunner {
                             answer += "\n" + truth
                         }
                     }
-                    if let key = learnKey, !ArisShortcuts.isQuestion(key), ArisShortcuts.learnable(commands: commands, usedOtherTools: usedOtherTools,
+                    if let key = learnKey, ArisShortcuts.mayKeep(key), ArisShortcuts.learnable(commands: commands, usedOtherTools: usedOtherTools,
                                                                    reply: answer, tools: Self.toolsPath, tainted: driver.isTainted) {
                         ArisShortcutStore.shared.learn(commands, reply: answer, as: key)
                     }
@@ -1105,6 +1474,18 @@ final class ArisAgentRunner {
                     if !isTask, let line = ArisSendClaim.note(answer, request: request, record: ArisSendClaim.Record(commands: commands, otherTools: nonShellTools, cards: cardAnswers),
                                                              tools: Self.toolsPath, korean: request.unicodeScalars.contains { (0xAC00...0xD7A3).contains($0.value) }) {
                         Self.writeAudit(Self.auditJSON(["answer": "an answer said it sent something no send went out for: Aris's line added", "question": key]), key: key)
+                        answer += "\n\n" + line
+                    }
+                    // An answer that says Aris will pay, order or finish a purchase (eleventh VM run, R2: "결제까지 해 드릴게요"):
+                    // the sentence that promised is taken out and Aris's own line says who presses pay (ArisPaymentBoundary).
+                    // (An answer with a jobs block is the app's: its sentence is dropped there, ArisDelegationLine.)
+                    if !answer.contains("\"jobs\""), let unpromised = ArisPaymentBoundary.unpromised(answer, english: englishRequest) {
+                        Self.writeAudit(Self.auditJSON(["answer": "an answer promised to pay: that sentence taken out, Aris's line added", "question": key]), key: key)
+                        answer = unpromised
+                    }
+                    // "이 영상 볼륨 30으로" answered by changing the Mac's volume: Aris's own line says which volume moved (K3).
+                    if let line = ArisVolumeScope.note(answer, request: request, commands: commands, tools: Self.toolsPath, english: englishRequest) {
+                        Self.writeAudit(Self.auditJSON(["answer": "a player's volume was asked, the Mac's changed: Aris's line added", "question": key]), key: key)
                         answer += "\n\n" + line
                     }
                     if !isTask { answer = ArisWidgetPick.attach(to: answer, commands: commands, tools: Self.toolsPath, access: commands.isEmpty ? ArisWidgetPick.Access() : .now) }
@@ -1142,13 +1523,19 @@ final class ArisAgentRunner {
                                                                  korean: koreanRequest)
                         if checked != answer { Self.writeAudit(Self.auditJSON(["answer": "a job's claim about Aris's own data was checked against the store", "question": key]), key: key) }
                         answer = checked
+                        // Work promised for later stands only when something was scheduled to do it (twelfth VM run, B6).
+                        let now = ArisScheduleStore.load(file: ArisScheduleStore.file(home: FileManager.default.homeDirectoryForCurrentUser.path)).map { $0.id.uuidString }
+                        let scheduled = !Set(now).isSubset(of: Set(before.schedules.map { String($0.prefix(36)) }))
+                        answer = ArisLaterPromise.checked(answer, scheduled: scheduled, korean: koreanRequest)
                     }
                     // A job says what it did before its answer: the app never ticks green a job that did nothing, or whose
                     // step failed (seventh VM pass: ArisJobVerdict).
                     if isTask {
                         let desk = computerUse.actionsThisTurn
                         pending?(.work(ArisJobWork(tools: toolCalls, failed: failedSteps + desk.notDone,
-                                                   acted: desk.done || (toolCalls > 0 && failedSteps < toolCalls && desk.notDone == 0))))
+                                                   acted: desk.done || (toolCalls > 0 && failedSteps < toolCalls && desk.notDone == 0),
+                                                   delegated: delegated,
+                                                   stopped: ArisCore2.isOn() && ArisMindJudge.shared.stoppedActing(session: ArisMindRoute.session(self)))))
                     }
                     // What the agent did for the user's changed card comes first; the AI's answer (a task's result, a card) stays.
                     finish(ArisEditableAction.answer(answer, outcomes: editedOutcomes), nil)
@@ -1160,11 +1547,9 @@ final class ArisAgentRunner {
                     finish(nil, ArisEditableAction.answer(koreanTurn ? message : ArisBrainFailure.english(message, brain: brain), outcomes: editedOutcomes))
                 case .unavailable(let message):
                     if stopsUnopened(message) { return }
-                    // Another AI takes the question only before anything was done, and never for a task: otherwise the
-                    // notch gets the Korean line, not the tool's English.
-                    let handsOff = !acted && !isTask && handOff != nil
-                    finish(nil, handsOff ? message : ArisBrainFailure.friendly(message, brain: brain, korean: koreanTurn), handingOff: handsOff)
+                    limitReached(message)
                 case .abort(let message):
+                    if let extra = (driver as? ArisClaudeDriver)?.takeRelaunch(), relaunches(extra) { return }
                     Self.writeAudit(Self.auditJSON(["answer": "stopped (the sealed process broke its rules)", "question": key]), key: key)
                     // In the request's language (the API brain's stop lines were Korean only: vm4 bug 4).
                     finish(nil, said(message))
@@ -1173,6 +1558,36 @@ final class ArisAgentRunner {
                 }
             }
         }
+    }
+
+    /// The brain hit a limit. Another AI takes the question only before anything was done that could have changed
+    /// something (ArisTurnSideEffects), and never for a task: otherwise it would be done twice. Then the notch gets the
+    /// Korean line, not the tool's English, and a turn that did something says what, and that the rest wasn't done.
+    private func limitReached(_ message: String) {
+        let handsOff = ArisTurnSideEffects.mayHandOff(acted: acted, changed: changed, isTask: isTask, canHandOff: handOff != nil)
+        guard !handsOff else { return finish(nil, message, handingOff: true) }
+        let friendly = ArisBrainFailure.friendly(message, brain: brain, korean: koreanTurn)
+        guard !isTask, handOff != nil, acted || changed else { return finish(nil, friendly) }
+        Self.writeAudit(Self.auditJSON(["answer": "not handed to another brain: this turn had already acted", "question": key]), key: key)
+        finish(nil, ArisTurnSideEffects.stoppedLine(reason: friendly, done: changedSteps, korean: koreanTurn))
+    }
+
+    /// Claude Code listed built-in tools it wasn't given (ArisClaudeInit, a new version): its process is stopped before it
+    /// answered (the init line comes first), those tools are denied by name in every Claude from now on, and the turn is
+    /// asked once more on a new process. False: the turn stops as before (asked again already, or nothing learnable).
+    private func relaunches(_ extra: [String]) -> Bool {
+        guard pending != nil, !askedAgain, let question = asked, ArisClaudeToolDrift.shared.learn(extra) else { return false }
+        FileHandle.standardError.write(Data("aris-agent: claude listed tools it wasn't given (\(extra.joined(separator: ", "))): denied by name, asking once more\n".utf8))
+        stopProcess()
+        askedAgain = true
+        guard runningInput() != nil else {
+            finish(nil, notStartedLine())
+            return true
+        }
+        driver.setRequest(question.request)
+        driver.setHandsFree(handsFreeTurn)
+        put(question)
+        return true
     }
 
     /// An error from a process nobody is asking, whose conversation never opened: logged and the process stopped.
@@ -1214,15 +1629,22 @@ final class ArisAgentRunner {
         // R1 = B: after the screen, a grant, the judge, learning and a plain card only for an action the user's words cover.
         // Hands-free: no standing permission, no learning, no proposal (ArisHandsFree).
         let tainted = driver.taint.blocks(covered: pendingAction.covered) || handsFreeTurn
+        // A payment (decision 1): its amount and payee from the typed arguments, and whether his own words named them.
+        var payment: ArisCallFacts?
+        if hardLine == .money, case .mcp(_, let tool) = pendingAction.action {
+            payment = ArisEscalation.paymentFacts(tool: tool, arguments: pendingAction.arguments)
+        }
+        let paymentNamed = payment.map { ArisEscalation.paymentNamed($0, request: request) } ?? false
         let verdict = { (judgement: ArisJudgement?) in
             ArisEscalation.decide(scope: scope, approvable: approvable, hardLine: hardLine, tainted: tainted, standing: standing,
-                                  judgement: judgement, showsMail: ArisMailCard.shows(pendingAction.action, arguments: pendingAction.arguments))
+                                  judgement: judgement, showsMail: ArisMailCard.shows(pendingAction.action, arguments: pendingAction.arguments),
+                                  payment: payment, paymentNamed: paymentNamed)
         }
         let early = verdict(nil)
         // Never learned after outside text: a yes then counts toward no streak and no proposal.
         let learnable = ArisEscalation.learnable(scope, approvable: approvable, hardLine: hardLine, tainted: tainted)
         // After outside text the card says why it asks again, and is a question, never a countdown.
-        let escalated = ArisEscalation.card(for: ask, approvable: approvable, hardLine: hardLine, tainted: tainted)
+        let escalated = ArisEscalation.card(for: ask, approvable: approvable, hardLine: hardLine, tainted: tainted, payment: payment)
         // A card that is there only because outside content was read says so too (the conversion after the brain's own
         // `files find`, as the trash card after it): one rule, where every brain's card passes (ArisGateReason).
         let raised = ArisGateReason.raised(outside: driver.taint.blocks(covered: pendingAction.covered), hardLine: hardLine != nil,
@@ -1276,6 +1698,51 @@ final class ArisAgentRunner {
     var autoBook: ArisAutoBook { autoLock.withLock { autoBookNow } }
     /// The stopped cards up, on `queue`: each one's id and today's card for the call it stands for.
     private var autoStops: [String: ArisConfirmation] = [:]
+    /// Same-kind cards the check left to the user this turn, waiting for the turn's other checks of that kind so they go up
+    /// as one card (ArisCardGroup; on `queue`): by kind, in the order asked. `checksUnderWay`: each checked call's kind.
+    private var heldCards: [String: [(ask: ArisConfirmation, line: String)]] = [:]
+    private var checksUnderWay: [String: String] = [:]
+    /// A grouped card's other calls, by the card's id: its answer is theirs too. `plainCards`: cards with no fields.
+    private var cardGroups: [String: [String]] = [:]
+    private var plainCards: Set<String> = []
+    /// Ordinary cards of one step waiting a moment for their same-kind siblings (ArisCardGroup.gatherKind), by kind.
+    private var gathering: [String: [(ask: ArisConfirmation, scope: ArisActionScope?)]] = [:]
+
+    /// An ordinary card in a conversation: one of a kind that groups waits a moment, and its step's others of that kind go
+    /// up with it as one card; any other goes up at once.
+    private func gather(_ ask: ArisConfirmation, scope: ArisActionScope?) {
+        guard !isTask, !ask.countdown, let kind = ArisCardGroup.gatherKind(driver.escalation(for: ask.id).flatMap {
+            ArisAutoScope.argv(of: $0.action, tools: Self.toolsPath) }) else { return forward(ask, scope: scope) }
+        let first = gathering[kind] == nil
+        gathering[kind, default: []].append((ask, scope))
+        guard first else { return }
+        queue.asyncAfter(deadline: .now() + ArisCardGroup.gatherWait) { [self] in
+            let live = (gathering.removeValue(forKey: kind) ?? []).filter { driver.escalation(for: $0.ask.id) != nil }
+            guard pending != nil, let lead = live.first else { return }
+            guard live.count > 1 else { return forward(lead.ask, scope: lead.scope) }
+            cardGroups[lead.ask.id] = live.dropFirst().map(\.ask.id)
+            plainCards.insert(lead.ask.id)
+            forward(ArisCardGroup.card(live.map { ($0.ask, "") }, english: englishRequest), scope: nil)
+        }
+    }
+
+    /// Today's card for a call the check left to the user: held while another check of its kind is under way.
+    private func hold(_ ask: ArisConfirmation, line: String, kind: String?) {
+        guard let kind else { return forward(ArisAutoCard.reasoned(ask, line), scope: nil) }
+        heldCards[kind, default: []].append((ask, line))
+        showHeld(kind)
+    }
+
+    /// The held cards of `kind` go up once no check of that kind is under way: one alone as it is, several as one card.
+    private func showHeld(_ kind: String) {
+        guard !checksUnderWay.values.contains(kind), let all = heldCards.removeValue(forKey: kind) else { return }
+        let held = all.filter { driver.escalation(for: $0.ask.id) != nil }
+        guard pending != nil, let first = held.first else { return }
+        guard held.count > 1 else { return forward(ArisAutoCard.reasoned(first.ask, first.line), scope: nil) }
+        cardGroups[first.ask.id] = held.dropFirst().map(\.ask.id)
+        plainCards.insert(first.ask.id)
+        forward(ArisCardGroup.card(held, english: englishRequest), scope: nil)
+    }
     /// Who checks for this runner's brain (its quick model); nil when no AI can.
     var autoChecker: ArisAutoChecking? { ArisAutoCheckLive.checker(brain, environment: Self.environment()) }
 
@@ -1309,7 +1776,7 @@ final class ArisAgentRunner {
             switch outcome {
             case .stop(let why):
                 // Nothing decided (late, failed, odd, too few words): today's card at once, with the line why (review 9, L1).
-                if let line = ArisAutoCard.todaysLine(why, english: englishRequest) { return forward(ArisAutoCard.reasoned(ask, line), scope: nil) }
+                if let line = ArisAutoCard.todaysLine(why, english: englishRequest) { return hold(ask, line: line, kind: subject.map(ArisCardGroup.kind)) }
                 let id = Self.registry.withLock { () -> String in
                     Self.reaskCount += 1
                     return "s\(Self.reaskCount)-\(ArisLaunch.nonce)"
@@ -1336,13 +1803,21 @@ final class ArisAgentRunner {
             let began = Date(), turn = mcpTurn
             restartTimeout(after: checker.budget + answerLimit)
             let input = ArisAutoCheck.input(ownerTurns: owner, action: subject, code: ArisAutoCheck.code())
+            let kind = ArisCardGroup.kind(subject)
+            let plainlyAsked = ArisPlainAsk.addsPointedItems(request: owner.last ?? "", tool: subject.tool, verb: subject.verb)
+            checksUnderWay[ask.id] = kind
             ArisAutoAsk.ask(checker, input: input, showTag: { [weak self] in self?.autoChecking(turn: turn) }) { [weak self] run in
                 self?.queue.async { [weak self] in
+                    guard let self else { return }
+                    // This check is over, however it ended: the held cards of its kind may go up now.
+                    self.checksUnderWay[ask.id] = nil
+                    defer { self.showHeld(kind) }
                     // The turn ended (another may have begun), or the call is gone, while it was checked: nothing runs.
-                    guard let self, self.pending != nil, ArisMCPTurnCredential.same(self.mcpTurn, turn),
+                    guard self.pending != nil, ArisMCPTurnCredential.same(self.mcpTurn, turn),
                           let now = self.driver.escalation(for: ask.id) else { return }
                     // The verdict counts only for the call as it stands now, word for word, and once (ArisAutoBook).
-                    let settled = ArisAutoMode.after(run, ticket: ticket, argvNow: ArisAutoScope.argv(of: now.action, tools: Self.toolsPath), book: book)
+                    let settled = ArisAutoMode.after(run, ticket: ticket, argvNow: ArisAutoScope.argv(of: now.action, tools: Self.toolsPath), book: book,
+                                                     plainlyAsked: plainlyAsked)
                     note(settled.ledger, Date().timeIntervalSince(began))
                     finish(settled.outcome)
                 }
@@ -1356,7 +1831,7 @@ final class ArisAgentRunner {
         let question = key + "/" + ask.id
         switch verdict {
         case .askUser:
-            forward(ask, scope: learnable)
+            gather(ask, scope: learnable)
         case .proceed(let why):
             let because = reason.isEmpty ? why : "\(why): \(reason)"
             Self.writeAudit(Self.auditJSON(["answer": "auto-approved (\(because))", "question": question,
@@ -1388,7 +1863,7 @@ final class ArisAgentRunner {
         let id = key + "/" + ask.id
         if let scope { askedScopes[ask.id] = scope }
         // The owner's ②A: the fields of an action the agent's code knows how to change (never a countdown or a proposal).
-        let editable = editables[ask.id] ?? (ask.countdown || ask.proposal ? nil
+        let editable = plainCards.contains(ask.id) ? nil : editables[ask.id] ?? (ask.countdown || ask.proposal ? nil
             : driver.escalation(for: ask.id).flatMap { ArisEditableAction.parse($0.action, tools: Self.toolsPath) })
         editables[ask.id] = editable
         let fields = editable?.fields ?? []
@@ -1441,6 +1916,7 @@ final class ArisAgentRunner {
         }
         var shown = ArisConfirmation(id: id, title: title, detail: detail, countdown: ask.countdown, spoken: spoken, full: full, fields: fields)
         shown.stopped = ask.stopped
+        trail?.card(shown)
         pending?(.confirm(shown))
     }
 
@@ -1535,11 +2011,15 @@ final class ArisAgentRunner {
     static func writeAudit(_ line: String, key: String) {
         ArisWhyDesk.shared.audited(line, key: key)
         ArisWorkDesk.live.audited(line, key: key)
+        // An uninstall that removes ~/.config/aris: the line is dropped (never bringing the folder back, never its
+        // content in the system log); only a counted marker says so.
+        if ArisUninstallQuiet.folderIsFrozen { return ArisUninstallQuiet.drop(line) }
         auditLock.withLock { auditWriter.write(line, caller: key, at: Date()) }
     }
 
     /// At exit: every count still held is written, so nothing the throttle counted is lost with the process.
     static func flushAudit() {
+        guard !ArisUninstallQuiet.folderIsFrozen else { return }
         auditLock.withLock { auditWriter.flush(at: Date()) }
     }
 
@@ -1554,8 +2034,13 @@ final class ArisAgentRunner {
                                             "question": key + "/" + held.id]), key: key)
             return allow ? forward(held, scope: nil) : decide(held.id, allow: false, as: answer, note: note)
         }
+        // A grouped card's answer is the answer for each call it listed (ArisCardGroup), each on its own ledger line.
+        let together = cardGroups.removeValue(forKey: id) ?? []
+        plainCards.remove(id)
+        defer { together.forEach { decide($0, allow: allow, as: answer, note: note) } }
         Self.writeAudit(Self.auditJSON(["answer": answer ?? (allow ? "yes" : "no"), "question": id]), key: key)
         queue.async { [self] in
+            trail?.answer(key + "/" + id, allow: allow, how: answer)
             // A fresh card that asked again about a change stands for the AI's own call (a no or a timeout declines it).
             let call = reasked.removeValue(forKey: id) ?? id
             if let asked = driver.escalation(for: call)?.action { cardAnswers.note(asked, allowed: allow && call == id) }
@@ -1684,17 +2169,19 @@ final class ArisAgentRunner {
         }
     }
 
+    /// Nothing ends the turn for `seconds` (a card, a judge, a long job: the clock is held), then the usual quiet
+    /// limit counts again (`answerLimit` of it is that limit; ArisSilenceClock).
     private func restartTimeout(after seconds: TimeInterval) {
-        schedule(&timeout, after: max(seconds, longJobDeadline?.timeIntervalSinceNow ?? 0)) { [weak self] in
-            guard let self else { return }
-            self.finish(nil, ArisBrainFailure.slowLine(brain: self.brain, korean: self.koreanTurn))
-            self.stopProcess()
-        }
+        silence.hold(for: max(seconds, longJobDeadline?.timeIntervalSinceNow ?? 0) - answerLimit)
     }
 
     /// `handingOff`: the question goes to another AI (whenUnavailable) instead of ending here.
     private func finish(_ answer: String?, _ error: String?, handingOff: Bool = false) {
-        timeout?.cancel()
+        silence.stop()
+        if pending != nil, let trail {
+            trail.ended(answer != nil ? .answered : endingNow ?? .failed, line: answer ?? error)
+            self.trail = nil
+        }
         longJobBeat?.cancel()
         longJobDeadline = nil
         // An external-service card still up when the turn ends is a no, and the turn's credential stops working.
@@ -1726,7 +2213,8 @@ final class ArisAgentRunner {
             listener(answer.map(ArisAgentReply.answer) ?? .failure(error ?? ArisBrainFailure.silentLine(brain: brain, korean: koreanTurn)))
         }
         guard !isTask else {
-            // A task's process ends with it.
+            // A task's process ends with it, and so does anything still added for it.
+            if let taskJob { ArisSteerDesk.shared.drop(job: taskJob) }
             stopProcess()
             Self.registry.withLock {
                 _ = Self.runners.removeValue(forKey: key)
@@ -1756,6 +2244,11 @@ final class ArisAgentRunner {
 
     private func clearProcess() {
         if let pid = jobFilePid { ArisTeammateJobFile.remove(pid: pid, home: Self.home) }
+        if let pid = process?.processIdentifier { ArisChildLedger.shared.remove(pid) }
+        pump?.close()
+        pump = nil
+        // A stopped turn's process is gone: whatever waited for it starts afresh.
+        endDrain()
         jobFilePid = nil
         // The thread ends with its process: nothing it read carries over, and computer use's looks, the user's yeses for
         // apps and Peekaboo's snapshot folders go with it (stop, retire, an idle end, a crash: I12).
@@ -1803,6 +2296,9 @@ final class ArisAgentRunner {
         // claude (and the others) find their login in the keychain under the account name.
         environment["USER"] = NSUserName()
         environment["LOGNAME"] = NSUserName()
+        // The app's experimental switches as the helper holds them, for the children it starts (the Mind's loop, the MCP
+        // face under Claude): never what this process's own environment said.
+        environment[ArisSwitchSet.environmentKey] = ArisHelperSwitches.shared.set.environmentValue
         return environment
     }
 }

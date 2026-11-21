@@ -86,21 +86,22 @@ private func fix16StoredEndTests() {
 
 private func fix16SidebarFadeTests() {
     typealias M = ArisSidebarMetrics
-    let list = M.pagesHeight()
-    let box = 480.0
-    let about = M.rowSpan(.about), conversation = M.rowSpan(.aris)
-    check(list == M.height() - (M.top + M.greeting + M.greetingGap + M.searchHeight + M.searchGap + M.bottom),
+    // Option A: the list is the four pages and the open page's parts (할 수 있는 일's eight, the longest), in a short box.
+    let list = M.pagesHeight(open: .able)
+    let box = 300.0
+    let about = M.rowSpan(.about, open: .able), conversation = M.rowSpan(.aris, open: .able)
+    check(list == M.height(open: .able) - (M.top + M.greeting + M.greetingGap + M.searchHeight + M.searchGap + M.bottom),
           "fix-16 fade: the pages' own height is the sidebar's less its header and bottom")
-    let firstTop: Double = M.firstGroupTop + M.groupLabel + M.groupBottom
+    let firstTop: Double = 0
     let aboutLast: Bool = about?.bottom == list
     let conversationFirst: Bool = conversation?.top == firstTop && conversation.map { $0.bottom - $0.top } == M.row
-    check(aboutLast && conversationFirst, "fix-16 fade: the rows lie where the list draws them (대화 under its group name, 정보 last)")
+    check(aboutLast && conversationFirst, "fix-16 fade: the rows lie where the list draws them (Aris와 말하기 first, 앱 last)")
     // Rows: each 44 tall, in order, none overlapping.
-    let spans: [(top: Double, bottom: Double)] = ArisSettingsPage.allCases.compactMap { M.rowSpan($0) }
+    let spans: [(top: Double, bottom: Double)] = ArisSettingsPage.allCases.compactMap { M.rowSpan($0, open: .able) }
     var ordered = spans.count == ArisSettingsPage.allCases.count
     for index in spans.indices.dropFirst() where spans[index - 1].bottom > spans[index].top { ordered = false }
     check(ordered, "fix-16 fade: every page has a row, in the sidebar's order")
-    func span(_ page: ArisSettingsPage, _ top: Double) -> (top: Double, bottom: Double)? { M.rowSpan(page).map { ($0.top + top, $0.bottom + top) } }
+    func span(_ page: ArisSettingsPage, _ top: Double) -> (top: Double, bottom: Double)? { M.rowSpan(page, open: .able).map { ($0.top + top, $0.bottom + top) } }
     // At the top of a list taller than its box, with 대화 chosen: more below, so the end fades.
     check(M.fades(listHeight: list, boxHeight: box, listTop: 0, chosen: span(.aris, 0)), "fix-16 fade: more below and the chosen row high up → the end fades")
     // Scrolled to its end: nothing below, nothing fades (whatever is chosen).
@@ -122,7 +123,7 @@ private func fix16SidebarFadeTests() {
     // The view reads it: the scroller tracks where its list is, and both the scroller and the still drawing ask fades.
     let sidebar = fix16Source("Aris/components/Settings/ArisSettingsSidebar.swift")
     check(sidebar.contains("ArisSidebarMetrics.fades(") && sidebar.contains(".coordinateSpace(name: Self.scrollSpace)")
-          && sidebar.contains("listTop = frame.minY") && sidebar.contains("ArisSidebarMetrics.rowSpan(nav.page)")
+          && sidebar.contains("listTop = frame.minY") && sidebar.contains("ArisSidebarMetrics.rowSpan(nav.page, open: nav.page)")
           && !sidebar.contains("let more = listHeight > box.size.height + 1")
           && sidebar.components(separatedBy: "fadeMask(fades(").count == 3,
           "fix-16 fade: the sidebar fades from its scroll position and the chosen row, live and in the still drawing")
@@ -148,7 +149,7 @@ private func fix16SidebarLabelTests() {
     ArisSettingsCopy.install(pairs)
     let shownPath = ArisSettingsPath.shown("설정 › 노치 · 사이드 노치", english: true)
     ArisSettingsCopy.install([:])
-    check(shownPath == "Settings › Notch", "fix-16 labels: a reply's path names it as the sidebar does (\(shownPath))")
+    check(shownPath == "Settings › Appearance › Notch", "fix-16 labels: a reply's path names it as the sidebar does (\(shownPath))")
     // The name has the whole room after the icon: no spacer (and its 12-pt gap) after it.
     let sidebar = fix16Source("Aris/components/Settings/ArisSettingsSidebar.swift")
     let item = sidebar.components(separatedBy: "private struct ArisNavItem").last?.components(separatedBy: "struct ArisGlassHighlight").first ?? ""

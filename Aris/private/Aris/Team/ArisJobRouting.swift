@@ -3,11 +3,10 @@
 //  Aris
 //
 //  Which AI a job asks for (audit team-7, imp-4; the user: no feature locked to one brain). A job whose prompt a model
-//  wrote, or that comes out of a turn with outside content, is run by the agent behind a per-call gate: on the API
-//  brain when that is the turn's brain, on Codex for every other brain's turn (ArisImageRouting.taskPlan in aris-agent:
-//  Codex is the one whose web search can be turned off). So the job asks for the brain it will run on, and when that
-//  one isn't set up on this Mac (not installed, not logged in) for the other gated brain if that is; with neither, for
-//  the turn's own brain, so the job says what is missing instead of being lost to a rule. A teammate whose own brain
+//  wrote, or that comes out of a turn with outside content (a screen conversation), is run by the agent on the turn's
+//  own brain, untrusted behind that brain's gate for outside words (ArisJobBrain in aris-agent). Only when that brain
+//  isn't set up on this Mac (not installed, not logged in) does the job ask for a gated one that is (Codex, then the
+//  API brain); with neither, for the turn's own brain, so the job says what is missing instead of being lost to a rule. A teammate whose own brain
 //  isn't set up hands its job to Aris itself, which says so. Pure.
 //
 
@@ -21,11 +20,10 @@ enum ArisJobRouting {
     /// The brain to ask for, for a job handed out untrusted (a model wrote its prompt, or its turn saw outside content),
     /// from the brain that answered the turn.
     static func brain(forDispatched parent: ArisBrain, ready: [String: Bool] = [:]) -> ArisBrain {
-        // Where the agent runs such a job: the API brain's own stay on it, every other brain's on Codex.
-        let gated: ArisBrain = parent == .api ? .api : .codex
-        if isReady(gated, ready) { return gated }
-        let other: ArisBrain = gated == .codex ? .api : .codex
-        return isReady(other, ready) ? other : parent
+        // The brain the owner chose runs it, untrusted behind its own gate (aris-agent's ArisJobBrain); another only when that
+        // one isn't set up here: a gated one (Codex, then the API brain), else the parent, which then says what is missing.
+        if isReady(parent, ready) { return parent }
+        return [ArisBrain.codex, .api].first { $0 != parent && isReady($0, ready) } ?? parent
     }
 
     /// A teammate (not Claude Code, which opens in a terminal) whose own brain isn't set up here: its job goes to Aris

@@ -4,7 +4,8 @@
 //
 //  How hard a conversation brain thinks (the owner, 2026-11-14: "생각을 하고 답하든지… 알아볼께 이지랄하던가"). Every Claude turn
 //  ran Haiku or Sonnet at effort low and Codex at effort low, so a question that needed looking into got a guess at once.
-//  Now a normal turn is Sonnet at effort medium (Codex: medium); a turn that has to look things up (a vague question about
+//  Then a normal turn was Sonnet at effort medium (Codex: medium); since 2026-11-17 a quick (spoken or plain chat) turn
+//  is at low and other work at medium, from measurements (`efforts`, the one table); a turn that has to look things up (a vague question about
 //  The user's own work, a report, a background job, the screen or a session to read and judge) is Opus at effort high (Codex:
 //  high), and Aris says a short "알아볼게요" before the slow work starts. What the local router answers never reaches a
 //  brain, and the small one-shot helpers (judges, dictation routes, sealed one-shots) keep their own low effort.
@@ -54,17 +55,44 @@ enum ArisThinking {
         return thinksHard(tier) ? "opus" : "sonnet"
     }
 
-    /// Claude Code's `--effort` for a runner of `model` (set when its process starts, so the model carries it).
-    static func claudeEffort(model: String) -> String {
+    /// How hard each tier thinks, on Claude and Codex, and why: the one table (jv-fastlane, 2026-11-17).
+    /// `quick` is a spoken or plain chat turn (a fact, one command): measured on claude 2.1.327, Sonnet, Aris's ~10k-token
+    /// system prompt, 5 plain Korean questions, warm process: first text at 510 ms median at low against 935 ms at
+    /// medium, the same answers. Codex luna warm: 1279 ms at low against 1791 ms at medium. Low is the lowest both take.
+    /// `work` (several steps, writing, planning) keeps medium; `deep` (a look-up, a job, the screen) and `critical`
+    /// (sending, deleting, money: the gate reads it) keep high, as before.
+    struct Effort: Equatable {
+        let claude: String
+        let codex: String
+        let why: String
+    }
+
+    static let efforts: [ArisTier: Effort] = [
+        .quick: Effort(claude: "low", codex: "low", why: "spoken or plain chat: first token first (measured 510 vs 935 ms warm)"),
+        .work: Effort(claude: "medium", codex: "medium", why: "several steps or writing: keeps its depth"),
+        .deep: Effort(claude: "high", codex: "high", why: "looks things up, a job or the screen: thinks hardest"),
+        .critical: Effort(claude: "high", codex: "high", why: "sending, deleting, money: thinks hardest"),
+    ]
+
+    static func effort(_ tier: ArisTier) -> Effort { efforts[tier] ?? efforts[.work]! }
+
+    /// Claude Code's effort for a turn of `tier` on a runner of `model`, sent before the turn when the process is at
+    /// another one (ArisClaudeDriver: `apply_flag_settings`). Opus only ever answers deep and careful turns; Haiku is the
+    /// one-shot helpers' and stays low.
+    static func claudeEffort(model: String, tier: ArisTier) -> String {
         switch model {
         case "opus": return "high"
         case "haiku": return "low"
-        default: return "medium"
+        default: return effort(tier).claude
         }
     }
 
+    /// Claude Code's `--effort` when a runner of `model` starts: its most common turn's (a quick one for Sonnet), so the
+    /// usual turn sends nothing first.
+    static func claudeEffort(model: String) -> String { claudeEffort(model: model, tier: .quick) }
+
     /// Codex's effort for a turn of `tier`.
-    static func codexEffort(tier: ArisTier) -> String { thinksHard(tier) ? "high" : "medium" }
+    static func codexEffort(tier: ArisTier) -> String { effort(tier).codex }
 
     static func thinksHard(_ tier: ArisTier) -> Bool { tier == .deep || tier == .critical }
 

@@ -28,13 +28,20 @@ final class ArisClipboardModel: ObservableObject {
     private var saving: Task<Void, Never>?
     private static let checkEvery: Duration = .milliseconds(500)
 
-    private static var file: URL? {
+    nonisolated private static var file: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("Aris/clipboard.json")
     }
 
     func watch() {
-        items = Self.load()
+        // Read and decoded off the main thread; a copy recorded before it's in stays on top.
+        Task.detached(priority: .utility) {
+            let loaded = Self.load()
+            await MainActor.run {
+                let ids = Set(self.items.map(\.id))
+                self.items = ArisClipboard.trimmed(ArisClipboard.sorted(self.items + loaded.filter { !ids.contains($0.id) }))
+            }
+        }
         watching?.cancel()
         watching = Task { [weak self] in
             while !Task.isCancelled {
@@ -113,17 +120,22 @@ final class ArisClipboardModel: ObservableObject {
         guard ArisClipboard.keeps(types: types) else { return }
         // Some apps put two items on the pasteboard for one copy: their data is merged into one record.
         var contents: [ArisClipboard.Content] = []
-        for entry in board.pasteboardItems ?? [] {
+        var bytes = 0
+        reading: for entry in board.pasteboardItems ?? [] {
             if entry.types.contains(.string), (entry.string(forType: .string) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                !entry.types.contains(.rtf), !entry.types.contains(.html), !entry.types.contains(.fileURL),
                !entry.types.contains(where: { ArisClipboard.imageTypes.contains($0.rawValue) }) {
                 continue
             }
             for type in entry.types where ArisClipboard.keepsType(type.rawValue) {
-                if let data = entry.data(forType: type) { contents.append(ArisClipboard.Content(type: type.rawValue, data: data)) }
+                guard let data = entry.data(forType: type) else { continue }
+                bytes += data.count
+                // Over the limit it isn't kept: stop reading the rest of it.
+                if bytes > ArisClipboard.itemLimit { break reading }
+                contents.append(ArisClipboard.Content(type: type.rawValue, data: data))
             }
         }
-        guard !contents.isEmpty, contents.reduce(0, { $0 + $1.data.count }) <= ArisClipboard.itemLimit else { return }
+        guard !contents.isEmpty, bytes <= ArisClipboard.itemLimit else { return }
         let now = Date()
         let item = ArisClipboard.Item(id: UUID(), contents: contents, title: ArisClipboard.title(of: contents),
                                       app: front?.localizedName, appBundle: front?.bundleIdentifier, firstCopied: now, lastCopied: now)
@@ -141,7 +153,8 @@ final class ArisClipboardModel: ObservableObject {
     private func update(_ new: [ArisClipboard.Item]) {
         items = new
         saving?.cancel()
-        saving = Task { [items] in
+        // Encoded and written off the main thread (megabytes of images were encoded on it).
+        saving = Task.detached(priority: .utility) { [items] in
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
             Self.save(items)
@@ -149,12 +162,12 @@ final class ArisClipboardModel: ObservableObject {
     }
 
     /// A file that can't be read is kept aside, never overwritten by the next save (ArisJSONFile).
-    private static func load() -> [ArisClipboard.Item] {
+    nonisolated private static func load() -> [ArisClipboard.Item] {
         guard let file else { return [] }
         return ArisJSONFile.load([ArisClipboard.Item].self, from: file, what: "clipboard")
     }
 
-    private static func save(_ items: [ArisClipboard.Item]) {
+    nonisolated private static func save(_ items: [ArisClipboard.Item]) {
         guard let file else { return }
         let kept = items.filter { $0.size <= ArisClipboard.savedItemLimit }
         do {

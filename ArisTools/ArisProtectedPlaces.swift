@@ -24,7 +24,13 @@ enum ArisProtectedPlaces {
         // Computer use's checked runtime (Peekaboo) and Peekaboo's own store (its snapshots hold other apps' windows):
         // only the agent's desktop engine touches them (security review I11, I12).
         "Library/Application Support/Aris/computer-runtime", ".peekaboo",
+        // The app's clipboard history (everything copied, passwords from a password manager too): only the app keeps it
+        // (audit 17). In its sandbox's container, and where an unsandboxed build keeps it.
+        clipboardHistory, "Library/Application Support/Aris/clipboard.json",
     ]
+
+    /// The app's clipboard history (ArisClipboardModel), in the sandboxed app's container.
+    static let clipboardHistory = "Library/Containers/com.lumenjsn.aris/Data/Library/Application Support/Aris/clipboard.json"
 
     /// The shell and tool settings among `relative` that the user may ask Aris to edit (audit gate-17: "내 .zshrc에 alias
     /// 하나 추가해줘" was refused while the same edit by a shell redirect only asked). An edit there asks on a card that

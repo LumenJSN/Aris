@@ -172,6 +172,12 @@ enum ArisHandoffLine {
             : "\(joined) took it. I'll let you know when it's done."
     }
 
+    /// Website work when Aside isn't on this Mac: not started, and how to get it.
+    static func asideMissingLine(korean: Bool) -> String {
+        korean ? "웹사이트 작업은 Aside가 필요한데 이 Mac에 설치돼 있지 않아서 시작하지 않았어요. aside.com/download 에서 설치할 수 있어요."
+            : "Website work needs Aside, which isn't installed on this Mac, so I didn't start it. You can get it at aside.com/download."
+    }
+
     /// The name with 이 or 가: 이 after a final consonant (민준이), 가 after a vowel or a Latin name (코디가, Aside가).
     static func subject(_ name: String) -> String {
         guard let last = name.unicodeScalars.last, (0xAC00...0xD7A3).contains(last.value) else { return name + "가" }

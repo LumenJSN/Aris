@@ -12,8 +12,17 @@ func findFiles(_ args: [String]) {
     guard !words.isEmpty else { fail("usage: find <words>") }
     let home = FileManager.default.homeDirectoryForCurrentUser.path
     // Files named that come first; files that only mention it in their contents after (they matched loosely).
-    let named = run("/usr/bin/mdfind", ["-onlyin", home, "-name", words]).split(separator: "\n").map(String.init)
-    let mentioned = run("/usr/bin/mdfind", ["-onlyin", home, words]).split(separator: "\n").map(String.init)
+    // Each search has a limit (ArisBoundedRun.spotlightLimit); one stopped there keeps what it found, and says so.
+    var stopped = false
+    func spotlight(_ query: [String]) -> [String] {
+        let (status, printed, complaint) = runCapturing("/usr/bin/mdfind", ["-onlyin", home] + query)
+        if status == ArisBoundedRun.timedOutStatus { stopped = true } else if status != 0 {
+            fail(complaint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Spotlight (mdfind) failed" : complaint)
+        }
+        return printed.split(separator: "\n").map(String.init)
+    }
+    let named = spotlight(["-name", words])
+    let mentioned = spotlight([words])
     func dated(_ paths: [String]) -> [(String, Date)] {
         paths.filter { ArisFiles.listable($0, home: home) }.prefix(400).compactMap { path -> (String, Date)? in
             guard let date = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date else { return nil }
@@ -24,7 +33,8 @@ func findFiles(_ args: [String]) {
     let names = Set(byName.map(\.0))
     let newest = (byName + dated(mentioned.filter { !names.contains($0) })).prefix(ArisFiles.shown)
     // Matches left out for their names are said, so a file that is there is never told as missing (audit tools-3).
-    let note = ArisFiles.heldBackNote(ArisFiles.heldBack(Array(Set(named + mentioned)), home: home), korean: false).map { "\n" + $0 } ?? ""
+    let note = (ArisFiles.heldBackNote(ArisFiles.heldBack(Array(Set(named + mentioned)), home: home), korean: false).map { "\n" + $0 } ?? "")
+        + (stopped ? "\n" + ArisBoundedRun.spotlightStoppedNote() : "")
     guard !newest.isEmpty else { return print("nothing found for \"\(words)\"" + note) }
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"

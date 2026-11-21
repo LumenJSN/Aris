@@ -8,7 +8,9 @@
 //  run is untrusted, runs behind its brain's gate for outside words (whichever AI can run here: ArisJobBrain), and
 //  carries no words of the user's (no target is known, nothing is a dictated message); its questions park for the user (a day at most) like any background task's. A wall-clock timer
 //  ticks every 30 seconds; an idle tick only looks at the store's modification time. A run missed while the Mac slept
-//  runs once, not once per missed time. Removing a schedule (or undoing its creation) cancels its run.
+//  (or the agent was down) runs once, not once per missed time, and says it is late. A failed run is tried again after
+//  2, 10 and 30 minutes; a one-time job is never dropped for a failure. A store that can't be used (not the user's private
+//  file) is said in the inbox once. Removing a schedule (or undoing its creation) cancels its run.
 //
 
 import Foundation
@@ -27,6 +29,10 @@ final class ArisScheduler {
     /// A run's questions waiting for the user, and a long result's saved file, by running job.
     private var parked: [UUID: [String]] = [:]
     private var files: [UUID: String] = [:]
+    /// The time a running job was due, when it started late (the Mac slept, the agent was down).
+    private var lateSince: [UUID: Date] = [:]
+    /// The user was told the store can't be used (reportRefusal).
+    private var refusalTold = false
     private var watch = ArisScheduleWatch()
     /// The time zone the stored run times were last checked in (nil until the first tick).
     private var zone: String?
@@ -63,14 +69,31 @@ final class ArisScheduler {
                 ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(["answer": "expired (agent restarted)", "question": question]), key: "schedule")
             }
             let declined = job.parked.isEmpty ? "" : " 기다리던 확인은 거절로 처리했어요."
-            ArisInbox.append(entry(.note, job: job, text: "‘\(job.title)’ 예약 작업이 Aris가 다시 시작되면서 중단됐어요.\(declined)"), file: inbox)
+            // A one-time job whose run was cut off is kept, stopped (ArisSchedule.recovered): part of it may be done.
+            let kept = job.nextRun == nil ? " 한 번만 하는 예약이라 다시 하지는 않고, 지우지 않고 남겨 뒀어요. 다시 하려면 말해 주세요." : ""
+            ArisInbox.append(entry(.note, job: job, text: "‘\(job.title)’ 예약 작업이 Aris가 다시 시작되면서 중단됐어요.\(declined)\(kept)"), file: inbox)
         }
+    }
+
+    /// The store is there but can't be used (ArisScheduleStore.refusal): no schedule runs, and the user is told once (again
+    /// only after it was fine in between).
+    private func reportRefusal() {
+        let reason = ArisScheduleStore.refusal(file: store)
+        defer { refusalTold = reason != nil }
+        guard let reason, !refusalTold else { return }
+        FileHandle.standardError.write(Data("aris-agent: schedules can't run: \(store.path): \(reason)\n".utf8))
+        ArisInbox.append(ArisInboxEntry(id: UUID(), date: Date(), kind: .note, schedule: nil, title: "예약 작업이 멈췄어요",
+                                        text: "예약 파일(schedules.json)의 권한이 맞지 않아서(\(reason)) 예약 작업을 하나도 실행하지 못하고 있어요. "
+                                            + "그 파일이 내 것이고 나만 읽고 쓸 수 있게(chmod 600) 되어 있는지 확인해 주세요.",
+                                        file: nil, confirm: nil), file: inbox)
+        notifyApp()
     }
 
     /// One tick: cancels runs whose schedule was removed, drops one-time jobs that are done, and starts the due jobs
     /// (at most ArisSchedule.maxConcurrent at once), only once the store saved that they started.
     private func check() {
         let now = Date()
+        reportRefusal()
         retimeIfMoved(now)
         let stamp = ArisScheduleWatch.stamp(of: store)
         guard watch.needsLook(stamp: stamp, now: now, running: running.count) else { return }
@@ -80,17 +103,23 @@ final class ArisScheduler {
             // Its parked questions are declined as cancelled; the run then ends (ended()) without a failure entry.
             runners.removeValue(forKey: id)?.cancelTask()
         }
-        let finished = jobs.contains { $0.nextRun == nil && $0.runningSince == nil }
+        let finished = jobs.contains(where: ArisSchedule.isDone)
         guard finished || !ArisSchedule.due(jobs, now: now, running: running.count, excluding: running).isEmpty else { return }
+        var due: [ArisScheduledJob] = []
         var starting: [ArisScheduledJob] = []
         let saved = ArisScheduleStore.update(file: store) { current in
             let kept = ArisSchedule.pruned(current)
             // A job still running here (removed and brought back meanwhile) never starts twice.
-            starting = ArisSchedule.due(kept, now: now, running: running.count, excluding: running)
-                .map { ArisSchedule.started($0, at: now, calendar: .current) }
+            due = ArisSchedule.due(kept, now: now, running: running.count, excluding: running)
+            starting = due.map { ArisSchedule.started($0, at: now, calendar: .current) }
             return kept.map { job in starting.first { $0.id == job.id } ?? job }
         }
         guard saved != nil else { return }
+        // A run missed while the Mac slept or the agent was down runs once now (started() counts the next from now),
+        // and says it is late.
+        for job in due {
+            if let at = job.nextRun, now.timeIntervalSince(at) > ArisSchedule.lateAfter { lateSince[job.id] = at }
+        }
         for job in starting { run(job, at: now) }
     }
 
@@ -138,8 +167,10 @@ final class ArisScheduler {
     /// its own, and only the routine's account at the end is the job's result.
     private func ask(_ words: String, of job: ArisScheduledJob, chain: ArisRoutineChain?, brain: ArisBrain, mate: ArisTeammate?, notes: String?,
                      korean: Bool, at now: Date) {
-        let prompt = ArisAgentStream.prompt(request: words, context: context(for: job, now: now), memory: nil, notes: notes)
-        guard let runner = ArisAgentRunner.task(brain: brain, model: brain.model(tier: .work), title: job.title, untrusted: true, teammate: mate) else {
+        // The owner's rule about paying is the last word of every scheduled run's words (ArisPaymentBoundary).
+        let prompt = ArisAgentStream.prompt(request: ArisPaymentBoundary.taskWords(words, task: true, english: !korean), context: context(for: job, now: now),
+                                            memory: nil, notes: notes)
+        guard let runner = ArisAgentRunner.task(brain: brain, model: ArisThinking.jobModel(brain, auto: brain.model(tier: .work), choices: ArisModelChoiceBox.shared.current), title: job.title, untrusted: true, teammate: mate) else {
             return ended(job, .failure(korean ? "예약 작업을 시작하지 못했어요." : "The scheduled job couldn't start."))
         }
         runners[job.id] = runner
@@ -159,9 +190,12 @@ final class ArisScheduler {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "ko_KR")
         formatter.dateFormat = "yyyy-MM-dd (E) HH:mm"
+        // A run that is late (the Mac slept, the agent was down) runs once, and the brain knows it.
+        let late = lateSince[job.id].map { " It was due at \(formatter.string(from: $0)) and runs late now (the Mac was asleep or Aris wasn't running): " +
+            "do it as of now, and say briefly that it is late if the time matters." } ?? ""
         return """
             Now: \(formatter.string(from: now))
-            This is a scheduled job ("\(job.title)", \(ArisSchedule.describe(job.rule, calendar: .current))) the user set up earlier. \
+            This is a scheduled job ("\(job.title)", \(ArisSchedule.describe(job.rule, calendar: .current))) the user set up earlier.\(late) \
             The user is not waiting at the Mac: do what it says and give the result as your answer; it is said to them later. \
             Anything that needs their yes waits for them.
             """
@@ -192,21 +226,31 @@ final class ArisScheduler {
     }
 
     /// The run is over: its questions leave the inbox, its result (or failure) goes in unless the schedule was removed
-    /// meanwhile, and the job waits for its next time (a one-time job leaves the store).
+    /// meanwhile, and the job waits for its next time (a one-time job that went through leaves the store). A failed
+    /// run is tried again after a pause (ArisSchedule.failed), with no failure in the inbox until the last try; a
+    /// one-time job whose every try failed is kept, stopped.
     private func ended(_ job: ArisScheduledJob, _ reply: ArisAgentReply) {
         running.remove(job.id)
         runners[job.id] = nil
         let file = files.removeValue(forKey: job.id)
         let questions = parked.removeValue(forKey: job.id) ?? []
+        let late = lateSince.removeValue(forKey: job.id)
         var stillScheduled = false
         // Kept with the schedule, for the day-end list: whether this run failed.
         var failed = false
         if case .failure = reply { failed = true }
+        var retry: Date?
+        var tries = 0
+        var stopped = false
+        let now = Date()
         ArisScheduleStore.update(file: store) { jobs in
             jobs.compactMap { stored in
                 guard stored.id == job.id else { return stored }
                 stillScheduled = true
-                return ArisSchedule.finished(stored, failed: failed)
+                guard failed else { return ArisSchedule.finished(stored, failed: false) }
+                let after = ArisSchedule.failed(stored, now: now)
+                (retry, tries, stopped) = (after.retry, after.tries, ArisSchedule.isStopped(after.job))
+                return after.job
             }
         }
         ArisInbox.removeQuestions(Set(questions), file: inbox)
@@ -215,15 +259,24 @@ final class ArisScheduler {
                                        key: "schedule")
             return
         }
+        let korean = ArisBrainTrouble.isKorean(job.title + " " + job.prompt)
         switch reply {
-        case .answer(let answer): ArisInbox.append(entry(.result, job: job, text: answer, file: file), file: inbox)
+        case .answer(let answer):
+            let note = ArisSchedule.lateNote(due: late, now: now, korean: korean, calendar: .current).map { $0 + "\n\n" } ?? ""
+            ArisInbox.append(entry(.result, job: job, text: note + answer, file: file), file: inbox)
         case .failure(let message):
-            FileHandle.standardError.write(Data("aris-agent: scheduled job failed: \(message)\n".utf8))
-            ArisInbox.append(entry(.failure, job: job, text: String(message.prefix(300))), file: inbox)
+            FileHandle.standardError.write(Data("aris-agent: scheduled job failed (try \(tries)): \(message)\n".utf8))
+            if let retry {
+                ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(["answer": "failed, tried again at \(ISO8601DateFormatter().string(from: retry))",
+                                                                      "question": "schedule " + job.id.uuidString]), key: "schedule")
+                return
+            }
+            ArisInbox.append(entry(.failure, job: job, text: String(message.prefix(300)) + ArisSchedule.gaveUp(tries: tries, stopped: stopped, korean: korean)), file: inbox)
         default: return
         }
         notifyApp()
     }
+
 
     private func entry(_ kind: ArisInboxEntry.Kind, job: ArisScheduledJob, text: String, file: String? = nil,
                        question: ArisInboxEntry.Question? = nil) -> ArisInboxEntry {

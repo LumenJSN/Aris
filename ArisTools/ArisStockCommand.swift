@@ -21,8 +21,9 @@ private func stockGet(_ url: URL) -> ArisCappedFetch.Reply {
     return ArisCappedFetch.get(request, most: ArisStock.mostReplyBytes)
 }
 
-/// Tries query1, then query2; `reached` turns true once Yahoo answered at all.
-func stockDecode<T: Decodable>(_ make: (String) -> URL?, as type: T.Type, reached: inout Bool) -> T? {
+/// Tries query1, then query2; `reached` turns true once Yahoo answered at all, `limited` when it said 429 (too many
+/// requests: the stock may well exist).
+func stockDecode<T: Decodable>(_ make: (String) -> URL?, as type: T.Type, reached: inout Bool, limited: inout Bool) -> T? {
     for host in ["query1", "query2"] {
         guard let url = make(host) else { return nil }
         switch stockGet(url) {
@@ -30,6 +31,7 @@ func stockDecode<T: Decodable>(_ make: (String) -> URL?, as type: T.Type, reache
             reached = true
             return try? JSONDecoder().decode(T.self, from: data)
         case .refused: reached = true
+        case .limited: limited = true
         // No answer, or one too long to be a quote: the other host is asked, and with neither the command says so.
         case .unreachable, .tooLong: continue
         }
@@ -45,9 +47,9 @@ func stock(_ args: [String]) {
     // A currency or "환율" is `currency`'s (a conversion is no stock quote); a ticker as typed ("KRW=X") is still read here.
     if !ArisStock.looksLikeTicker(query), ArisCurrency.isCurrencyAsk(query) { fail(ArisCurrency.notAStock) }
     let alias = ArisStock.alias(query)
-    var reached = false
+    var reached = false, limited = false
     let chart = { (symbol: String) -> [String: Any]? in
-        stockDecode({ ArisStock.chartURL(symbol: symbol, host: $0) }, as: ArisStock.ChartReply.self, reached: &reached)
+        stockDecode({ ArisStock.chartURL(symbol: symbol, host: $0) }, as: ArisStock.ChartReply.self, reached: &reached, limited: &limited)
             .flatMap { ArisStock.card($0, displayName: alias?.name) }
     }
     var card: [String: Any]?
@@ -55,17 +57,14 @@ func stock(_ args: [String]) {
         card = chart(alias.symbol)
     } else {
         if ArisStock.looksLikeTicker(query) { card = chart(query) }
-        if card == nil, let symbol = stockDecode({ ArisStock.searchURL(query, host: $0) }, as: ArisStock.SearchReply.self, reached: &reached)
+        if card == nil, let symbol = stockDecode({ ArisStock.searchURL(query, host: $0) }, as: ArisStock.SearchReply.self, reached: &reached, limited: &limited)
             .flatMap(ArisStock.bestSymbol) {
             card = chart(symbol)
         }
         // "aapl" typed in lower case.
         if card == nil, !ArisStock.looksLikeTicker(query), ArisStock.looksLikeTicker(query.uppercased()) { card = chart(query.uppercased()) }
     }
-    guard let card else {
-        fail(reached ? "couldn't find a stock called \(query): try its ticker (AAPL, 005930.KS) or its English name"
-             : "the stock service didn't answer; try again in a moment")
-    }
+    guard let card else { fail(ArisStock.notFoundLine(query, reached: reached, limited: limited)) }
     guard json else { return print(ArisStock.summary(card)) }
     let data = (try? JSONSerialization.data(withJSONObject: card, options: [.sortedKeys])) ?? Data("{}".utf8)
     print(String(decoding: data, as: UTF8.self))

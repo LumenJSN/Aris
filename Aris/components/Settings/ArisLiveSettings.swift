@@ -11,7 +11,9 @@ import AppKit
 import AVFoundation
 import Defaults
 import KeyboardShortcuts
+import Speech
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ArisLiveSettings: View {
     @ObservedObject var nav = ArisSettingsNav.shared
@@ -38,6 +40,8 @@ struct ArisLiveSettings: View {
     @ObservedObject private var dropModel = ArisDropModel.shared
     /// 호출어 녹음 and 하루 소리 모으기 (ArisWakeRecordRows).
     @ObservedObject private var wakeRecord = ArisWakeRecordLive.shared
+    /// 내 목소리 (ArisVoiceIDRows, F1).
+    @ObservedObject private var voiceID = ArisVoiceIDLive.shared
     /// AI 서비스 (design D) draws from its own state (ArisAIServicesLive).
     @ObservedObject private var aiServices = ArisAIServicesLive.shared.model
 
@@ -45,8 +49,17 @@ struct ArisLiveSettings: View {
     @Default(.arisConversationMinutes) private var minutes
     @Default(.arisConversationSilence) private var silence
     @Default(.arisBargeInOnSpeakers) private var bargeInSpeakers
+    /// 에코 제거 오디오 (새 엔진): the duplex engine's one switch (ArisDuplexSwitch), the same key `defaults write` set.
+    @AppStorage(ArisDuplexSwitch.key) private var duplexAudio = false
+    /// Nil until the switch is touched: then 들은 말 다듬기 follows the engine (on with 자동).
+    @AppStorage(ArisHearRepairSetting.key) private var hearRepairStored: Bool?
     @Default(.claudeSounds) private var sounds
     @Default(.arisDayEndOffer) private var dayEndOffer
+    /// 하루 정리를 자세히 말하기: the day in review's switch (ArisRecapSwitch), the same key `defaults write` sets.
+    @AppStorage(ArisRecapSwitch.key) private var recap = false
+    /// 실험 기능: the helper's switches, kept here and sent with every /health, /warm and /ask (ArisAgentClient.switches).
+    @AppStorage(ArisExperimentSwitch.core2.rawValue) private var core2 = false
+    @AppStorage(ArisExperimentSwitch.teach.rawValue) private var teach = false
     @Default(.arisMuted) private var muted
     @Default(.arisQuietHours) private var quietHours
     @Default(.arisTeammateTerminal) private var teammateTerminal
@@ -54,12 +67,12 @@ struct ArisLiveSettings: View {
     @Default(.arisBrain) private var brain
     @Default(.arisComputerEngine) private var computerEngine
     @Default(.arisLanguages) private var languages
-    @Default(.arisCloudListening) private var cloud
     @Default(.arisVoiceSpeed) private var speed
     @Default(.arisVoiceName) private var voiceName
     @Default(.arisTodoDefaultList) private var defaultList
     @Default(.hideAllDayEvents) private var hideAllDay
     @Default(.joinMeetingOnEventTap) private var joinMeeting
+    @Default(.arisBrainFallback) private var brainFallback
     @Default(.calendarOpenIn) private var openIn
     @Default(.arisSeesScreen) private var seesScreen
     @Default(.arisCircleGesture) private var circle
@@ -81,8 +94,10 @@ struct ArisLiveSettings: View {
     @Default(.displayMode) private var displayMode
     @Default(.appLanguage) private var appLanguage
     @Default(.arisDictationBrainPolish) private var brainPolish
+    @Default(.arisDictationOn) private var dictationOn
     @Default(.arisDictationPill) private var dictationPill
     @Default(.arisDictationPillIdle) private var dictationPillIdle
+    @Default(.arisAutoUpdate) private var autoUpdate
     @Default(.arisDictationStyles) private var dictationStyles
 
     /// What the install itself lacks (ArisPrerequisites), read when the window opens and when Aris comes forward.
@@ -92,8 +107,15 @@ struct ArisLiveSettings: View {
     @State private var newListName = "Aris"
     /// What Aris calls the user (ArisUserName), saved as they types.
     @State private var userName = ArisUserName.current ?? ""
+    /// Claude Code 연결's dot (ClaudeConnect, read through the folder's grant without asking).
+    @State private var claudeConnected = ClaudeConnect.connectedNow ?? false
+    /// The name that wakes Aris as typed (ArisWakeName keeps the cleaned one), and why it is or isn't listening.
+    @State private var wakeName = ArisWakeName.load(.standard).name
+    @ObservedObject private var wakeStatus = ArisWakeStatusLive.shared
     @State private var newListFailed = false
     @State private var permissions: [ArisSettingsSnapshot.Permission] = ArisLiveSettings.readPermissions()
+    /// Rows the greeting never counts as missing: each is asked by the feature that needs it, the first time it is used.
+    static let quietRows: Set<String> = ["fda", "speech", "input"]
     /// aris-agent's Full Disk Access, as the agent last said (it reads Messages, Mail and Notes).
     @State private var agentDiskAccess = false
     @State private var standing: [ArisStandingPermission]?
@@ -114,20 +136,12 @@ struct ArisLiveSettings: View {
         ArisSettingsShell(nav: nav, menus: menus, status: status,
                           searchable: ArisSettingsBuilder.searchable(s),
                           helperFix: (ArisFixWords.title(.settings(.helper), english: ArisUIWords.english), { restartHelper() }),
-                          aiFix: (ArisUIWords.text("다시 확인", "Check again"), { recheckAI() }),
-                          accessory: nav.page == .skills && !ArisSkillsOff.shown(enabled: skills.status.enabled, chatEmpty: skills.chat.isEmpty)
-                              ? AnyView(ArisSkillsSwitch(model: skills).id("skills.feature").arisFlash("skills.feature")) : nil) {
-            if nav.page == .team {
-                ArisTeamPage(team: team, mainBrain: ArisBrain.named(Defaults[.arisBrain]).rawValue)
-                // The terminal a Claude Code teammate opens in: one row of the settings' own (ArisTerminalSetting).
-                ArisSettingsPageView(sections: wording.sections([ArisTerminalSetting.section(pinned: teammateTerminal, installed: Self.installedTerminals())]))
-                    .padding(.top, 22)
-            } else if nav.page == .skills {
-                ArisSkillsPage(model: skills)
-            } else if nav.page == .ai {
-                ArisAIServicesPage(model: aiServices, sections: wording.sections(ArisSettingsBuilder.sections(.ai, s)))
-            } else {
-                ArisSettingsPageView(sections: wording.sections(ArisSettingsBuilder.sections(nav.page, s)))
+                          aiFix: (ArisUIWords.text("다시 확인", "Check again"), { recheckAI() })) {
+            // Option A: the page's parts one under the other, each under its title.
+            ArisSettingsLongPage(nav: nav, parts: ArisSettingsBuilder.parts(nav.page, s).map { ArisPartSections(part: $0.part, sections: wording.sections($0.sections)) }) { part in
+                ArisLivePart(part: part, ai: aiServices, engineLine: ArisSettingsBuilder.engineLine(s))
+            } accessory: { part in
+                part.sections.first.flatMap { $0.heading == nil ? $0.feature : nil }.map { AnyView(ArisFeatureLink(feature: $0)) }
             }
         }
         .environment(\.arisSettingsHandlers, handlers)
@@ -148,8 +162,8 @@ struct ArisLiveSettings: View {
             await pageOpened(nav.page)
         }
         // Permissions change in System Settings while 컴퓨터 제어 is open: read them each second, only while it's seen.
-        .task(id: nav.page == .control && window.visible) {
-            guard nav.page == .control && window.visible else { return }
+        .task(id: nav.page == .app && window.visible) {
+            guard nav.page == .app && window.visible else { return }
             var tick = 0
             while !Task.isCancelled {
                 // The agent is asked every 3 s (M11); the app's own permissions every second.
@@ -163,6 +177,10 @@ struct ArisLiveSettings: View {
         .onAppear {
             menus.choose = { menu, id in set(menu.key, .text(id), menu.title) }
             nav.remember(in: .standard)
+            ClaudeConnect.refreshConnected()
+            claudeConnected = ClaudeConnect.connectedNow ?? false
+            // 저장된 단계 is searchable from the start; its rows come with the helper's answer (sixth VM run, item 3).
+            Task { await memory.loadSavedSteps() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             permissions = Self.readPermissions(diskAccess: agentDiskAccess, folders: folderAccess)
@@ -182,13 +200,21 @@ struct ArisLiveSettings: View {
             if ArisMemorySettingsRows.reloadsOnChange(page: nav.page) { Task { await memory.reload() } }
         }
         .onChange(of: nav.sheet) { _, sheet in if sheet == "language" { overlay.sheet = .languages } }
+        // A link to a row only the 팀원 sheet draws opens the sheet on it.
+        .onChange(of: nav.sheetPart) { _, part in
+            guard let part else { return }
+            openSheet(part)
+            nav.sheetPart = nil
+        }
     }
 
     // MARK: - Reading
 
     private var status: String {
-        ArisSettingsCaption.greeting(agentDown: agent.link.dozes || !agent.answering, missingPermissions: permissions.filter { !$0.granted && $0.id != "fda" && !$0.id.hasPrefix("folder.") }.count,
-                                     noAI: brainSetup.noneReady, aiUnchecked: brainSetup.needsCheck, quickKey: quickKey, missing: missing)
+        let missingRows = permissions.filter { !$0.granted && !Self.quietRows.contains($0.id) && !$0.id.hasPrefix("folder.") }
+        return ArisSettingsCaption.greeting(agentDown: agent.link.dozes || !agent.answering, missingPermissions: missingRows.count,
+                                            missingNames: missingRows.map(\.title), noAI: brainSetup.noneReady,
+                                            aiUnchecked: brainSetup.needsCheck, quickKey: quickKey, missing: missing)
     }
 
     /// The quick commands' key as its last answers said (ArisRouterKeyHealth); nothing to say without a key.
@@ -209,38 +235,6 @@ struct ArisLiveSettings: View {
         (UserDefaults.standard.dictionary(forKey: Self.folderAccessKey) as? [String: Bool]) ?? [:]
     }
 
-    private static func readPermissions(diskAccess: Bool = false, folders: [String: Bool] = [:]) -> [ArisSettingsSnapshot.Permission] {
-        base(diskAccess: diskAccess) + ArisSettingsSnapshot.folderPermissions(granted: diskAccess ? Dictionary(uniqueKeysWithValues: ArisSettingsSnapshot.agentFolders.map { ($0, true) }) : folders)
-    }
-
-    private static func base(diskAccess: Bool) -> [ArisSettingsSnapshot.Permission] {
-        [
-            .init(id: "ax", title: ArisFix.Pane.accessibility.title(english: false), desc: "버튼·입력칸을 찾아 누르고 글자를 입력해요.", granted: AXIsProcessTrusted()),
-            .init(id: "screen", title: ArisFix.Pane.screen.title(english: false), desc: "화면을 가리켜 말할 때 그 화면을 같이 봐요.", granted: CGPreflightScreenCaptureAccess()),
-            .init(id: "mic", title: "마이크", desc: "말을 들어요.", granted: AVCaptureDevice.authorizationStatus(for: .audio) == .authorized),
-            .init(id: "fda", title: "전체 디스크 접근", desc: "메시지·메일·메모를 읽기만 해요.",
-                  granted: diskAccess),
-        ]
-    }
-
-    /// The terminals on this Mac a teammate can open in (looked up by their bundle ids; nothing is opened).
-    private static func installedTerminals() -> [ArisTerminal] {
-        ArisTerminal.allCases.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleId) != nil }
-    }
-
-    private static func readScreens() -> [ArisSettingOption] {
-        NSScreen.screens.compactMap { screen in screen.displayUUID.map { ArisSettingOption(id: $0, title: screen.localizedName) } }
-    }
-
-    private static func caps(_ name: KeyboardShortcuts.Name) -> [String] {
-        KeyboardShortcuts.getShortcut(for: name).map { ArisShortcutCaps.caps($0.description) } ?? []
-    }
-
-    private static func hex(_ color: NSColor) -> String {
-        let c = color.usingColorSpace(.sRGB) ?? color
-        return String(format: "#%02X%02X%02X", Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
-    }
-
     private var accentHex: String? {
         accentData.flatMap { try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: $0) }.map(Self.hex)
     }
@@ -249,25 +243,40 @@ struct ArisLiveSettings: View {
         _ = recorder.version
         var s = ArisSettingsSnapshot()
         s.wakeWord = wakeWord
+        s.wakeName = wakeName
+        s.wakeStatus = wakeStatus.line(english: false)
         s.hasVoiceModel = aris.hasWakeModel
         s.wakeRecord = wakeRecord.summary
+        s.voiceID = voiceID.summary
         s.busy = aris.isActive
         s.talkCaps = Self.caps(.talkToAris)
         s.minutes = minutes
         s.silence = silence
         s.bargeInSpeakers = bargeInSpeakers
+        s.duplexAudio = duplexAudio
+        s.hearRepair = ArisHearRepairSetting.isOn(stored: hearRepairStored, choice: ArisHearSetup.choice)
+        s.teamCount = team.teammates.count
+        s.skillCount = skills.status.skills.count
+        // A key cleared while the page is open keeps its row (ArisSavedKeyRows), so the section keeps its heading.
+        s.savedKeys = aiServices.keyRows.count(saved: aiServices.page.savedKeys)
+        s.teammateTerminal = teammateTerminal
+        s.terminals = Self.installedTerminals()
         s.systemAudioMissing = aris.systemAudioMissing
+        s.systemAudioProven = ArisOutputMeter.tapProven
         s.sounds = sounds
         s.dayEndOffer = dayEndOffer
+        s.recap = recap
+        s.core2 = core2
+        s.teach = teach
         s.muted = muted
         s.quietHours = quietHours
         s.claudeRing = claudeRing
+        s.claudeConnected = claudeConnected
         s.brain = ArisBrainChoice.shown(brain, stored: ArisBrainSetup.stored, ready: brainSetup.ready)
         s.computerEngine = computerEngine
         s.computerEngines = ArisComputerEngine.allCases.map { .init(id: $0.rawValue, title: $0.title) }
         s.brains = ArisBrain.allCases.map { .init(id: $0.rawValue, title: $0.shortTitle) }
         s.languages = languages.map { .init(id: $0, title: ArisLanguages.named($0)?.native ?? $0) }
-        s.cloud = cloud
         s.hasVoiceKey = hasVoiceKey
         s.voiceName = voiceName
         s.speed = speed
@@ -277,8 +286,12 @@ struct ArisLiveSettings: View {
         s.words = words
         s.learned = learned
         s.brainPolish = brainPolish
+        s.dictationOn = dictationOn
         s.dictationPill = dictationPill
         s.dictationPillIdle = dictationPillIdle
+        s.updates = ArisUpdater.shared.isOn
+        s.autoUpdate = autoUpdate
+        s.appVersion = Bundle.main.releaseVersionNumber ?? "?"
         s.styles = dictationStyles
         s.pasteLastCaps = Self.caps(.pasteLastDictation)
         s.dictationCaps = [ArisDictationKey.Choice.current.name(english: wording.pageEnglish)]
@@ -297,6 +310,7 @@ struct ArisLiveSettings: View {
         s.googleCalendars = calendar.eventCalendars.filter { ArisAgenda.isGoogle(account: $0.account) }.count
         s.allDay = !hideAllDay
         s.joinMeeting = joinMeeting
+        s.brainFallback = brainFallback
         s.openIn = openIn
         s.services = usage.providers.map { provider in
             let status = provider.note ?? (provider.lanes.isEmpty ? "연결 확인 중" : "연결됨")
@@ -327,6 +341,10 @@ struct ArisLiveSettings: View {
         s.workMemory = memory.workOn
         s.confirmingWorkClear = memory.confirmingWorkClear
         s.savedSteps = memory.savedSteps
+        s.savedStepsConfirming = memory.confirmingForget
+        s.savedStepsRenaming = memory.renaming
+        s.savedStepsName = memory.renameText
+        s.savedStepsRenameProblem = memory.renameProblem
         s.hover = hover
         s.haptics = haptics
         s.gestures = gestures
@@ -365,27 +383,30 @@ struct ArisLiveSettings: View {
                                                               (.activeDisplay, "active"), (.allDisplays, "all")]
     private static func displayID(_ mode: DisplayMode) -> String { displayIDs.first { $0.0 == mode }?.1 ?? "active" }
 
-    /// What a page needs fresh each time it opens.
+    /// What a page needs fresh each time it opens: what each of its parts shows.
     private func pageOpened(_ page: ArisSettingsPage) async {
         switch page {
-        case .dictation:
-            words = ArisVocabulary.loadOwn().count
-            learned = Self.readLearned()
-        case .todo:
-            await reminders.reload()
-            await calendar.loadIfAuthorized()
-        case .about: await ArisDataModel.shared.reload()
-        case .memory: await memory.reload()
-        // 호출어 녹음's counts and whether 하루 소리 모으기's day is over.
-        case .aris: wakeRecord.refresh()
-        case .features: await more.pageOpened()
-        case .ai:
+        case .talk:
+            // 호출어 녹음's counts and whether 하루 소리 모으기's day is over; the AI parts' services.
+            wakeRecord.refresh()
+            voiceID.refresh()
             await services.reload()
             await ArisAIServicesLive.shared.reload()
-        case .control:
+        case .able:
+            words = ArisVocabulary.loadOwn().count
+            learned = Self.readLearned()
+            Task { await memory.reload() }
             standing = await ArisAgentClient.standingPermissions()
             standingLoaded = true
-        default: break
+            await services.reload()
+            await reminders.reload()
+            await calendar.loadIfAuthorized()
+        case .look: await more.pageOpened()
+        case .app:
+            await reminders.reload()
+            await calendar.loadIfAuthorized()
+            await ArisDataModel.shared.reload()
+            await ArisAIServicesLive.shared.reload()
         }
     }
 
@@ -416,12 +437,22 @@ struct ArisLiveSettings: View {
             // Off now: an open conversation ends here.
             if silence == 0 { ArisController.shared.closeConversation(.dismissed) }
         case .bargeInSpeakers: bargeInSpeakers = on ?? bargeInSpeakers
+        case .duplexAudio: duplexAudio = on ?? duplexAudio
+        case .hearRepair: hearRepairStored = on ?? !ArisHearSetup.repairOn
+        case .voiceID: voiceID.setOn(on ?? !voiceID.summary.on)
         case .dictationBrainPolish: brainPolish = on ?? brainPolish
+        case .dictationOn: dictationOn = on ?? dictationOn
         case .dictationPill: dictationPill = on ?? dictationPill
         case .dictationPillIdle: dictationPillIdle = on ?? dictationPillIdle
+        case .autoUpdate: autoUpdate = on ?? autoUpdate
         case .dictationStyle(let kind): dictationStyles[kind] = text
         case .sounds: sounds = on ?? sounds
         case .dayEndOffer: dayEndOffer = on ?? dayEndOffer
+        case .recap: recap = on ?? recap
+        case .core2, .teach:
+            if key == .core2 { core2 = on ?? core2 } else { teach = on ?? teach }
+            // The helper hears it now, not at the next probe or question.
+            Task { _ = await ArisAgentClient.reachable() }
         case .muted: ArisQuietLive.shared.setMuted(on ?? muted)
         case .quietHours: quietHours = ArisQuietSpan.choosing(text, current: quietHours)
         case .quietStart: quietHours = ArisQuietSpan.setting(start: text, current: quietHours)
@@ -436,7 +467,9 @@ struct ArisLiveSettings: View {
         case .apiBrain(let field):
             apiBrains.choose(field, text)
             return
-        case .cloud: cloud = on ?? cloud
+        case .modelChoice(let field):
+            ArisModelChoiceModel.shared.choose(field, text)
+            return
         case .speed: speed = Double(text) ?? speed
         case .todoList(let id):
             var ids = reminders.includedIDs
@@ -445,6 +478,13 @@ struct ArisLiveSettings: View {
         case .todoDefault: defaultList = text
         case .newListName:
             newListName = text
+            return
+        case .savedStepsName:
+            memory.renameText = text
+            return
+        case .wakeName:
+            wakeName = String(text.prefix(ArisWakeName.longest))
+            ArisWakeName.save(name: wakeName, to: .standard)
             return
         case .userName:
             userName = String(text.prefix(ArisUserName.maxLength))
@@ -462,6 +502,7 @@ struct ArisLiveSettings: View {
             }
         case .allDay: hideAllDay = !(on ?? true)
         case .joinMeeting: joinMeeting = on ?? joinMeeting
+        case .brainFallback: brainFallback = on ?? brainFallback
         case .openIn: openIn = text
         case .seesScreen: seesScreen = on ?? seesScreen
         case .circle: circle = on ?? circle
@@ -523,7 +564,7 @@ struct ArisLiveSettings: View {
             // The sample is read in the page's wording.
             let line = wording(ArisVoiceSample.line)
             Task { await speaker.speak(line, preview: true) }
-        case .editWords: ArisLiveSettings.openVocabulary()
+        case .editWords: openVocabulary()
         case .voicePicker: nav.sheet = "voice"
         case .addLanguage: overlay.sheet = .languages
         case .remindersAccess: Task { await reminders.requestAccess() }
@@ -567,7 +608,11 @@ struct ArisLiveSettings: View {
             Task { if await memory.clearWorkPressed() { overlay.show(ArisWorkSettingsRows.clearedToast) } }
         case .keepWork: memory.cancelWorkClear()
         case .forgetSavedSteps(let key):
-            Task { if await memory.forgetSavedSteps(key: key) { overlay.show(ArisSavedStepsSettingsRows.forgotToast) } }
+            Task { if await memory.forgetSavedStepsPressed(key: key) { overlay.show(ArisSavedStepsSettingsRows.forgotToast) } }
+        case .keepSavedSteps: memory.cancelForgetSavedSteps()
+        case .renameSavedSteps(let key): memory.startRename(key: key)
+        case .saveSavedStepsName(let key):
+            Task { if await memory.saveRename(key: key) { overlay.show(ArisSavedStepsSettingsRows.renamedToast) } }
         case .importMemory:
             importer.open()
             overlay.sheet = .memoryImport
@@ -577,18 +622,26 @@ struct ArisLiveSettings: View {
         case .clearMemoryQuery: memory.query = ""
         case .unhideSides: for edge in ArisSidePanels.Edge.allCases { panels.unhide(edge) }
         case .go(let page, let anchor): nav.go(page, anchor: anchor)
+        case .openSheet(let part, _): openSheet(part)
         case .export: openData(.export)
         case .diagnostics: openData(.diagnostics)
         case .wipe: openData(.wipe)
         case .uninstall: openData(.uninstall)
         case .onboarding: ArisOnboardingGuide.shared.show(replay: true)
+        case .resetWakeName:
+            wakeName = ArisWakeName.defaultName
+            ArisWakeName.save(name: wakeName, to: .standard)
         case .clearName:
             userName = ""
             ArisUserName.set(nil)
         case .restart: ApplicationRelauncher.restart()
         case .quit: NSApp.terminate(nil)
-        case .openFolder:
-            NSWorkspace.shared.activateFileViewerSelecting([FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/aris")])
+        case .checkUpdate: ArisUpdater.shared.checkNow()
+        case .claudeConnect, .claudeDisconnect:
+            let done = action == .claudeConnect ? ClaudeConnect.connect() : ClaudeConnect.disconnect()
+            claudeConnected = ClaudeConnect.connectedNow ?? false
+            overlay.show(done.line, tone: done.ok ? .ok : .bad)
+        case .openFolder: openRecordsFolder()
         case .accent(let hex): if let hex, let color = Color(arisHexString: hex) { saveAccent(NSColor(color)) }
         case .pickAccent: ArisAccentPanel.shared.open { saveAccent($0) }
         case .sliding(let key, _):
@@ -605,6 +658,13 @@ struct ArisLiveSettings: View {
                 overlay.show(ArisWakeRecordRows.clearedToast)
             }
         case .keepWakeRecordings: wakeRecord.cancelClear()
+        case .enrolVoice: overlay.sheet = .voiceEnrol
+        case .forgetVoice:
+            Task {
+                guard await voiceID.forgetPressed() else { return }
+                overlay.show(ArisVoiceIDRows.forgottenToast)
+            }
+        case .keepVoice: voiceID.cancelForget()
         }
     }
 
@@ -630,11 +690,41 @@ struct ArisLiveSettings: View {
         NotificationCenter.default.post(name: .accentColorChanged, object: nil)
     }
 
-    private static func openVocabulary() {
+    /// ~/.config/aris in Finder: the real home's (homeDirectoryForCurrentUser is the sandbox's container, where there
+    /// is no such folder, so the button opened nothing).
+    private func openRecordsFolder() {
+        let folder = URL(fileURLWithPath: ArisKeyFile.folder, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: folder.path) else {
+            return overlay.show("기록 폴더가 아직 없어요. Aris 도우미가 처음 켜지면 생겨요.", tone: .bad)
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([folder])
+    }
+
+    /// The word list, opened in the text editor. The app may only read ~/.config/aris, so on a fresh install the empty
+    /// file is made through a save panel on its place (the user's own Save gives the app the right to write it), then
+    /// opened; it used to be "made" where the sandbox forbids it, and nothing opened.
+    private func openVocabulary() {
         let url = URL(fileURLWithPath: ArisVocabulary.path)
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: Data()) }
-        NSWorkspace.shared.open(url)
+        if FileManager.default.fileExists(atPath: url.path) { return openWords(url) }
+        let panel = NSSavePanel()
+        panel.directoryURL = url.deletingLastPathComponent()
+        panel.nameFieldStringValue = url.lastPathComponent
+        panel.message = ArisUIWords.text("내 단어장을 만들어요. 이 자리에 저장해야 Aris가 읽어요.", "Create your word list. Save it here so Aris can read it.")
+        panel.allowedContentTypes = [.plainText]
+        guard panel.runModal() == .OK, let chosen = panel.url else { return }
+        guard chosen.resolvingSymlinksInPath().standardizedFileURL.path == url.resolvingSymlinksInPath().standardizedFileURL.path else {
+            return overlay.show("단어장은 처음 보여 준 자리에 저장해야 Aris가 읽어요.", tone: .bad)
+        }
+        do {
+            try Data(ArisVocabulary.fileStart(english: ArisUIWords.english).utf8).write(to: chosen, options: .withoutOverwriting)
+        } catch {
+            if !FileManager.default.fileExists(atPath: chosen.path) { return overlay.show("단어장을 만들지 못했어요.", tone: .bad) }
+        }
+        openWords(chosen)
+    }
+
+    private func openWords(_ url: URL) {
+        if !NSWorkspace.shared.open(url) { overlay.show("단어장을 열지 못했어요.", tone: .bad) }
     }
 
     /// Accessibility and Screen Recording have no prompt to answer: System Settings opens on the list with the drag
@@ -643,6 +733,16 @@ struct ArisLiveSettings: View {
         switch id {
         case "ax": ArisPermissionGuide.shared.show(.accessibility)
         case "screen": ArisPermissionGuide.shared.show(.screen)
+        // Through the permission layer (ArisPermissionCenter): macOS's own dialog where it has one and was never
+        // answered, else the pane, watched until its switch is on.
+        case "speech":
+            if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
+                // The list is read again every second while the window is open.
+                SFSpeechRecognizer.requestAuthorization { _ in }
+            } else {
+                ArisPermissionCenter.shared.openPane(.speechRecognition)
+            }
+        case "input": ArisPermissionCenter.shared.openPane(.inputMonitoring)
         case "fda":
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") { NSWorkspace.shared.open(url) }
         case "systemAudio":
@@ -713,8 +813,18 @@ struct ArisLiveSettings: View {
 
     // MARK: - Parts
 
+    /// 팀원 or 스킬, as a sheet over the window (they draw themselves as whole pages).
+    private func openSheet(_ part: String) {
+        overlay.sheet = part == "skills" ? .skills : .team
+    }
+
     private func custom(_ item: ArisSettingItem) -> AnyView? {
-        guard case .custom(let kind) = item.control else { return nil }
+        let kind: String
+        switch item.control {
+        case .custom(let named), .trailing(let named): kind = named
+        default: return nil
+        }
+        if kind == "skills.switch" { return AnyView(ArisSkillsSwitch(model: skills)) }
         if kind == "voicePicker" {
             return AnyView(ArisVoiceMenu { _ in })
         }
@@ -756,6 +866,15 @@ struct ArisLiveSettings: View {
             featureSheet(overlay.feature)
         case .wakeRecord:
             ArisWakeRecordSheet(model: .shared) { overlay.sheet = nil }
+        case .voiceEnrol:
+            ArisVoiceEnrolSheet(model: .shared) { overlay.sheet = nil }
+        case .team:
+            VStack(alignment: .leading, spacing: 22) {
+                ArisFaceStageView()
+                ArisTeamPage(team: team, mainBrain: ArisBrain.named(Defaults[.arisBrain]).rawValue)
+            }
+        case .skills:
+            ArisSkillsPage(model: skills)
         default:
             ArisDataSheet(kind: sheet, model: .shared)
         }

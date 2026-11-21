@@ -9,12 +9,22 @@
 //  CGNAT or ULA); a redirect is checked the same way, and the body is read with a hard 2 MB cap. The Claudes' WebFetch
 //  addresses pass the same check in their hooks. Pure parts here (the resolver passed in), so the tests run them.
 //
+//  A proxy or fake-IP DNS (Clash, Surge and the like; the user's family's Macs): a fake-IP resolver answers every name with
+//  an address in 198.18.0.0/15, the benchmarking range no real host uses, and the proxy core picks the real one. Such
+//  an answer counts as public only while this Mac holds an address in that range itself (the proxy's tunnel), and never
+//  as a literal in the address. A fetch through the system proxy connects to the proxy, not to the page: that hop is
+//  taken when the system marked it a proxy connection to one of the configured proxies (ArisWebRoute). What still
+//  holds: a local name, a literal private or reserved address, and a name that resolves here to a private one are
+//  refused before any connection. What a proxy leaves open: it resolves the name again itself, so a public name whose
+//  real record points into a private network can still be reached through it (the check sees only the fake answer).
+//
 
 import Foundation
 
 enum ArisWebFetch {
     static let maxBytes = 2_000_000
-    static let maxText = 6_000
+    /// The most text a fetch hands on; more is cut, and the cut is said first (ArisWebFetch.capped).
+    static let maxText = 20_000
     static let timeout: TimeInterval = 15
 
     /// The address when it may be fetched; nil otherwise.
@@ -46,9 +56,10 @@ enum ArisWebFetch {
 
     /// The address when it may be fetched and every address its host resolves to is public; nil otherwise (one that
     /// doesn't resolve included).
-    static func allows(_ text: String, resolve: (String) -> [String]? = liveResolve) -> URL? {
+    /// `fakeIP`: this Mac runs a fake-IP resolver (ArisWebRoute.fakeIPInUse): an answer in its range is the proxy's.
+    static func allows(_ text: String, resolve: (String) -> [String]? = liveResolve, fakeIP: Bool = ArisWebRoute.fakeIPInUse()) -> URL? {
         guard let url = checkURL(text), let host = url.host, let addresses = resolve(host), !addresses.isEmpty,
-              addresses.allSatisfy(isPublicAddress) else { return nil }
+              addresses.allSatisfy({ isPublicAddress($0) || (fakeIP && ArisWebRoute.isFakeIP($0)) }) else { return nil }
         return url
     }
 
@@ -79,9 +90,18 @@ enum ArisWebFetch {
     /// The addresses a fetch's transactions connected to (URLSessionTaskTransactionMetrics.remoteAddress): at least one,
     /// and every one public; a transaction with none (or none at all) fails closed.
     static func connectedPublicly(_ addresses: [String?]) -> Bool {
-        !addresses.isEmpty && addresses.allSatisfy { address in
-            guard let address else { return false }
-            return isPublicAddress(address.trimmingCharacters(in: CharacterSet(charactersIn: "[]")))
+        connectedSafely(addresses.map { ArisWebRoute.Hop(address: $0, viaProxy: false) }, proxies: [], fakeIP: false)
+    }
+
+    /// The same for each transaction as it really went: one the system made to its proxy counts when it reached one of
+    /// the configured proxies (`proxies`; nil: a proxy script chose it, whose host isn't known beforehand); any other
+    /// must have reached a public address, or with `fakeIP` one in the fake-IP range.
+    static func connectedSafely(_ hops: [ArisWebRoute.Hop], proxies: Set<String>?, fakeIP: Bool) -> Bool {
+        !hops.isEmpty && hops.allSatisfy { hop in
+            guard let raw = hop.address else { return false }
+            let address = raw.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+            if hop.viaProxy { return proxies.map { $0.contains(address) } ?? true }
+            return isPublicAddress(address) || (fakeIP && ArisWebRoute.isFakeIP(address))
         }
     }
 
@@ -115,8 +135,8 @@ enum ArisWebFetch {
     }
 
     /// A page's readable text: scripts, styles and comments dropped, tags taken out (block ends as line breaks), the
-    /// common entities decoded, blank runs folded, cut to `maxText`.
-    static func text(fromHTML html: String) -> String {
+    /// common entities decoded, blank runs folded, cut to `limit` (said first when it is: capped).
+    static func text(fromHTML html: String, limit: Int = maxText) -> String {
         var text = html
         for (open, close) in [("<!--", "-->"), ("<head", "</head"), ("<script", "</script"), ("<style", "</style"), ("<noscript", "</noscript")] {
             text = cut(text, from: open, to: close)
@@ -127,9 +147,14 @@ enum ArisWebFetch {
         let lines = text.components(separatedBy: .newlines)
             .map { $0.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\u{A0}" }).joined(separator: " ") }
             .filter { !$0.isEmpty }
-        let joined = lines.joined(separator: "\n")
-        guard joined.count > maxText else { return joined }
-        return String(joined.prefix(maxText)) + "\n…(cut)"
+        return capped(lines.joined(separator: "\n"), limit: limit)
+    }
+
+    /// `text` as it is, or its first `limit` characters under a line that says it was cut and how long it was, so a
+    /// cut page is never read as the whole of it (a later cut by whoever passes it on keeps that line).
+    static func capped(_ text: String, limit: Int = maxText) -> String {
+        guard text.count > limit else { return text }
+        return "[truncated: the first \(limit) of \(text.count) characters of the page]\n" + String(text.prefix(limit)) + "\n…[truncated]"
     }
 
     /// `text` without every run from `open` to the end of the next `close` (the rest of the page when it never closes),
@@ -180,5 +205,84 @@ enum ArisWebFetch {
             last = whole.upperBound
         }
         return result + text[last...]
+    }
+}
+
+/// How a fetch reaches the web on this Mac: the system's proxies for an address, and whether a fake-IP resolver runs.
+enum ArisWebRoute {
+    /// One transaction of a fetch: the address it connected to, and whether the system made it to its proxy.
+    struct Hop: Equatable {
+        let address: String?
+        let viaProxy: Bool
+    }
+
+    /// The proxies the system uses for one address: their hosts (and ports), or a proxy script whose choice isn't known
+    /// beforehand.
+    struct Proxies: Equatable {
+        var hosts: [String] = []
+        var scripted = false
+        var any: Bool { scripted || !hosts.isEmpty }
+    }
+
+    /// 198.18.0.0/15 (RFC 2544 benchmarking): where fake-IP resolvers hand out their answers. IPv4 only.
+    static func isFakeIP(_ text: String) -> Bool {
+        var v4 = in_addr()
+        guard inet_pton(AF_INET, text, &v4) == 1 else { return false }
+        let o = withUnsafeBytes(of: v4.s_addr) { Array($0) }
+        return o[0] == 198 && (o[1] == 18 || o[1] == 19)
+    }
+
+    /// Whether one of this Mac's own addresses is in the fake-IP range: the tunnel of a fake-IP proxy is up.
+    static func holdsFakeIP(_ ownAddresses: [String]) -> Bool { ownAddresses.contains(where: isFakeIP) }
+
+    /// The IPv4 addresses of this Mac's interfaces that are up.
+    static func ownAddresses() -> [String] {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return [] }
+        defer { freeifaddrs(list) }
+        var found: [String] = []
+        var node: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = node {
+            if let address = current.pointee.ifa_addr, address.pointee.sa_family == UInt8(AF_INET), (current.pointee.ifa_flags & UInt32(IFF_UP)) != 0 {
+                var name = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                if getnameinfo(address, socklen_t(address.pointee.sa_len), &name, socklen_t(name.count), nil, 0, NI_NUMERICHOST) == 0 {
+                    found.append(String(cString: name))
+                }
+            }
+            node = current.pointee.ifa_next
+        }
+        return found
+    }
+
+    static func fakeIPInUse() -> Bool { holdsFakeIP(ownAddresses()) }
+
+    /// The proxies in CFNetworkCopyProxiesForURL's list: a host for each HTTP, HTTPS or SOCKS entry, `scripted` for a
+    /// proxy script (PAC); a direct entry adds nothing.
+    static func proxies(from list: [[String: Any]]) -> Proxies {
+        var result = Proxies()
+        for entry in list {
+            let type = entry[kCFProxyTypeKey as String] as? String
+            if type == kCFProxyTypeAutoConfigurationURL as String || type == kCFProxyTypeAutoConfigurationJavaScript as String {
+                result.scripted = true
+            } else if [kCFProxyTypeHTTP, kCFProxyTypeHTTPS, kCFProxyTypeSOCKS].map({ $0 as String }).contains(type ?? ""),
+                      let host = entry[kCFProxyHostNameKey as String] as? String, !host.isEmpty {
+                result.hosts.append(host)
+            }
+        }
+        return result
+    }
+
+    /// The system's proxies for `url` (System Settings › Network › Proxies, and what a proxy app set there).
+    static func proxies(for url: URL) -> Proxies {
+        guard let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue(),
+              let list = CFNetworkCopyProxiesForURL(url as CFURL, settings).takeRetainedValue() as? [[String: Any]] else { return Proxies() }
+        return proxies(from: list)
+    }
+
+    /// The addresses a connection to one of `proxies` lands on (each host resolved; a numeric one as it is); nil for a
+    /// proxy script, whose proxy isn't known beforehand.
+    static func proxyAddresses(_ proxies: Proxies, resolve: (String) -> [String]? = ArisWebFetch.liveResolve) -> Set<String>? {
+        guard !proxies.scripted else { return nil }
+        return Set(proxies.hosts.flatMap { resolve($0) ?? [$0] })
     }
 }

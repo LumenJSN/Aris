@@ -7,7 +7,7 @@
 //  {"op": "list"}: the sessions the hooks know, each with its folder, state, last hook, how long ago, its terminal and
 //  whether a card waits on it; never anything a session wrote (that stays in the turn's context lines). {"op": "watch",
 //  "session": id}: the agent typed a prompt there, so the session's next Stop is said once (ClaudeSessionWatch).
-//  Foundation only (tested).
+//  {"op": "fleet"} and {"op": "deny"}: the fleet's (ArisFleetRoute). Foundation only (tested).
 //
 
 import Foundation
@@ -62,6 +62,9 @@ enum ClaudeSessionsRoute {
             }
             watch.watch(id, folder: session.title, at: now)
             json = ["ok": true]
+        case "fleet", "deny":
+            // The fleet (jv-fleet): Claude Code's own list in, the fleet out; or a "no" to a session's permission card.
+            return ArisFleetRoute.answer(body, store: store, fleet: .shared, now: now)
         default:
             json = ["ok": false, "message": "usage: {\"op\": \"list\"} or {\"op\": \"watch\", \"session\": <id>}"]
         }
@@ -79,6 +82,8 @@ final class ClaudeSessionWatch {
     static let most = 8
 
     private var watched: [String: (folder: String, at: Date)] = [:]
+    /// The watched sessions whose Stop was just said, and when (the fleet leaves their finish to this).
+    private var said: [String: Date] = [:]
 
     func watch(_ id: String, folder: String, at now: Date) {
         let fresh = watched.filter { now.timeIntervalSince($0.value.at) < Self.keep }
@@ -87,6 +92,11 @@ final class ClaudeSessionWatch {
     }
 
     var count: Int { watched.count }
+
+    /// Whether this session's finish is said here: it is watched, or its Stop was said within the last minute.
+    func saysFinish(of id: String, at now: Date = Date()) -> Bool {
+        watched[id] != nil || said[id].map { now.timeIntervalSince($0) < 60 } == true
+    }
 
     /// A hook event for a watched session: on its Stop, the folder and Claude Code's last message (and it is watched no
     /// more); a SessionEnd forgets it. Nil otherwise.
@@ -102,6 +112,7 @@ final class ClaudeSessionWatch {
             return nil
         case "Stop":
             watched[event.sessionId] = nil
+            said = said.filter { now.timeIntervalSince($0.value) < 60 }.merging([event.sessionId: now]) { _, new in new }
             return (entry.folder, event.lastMessage)
         default:
             return nil

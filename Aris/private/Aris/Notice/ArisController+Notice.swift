@@ -26,20 +26,34 @@ extension ArisController {
         let center = ArisNoticeCenter.shared
         // A card with the key of one already up takes its place at once: the moment was right for that one.
         if center.enqueue(notice) { return true }
+        // What the interruption policy is asked each time the moment is looked at (ArisInterruption).
+        let want = ArisNoticeRoute.want(notice, spoken: !said.isEmpty)
         while !Task.isCancelled {
+            let now = interruption(want)
+            if now == .drop { break }
+            if case .hold = now {
+                // Held (the user talking, a call, the lock): it waits outside the line, so what may come up now (a timer
+                // in a call) is not stuck behind it.
+                try? await Task.sleep(for: .seconds(ArisNoticeGate.recheck))
+                center.dropExpired()
+                guard center.isWaiting(notice.id) else { return false }
+                continue
+            }
             let outcome: Bool?? = await announce(recheck: .seconds(ArisNoticeGate.recheck), when: { center.mayShow }) {
                 try? await Task.sleep(for: .seconds(ArisNoticeGate.settle))
                 center.dropExpired()
                 guard !Task.isCancelled, center.isWaiting(notice.id) else { return false }
-                // The moment passed meanwhile (a turn began, the notch opened): back in line.
-                guard self.isPause(present: false), center.mayShow else { return nil }
+                // The moment passed meanwhile (a turn began, the notch opened, the user began to talk): back in line, or
+                // out of it while the policy holds it.
+                let decision = self.interruption(want)
+                guard self.isPause(present: false), center.mayShow, decision.comesUp else { return nil }
                 center.present(notice.id)
-                log.notice("card up: \(notice.kind.rawValue, privacy: .public)")
+                log.notice("card up: \(notice.kind.rawValue, privacy: .public)\(decision == .speak ? "" : " (quietly)", privacy: .public)")
                 if let parking, self.session.phase == .idle, self.session.question == nil {
-                    self.session = .parked(heard: notice.title, reply: parking)
+                    self.setSession(.parked(heard: notice.title, reply: parking))
                 }
                 shown()
-                if !said.isEmpty { await self.sayNews(said) }
+                if !said.isEmpty, decision == .speak { await self.sayNews(said) }
                 return true
             }
             // Cancelled before its turn came.
@@ -49,6 +63,11 @@ extension ArisController {
         }
         center.withdraw(notice.id)
         return false
+    }
+
+    /// What the interruption policy says about `want` now, from the world's snapshot and the quiet rules.
+    func interruption(_ want: ArisInterruption.Want) -> ArisInterruption.Decision {
+        ArisInterruption.decide(want, ArisWorld.shared.moment(mayMakeSound: !silentSpeech && ArisQuietGate.maySound(.aris)))
     }
 
     /// What used to be said with the line: once, with the "done" chime, music paused meanwhile. Only when Aris may

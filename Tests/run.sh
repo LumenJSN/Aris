@@ -7,6 +7,7 @@ python3 -I "$DIR/side-demo-lint.py" "$DIR/.." || { echo "SIDE DEMO LINT FAILED";
 python3 -I "$DIR/onboarding-strings-lint.py" "$DIR/.." || { echo "ONBOARDING STRINGS LINT FAILED"; exit 1; }
 python3 -I "$DIR/team-strings-lint.py" "$DIR/.." || { echo "TEAM STRINGS LINT FAILED"; exit 1; }
 python3 -I "$DIR/applescript-lint.py" "$DIR/.." || { echo "APPLESCRIPT LINT FAILED"; exit 1; }
+python3 -I "$DIR/no-store-lint.py" "$DIR/.." || { echo "NO STORE LINT FAILED"; exit 1; }
 # The skills sandboxes, probed for real before the tests (sandbox-exec can't run inside ARIS_TEST_SANDBOX).
 bash "$DIR/skills-sandbox-probe/probe.sh" || { echo "SKILLS SANDBOX PROBE FAILED"; exit 1; }
 SRC="$DIR/../Aris/private/Claude"
@@ -33,11 +34,11 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/../ArisTools/ArisWeather.swift" "$DIR/../ArisAgent/ArisMemoryText.swift" "$DIR/../ArisAgent/ArisMemoryWhen.swift" "$DIR/../ArisAgent/ArisMemoryRecall.swift" "$DIR/../ArisAgent/ArisMemoryStore.swift" "$DIR/../ArisAgent/ArisMemoryLearning.swift" "$DIR/../ArisAgent/ArisMemoryIntent.swift" "$DIR/../ArisAgent/ArisMemoryCurator.swift" "$DIR/memory-tests.swift" "$DIR/../ArisAgent/ArisMemoryGate.swift" "$DIR/../ArisAgent/ArisMemoryEntities.swift" "$DIR/../ArisAgent/ArisMemoryStore+Review.swift" "$DIR/../ArisAgent/ArisMemoryConsolidation.swift" "$DIR/../ArisAgent/ArisMemoryReviewRoute.swift" "$DIR/memory-v2-tests.swift" "$DIR/memory-v2-turn-tests.swift" "$DIR/../ArisTools/ArisActions.swift" "$DIR/../ArisTools/ArisWindowGrid.swift" "$DIR/../ArisTools/ArisCanvas.swift" "$DIR/../ArisTools/ArisFiles.swift" "$DIR/../ArisTools/ArisActivity.swift" "$DIR/../ArisTools/ArisProtectedPlaces.swift" "$DIR/../ArisTools/ArisUndoArguments.swift" "$DIR/../ArisAgent/ArisActivityBridge.swift" "$DIR/../ArisAgent/ArisPendingUndos.swift" \
   "$DIR/../ArisAgent/ArisSchedule.swift" "$DIR/../ArisAgent/ArisScheduleStore.swift" "$DIR/../ArisTools/ArisScheduleTool.swift" "$SRC/../Aris/ArisInboxItem.swift" \
   "$SRC/../Aris/Gesture/ArisGestureConstants.swift" "$SRC/../Aris/Gesture/ArisGestureDetector.swift" "$SRC/../Aris/Gesture/ArisSpeechActivity.swift" "$SRC/../Aris/Gesture/ArisGestureMarkers.swift" "$SRC/../Aris/Gesture/ArisGestureGeometry.swift" "$SRC/../Aris/Gesture/ArisGestureSession.swift" "$SRC/../Aris/Gesture/ArisInkRenderer.swift" "$SRC/../Aris/Gesture/ArisInkSmoothing.swift" "$SRC/../Aris/Gesture/ArisPointerSampler.swift" "$SRC/../Aris/Gesture/ArisGestureMotion.swift" "$SRC/../Aris/Gesture/ArisGestureChrome.swift" "$SRC/../Aris/Gesture/ArisInkOverlay.swift" "$SRC/../Aris/Gesture/ArisGestureHint.swift" "$SRC/../Aris/Gesture/ArisCircleHint.swift" "$SRC/../Aris/Gesture/ArisGestureKey.swift" "$SRC/../Aris/Gesture/ArisGestureCapturing.swift" "$SRC/../Aris/Gesture/ArisGestureController.swift" "$SRC/../Aris/Gesture/ArisGestureShot.swift" "$SRC/../Aris/Gesture/ArisGestureTurn.swift" "$SRC/../Aris/Gesture/ArisWindowAtPoint.swift" "$SRC/../Aris/Gesture/ArisGestureCapture.swift" "$SRC/../Aris/Gesture/ArisWindowPick.swift" "$SRC/../Aris/Gesture/ArisWindowPickShot.swift" "$DIR/window-pick-tests.swift" "$SRC/../Aris/See/ArisScreenPermissionNotice.swift" "$SRC/../Aris/See/ArisCaptureTiming.swift" "$SRC/../Aris/See/ArisTaskRace.swift" "$SRC/../Aris/See/ArisNotchPresence.swift" "$SRC/../Aris/See/ArisTurnCapture.swift" \
-  "$DIR/settings-data-tests.swift" "$SRC/../Aris/ArisDataSafety.swift" "$SRC/../Aris/Onboarding/ArisOnboardingFlow.swift" "$SRC/../Aris/Onboarding/ArisOnboardingStage.swift" "$SRC/../Aris/Onboarding/ArisOnboardingClocks.swift" "$SRC/../Aris/Onboarding/ArisOnboardingModel.swift" "$SRC/../Aris/Onboarding/ArisOnboardingMotion.swift" "$SRC/../Aris/Onboarding/ArisOnboardingScore.swift" "$SRC/../Aris/Onboarding/ArisOnboardingNotchForm.swift" "$SRC/../Aris/Onboarding/ArisOnboardingTimeline.swift" "$SRC/../Aris/Onboarding/ArisOnboardingAudioPlan.swift" "$SRC/../Aris/Onboarding/ArisOnboardingLanguage.swift" "$SRC/../Aris/Onboarding/ArisOnboardingCopy.swift" "$DIR/onboarding-tests.swift" "$DIR/qa-voice-tests.swift" "$SRC/../Aris/Onboarding/ArisOnboardingPractice.swift" "$SRC/../Aris/ArisAppData.swift" "$DIR/../ArisAgent/ArisDataRoute.swift" "$DIR/../ArisAgent/ArisNoFollow.swift" "$DIR/../ArisAgent/ArisUninstallCleanup.swift" "$DIR/../ArisAgent/ArisDiagnosticsFilter.swift" \
-  "$DIR/settings-catalog-tests.swift" "$SRC/../Aris/ArisMemorySettings.swift" "$SRC/../Aris/ArisMemoryReviewSettings.swift" "$DIR/../Aris/components/Settings/ArisSettingsCatalog.swift" "$DIR/../Aris/components/Settings/ArisSettingsWords.swift" "$DIR/../Aris/components/Settings/ArisSettingsModel.swift" "$DIR/../Aris/components/Settings/ArisSettingsSnapshot.swift" "$DIR/../Aris/components/Settings/ArisSettingsBuilder.swift" "$DIR/../Aris/components/Settings/ArisMoreSettings.swift" "$DIR/../Aris/components/Settings/ArisFaceStage.swift" \
+  "$DIR/settings-data-tests.swift" "$SRC/../Aris/ArisDataSafety.swift" "$SRC/../Aris/Onboarding/ArisOnboardingFlow.swift" "$SRC/../Aris/Onboarding/ArisOnboardingStage.swift" "$SRC/../Aris/Onboarding/ArisOnboardingClocks.swift" "$SRC/../Aris/Onboarding/ArisOnboardingModel.swift" "$SRC/../Aris/Onboarding/ArisOnboardingMotion.swift" "$SRC/../Aris/Onboarding/ArisOnboardingScore.swift" "$SRC/../Aris/Onboarding/ArisOnboardingNotchForm.swift" "$SRC/../Aris/Onboarding/ArisOnboardingTimeline.swift" "$SRC/../Aris/Onboarding/ArisOnboardingAudioPlan.swift" "$SRC/../Aris/Onboarding/ArisOnboardingLanguage.swift" "$SRC/../Aris/Onboarding/ArisOnboardingCopy.swift" "$DIR/onboarding-tests.swift" "$DIR/qa-voice-tests.swift" "$SRC/../Aris/Onboarding/ArisOnboardingPractice.swift" "$SRC/../Aris/ArisAppData.swift" "$DIR/../ArisAgent/ArisDataRoute.swift" "$DIR/../ArisAgent/ArisNoFollow.swift" "$DIR/../ArisAgent/ArisUninstallCleanup.swift" "$DIR/../ArisAgent/ArisUninstallQuiet.swift" "$DIR/../ArisAgent/ArisDiagnosticsFilter.swift" \
+  "$DIR/settings-catalog-tests.swift" "$DIR/settings-ia-tests.swift" "$SRC/../Aris/ArisMemorySettings.swift" "$SRC/../Aris/ArisMemoryReviewSettings.swift" "$DIR/../Aris/components/Settings/ArisSettingsCatalog.swift" "$DIR/../Aris/components/Settings/ArisSettingsParts.swift" "$DIR/../Aris/components/Settings/ArisSettingsSlots.swift" "$DIR/../Aris/components/Settings/ArisSettingsWords.swift" "$DIR/../Aris/components/Settings/ArisSettingsModel.swift" "$DIR/../Aris/components/Settings/ArisSettingsSnapshot.swift" "$DIR/../Aris/components/Settings/ArisSettingsBuilder.swift" "$DIR/../Aris/components/Settings/ArisMoreSettings.swift" "$DIR/../Aris/components/Settings/ArisFaceStage.swift" \
   "$DIR/widget-tests.swift" "$SRC/../Aris/ArisWidget.swift" "$DIR/../ArisAgent/ArisWidgetPick.swift" \
   "$DIR/stock-map-tests.swift" "$SRC/../Aris/ArisWidgetStockMap.swift" "$DIR/../ArisTools/ArisStock.swift" "$DIR/../ArisTools/ArisMapsCard.swift" \
-  "$DIR/team-dispatch-tests.swift" "$DIR/side-demo-tests.swift" "$SRC/../Aris/Side/ArisSideDemoSamples.swift" "$DIR/ad-demo-tests.swift" "$SRC/../Aris/Demo/ArisAdDemoScript.swift" "$SRC/../Aris/Demo/ArisCaptureSharing.swift" "$SRC/../Aris/Team/ArisOverlayPanels.swift" "$DIR/calendar-tests.swift" "$SRC/../Calendar/ArisCalendarEvent.swift" "$SRC/../Calendar/ArisMeetingLink.swift" "$SRC/../Calendar/ArisCalendarSelection.swift" "$SRC/../Calendar/ArisCalendarStore.swift" "$SRC/../Calendar/ArisEventKitSource.swift" \
+  "$DIR/team-dispatch-tests.swift" "$DIR/side-demo-tests.swift" "$SRC/../Aris/Side/ArisSideDemoSamples.swift" "$DIR/ad-demo-tests.swift" "$SRC/../Aris/Demo/ArisAdDemoScript.swift" "$SRC/../Aris/Demo/ArisCaptureSharing.swift" "$SRC/../Aris/Team/ArisOverlayPanels.swift" "$DIR/calendar-tests.swift" "$SRC/../Calendar/ArisCalendarEvent.swift" "$SRC/../Calendar/ArisMeetingLink.swift" "$SRC/../Calendar/ArisCalendarSelection.swift" "$SRC/../Calendar/ArisCalendarStore.swift" "$SRC/../Calendar/ArisEventGrants.swift" "$SRC/../Calendar/ArisEventKitSource.swift" \
   "$DIR/platform-tests.swift" "$SRC/../Platform/ArisDisplayIdentity.swift" "$SRC/../Platform/ArisRelaunch.swift" "$SRC/../Platform/ArisBundleVersion.swift" "$SRC/../Platform/ArisAccent.swift" "$SRC/../Platform/ArisBlur.swift" \
   "$DIR/volume-tests.swift" "$SRC/../Platform/ArisVolumeRules.swift" "$SRC/../Platform/ArisVolume.swift" \
   "$DIR/helper-tests.swift" "$DIR/../Shared/ArisHelperService.swift" "$DIR/../ArisXPCHelper/ArisDisplayBrightness.swift" "$DIR/../ArisXPCHelper/ArisHelperServiceObject.swift" "$SRC/../Platform/ArisHelperClient.swift" "$SRC/../Platform/ArisBrightness.swift" \
@@ -51,7 +52,7 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/qa-wake-tests.swift" "$SRC/../Aris/ArisWakeArm.swift" \
   "$DIR/qa-overlay-tests.swift" "$SRC/../Aris/Gesture/ArisOverlayCensus.swift" "$SRC/../Aris/Gesture/ArisWindowPicker.swift" "$SRC/../Aris/Gesture/ArisWindowPickOverlay.swift" \
   "$DIR/state-tests.swift" "$SRC/../Notch/ArisNotchRules.swift" "$SRC/../Notch/ArisNotchPeek.swift" "$DIR/window-tests.swift" "$SRC/../Notch/ArisNotchWindowRules.swift" "$DIR/composition-tests.swift" "$SRC/../Notch/ArisNotchDecisions.swift" "$DIR/launch-tests.swift" "$SRC/../App/ArisLaunchRules.swift" \
-  "$DIR/local-reads-tests.swift" "$DIR/../ArisTools/ArisLocalStore.swift" "$DIR/../ArisTools/ArisMessagesRead.swift" "$DIR/../ArisTools/ArisMailRead.swift" "$DIR/../ArisTools/ArisNotesRead.swift" "$DIR/../ArisTools/ArisObsidianRead.swift" "$DIR/../ArisTools/ArisFindAndMaps.swift" "$DIR/../ArisAgent/ArisLocalReadPolicy.swift" "$DIR/../ArisTools/ArisTurnGate.swift" "$DIR/../ArisAgent/ArisAgyRelay.swift" \
+  "$DIR/local-reads-tests.swift" "$DIR/../ArisTools/ArisLocalStore.swift" "$DIR/../ArisTools/ArisMessagesRead.swift" "$DIR/../ArisTools/ArisMailRead.swift" "$DIR/../ArisTools/ArisNotesRead.swift" "$DIR/../ArisTools/ArisObsidianRead.swift" "$DIR/../ArisTools/ArisFindAndMaps.swift" "$DIR/../ArisAgent/ArisLocalReadPolicy.swift" "$DIR/../ArisAgent/ArisTCCReading.swift" "$DIR/../ArisTools/ArisTurnGate.swift" "$DIR/../ArisAgent/ArisAgyRelay.swift" \
   "$DIR/answer-format-tests.swift" "$DIR/qa-tasks-tests.swift" "$DIR/qa-drops-tests.swift" "$SRC/../Aris/ArisPendingFiles.swift" "$SRC/../Aris/Home/ArisAnswerDocument.swift" "$DIR/../ArisTools/ArisNoteMarkdown.swift" \
   "$DIR/reader-tests.swift" "$SRC/../Aris/Home/ArisDoneFold.swift" "$SRC/../Aris/ArisReaderDocument.swift" "$DIR/../ArisAgent/ArisResultPath.swift" \
   "$DIR/edit-card-tests.swift" "$SRC/../Aris/ArisCardRevise.swift" "$DIR/../ArisAgent/ArisEditableAction.swift" \
@@ -92,7 +93,7 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/qa-followup-a-tests.swift" \
   "$DIR/qa-followup-b-tests.swift" "$DIR/../ArisTools/ArisDisplayGeometry.swift" \
   "$DIR/qa-followup-tests.swift" "$DIR/qa-final-tests.swift" "$SRC/../Aris/ArisCardWait.swift" \
-  "$DIR/qa-final2-tests.swift" "$SRC/../Aris/ArisTurnWatchdog.swift" "$SRC/../Aris/ArisAttachmentText.swift" "$DIR/../ArisAgent/ArisSlowCalls.swift" "$DIR/../ArisAgent/ArisEventCard.swift" "$SRC/../Aris/ArisEventEdit.swift" "$SRC/../Calendar/ArisEventKitStore.swift" "$SRC/../Aris/ArisSaveAnswer.swift" "$SRC/../Aris/ArisUIWords.swift" "$DIR/../ArisAgent/ArisCardWords.swift" "$SRC/../Aris/ArisActionGrant.swift" "$DIR/../ArisAgent/ArisActionGrants.swift" "$DIR/../ArisAgent/ArisSaveText.swift" \
+  "$DIR/qa-final2-tests.swift" "$SRC/../Aris/ArisTurnWatchdog.swift" "$SRC/../Aris/ArisAttachmentText.swift" "$DIR/../ArisAgent/ArisSlowCalls.swift" "$DIR/../ArisAgent/ArisEventCard.swift" "$SRC/../Aris/ArisEventEdit.swift" "$SRC/../Calendar/ArisEventKitStore.swift" "$SRC/../Aris/ArisSaveAnswer.swift" "$SRC/../Aris/ArisUIWords.swift" "$SRC/../Aris/ArisToolErrorWords.swift" "$DIR/../ArisAgent/ArisCardWords.swift" "$SRC/../Aris/ArisActionGrant.swift" "$DIR/../ArisAgent/ArisActionGrants.swift" "$DIR/../ArisAgent/ArisSaveText.swift" \
   "$DIR/qa-final3-tests.swift" \
   "$DIR/qa-b3-tests.swift" "$SRC/../Aris/Side/ArisStripLayout.swift" \
   "$DIR/side-tabs-tests.swift" "$SRC/../Aris/Side/ArisSideTab.swift" \
@@ -110,11 +111,16 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/fix-agent-tests.swift" "$DIR/../ArisAgent/ArisExactProcess.swift" "$DIR/../ArisAgent/ArisProgramFinder.swift" "$DIR/../ArisAgent/ArisJobBrain.swift" "$DIR/../ArisAgent/ArisAgyRules.swift" \
   "$DIR/fix-turn-tests.swift" "$SRC/../Aris/ArisIntentScope.swift" "$SRC/../Aris/ArisLocalReply.swift" "$SRC/../Aris/ArisDeadline.swift" "$SRC/../Aris/ArisTurnWatch.swift" \
   "$DIR/fix-cards-tests.swift" "$SRC/../Aris/ArisCardCover.swift" "$SRC/../Aris/ArisWaitingCards.swift" "$SRC/../Aris/Team/ArisJobLedger.swift" \
+  "$DIR/kernel-tests.swift" "$DIR"/../Shared/Core/*.swift \
+  "$DIR/world-tests.swift" "$DIR"/../Shared/Core/World/*.swift \
+  "$DIR/fleet-tests.swift" "$DIR"/../Shared/Core/Fleet/*.swift "$DIR"/../ArisAgent/Fleet/*.swift \
+  "$SRC/../Aris/Fleet/ArisFleetHooks.swift" "$SRC/../Aris/Fleet/ArisFleetRoute.swift" "$SRC/../Aris/Fleet/ArisFleetStore.swift" "$SRC/../Aris/Fleet/ArisFleetGrantApply.swift" \
+  "$DIR/polish-tests.swift" "$DIR/perms-tests.swift" "$DIR"/../Shared/Core/Permissions/*.swift "$DIR/../Shared/ArisAutomationAccess.swift" "$SRC/../Aris/Onboarding/ArisSetupCards.swift" "$SRC/../Aris/Permissions/ArisPermissionNotice.swift" \
   "$DIR/security-review-tests.swift" \
   "$DIR/gate-desktop-tests.swift" "$DIR/../ArisAgent/ArisDesktopCopy.swift" \
   "$DIR/fix-leftovers-tests.swift" "$SRC/ClaudeHookRetry.swift" "$SRC/ClaudeSessionSweep.swift" "$SRC/ClaudeLimitReached.swift" \
   "$SRC/../Aris/ArisPrerequisites.swift" "$DIR/../Aris/components/Settings/ArisSettingsCopy.swift" \
-  "$DIR/ai-services-tests.swift" "$DIR/../Aris/components/Settings/ArisAIServicesModel.swift" "$DIR/../Aris/components/Settings/ArisAIServicesPageModel.swift" "$DIR/../Aris/components/Settings/ArisAIServicesSheetModel.swift" "$DIR/../Aris/components/Settings/ArisAIVoices.swift" "$DIR/../ArisAgent/ArisAPIConnections.swift" \
+  "$DIR/ai-services-tests.swift" "$DIR/../Aris/components/Settings/ArisAIServicesModel.swift" "$DIR/../Aris/components/Settings/ArisHearSource.swift" "$DIR/../Aris/components/Settings/ArisAIServicesPageModel.swift" "$DIR/../Aris/components/Settings/ArisAIServicesSheetModel.swift" "$DIR/../Aris/components/Settings/ArisAIVoices.swift" "$DIR/../ArisAgent/ArisAPIConnections.swift" \
   "$DIR/feat-progress-tests.swift" "$SRC/../Aris/Home/ArisTagTimes.swift" "$SRC/../Aris/Home/ArisStopLine.swift" "$DIR/../ArisAgent/ArisStepLine.swift" \
   "$DIR/vm-setup-tests.swift" "$SRC/../Aris/Onboarding/ArisOnboardingFront.swift" \
   "$DIR/feat-receipt-tests.swift" "$SRC/../Aris/ArisReceipt.swift" "$SRC/../Aris/ArisReceiptWords.swift" "$DIR/../ArisTools/ArisActSummary.swift" "$DIR/../ArisAgent/ArisSendJob.swift" \
@@ -143,7 +149,7 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/sec-fix-3-tests.swift" "$DIR/../ArisTools/ArisTabTarget.swift" "$DIR/../ArisTools/ArisScreenTarget.swift" "$SRC/../Aris/ArisCardHold.swift" "$DIR/../Aris/components/Settings/ArisSettingsFront.swift" \
   "$DIR/../ArisAgent/ArisLookTarget.swift" "$SRC/../Aris/ArisRemindersAccess.swift" "$SRC/../Aris/ArisListenStart.swift" "$DIR/../ArisAgent/ArisGateReason.swift" \
   "$DIR/feat-2-tests.swift" "$SRC/../Aris/ArisMicPlan.swift" "$SRC/../Aris/ArisOwnOutput.swift" "$SRC/../Aris/ArisQuietSpan.swift" "$SRC/../Aris/ArisQuietHoursWords.swift" \
-  "$DIR/../Aris/components/Settings/ArisSettingsCopyMore.swift" "$SRC/../Aris/Team/ArisTerminal.swift" "$SRC/../Aris/Team/ArisTerminalSetting.swift" \
+  "$DIR/../Aris/components/Settings/ArisSettingsCopyMore.swift" "$DIR/../Aris/components/Settings/ArisPermissionsNote.swift" "$SRC/../Aris/Team/ArisTerminal.swift" "$SRC/../Aris/Team/ArisTerminalSetting.swift" \
   "$DIR/../ArisAgent/ArisTerminalOpener.swift" "$SRC/../Aris/Drop/ArisDropLearned.swift" "$SRC/../Aris/Drop/ArisDropLearnedSetting.swift" \
   "$DIR/dayend2-tests.swift" "$SRC/../Aris/DayEnd/ArisDayEndPlan.swift" "$SRC/../Aris/DayEnd/ArisDayEndPush.swift" \
   "$DIR/glass-tests.swift" "$DIR/glass-render/glass-contrast.swift" "$SRC/../Aris/Design/ArisGlassRecipe.swift" \
@@ -177,8 +183,10 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/fix-8-tests.swift" "$DIR/../ArisAgent/ArisHelperListing.swift" "$SRC/../Aris/ArisCalendarCardDay.swift" "$DIR/../ArisAgent/ArisSendClaim.swift" \
   "$DIR/themes-tests.swift" "$SRC/../Aris/Design/ArisTextBacking.swift" "$DIR/../Aris/components/Settings/ArisNotchLookSetting.swift" \
   "$SRC/../Notch/ArisRestStar.swift" "$SRC/../Aris/Design/ArisNotchTheme.swift" \
-  "$DIR/notify-card-tests.swift" "$DIR/notice-pill-tests.swift" "$SRC/../Aris/Notice/ArisNotice.swift" "$SRC/../Aris/Notice/ArisNoticePill.swift" \
-  "$SRC/../Aris/Notice/ArisNoticeQueue.swift" "$SRC/../Aris/Notice/ArisNoticeRoute.swift" "$SRC/../Aris/Notice/ArisNoticeWords.swift" "$SRC/../Aris/Team/ArisJobVerdict.swift" \
+  "$DIR/notify-card-tests.swift" "$DIR/notice-pill-tests.swift" "$DIR/notice-pill-motion-tests.swift" "$SRC/../Aris/Notice/ArisNotice.swift" "$SRC/../Aris/Notice/ArisNoticePill.swift" "$SRC/../Aris/Design/ArisHoverIntent.swift" \
+  "$DIR/auto-update-tests.swift" "$SRC/../Aris/Update/ArisUpdateRules.swift" "$SRC/../Aris/Update/ArisAppcast.swift" \
+  "$DIR/dictation-off-tests.swift" \
+  "$SRC/../Aris/Notice/ArisNoticeQueue.swift" "$SRC/../Aris/Notice/ArisNoticeRoute.swift" "$SRC/../Aris/Notice/ArisNoticeWords.swift" "$SRC/../Aris/Team/ArisJobVerdict.swift" "$SRC/../Aris/Team/ArisJobSaid.swift" "$SRC/../Aris/Routing/ArisServiceReach.swift" "$DIR/jobfix-tests.swift" \
   "$DIR/fix-10-tests.swift" "$DIR/fix-10-api-tests.swift" "$DIR/../ArisTools/ArisDesktopHoldPlan.swift" \
   "$DIR/settings-tidy-tests.swift" "$DIR/settings-look-tests.swift" \
   "$DIR/fix-11-tests.swift" \
@@ -191,13 +199,15 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/fix-17-tests.swift" \
   "$DIR/settings-1to1-tests.swift" "$DIR/../Aris/components/Settings/ArisFeatureCatalog.swift" \
   "$DIR/../Aris/components/Settings/ArisLineIconData.swift" "$DIR/../Aris/components/Settings/ArisLineIconPath.swift" \
-  "$DIR/dictation-pill-tests.swift" "$SRC/../Aris/Dictation/ArisDictationPillRules.swift" "$SRC/../Aris/Dictation/ArisDictationPillRecoveredLayout.swift" "$SRC/../Aris/Dictation/ArisDictationPillMotion.swift" \
+  "$DIR/dictation-pill-tests.swift" "$DIR/dictation-pill-motion-tests.swift" "$SRC/../Aris/Dictation/ArisDictationPillRules.swift" "$SRC/../Aris/Dictation/ArisDictationPillRecoveredLayout.swift" "$SRC/../Aris/Dictation/ArisDictationPillMotion.swift" \
   "$DIR/pill-idle-tests.swift" \
   "$DIR/brain-handoff-tests.swift" "$SRC/../Aris/Team/ArisBrainHandOff.swift" "$SRC/../Aris/Team/ArisProgramMention.swift" \
   "$DIR/legacy-speech-tests.swift" "$SRC/../Aris/ArisListenEngine.swift" "$SRC/../Aris/ArisRecognizer.swift" "$SRC/../Aris/ArisListenFeed.swift" \
   "$DIR/wake-net-tests.swift" "$SRC/../Aris/ArisWakeScript.swift" "$SRC/../Aris/ArisWakeTake.swift" "$SRC/../Aris/ArisWakeCorpus.swift" "$SRC/../Aris/ArisWakeCollect.swift" "$SRC/../Aris/ArisWakeRecordSettings.swift" \
   "$DIR/false-wake-tests.swift" "$SRC/../Aris/ArisWakeDoubt.swift" \
   "$DIR/look-first-tests.swift" "$SRC/../Aris/See/ArisDisplayPick.swift" "$SRC/../Aris/ArisThinking.swift" "$DIR/../ArisAgent/ArisAgentPrompt+LookFirst.swift" \
+  "$DIR/fastlane-tests.swift" "$DIR/../ArisAgent/ArisFastLane.swift" "$DIR/../ArisAgent/ArisClaudeInit.swift" \
+  "$DIR/models-tests.swift" "$SRC/../Aris/ArisModelChoice.swift" "$SRC/../Aris/ArisModelList.swift" "$SRC/../Aris/ArisModelVoice.swift" "$DIR/../ArisAgent/ArisModelDiscovery.swift" "$DIR/../ArisAgent/ArisModelRoutes.swift" "$DIR/../Aris/components/Settings/ArisModelChoiceRows.swift" \
   "$DIR/ask-claude-tests.swift" "$SRC/ClaudeSessionsContext.swift" "$SRC/../Aris/Team/ArisTeammateGoalStop.swift" \
   "$DIR/quiet-wake-tests.swift" "$SRC/../Aris/ArisQuietWake.swift" \
   "$DIR/music-wake-tests.swift" "$SRC/../Aris/ArisWakeEvidence.swift" "$SRC/../Aris/ArisWakeAddressed.swift" "$SRC/../Aris/ArisWakeMusic.swift" \
@@ -206,8 +216,76 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/../ArisAgent/ArisSessionChecks.swift" "$DIR/../ArisAgent/ArisAsideLocal.swift" "$DIR/../ArisTools/ArisDevinRead.swift" \
   "$DIR/desktop-bg-tests.swift" "$DIR/../ArisAgent/ArisNativeRunner.swift" "$DIR/../ArisAgent/ArisNativeAX.swift" \
   "$DIR/../ArisAgent/ArisNativeInput.swift" "$DIR/../ArisAgent/ArisNativeShot.swift" "$DIR/../ArisAgent/ArisNativeApps.swift" \
+  "$DIR/cu-tests.swift" "$DIR/../ArisAgent/ArisNativeKeyLayout.swift" "$DIR/../ArisAgent/ArisNativeFocusGap.swift" \
+  "$DIR/../ArisAgent/ArisNativeTextLadder.swift" "$DIR/../ArisAgent/ArisNativeTextLive.swift" "$DIR/../ArisAgent/ArisAXBudget.swift" \
+  "$DIR/../ArisAgent/ArisDesktopWindowMerge.swift" "$DIR/../ArisAgent/ArisDesktopVisionScale.swift" "$DIR/../ArisAgent/ArisDesktopKeysWords.swift" \
   "$DIR/session-send-all-tests.swift" "$DIR/../ArisAgent/ArisSessionHost.swift" "$DIR/../ArisAgent/ArisSessionHostsLive.swift" \
-  "$DIR/../ArisAgent/ArisSessionWindowsLive.swift" "$DIR/../ArisAgent/ArisSessionDesktopLive.swift" "$DIR/../ArisAgent/ArisSessionLive.swift"
+  "$DIR/../ArisAgent/ArisSessionWindowsLive.swift" "$DIR/../ArisAgent/ArisSessionDesktopLive.swift" "$DIR/../ArisAgent/ArisSessionLive.swift" \
+  "$DIR/star-card-tests.swift" "$SRC/../Aris/Onboarding/ArisStarCard.swift" "$DIR/../ArisAgent/ArisGitHubStar.swift" \
+  "$DIR/fixapp-tests.swift" \
+  "$DIR/converse-tests.swift" "$DIR/../ArisAgent/ArisSteerableDriver.swift" "$DIR/../ArisAgent/ArisAgentPrompt+Converse.swift" "$DIR/../ArisAgent/ArisTaskTool.swift" "$DIR/../ArisAgent/ArisSteerDesk.swift" "$DIR/../ArisAgent/ArisReportLine.swift" "$DIR/../ArisTools/ArisTaskRequest.swift" "$SRC/../Aris/Team/ArisDelegationLine.swift" "$SRC/../Aris/ArisReportWording.swift" \
+  "$DIR/appbugs-tests.swift" "$SRC/../Aris/ArisPreviewGate.swift" "$SRC/../Aris/ArisPermissionDrift.swift" "$SRC/ClaudeHookSettings.swift" \
+  "$DIR/hearing-tests.swift" "$DIR"/../Shared/Core/Hearing/*.swift "$SRC/../Aris/ArisAgentReply+Speculation.swift" "$SRC/../Aris/ArisRecognizerFeed.swift" \
+  "$DIR/tasks-tests.swift" "$DIR"/../Shared/Core/Tasks/*.swift "$DIR/../ArisAgent/ArisSilenceWatch.swift" \
+  "$DIR/../ArisAgent/ArisTurnInterrupt.swift" "$DIR/../ArisAgent/ArisTurnSideEffects.swift" "$DIR/../ArisAgent/ArisTaskJournal.swift" \
+  "$DIR/../ArisAgent/ArisTaskTrail.swift" "$DIR/../ArisAgent/ArisTaskFollow.swift" "$DIR/../ArisAgent/ArisTaskTakeBack.swift" \
+  "$DIR/../ArisAgent/ArisTaskResume.swift" "$DIR/../ArisAgent/ArisSessionTranscript.swift" "$DIR/fixhelper-tests.swift" "$DIR/../ArisAgent/ArisProcessGroup.swift" "$DIR/../ArisAgent/ArisChildLedger.swift" "$DIR/../ArisAgent/ArisInputPump.swift" "$DIR/../ArisAgent/ArisTaskSeal.swift" \
+  "$SRC/../Aris/Team/ArisTaskFollowing.swift" \
+  "$DIR/helperbugs-memory-tests.swift" "$DIR/../ArisAgent/ArisShortcutsRoute.swift" \
+  "$DIR/helperbugs-schedules-tests.swift" \
+  "$DIR/helperbugs-mcp-tests.swift" \
+  "$DIR/helperbugs-web-tests.swift" "$DIR/../ArisTools/ArisTextDecoding.swift" "$DIR/../ArisTools/ArisHTMLFileText.swift" "$DIR/../ArisTools/ArisAppAck.swift" \
+  "$DIR/helperbugs-tools-tests.swift" "$DIR/../ArisTools/ArisOfficeText.swift" "$DIR/../ArisTools/ArisExclusiveRename.swift" "$DIR/../ArisTools/ArisWindowMoveReport.swift" \
+  "$DIR/helperbugs-misc-tests.swift" "$DIR/../ArisAgent/ArisConnectedServices.swift" \
+  "$DIR/duplex-tests.swift" "$DIR/../Shared/Core/Audio/ArisSampleRing.swift" "$DIR/../Shared/Core/Audio/ArisAudioFanout.swift" \
+  "$DIR/../Shared/Core/Audio/ArisDuplexLifetime.swift" "$DIR/../Shared/Core/Audio/ArisDuplexRoute.swift" "$SRC/../Aris/Audio/ArisAudioEngine.swift" \
+  "$DIR/trust-tests.swift" "$DIR"/../Shared/Core/Trust/*.swift "$DIR"/../ArisAgent/Trust/*.swift "$DIR"/../ArisAgent/Record/*.swift \
+  "$DIR/apps-tests.swift" "$DIR"/../Shared/Core/Apps/*.swift "$DIR"/../ArisAgent/Apps/*.swift \
+  "$DIR/jv-wake-tests.swift" "$SRC/../Aris/ArisWakeDown.swift" "$SRC/../Aris/ArisWakeName.swift" "$SRC/../Aris/ArisWakeStatus.swift" "$SRC/../Aris/ArisWakeNameSettings.swift" "$SRC/../Aris/Dictation/ArisDictationWait.swift" \
+  "$DIR/funnel-tests.swift" "$DIR/mind10a-tests.swift" "$SRC/../Aris/Routing/ArisTurnRequest.swift" "$SRC/../Aris/Routing/ArisTurnFunnel.swift" "$SRC/../Aris/Routing/ArisBrainTurnState.swift" "$DIR"/../Shared/Core/Routing/*.swift \
+  "$DIR/voiceid-tests.swift" "$DIR"/../Shared/Core/Hearing/VoiceID/*.swift "$SRC/../Aris/Hearing/ArisVoiceEmbedder.swift" \
+  "$SRC/../Aris/Hearing/ArisVoiceIDStore.swift" "$SRC/../Aris/Hearing/ArisVoiceID.swift" "$SRC/../Aris/Hearing/ArisVoiceIDSettings.swift" \
+  "$SRC/../Aris/Hearing/ArisVoiceEnrolment.swift" \
+  "$DIR/recap-tests.swift" "$DIR"/../Shared/Core/Recap/*.swift "$SRC/../Aris/DayEnd/ArisDayEndRecap.swift" "$SRC/../Aris/DayEnd/ArisRecapSetting.swift" \
+  "$DIR/decide-tests.swift" "$DIR/focus-tests.swift" "$DIR"/../Shared/Core/Focus/*.swift "$DIR"/../ArisAgent/Focus/*.swift \
+  "$DIR/hands-tests.swift" "$DIR"/../Shared/Core/Hands/*.swift "$DIR/../ArisTools/ArisCapabilityLocal.swift" \
+  "$DIR/../ArisAgent/ArisCapability.swift" "$DIR/../ArisAgent/ArisCapabilityFunctions.swift" "$DIR/../ArisAgent/ArisCapabilityBook.swift" "$DIR/../ArisAgent/ArisCapabilityCore2.swift" "$DIR/../ArisAgent/ArisCore2Paths.swift" "$DIR/../ArisAgent/ArisCapabilityGate.swift" "$DIR/../ArisAgent/ArisHandsFace.swift" "$DIR/../ArisAgent/ArisHandsPrompt.swift" "$DIR/../ArisAgent/ArisHandsShim.swift" \
+  "$DIR/mind-tests.swift" "$DIR"/../Shared/Core/Mind/*.swift "$DIR/../ArisAgent/Mind/ArisMindBook.swift" "$DIR/../ArisAgent/Mind/ArisMindExecutor.swift" "$DIR/../ArisAgent/Mind/ArisMindJudge.swift" "$DIR/../ArisAgent/Mind/ArisMindSession.swift" "$DIR/../ArisAgent/Mind/ArisMindAPIProvider.swift" "$DIR/../ArisAgent/Mind/ArisMindRoute.swift" "$DIR/../ArisAgent/Mind/ArisMindLive.swift" "$DIR/mind2-tests.swift" "$DIR/../ArisAgent/Mind/ArisMindPass.swift" "$DIR/../ArisAgent/Mind/ArisMindBrain.swift" "$DIR/../ArisAgent/Mind/ArisMindBrainDriver.swift" "$DIR/../ArisAgent/Mind/ArisMindUndoMore.swift" "$DIR/../ArisAgent/Mind/ArisTurnVoices.swift" \
+  "$DIR/teach-tests.swift" "$DIR"/../Shared/Core/Teach/*.swift "$DIR/../ArisAgent/Teach/ArisTeachStore.swift" "$DIR/../ArisAgent/Teach/ArisTeachDesk.swift" "$DIR/../ArisAgent/Teach/ArisTeachLiveObserver.swift" \
+  "$DIR/vmfix2-tests.swift" "$DIR/../ArisAgent/ArisHelperSwitches.swift" "$DIR/../ArisAgent/ArisDesktopEffect.swift" "$DIR/../Aris/components/Settings/ArisLabsSetting.swift" \
+  "$DIR/prompts-tests.swift" "$DIR/../ArisTools/ArisAutomationAsk.swift" "$DIR/../ArisTools/ArisTabRead.swift" "$SRC/../Aris/Permissions/ArisPermissionRoute.swift" \
+  "$DIR/vmfix1-tests.swift" "$SRC/../Aris/ArisUninstallReply.swift" \
+  "$DIR/vmfix3-tests.swift" \
+  "$DIR/vmfix4-teach-tests.swift" "$DIR/vmfix4-finder-tests.swift" "$DIR/vmfix4-script-tests.swift" "$DIR/vmfix4-fast-tests.swift" "$DIR/vmfix4-core2-tests.swift" "$DIR/core2sec-tests.swift" "$DIR/webabort-tests.swift" \
+  "$DIR/vmfix4-field-tests.swift" "$DIR/../ArisAgent/ArisFieldWrite.swift" "$DIR/../ArisAgent/ArisFieldTargetLive.swift" \
+  "$DIR/router-model-tests.swift" "$SRC/../Aris/ArisRouterModels.swift" "$DIR/../ArisAgent/ArisAPIRouterCall.swift" \
+  "$DIR/vmfix5-lang-tests.swift" "$DIR/vmfix5-undo-tests.swift" "$DIR/vmfix5-teach-tests.swift" \
+  "$DIR/vmfix6-teach-tests.swift" \
+  "$DIR/vmfix6-app-tests.swift" "$DIR/../ArisAgent/Teach/ArisTaughtRoute.swift" \
+  "$DIR/vmfix7-tests.swift" \
+  "$DIR/vmfix8-tests.swift" \
+  "$DIR/vmfix9-tests.swift" \
+  "$DIR/vmfix10-tests.swift" "$DIR/../ArisAgent/Teach/ArisTeachTurnReplies.swift" \
+  "$DIR/vmfix11-tests.swift" \
+  "$DIR/vmfix12-tests.swift" \
+  "$DIR/rel12-tests.swift" "$SRC/../Aris/ArisTypeHere.swift" "$SRC/../Aris/ArisTodoListName.swift" "$SRC/../Aris/Team/ArisJobContextView.swift" \
+  "$DIR/rel11-tests.swift" "$DIR/../ArisAgent/ArisPaymentHandOff.swift" "$DIR/../ArisAgent/ArisCardGroup.swift" "$DIR/../ArisAgent/ArisVolumeScope.swift" \
+  "$DIR/voiceyes-tests.swift" "$SRC/../Aris/ArisCardOwner.swift" "$SRC/../Aris/ArisCardHearing.swift" \
+  "$DIR/cardintent-tests.swift" "$SRC/../Aris/ArisCardIntentWait.swift" "$SRC/../Aris/ArisCardJudge.swift" \
+  "$DIR/mind10-tests.swift" "$DIR/../ArisAgent/Mind/ArisMindTaught.swift" \
+  "$DIR/mind10d-tests.swift" "$DIR/../ArisAgent/Mind/ArisMindSpeech.swift" "$SRC/../Aris/ArisSpeakableDates.swift" "$SRC/../Aris/Home/ArisCardEnglish+Desktop.swift" \
+  "$DIR/mind10c-tests.swift" "$DIR/../ArisAgent/Mind/ArisMindClickReads.swift" "$DIR/../ArisAgent/Mind/ArisMindSession+Click.swift" \
+  "$DIR/mind10b-tests.swift" "$DIR/../ArisAgent/Mind/ArisMindSession+DirectFirst.swift" \
+  "$DIR/exp11-tests.swift" \
+  "$DIR/exp12-tests.swift" "$DIR/../ArisAgent/Teach/ArisTeachLastValues.swift" \
+  "$DIR/decision-tests.swift" "$DIR"/../Shared/Core/Decide/*.swift "$SRC/../Aris/ArisDecider.swift" "$SRC/../Aris/ArisRouter+Decide.swift" "$SRC/../Aris/ArisRouterModels+Chat.swift" "$DIR/../Aris/components/Settings/ArisAIDecisionModels.swift" \
+  "$DIR/stt-tests.swift" "$DIR"/../Shared/Core/Hearing/Recognise/*.swift \
+  "$DIR/safe10-tests.swift" "$DIR/../Shared/ArisNoStore.swift" "$DIR/../ArisAgent/ArisHelperCaches.swift" "$DIR/../Aris/components/Settings/ArisSavedKeyRows.swift" \
+  "$DIR/quick-tests.swift" "$DIR/../ArisAgent/Teach/ArisTeachRunOnce.swift" \
+  "$DIR/cctab-tests.swift" "$DIR/cctab-render/scene.swift" "$SRC/ClaudeCardFit.swift" "$SRC/ClaudeAnswerViews.swift" "$SRC/NotchButtonStyle.swift" "$SRC/ClaudeAttention.swift" "$SRC/TerminalJump.swift"
+# Every line of text a confirm card is built with is drawn (seventh VM run, item 1), and the yes button's click hold is
+# drawn unlike a disabled button (item 3): real cards drawn offscreen, read back from their pixels.
+bash "$DIR/card-text-render/check.sh" || { echo "CARD TEXT RENDER FAILED"; exit 1; }
 # The tests keep every UserDefaults suite they make (aris-*-tests) in a throwaway folder (testSuiteName, by its path:
 # CFFIXED_USER_HOME alone doesn't stop cfprefsd writing to ~/Library/Preferences, and a path whose folder is named
 # Library/Preferences is taken as the user's own domain), never in the user's real Preferences.

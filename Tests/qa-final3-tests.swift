@@ -78,7 +78,8 @@ private func qaFinal3OneCardTests() {
         check(final3Source(route).contains("ArisSlowCalls.shared.run(owner: credential"), "BUG-47 (retest): \(route) answers within one command's time, its card going on")
     }
     check(final3Source("ArisAgent/ArisMessageRoutes.swift").contains("guard runner.brain == .claude")
-          && final3Source("ArisAgent/ArisBrainDriver.swift").contains("\"BASH_DEFAULT_TIMEOUT_MS\": \"1800000\"")
+          && final3Source("ArisAgent/ArisBrainDriver.swift").contains("\"BASH_DEFAULT_TIMEOUT_MS\": Self.bashLimitMilliseconds")
+          && final3Source("ArisAgent/ArisBrainDriver.swift").contains("static let bashLimit: TimeInterval = 1_800")
           && final3Source("ArisAgent/ArisAgentPrompt.swift").contains("give it a long time limit, 30 minutes"),
           "BUG-47 (retest): message (Claude only, 30-min commands) and Aside (told to run for 30 minutes) wait on their own long command")
     check(final3Source("ArisAgent/ArisAgentRunner.swift").contains("let limit = isTask ? Self.mcpTaskWait : Self.questionTimeout")
@@ -93,9 +94,9 @@ private func qaFinal3CardAnswerTests() {
     // legacy-speech: every macOS hears the answer now (the older engine on 14 and 15), so no macOS falls back to
     // the buttons; a listener that fails still does.
     check(!tasks.contains("return typedAnswer ?? false") && !tasks.contains("guard #available(macOS 26.0, *)")
-          && tasks.contains("return await clickAnswer(ask, waiter: waiter)\n        }"),
+          && tasks.contains("return await clickAnswer(ask, key: key, waiter: waiter)\n        }"),
           "BUG-54: a listener that fails never answers no: the card waits for a click, Y or N (every macOS listens for it)")
-    check(tasks.contains("return CardWait(allow: answer ?? false, typed: answer == nil ? nil : cardAnswerSource, unanswered: ArisCardWait.unanswered(answer))\n    }\n\n    /// The card's request ended")
+    check(tasks.contains("return CardWait(unanswered: ArisCardWait.unanswered(nil))\n    }\n\n    /// The card's request ended")
           && ArisCardWait.unanswered(nil) && ArisCardWait.replyAfterCards("x", unanswered: true, declined: false, korean: true) == "답이 없어서 하지 않았어요.",
           "BUG-54: past the limit with no click it is unanswered, never “You said no”")
     check(!countdown.contains("guard #available(macOS 26.0, *), !Task.isCancelled else { return false }"),
@@ -134,7 +135,8 @@ func runQAFinal3CalendarTests() {
           && ArisRiskPolicy.risk(of: .shell(delete), tools: "/t", home: "/Users/me", critical: true) == .confirm,
           "BUG-53 (retest): find then delete makes exactly one card")
     let tools = final3Source("ArisTools/ArisEventKit.swift"), mac = final3Source("ArisTools/ArisMac.swift")
-    check(tools.contains("http://127.0.0.1:23350/aris/events") && !tools.contains("import EventKit") && mac.contains("if let reply = askEvents(asked), reply[\"noAccess\"] as? Bool != true"),
+    // vmfix3: the request goes through ArisAppRoute (one waiter for the app's calendar and to-do routes).
+    check(tools.contains("appRouteReply(path: \"/aris/events\"") && final3Source("ArisTools/ArisAppRoute.swift").contains("http://127.0.0.1:23350") && !tools.contains("import EventKit") && mac.contains("let reply = askEvents(asked)\n    if let reply, reply[\"noAccess\"] as? Bool != true"),
           "BUG-53 (retest): aris-tools asks the app, never EventKit itself")
 }
 
@@ -154,8 +156,9 @@ func runQAFinal3CardLogTests() {
           && ArisCardAnswer.line(allow: false, source: .ended) == "card answer: no answer (turn ended)", "card log: one line says the answer and where it came from")
     let tasks = final3Source("Aris/private/Aris/ArisController+Tasks.swift"), keys = final3Source("Aris/private/Claude/KeyboardFocus.swift")
     check(tasks.components(separatedBy: "ArisCardAnswer.line(").count == 2 && tasks.contains("if ArisCardAnswer.appRecords(waiter: waiter, agentCard: agentCard) { ArisAgentClient.recordCardAnswer(")
-          && final3Source("ArisAgent/main.swift").contains("case \"cardAnswer\":") && final3Source("Aris/private/Aris/ArisController+Countdown.swift").contains("return await cardAnswer("),
-          "card log: every card (the countdown's fallback inside its one line) logs once, and an app-handled card goes into the agent's audit ledger")
+          && final3Source("ArisAgent/main.swift").contains("case \"cardAnswer\":") && final3Source("Aris/private/Aris/ArisController+Countdown.swift").contains("return await pausedCountdown(ask, key: key)")
+          && !final3Source("Aris/private/Aris/ArisController+Countdown.swift").contains("return await cardAnswer("),
+          "card log: every card (the countdown's no-microphone wait, now the same card, inside its one line) logs once, and an app-handled card goes into the agent's audit ledger")
     // (Four key answers since auto mode: the stopped card's ↩ and esc are its 하지 않기, a key like the others.)
     check(keys.components(separatedBy: "source: .key)").count == 5 && final3Source("Aris/private/Aris/ArisController+Typed.swift").contains("answerQuestion(yes, source: .typed)")
           && final3Source("Aris/private/Aris/ArisController+Conversation.swift").contains("answerQuestion(false, source: .band)"),
@@ -176,8 +179,9 @@ func runQAFinal3PermissionTests() {
     check(!controller.contains("ArisCalendarStore.shared.checkAccess()"), "BUG-55: a turn or its context never asks for the calendar")
     check(keys.contains("guard AXIsProcessTrusted() else { return }"), "BUG-55: the card's Y/N keys never ask for Accessibility (the buttons still work)")
     check(entry.contains("ArisKeyTaps.startWhenAllowed()") && !entry.contains("ArisDictationKeyTap.shared.start()")
-          && taps.contains("CGPreflightListenEventAccess()") && !taps.contains("CGRequestListenEventAccess()"),
-          "BUG-55: the key taps start after onboarding and only with key access already given; nothing asks at launch")
+          && taps.contains("CGPreflightListenEventAccess()")
+          && taps.components(separatedBy: "CGRequestListenEventAccess()").count == 2 && taps.contains("if ArisListenAccess.asks(pastFirstRun: seen"),
+          "BUG-55: the key taps start after onboarding and only with key access given; Input Monitoring is asked for once, only past the guide (jv-appbugs 18)")
 }
 
 // MARK: - BUG-56: onboarding on a display with no notch
@@ -216,7 +220,7 @@ func runQAFinal3UndoTests() {
     check(ArisUndo.removeSchedule(id: "x").action == "made" && ArisUndo.deleteEvent(id: "x").action == "made" && ArisUndo.restoreFromTrash(trash: "a", original: "b").action == "removed"
           && ArisUndo.moveBack(from: "a", to: "b").action == "moved", "undo: each entry knows what it did")
     let undo = final3Source("Aris/private/Aris/ArisController+Undo.swift"), controller = final3Source("Aris/private/Aris/ArisController.swift")
-    check(!undo.contains("\"되돌렸어요. \\(summary)\"") && controller.contains("reply = await undoLast(korean: korean, heard: unmarked)")
+    check(!undo.contains("\"되돌렸어요. \\(summary)\"") && final3Source("Aris/private/Aris/Routing/ArisController+TurnRuns.swift").contains("return await undoLast(korean: korean, heard: unmarked)")
           && !controller.contains("방금 한 일을 되돌려요."), "undo: one card, the entry's own words, no second hands-free card")
 }
 
@@ -230,7 +234,7 @@ func runQAFinal3MinorTests() {
           && ArisAgentStatus.forCommand("/t event find QA --start '2026-11-10 15:00'", tools: "/t") == "일정 찾는 중", "minor (c): the status says what the action does")
     check(ArisSettingsCaption.asksForPermissions(ArisSettingsCaption.greeting(agentDown: false, missingPermissions: 3))
           && !ArisSettingsCaption.asksForPermissions(ArisSettingsCaption.greeting(agentDown: false, missingPermissions: 0))
-          && final3Source("Aris/components/Settings/ArisSettingsSidebar.swift").contains("nav.go(.control, anchor: ArisSettingsCaption.permissionsAnchor)"),
+          && final3Source("Aris/components/Settings/ArisSettingsSidebar.swift").contains("nav.go(anchor: ArisSettingsCaption.permissionsAnchor)"),
           "minor (d): “권한 3개가 더 필요해요” opens the permission rows")
     check(final3Source("Aris/private/Aris/ArisWidgetModel.swift").contains("Self.saidEmpty.insert(request.kind.rawValue).inserted"), "minor (e): a card with no values is logged once")
 }
@@ -357,7 +361,13 @@ func runQAFinal3ReviewTests() {
           "review 6: undo's card and reply show the summary cleaned")
     check(ArisCardAnswer.loggedTitle("엄마한테 ‘곧 갈게’", countdown: true) == "message (countdown)", "review 6: a countdown's log line names no recipient or body")
     let taps = final3Source("Aris/private/App/ArisKeyTaps.swift")
-    check(!taps.contains("|| AXIsProcessTrusted()") && taps.contains("listenAllowed: CGPreflightListenEventAccess())"), "review 6: the key taps check Input Monitoring on its own")
+    // Since the VM run of 2026-11-18 the listen check goes through ArisListenOutlook: only this process's own listen
+    // answer makes it .ready (Accessibility alone only says a reopen would).
+    check(!taps.contains("|| AXIsProcessTrusted()") && taps.contains("listenAllowed: outlook == .ready")
+          && taps.contains(".of(listenNow: CGPreflightListenEventAccess()")
+          && ArisListenOutlook.of(listenNow: false, trustedNow: true, trustedAtLaunch: false) != .ready
+          && ArisListenOutlook.of(listenNow: false, trustedNow: true, trustedAtLaunch: true) != .ready,
+          "review 6: the key taps check Input Monitoring on its own")
     let agentMain = final3Source("ArisAgent/main.swift")
     if let start = agentMain.range(of: "case \"/permissions\":"), let card = agentMain.range(of: "case \"cardAnswer\":") {
         check(agentMain[start.upperBound..<card.lowerBound].contains("guard isAppItself(object, on: connection, question: \"permissions\") else { return }"),
@@ -394,7 +404,7 @@ func runQAFinal3RetestTests() {
     // 2. An approved step that failed is told as such, never as "no answer"; the raise is real, then re-checked.
     check(ArisDesktopFocus.refusalLine.contains("허락하셨지만") && !ArisDesktopFocus.refusalLine.contains("didn't answer the"),
           "retest 2: a guard refusal after the user's yes says he approved it and why it wasn't done")
-    check(final3Source("Aris/private/Aris/ArisController.swift").contains("unanswered: cardUnansweredThisTurn && !cardApprovedThisTurn"),
+    check(final3Source("Aris/private/Aris/ArisController.swift").contains("unanswered: state.cardUnanswered && !state.cardApproved"),
           "retest 2: a later unanswered card never replaces what happened to an approved one")
     check(final3Source("ArisAgent/ArisDesktopActions.swift").contains("_ = run(ArisPeekabooCommands.app(\"focus\", target))")
           && final3Source("ArisAgent/ArisDesktopActions.swift").contains("guard Self.settles(check, tries: 15, wait: 0.1) else { return false }"),
@@ -660,8 +670,8 @@ func runQAFinal3OneParserTests() {
           && ArisIntent.guarded(.timer(seconds: 300, focus: false), said: "5분 타이머 맞춰 줘") == .timer(seconds: 300, focus: false)
           && ArisIntent.guarded(.listTodos, said: "할 일 뭐 남았어?") == .listTodos && ArisIntent.guarded(.volume(.up), said: "볼륨 올리지 마") == .ask("볼륨 올리지 마"),
           "guard: a question or a don't never runs an action, whichever matcher or router picked it")
-    let controller = final3Source("Aris/private/Aris/ArisController.swift")
-    if let routed = controller.range(of: "if let action = routed.intent { intent = action }"), let guarded = controller.range(of: "intent = ArisIntent.guarded(intent, said: unmarked)") {
+    let controller = final3Source("Aris/private/Aris/Routing/ArisTurnRequest.swift")
+    if let routed = controller.range(of: "if let action = routed.intent { intent = action }"), let guarded = controller.range(of: "intent = ArisIntent.guarded(intent, said: heard.unmarked)") {
         check(routed.lowerBound < guarded.lowerBound, "guard: the controller applies it after the router's second guess")
     } else { check(false, "guard: the controller applies it after the router's second guess") }
 

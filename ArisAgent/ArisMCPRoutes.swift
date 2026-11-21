@@ -5,7 +5,7 @@
 //  The two doors to the tool bus:
 //
 //    POST /mcp {"op": …, "pid", "started"}  (the Aris app itself only, ArisPeer; 403 else)
-//        "list"                                         ->  {"servers": [ArisMCPHub.settingsList rows]}
+//        "list"                                         ->  {"servers": [ArisMCPHub.settingsList rows], "ownTools": ["canvas"]?}
 //        "save" {"id"?, "name", "target", "secretName"?, "secret"?}  ->  {"server": row} or {"error"} (400)
 //                (secret: a new token, "" removes it, absent keeps it; it goes to the Keychain, never back)
 //        "composio" {"key"?: "ck_…"}                   ->  {} or {"error"} (a key saves it; none removes Composio)
@@ -44,7 +44,16 @@ final class ArisRunnerMCPTurn: ArisMCPTurn {
     var brainName: String { runner.brain.rawValue }
     var taint: ArisTaint { runner.mcpSnapshot().taint }
     func takeOutsideText() { runner.mcpTakeOutsideText() }
-    func ask(_ card: ArisMCPCard, answer: @escaping (ArisMCPAnswer) -> Void) { runner.mcpAsk(card, credential: credential, answer: answer) }
+    /// The owner's yes on the trust gate's card for exactly this call (`arisCore2`, ArisMindPasses): its first card here.
+    var standIn: ArisMindStandIn?
+    /// The trust gate decided this desktop call runs without a card (`arisCore2`, ArisMindPasses.Kind.judgedRun), and
+    /// that decision still holds now: checked live each time (ArisMindJudge.judgedRunFresh). Nil: no such decision.
+    var judgedCheck: (() -> Bool)?
+    var trustDecisionHolds: Bool { judgedCheck?() ?? false }
+
+    func ask(_ card: ArisMCPCard, answer: @escaping (ArisMCPAnswer) -> Void) {
+        ArisMindStandIn.ask(card, standIn: standIn, audit: audit, show: { runner.mcpAsk($0, credential: credential, answer: $1) }, answer: answer)
+    }
     func judgeRead(_ call: ArisReadCall, done: @escaping (ArisReadVerdict) -> Void) { runner.judgeRead(call, showsBlock: false, done: done) }
     func quiet(_ status: String) { runner.quietStatus(status) }
     func audit(_ fields: [String: String]) {
@@ -222,11 +231,14 @@ enum ArisMCPRoutes {
                     return send(.failed(ArisMCPHub.usage))
                 }
                 let arguments: ArisMCPHub.Arguments
-                if let pairs = object["pairs"] as? [String], pairs.count <= 40 {
+                let pairs = (object["pairs"] as? [String]).flatMap { $0.count <= 40 ? $0 : nil }
+                if let pairs {
                     arguments = .pairs(pairs)
                 } else {
                     arguments = .json(object["arguments"] as? String ?? "{}")
                 }
+                turn.standIn = ArisMindPasses.standIn(object, turn: credential, key: ArisMindPassKey.mcpKey(
+                    service: service, tool: tool, pairs: pairs, arguments: pairs == nil ? object["arguments"] as? String ?? "{}" : nil))
                 ArisSlowCalls.shared.run(owner: credential, kind: "mcp", work: { done in
                     ArisMCPHub.shared.call(service: service, tool: tool, arguments: arguments, turn: turn, done: done)
                 }, reply: send)
@@ -252,8 +264,11 @@ enum ArisMCPRoutes {
             switch object["op"] as? String {
             case "list":
                 let rows = hub.settingsList()
+                // Aris's own tools that are set up, by name, for the router (ArisServiceReach): only that they are there.
+                var listed: [String: Any] = ["servers": rows, "ownTools": ArisAgentPrompt.canvasSetUp() ? ["canvas"] : []]
                 // Changed behind Aris's back (I5): nothing in it starts until the user saves the list again.
-                reply("200 OK", json(hub.listProblem.map { ["servers": rows, "problem": $0] } ?? ["servers": rows]))
+                if let problem = hub.listProblem { listed["problem"] = problem }
+                reply("200 OK", json(listed))
             case "save":
                 guard let name = object["name"] as? String, let target = object["target"] as? String, name.count <= 64, target.count <= 4_096 else {
                     return reply("400 Bad Request", json(["error": "이름과 명령 또는 URL을 넣어 주세요."]))

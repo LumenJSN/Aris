@@ -66,6 +66,14 @@ final class ArisTimerModel: ObservableObject {
     }
 
     func cancel() { set(nil) }
+
+    /// Turned off by a hand other than a spoken one (the ear's button, the setup's practice going away): the record
+    /// says so as a spoken "타이머 꺼" does, so the day's list never counts the timer as done (ArisDayEndPlan).
+    func cancelLogged() {
+        guard state != nil else { return }
+        cancel()
+        ArisAgentClient.logLocalChange(kind: "timer-cancel", summary: ArisDayEndPlan.timerOffLine)
+    }
     func pause() { state.map { set($0.paused(at: .now)) } }
     func resume() { state.map { set($0.resumed(at: .now)) } }
     func togglePause() { state?.isPaused == true ? resume() : pause() }

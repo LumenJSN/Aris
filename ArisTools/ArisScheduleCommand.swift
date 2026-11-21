@@ -2,7 +2,8 @@
 //  ArisScheduleCommand.swift
 //  aris-tools
 //
-//  `schedule add --title T --prompt P (--at "YYYY-MM-DD HH:mm" | --daily HH:mm | --weekly <sun..sat> HH:mm | --every <N>m)
+//  `schedule add --title T --prompt P (--at "YYYY-MM-DD HH:mm" | --daily HH:mm | --weekly <sun..sat> HH:mm | --weekdays <days> HH:mm
+//  | --every-days <N> HH:mm | --every-weeks <N> <day> HH:mm | --monthly <1-31> HH:mm | --every <N>m)
 //  [--teammate ID]` prints {"id", "next"}; `schedule list`; `schedule remove <id>`. aris-agent runs the jobs
 //  (ArisScheduler). The risk gate asks the user before an AI runs `add` (and `remove` after outside text); `list` runs at once.
 //

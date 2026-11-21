@@ -55,9 +55,20 @@ func frontTab(_ args: [String]) {
     case .browser(let id): browser = id
     case .refused(let why): fail(why)
     }
-    guard let script = ArisActions.tabScript(bundleID: browser) else { fail("no browser is open") }
     let name = NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == browser }?.localizedName ?? "the browser"
-    let tab = appleScript(script, app: name)
+    let tab: String
+    // Accessibility first (no Automation grant, so no "Aris wants to control …" dialog: jv-prompts); the browser's own
+    // scripting only when that gives no address and Aris may already control the browser.
+    if let read = tabByAccessibility(browser) {
+        tab = read
+    } else {
+        guard let script = ArisActions.tabScript(bundleID: browser) else { fail("no browser is open") }
+        guard automationAlreadyGranted(browser) else {
+            fail("\(name)'s front tab couldn't be read: Accessibility gave no address" + (AXIsProcessTrusted() ? "" : " (Accessibility is off for Aris)"),
+                 fix: AXIsProcessTrusted() ? nil : .pane(.accessibility))
+        }
+        tab = appleScript(script, app: name)
+    }
     print(tab)
     guard args.contains("--text"), let address = tab.split(separator: ",").first.map({ String($0).trimmingCharacters(in: .whitespaces) }),
           ArisActions.isWebLink(address), let url = URL(string: address) else { return }
@@ -68,10 +79,48 @@ func frontTab(_ args: [String]) {
     print("\n" + ArisActions.trimmedScreenText(page, limit: pageLimit))
 }
 
+/// The front tab of `bundleID` read through Accessibility, as `tab` prints it; nil when it gave no address.
+/// A Chromium browser's page tree is switched on for the read and back off after, when it was off.
+private func tabByAccessibility(_ bundleID: String) -> String? {
+    guard AXIsProcessTrusted(), let pid = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.processIdentifier else { return nil }
+    let app = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(app, 0.5)
+    var turnedOn = false
+    if bundleID != "com.apple.Safari", tabAttribute(app, "AXManualAccessibility") as? Bool != true,
+       AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success {
+        turnedOn = true
+        usleep(250_000)
+    }
+    defer { if turnedOn { AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanFalse) } }
+    guard let window = (tabAttribute(app, kAXFocusedWindowAttribute) ?? tabAttribute(app, kAXMainWindowAttribute)).flatMap(tabElement) else { return nil }
+    let read = { (element: AXUIElement) -> ArisTabElement? in
+        guard let role = tabAttribute(element, kAXRoleAttribute) as? String else { return nil }
+        let url = tabAttribute(element, "AXURL")
+        return ArisTabElement(role: role, url: (url as? URL)?.absoluteString ?? url as? String,
+                              value: role == "AXTextField" ? tabAttribute(element, kAXValueAttribute) as? String : nil,
+                              identifier: tabAttribute(element, kAXIdentifierAttribute) as? String,
+                              title: (tabAttribute(element, kAXTitleAttribute) as? String).flatMap { $0.isEmpty ? nil : $0 }
+                                  ?? tabAttribute(element, kAXDescriptionAttribute) as? String)
+    }
+    let children = { (element: AXUIElement) -> [AXUIElement] in tabAttribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? [] }
+    guard let found = ArisTabRead.address(root: window, read: read, children: children) else { return nil }
+    return ArisTabRead.line(url: found.url, title: found.title ?? tabAttribute(window, kAXTitleAttribute) as? String)
+}
+
+private func tabAttribute(_ element: AXUIElement, _ name: String) -> AnyObject? {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
+    return value
+}
+
+private func tabElement(_ value: AnyObject) -> AXUIElement? {
+    CFGetTypeID(value) == AXUIElementGetTypeID() ? (value as! AXUIElement) : nil
+}
+
 func fetchData(_ url: URL) -> Data {
     var result: Data?
     let done = DispatchSemaphore(value: 0)
-    URLSession.shared.dataTask(with: URLRequest(url: url, timeoutInterval: 8)) { data, _, _ in
+    ArisNoStore.session.dataTask(with: URLRequest(url: url, timeoutInterval: 8)) { data, _, _ in
         result = data
         done.signal()
     }.resume()

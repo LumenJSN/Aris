@@ -8,6 +8,8 @@
 //   · nothing heard for two hours (the store's own limit, which only ran when another session spoke);
 //   · its terminal app was running when Aris last looked and no longer is (an app never seen running is left
 //     alone: the terminal named by a hook can be a guess, as with editors built on VS Code);
+//   · its agent's process is gone (its hooks send the pid: a session killed while it waited for an answer kept its
+//     "needs you" state, and its card, until the terminal app quit or two hours passed; the user's report 2026-11-19);
 //   · Codex, which has no SessionEnd hook: resting for 15 minutes after its last turn.
 //  A session that was working and has been silent for an hour is shown resting: a long build is quiet for many
 //  minutes between two hooks, so the wait is long. Foundation only (tested).
@@ -32,8 +34,10 @@ enum ClaudeSessionSweep {
     }
 
     /// The sessions still listed at `now`. `runningApps` holds the bundle ids of the apps running now; nil when that
-    /// isn't known, and then no session is dropped for its terminal. `terminalSeen` is the last look's.
-    static func swept(_ sessions: [String: ClaudeSession], now: Date, runningApps: Set<String>?, terminalSeen: Set<String> = []) -> Look {
+    /// isn't known, and then no session is dropped for its terminal. `terminalSeen` is the last look's. `alive` says
+    /// whether a process still runs (nil: not known, no session is dropped for its process).
+    static func swept(_ sessions: [String: ClaudeSession], now: Date, runningApps: Set<String>?, terminalSeen: Set<String> = [],
+                      alive: ((Int32) -> Bool)? = nil) -> Look {
         let terminalRuns = sessions.compactMapValues { session -> Bool? in
             guard let runningApps, let terminal = session.terminal else { return nil }
             return terminal.isRunning(among: runningApps)
@@ -41,6 +45,7 @@ enum ClaudeSessionSweep {
         let kept = sessions.compactMapValues { session -> ClaudeSession? in
             let quiet = now.timeIntervalSince(session.lastEvent)
             if quiet >= staleAfter { return nil }
+            if let pid = session.pid, let alive, !alive(pid) { return nil }
             if terminalRuns[session.id] == false, terminalSeen.contains(session.id) { return nil }
             if session.agent == "codex", isResting(session.state), quiet >= codexRestAfter { return nil }
             if isWorking(session.state), quiet >= workingQuietAfter { return session.with(state: .idle) }
@@ -65,7 +70,7 @@ extension ClaudeSession {
     /// The same session in another state (its last event's time is kept).
     func with(state: ClaudeState) -> ClaudeSession {
         ClaudeSession(id: id, cwd: cwd, state: state, lastEvent: lastEvent, steps: steps, edit: edit, lastMessage: lastMessage,
-                      terminal: terminal, contextPercent: contextPercent, agent: agent, lastHook: lastHook)
+                      terminal: terminal, pid: pid, contextPercent: contextPercent, agent: agent, lastHook: lastHook)
     }
 }
 

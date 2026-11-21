@@ -18,7 +18,10 @@ enum ArisScreenAccess {
 
     private static let lock = NSLock()
     /// A fresh check said on since this agent started.
-    private static var seenOn = false
+    nonisolated(unsafe) private static var seenOn = false
+    /// A capture failed and a fresh check said off: this process's own answer (CGPreflightScreenCaptureAccess, kept by
+    /// macOS for the process's life) no longer counts until a fresh check says on again.
+    nonisolated(unsafe) private static var revoked = false
 
     static func parse(_ said: String?) -> Bool? {
         switch said {
@@ -28,6 +31,9 @@ enum ArisScreenAccess {
         }
     }
 
+    /// Whether the answer is known to be on without asking a new process. Pure.
+    static func known(preflight: Bool, seenOn: Bool, revoked: Bool) -> Bool { !revoked && (preflight || seenOn) }
+
     /// As a new process sees it; nil when aris-tools couldn't say.
     static func fresh(tools: String, environment: [String: String]) -> Bool? {
         parse(ArisLook.tool(tools, question, environment))
@@ -35,16 +41,34 @@ enum ArisScreenAccess {
 
     /// Whether a capture may be tried now (ArisScreenRead.allowed); nil when macOS couldn't be asked.
     static func allowed(tools: String, environment: [String: String]) -> Bool? {
-        let known = CGPreflightScreenCaptureAccess() || lock.withLock { seenOn }
-        let answer = ArisScreenRead.allowed(known: known) { fresh(tools: tools, environment: environment) }
-        if !known, answer == true { lock.withLock { seenOn = true } }
+        let state = lock.withLock { (seenOn, revoked) }
+        let isKnown = known(preflight: CGPreflightScreenCaptureAccess(), seenOn: state.0, revoked: state.1)
+        let answer = ArisScreenRead.allowed(known: isKnown) { fresh(tools: tools, environment: environment) }
+        if !isKnown, answer == true { lock.withLock { seenOn = true; revoked = false } }
         return answer
     }
 
-    /// A capture just failed: what macOS says now, whatever this process saw before.
+    /// A capture just failed: what macOS says now, whatever this process saw before (a grant taken back is noticed
+    /// here, not cached as on until the agent restarts).
     static func afterFailure(tools: String, environment: [String: String]) -> Bool? {
         let answer = fresh(tools: tools, environment: environment)
-        if answer == false { lock.withLock { seenOn = false } }
+        note(failureAnswer: answer)
         return answer
     }
+
+    /// What a fresh check after a failed capture said, kept. Separate for the tests.
+    static func note(failureAnswer answer: Bool?) {
+        lock.withLock {
+            if answer == false { seenOn = false; revoked = true }
+            if answer == true { seenOn = true; revoked = false }
+        }
+    }
+
+    /// The same two questions asked with the agent's own aris-tools and environment, for a caller that doesn't run
+    /// brains (the session look; ArisScreenAccess+Live's `now` is the runner's).
+    static func nowAsAgent() -> Bool { allowed(tools: ArisAppBundle.toldTools, environment: ProcessInfo.processInfo.environment) == true }
+    static func afterFailureAsAgent() -> Bool? { afterFailure(tools: ArisAppBundle.toldTools, environment: ProcessInfo.processInfo.environment) }
+
+    /// The state, for the tests.
+    static var remembered: (seenOn: Bool, revoked: Bool) { lock.withLock { (seenOn, revoked) } }
 }

@@ -2,6 +2,7 @@
 //  ArisImageRouting.swift
 //  aris-agent
 //
+//  The screen's text ("이거") stays with the brain the owner chose: Claude answers it sealed, as it does images (2026-11-18).
 //  Which brain answers a turn that carries screen images (the owner's ruling R2 = a): Codex takes them itself, and so does
 //  an API brain (gated like Codex: every call through ArisAPIGate); Claude's
 //  and Antigravity's turns go to a sealed Claude, a separate process with Bash for the sealed aris-tools list only
@@ -36,7 +37,7 @@ enum ArisImageRouting {
     }
 
     /// `screenConversation`: this conversation already saw the screen (ArisScreenConversation). `task`: background
-    /// work, which has no sealed process, so a screen conversation's task goes to the gated brain.
+    /// work, which stays on the chosen brain and runs untrusted behind its gate (ArisJobBrain.untrustedPlan).
     /// `handsFree`: heard without a key or the name (ArisHandsFree.profile): Codex gated as ever, Claude and agy sealed
     /// ("클로드한테 물어봐" from a video must not reach an open, ungated brain). A turn or a task.
     /// `privateRead`: Aris read the user's messages, mail or notes for agy in this conversation (ArisAgyRelay).
@@ -52,6 +53,17 @@ enum ArisImageRouting {
             if requested == .api {
                 return Route(brain: .api, sealed: false, sendsImages: hasImages && api.vision, note: hasImages && !api.vision ? ArisAgentPrompt.readText : nil,
                              status: nil, readsText: hasImages && !api.vision)
+            }
+            // The brain the owner chose keeps the turn (2026-11-18: "Claude is chosen, why does GPT start?"): Claude takes the
+            // screen's text in its sealed process, exactly as it takes the screen's images below (ArisSealedTools, every
+            // read and web call through the read judge), so the text still reaches no open, ungated brain. Antigravity
+            // can't run sealed with the web off for this, so with Claude installed the sealed Claude takes it, as for
+            // images. Codex only when it was chosen, or when no sealed Claude can run here.
+            if requested == .claude, claudeInstalled {
+                return Route(brain: .claude, sealed: true, sendsImages: hasImages, note: nil, status: nil)
+            }
+            if requested == .antigravity, claudeInstalled {
+                return Route(brain: .claude, sealed: true, sendsImages: hasImages, note: nil, status: "화면은 Claude가 봐요")
             }
             return Route(brain: .codex, sealed: false, sendsImages: hasImages, note: nil, status: nil)
         }
@@ -71,9 +83,10 @@ enum ArisImageRouting {
             // A conversation in which Aris read the user's messages, mail or notes for agy stays with the sealed agy.
             return Route(brain: requested, sealed: requested == .antigravity && privateRead, sendsImages: false, note: nil, status: nil)
         }
-        // A task has no sealed process: the gated brain (the API brain is gated itself).
-        if task, requested != .codex, requested != .api { return Route(brain: .codex, sealed: false, sendsImages: false, note: nil, status: nil) }
-        if task, requested == .api { return Route(brain: .api, sealed: false, sendsImages: false, note: nil, status: nil) }
+        // A task stays on the brain the owner chose, run untrusted behind that brain's own gate for outside words (ArisJobBrain:
+        // the open Claude with its turn gate marked from the start, agy sealed, Codex and the API brain gated); its images
+        // stay here (a job is given the conversation's words).
+        if task { return Route(brain: requested, sealed: false, sendsImages: false, note: nil, status: nil) }
         switch requested {
         case .codex:
             return Route(brain: .codex, sealed: false, sendsImages: hasImages, note: nil, status: nil)

@@ -29,14 +29,36 @@ enum ArisAX {
 
     static func bool(_ element: AXUIElement, _ name: String) -> Bool? { (value(element, name) as? NSNumber)?.boolValue }
 
-    static func element(_ element: AXUIElement, _ name: String) -> AXUIElement? {
-        guard let found = value(element, name), CFGetTypeID(found) == AXUIElementGetTypeID() else { return nil }
-        return (found as! AXUIElement)
+    /// A value with the call's own error (a timeout is kAXErrorCannotComplete).
+    static func copy(_ element: AXUIElement, _ name: String) -> (value: AnyObject?, error: AXError) {
+        var value: AnyObject?
+        let error = AXUIElementCopyAttributeValue(element, name as CFString, &value)
+        return (error == .success ? value : nil, error)
     }
 
-    static func children(_ element: AXUIElement) -> [AXUIElement] { value(element, kAXChildrenAttribute as String) as? [AXUIElement] ?? [] }
+    /// Each element Aris reaches answers within `ArisAXBudget.perCall` (a messaging timeout is the element's own:
+    /// one set on the app's element doesn't carry to its children, which waited the system's six seconds each).
+    @discardableResult
+    static func timed(_ element: AXUIElement) -> AXUIElement {
+        AXUIElementSetMessagingTimeout(element, ArisAXBudget.perCall)
+        return element
+    }
+
+    static func element(_ element: AXUIElement, _ name: String) -> AXUIElement? {
+        guard let found = value(element, name), CFGetTypeID(found) == AXUIElementGetTypeID() else { return nil }
+        return timed(found as! AXUIElement)
+    }
+
+    static func children(_ element: AXUIElement) -> [AXUIElement] { (value(element, kAXChildrenAttribute as String) as? [AXUIElement] ?? []).map(timed) }
 
     static func role(_ element: AXUIElement) -> String { string(element, kAXRoleAttribute as String) ?? "" }
+
+    /// The app doesn't answer Accessibility at all now (its role asked with a short timeout timed out).
+    static func unresponsive(pid: Int32) -> Bool {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, ArisAXBudget.probe)
+        return copy(app, kAXRoleAttribute as String).error == .cannotComplete
+    }
 
     static func actions(_ element: AXUIElement) -> [String] {
         var names: CFArray?
@@ -76,12 +98,16 @@ enum ArisAX {
         return app
     }
 
-    /// The app's window with this window-server id (its windows, then its focused and main one).
+    /// The app's windows as Accessibility lists them (on this Space, minimized and hidden ones too), each timed.
+    static func windows(pid: Int32) -> [AXUIElement] { (value(app(pid), kAXWindowsAttribute as String) as? [AXUIElement] ?? []).map(timed) }
+
+    /// The app's window with this window-server id (its windows, then its focused and main one, then, for a window on
+    /// another Space that Accessibility doesn't list, the app's elements by their remote token: ArisAXRemote).
     static func window(pid: Int32, id: Int) -> AXUIElement? {
         let app = app(pid)
-        let listed = value(app, kAXWindowsAttribute as String) as? [AXUIElement] ?? []
+        let listed = windows(pid: pid)
         let extra = [element(app, kAXFocusedWindowAttribute as String), element(app, kAXMainWindowAttribute as String)].compactMap { $0 }
-        return (listed + extra).first { windowId($0) == id }
+        return (listed + extra).first { windowId($0) == id } ?? ArisAXRemote.window(pid: pid, id: id)
     }
 
     /// The window an element sits in.
@@ -186,22 +212,34 @@ struct ArisNativeTree {
     /// Containers walked through but not listed when they have nothing of their own to say.
     static let silent: Set<String> = ["AXGroup", "AXSplitGroup", "AXScrollArea", "AXLayoutArea", "AXLayoutItem", "AXUnknown", "AXSplitter"]
 
-    /// The window's tree, breadth first, every element with a frame inside the window (or none) kept.
-    static func read(window: AXUIElement, pid: Int32) -> ArisNativeTree {
+    /// The window's tree, breadth first, every element with a frame inside the window (or none) kept, within `budget`:
+    /// each element's role is asked first, and one that times out is skipped with its subtree (a hung app answers
+    /// nothing, and every further question would wait); a few timeouts in a row end the walk as "not responding".
+    static func read(window: AXUIElement, pid: Int32, budget: ArisAXBudget = ArisAXBudget(limit: ArisAXBudget.lookLimit)) -> ArisNativeTree {
         var tree = ArisNativeTree()
+        ArisAX.timed(window)
         let focused = ArisAX.focused(pid: pid)
         if let focused {
             tree.focusedFrame = ArisAX.frame(focused)
             tree.focusedRole = ArisAX.role(focused)
         }
-        var queue: [(AXUIElement, Int)] = ArisAX.children(window).map { ($0, 1) }
+        let top = ArisAX.copy(window, kAXChildrenAttribute as String)
+        budget.record(top.error)
+        var queue: [(AXUIElement, Int)] = ((top.value as? [AXUIElement]) ?? []).map { (ArisAX.timed($0), 1) }
         var index = 0
         var visited = 0
         while index < queue.count, visited < maxElements * 4 {
+            if budget.exhausted {
+                tree.truncated = true
+                break
+            }
             let (element, depth) = queue[index]
             index += 1
             visited += 1
-            let role = ArisAX.role(element)
+            let asked = ArisAX.copy(element, kAXRoleAttribute as String)
+            budget.record(asked.error)
+            if asked.error == .cannotComplete { continue }
+            let role = asked.value as? String ?? ""
             if let entry = entry(element, role: role, id: "elem_\(tree.elements.count + 1)") {
                 if tree.elements.count >= maxElements {
                     tree.truncated = true

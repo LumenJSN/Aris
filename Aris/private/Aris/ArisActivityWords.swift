@@ -20,7 +20,8 @@ enum ArisActivityWords {
             if scheduled.contains(lead) { return said + when(rest) }
             return said + (counted ? counts(rest) : rest)
         }
-        return summary
+        // A line of Core 2's record, by its capability's name (ArisCapabilityNames).
+        return ArisCapabilityNames.english(summary) ?? summary
     }
 
     /// The kinds whose line ends with when the schedule runs, in brackets, as aris-agent writes it (ArisSchedule.describe).
@@ -29,7 +30,8 @@ enum ArisActivityWords {
 
     /// A schedule's line with its time in English: "standup (매일 09:00)" → "standup (every day at 09:00)", "(매주 금
     /// 18:00)" → "(every Friday at 18:00)", "(30분마다)" → "(every 30 minutes)", "(11월 3일 14:05에 한 번)" → "(once,
-    /// 11/3 at 14:05)". Only the brackets that end the line, and only when they hold one of those forms: the title, and
+    /// 11/3 at 14:05)", "(평일 08:00)", "(매주 월·수·금 08:00)", "(3일마다 09:00)", "(2주마다 금 09:00)", "(매월 15일 09:00)"
+    /// as ArisScheduleCard says them. Only the brackets that end the line, and only when they hold one of those forms: the title, and
     /// brackets of its own, stay as they are (the English undo card and Activity rows read "(매일 09:00)").
     static func when(_ rest: String) -> String {
         guard rest.hasSuffix(")"), let open = rest.range(of: " (", options: .backwards) else { return rest }
@@ -50,6 +52,20 @@ enum ArisActivityWords {
             said = found[0] == "1" ? "every hour" : "every \(found[0]) hours"
         } else if let found = groups(#"(\d{1,2})월 (\d{1,2})일 (\d{2}:\d{2})에 한 번"#) {
             said = "once, \(found[0])/\(found[1]) at \(found[2])"
+        } else if let found = groups(#"평일 (\d{2}:\d{2})"#) {
+            said = "every weekday at \(found[0])"
+        } else if let found = groups(#"주말 (\d{2}:\d{2})"#) {
+            said = "on weekends at \(found[0])"
+        } else if let found = groups(#"매주 ([일월화수목금토](?:·[일월화수목금토])+) (\d{2}:\d{2})"#) {
+            let days = found[0].split(separator: "·").compactMap { weekdays[String($0)] }
+            said = "every " + days.dropLast().joined(separator: ", ") + " and " + (days.last ?? "") + " at \(found[1])"
+        } else if let found = groups(#"(\d+)일마다 (\d{2}:\d{2})"#) {
+            said = "every \(found[0]) days at \(found[1])"
+        } else if let found = groups(#"(\d+)주마다 ([일월화수목금토]) (\d{2}:\d{2})"#), let day = weekdays[found[1]] {
+            said = "every \(found[0]) weeks on \(day) at \(found[2])"
+        } else if let found = groups(#"매월 (\d{1,2})일 (\d{2}:\d{2})"#), let day = Int(found[0]) {
+            let suffix = (11...13).contains(day % 100) ? "th" : day % 10 == 1 ? "st" : day % 10 == 2 ? "nd" : day % 10 == 3 ? "rd" : "th"
+            said = "monthly on the \(day)\(suffix) at \(found[1])"
         } else {
             return rest
         }

@@ -393,7 +393,8 @@ extension ArisDesktopEngine {
                                                           context: ArisDesktopContext(home: identity.home), remembered: false, secureInput: false), target.never || target.browser {
             return refuse(why)
         }
-        if target.settings || target.bundle == ArisShownPlace.finder { return refuse(ArisDesktopBatch.oneAtATimeLine) }
+        // A browser (decision 2): every action on its own card, so never a batch.
+        if target.settings || target.browser || target.bundle == ArisShownPlace.finder { return refuse(ArisDesktopBatch.oneAtATimeLine) }
         if ArisDesktopGate.isCalendarApp(target) { return refuse(ArisDesktopBatch.calendarStepLine) }
         // Selecting everything (or deleting) before typing replaces the document: only when the user's words say so (QA
         // retest: "…창에 X 라고 써 줘 / 덧붙여" was planned as click, cmd+a, type).
@@ -463,7 +464,7 @@ extension ArisDesktopEngine {
         let taint = turn.taint(forApp: target.readKey)
         let context = ArisDesktopContext(taintForApp: taint, screen: turn.screen, handsFree: turn.handsFree, job: turn.isTask, relayed: turn.relayed, home: identity.home,
                                          request: turn.request, critical: turn.critical)
-        let remembered = target.memoryKey.map { turn.ledger.allows($0, tainted: taint != .none) } ?? false
+        let remembered = turn.appYes(target, tainted: taint != .none)
         let name = request.app ?? target.name
         var elements: [ArisDesktopElement?] = []
         var asks = false, remember = true
@@ -601,7 +602,7 @@ extension ArisDesktopEngine {
             // This step's gate again, with the control it really is, the taint as it is now: a card it would ask for must be
             // the one the user saw (M2).
             let single = step.request(ref: ref, app: name, window: window.id)
-            let remembered = target.memoryKey.map { turn.ledger.allows($0, tainted: taint != .none) } ?? false
+            let remembered = turn.appYes(target, tainted: taint != .none)
             switch ArisDesktopGate.decide(single, target: target, context: context, remembered: remembered, secureInput: apps.secureInput, element: element) {
             case .refuse(let why): return stopped(index, why)
             case .judge: return stopped(index, ArisDesktopBatch.oneAtATimeLine)

@@ -1,0 +1,7 @@
+{"menus":[
+ {"title":"Notes","items":[{"title":"Settings…","key":",","modifiers":0},{"title":"Quit Notes","key":"Q","modifiers":0}]},
+ {"title":"File","items":[{"title":"New Note","key":"N","modifiers":0},{"title":"New Folder","key":"N","modifiers":1},{"title":"Close","key":"W","modifiers":0},{"title":"Pin Note"},{"title":"Lock Note","enabled":false},{"title":"Export as PDF…"}]},
+ {"title":"Edit","items":[{"title":"Undo","key":"Z","modifiers":0},{"title":"Delete","enabled":true},{"title":"Find","items":[{"title":"Find…","key":"F","modifiers":0}]}]},
+ {"title":"Format","items":[{"title":"Title","key":"T","modifiers":1},{"title":"Checklist","key":"L","modifiers":1}]},
+ {"title":"View","items":[{"title":"as List","key":"1","modifiers":0,"checked":true},{"title":"as Gallery","key":"2","modifiers":0},{"title":"Show Folders","key":"S","modifiers":4}]}
+]}

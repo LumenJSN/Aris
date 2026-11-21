@@ -37,7 +37,7 @@ private func qaFinalCardWaitTests() {
           "BUG-39: silence keeps the card up until its limit (a click, Y or N still answers it)")
     let typed = finalSource("Aris/private/Aris/ArisController+Typed.swift")
     let typedAt = typed.range(of: "ArisCardWait.typedAnswer(text, cardUp: session.question != nil)")?.lowerBound
-    let turnAt = typed.range(of: "turn?.cancel()")?.lowerBound
+    let turnAt = typed.range(of: "let opened = openTurn(.typed)")?.lowerBound
     check(typedAt != nil && turnAt != nil && typedAt! < turnAt!, "BUG-40: the typed path answers the open card before any new turn")
     let making = finalSource("Aris/private/Aris/ArisController+TeamMaking.swift")
     check(making.contains("askUser(ArisTeamRemoval.confirmation(for: mate), handsFree: true)") && making.contains("cardUnanswered ? ArisCardWait.unansweredLine"),
@@ -65,7 +65,7 @@ private func qaFinalWindowTitleTests() {
     let actions = finalSource("ArisAgent/ArisDesktopActions.swift")
     check(actions.contains("It was done in the window named below (say that title when you tell the user).\" + ArisWindowTitleMatch.windowField($0.title)"),
           "BUG-47: a done action names the window it really happened in")
-    check(finalSource("ArisAgent/ArisDesktopLive.swift").contains("title: info[kCGWindowName as String] as? String"), "BUG-47: windows carry their titles")
+    check(finalSource("ArisAgent/ArisDesktopWindowMerge.swift").contains("let title = known?.title ?? info[kCGWindowName as String] as? String"), "BUG-47: windows carry their titles")
 }
 
 // MARK: - BUG-22: a real press on a panel's field
@@ -240,7 +240,7 @@ func runQAFinalWindowTitleSourceTests() {
     check(ArisWindowTitleMatch.line(.none, wanted: "무제", app: "TextEdit")!.contains("Don't use another window"), "BUG-47: no match says the same")
     let controller = (try? String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../ArisAgent/ArisDesktopController.swift").standardized, encoding: .utf8)) ?? ""
     let live = (try? String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../ArisAgent/ArisDesktopLive.swift").standardized, encoding: .utf8)) ?? ""
-    check(controller.contains("if ArisWindowTitleMatch.titlesUnreadable(all)") && live.contains("ArisWindowTitles.titled(Self.windows(in: list, pid: pid), accessibility: Self.accessibilityTitles(of: pid))"),
+    check(controller.contains("if ArisWindowTitleMatch.titlesUnreadable(all)") && live.contains("ArisWindowTitles.titled(merged.filter(\\.onScreen), accessibility: ax.compactMap { window in window.title.map { (window.frame, $0) } })"),
           "BUG-47: the live windows take Accessibility's titles, and a named window with none readable is refused")
 }
 

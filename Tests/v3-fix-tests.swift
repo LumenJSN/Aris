@@ -173,14 +173,14 @@ private func v3UndoTests() {
 
     // Wiring: the controller takes these steps, and the tab's and the receipt's path is untouched.
     let controller = v3Code("Aris/private/Aris/ArisController+Undo.swift")
-    check(controller.contains("ArisUndoSteps.start(asks: entry.asks) == .ownCard") && controller.contains("var outcome = await undoWaiting(id: entry.id, korean: korean)")
+    check(controller.contains("ArisUndoSteps.start(asks: entry.asks) == .ownCard") && controller.contains("var outcome = await undoWaiting(id: entry.id, unit: entry.unit != nil, korean: korean)")
           && controller.contains("ArisUndoSteps.next(after: outcome, entry: entry")
-          && controller.contains("outcome = await undoWaiting(id: entry.id, confirmed: true, shown: ask, echo: echo, korean: korean)")
+          && controller.contains("outcome = await undoWaiting(id: entry.id, confirmed: true, shown: ask, echo: echo, unit: entry.unit != nil, korean: korean)")
           && controller.components(separatedBy: "confirmed: true").count == 3,
           "vm3 bug B: wiring: the typed undo asks the helper plainly first; `confirmed` is sent only after the helper's card (here and in the tab's undo)")
     check(controller.contains("let outcome = await undoWaiting(id: id, korean: korean)\n        guard case .needsConfirm(let asked, let summary, let revives) = outcome"),
           "vm3 bug B: wiring: the 한 일 tab's and the receipt's undo go as they did")
-    check(v3Code("Aris/private/Aris/ArisAgentClient+Undo.swift").contains("ArisUndoSteps.request(id: id, confirmed: confirmed, echo: echo ?? shown?.detail)"),
+    check(v3Code("Aris/private/Aris/ArisAgentClient+Undo.swift").contains("ArisUndoSteps.request(id: id, confirmed: confirmed, echo: echo ?? shown?.detail, unit: unit)"),
           "vm3 bug B: wiring: the request's body is the tested one")
     let agent = v3Code("ArisAgent/main.swift")
     check(agent.contains("let yes = pendingUndos.consuming(id: object[\"id\"] as? String, summary: object[\"summary\"] as? String, at: Date())")
@@ -206,7 +206,7 @@ private func v3UndoWordsTests() {
           "vm3 smaller: the Korean Undo card is as it was")
     check(ArisUndoWords.card(for: todo, newest: volume, doubt: true, korean: false).detail == "To undo: To-do added: that\nThe latest one (Volume up) isn't that kind, so it stays",
           "vm3 smaller: the line about the newer change that stays is English too")
-    check(ArisUndoWords.doneLine("할 일 추가: that", korean: false) == "Undid “that” (To-do added)." && ArisUndoWords.doneLine("볼륨 올림", korean: false) == "Undid “Volume up”."
+    check(ArisUndoWords.doneLine("할 일 추가: that", korean: false) == "I took back the to-do “that”." && ArisUndoWords.doneLine("볼륨 올림", korean: false) == "I took back “Volume up”."
           && ArisUndoWords.doneLine("일정 추가: 회의", korean: true) == "‘회의’ 일정을 되돌렸어요.",
           "vm3 smaller: the reply after an undo names the record in the request's language (\(ArisUndoWords.doneLine("할 일 추가: that", korean: false)))")
     check(ArisUndoWords.noneOfKindLine([todo, volume], korean: false) == "Nothing of that kind. The latest are: To-do added: that; Volume up. Which one should I undo?",
@@ -242,12 +242,16 @@ private func v3PointsBackTests() {
         check(isAsk(said), "vm3 bug A: “\(said)” is the AI's (the Korean rule had the same hole)")
     }
     // A thing with a name of its own is still Aris's own add, as before.
-    check(added("add buy milk to my to-do list") == "buy milk" && added("add call that guy about the fence to my to-dos") == "call that guy about the fence"
+    check(added("add buy milk to my to-do list") == "buy milk"
           && added("add IT support ticket to my to-dos") == "IT support ticket" && added("remind me to call mom tomorrow at 5") == "call mom tomorrow at 5"
-          && added("remind me to send it to Kim") == "send it to Kim" && added("add this week's report to my to-dos") == "this week's report",
+          && added("add this week's report to my to-dos") == "this week's report",
           "vm3 bug A: an item with words of its own is added by the app as before (\(String(describing: added("add this week's report to my to-dos"))))")
-    check(added("우유 사기 할 일에 추가해 줘") == "우유 사기" && added("그 회의 자료 준비 할 일에 추가해 줘") == "그 회의 자료 준비" && added("이거저거 정리하기 할 일에 넣어 줘") == "이거저거 정리하기",
+    check(added("우유 사기 할 일에 추가해 줘") == "우유 사기" && added("이거저거 정리하기 할 일에 넣어 줘") == "이거저거 정리하기",
           "vm3 bug A: a Korean item with words of its own is added as before")
+    // Tenth VM run (mind10a 3): an item that points at something else ("that guy", "it", "그 회의") is the model's too.
+    for said in ["add call that guy about the fence to my to-dos", "remind me to send it to Kim", "그 회의 자료 준비 할 일에 추가해 줘"] {
+        check(isAsk(said), "vm3 bug A, since mind10a: “\(said)” points at something only the AI can tell, so it is the AI's")
+    }
     // The other local acts that take words: an app opened, a to-do ticked off.
     for said in ["open that", "open it", "open this one", "launch that", "그거 열어 줘", "이거 켜 줘", "그거 다 했어", "방금 그거 끝냈어", "mark that as done", "check it off"] {
         check(isAsk(said), "vm3 bug A: “\(said)” names nothing the app could open or tick: the AI's")
@@ -391,7 +395,7 @@ private func v3ListenStartTests() {
           && L.shownOnPage(failed: false, reply: en, listening: false) == nil && L.shownOnPage(failed: true, reply: "", listening: false) == nil,
           "vm3n bug 4: the setup's Dictation page shows the same sentence under its note while the notch says it")
     let listener = v3Code("Aris/private/Aris/ArisListener.swift")
-    check(listener.contains("ArisListenStart.problem(usesMicrophone: source == nil && feed == nil, hasMicrophone: ArisMicChoice.hasMicrophone(), modelMissing: modelMissing)")
+    check(listener.contains("ArisListenStart.problem(usesMicrophone: source == nil && feed == nil, hasMicrophone: ArisMicChoice.hasMicrophone(), modelMissing: modelMissing,")
           && v3Code("Aris/private/Aris/Onboarding/ArisOnboardingTryPages.swift").contains("ArisListenStart.shownOnPage(failed: aris.session.phase == .failed, reply: aris.session.reply, listening: listening)"),
           "vm3n bug 4: wiring: the listener asks the rule before it starts, and the page shows what came of it")
 }
@@ -516,9 +520,10 @@ private func v3SmallerTests() {
     check(v3Code("Aris/private/Aris/ArisPermissionGuide.swift").contains("panel.hasShadow = false") && !v3Code("Aris/private/Aris/ArisPermissionGuide.swift").contains("panel.hasShadow = true"),
           "vm3n smaller: the helper panel draws no window shadow (the grey box outline around it)")
     let strings = v3Source("Aris/components/Settings/Settings.xcstrings")
-    check(strings.contains("A small model that takes short requests before the AI does (TypeSafe Jev) · optional") && !strings.contains("\"TypeSafe Jev · optional\"")
-          && v3Code("Aris/components/Settings/ArisAIServicesPage.swift").contains("짧은 말을 AI보다 먼저 알아듣는 작은 모델(TypeSafe Jev) · 없어도 돼요"),
-          "vm3n smaller: the AI services row says in one clause what TypeSafe Jev is")
+    // Named by the service whose key it takes since the VM run of 2026-11-18 ("TypeSafe Jev" read as an odd name).
+    check(strings.contains("A small model that takes short requests before the AI does (TypeSafe) · optional") && !strings.contains("\"TypeSafe Jev · optional\"")
+          && v3Code("Aris/components/Settings/ArisAIServicesPage.swift").contains("짧은 말을 AI보다 먼저 알아듣는 작은 모델(TypeSafe) · 없어도 돼요"),
+          "vm3n smaller: the AI services row says in one clause what the quick-command model is")
     check(!strings.contains("Aris is two programs") && strings.contains("drag the Aris icon into the list there")
           && !v3Code("Aris/components/Settings/ArisSettingsBuilder.swift").contains("프로그램이 둘이라"),
           "one row: Settings › Computer control's intro names one program, Aris, to drag into the list")
@@ -550,7 +555,7 @@ private func v3SmallerLogicTests() {
                    asksAfter: ArisRiskPolicy.asksAfterOutsideText(conversion, tools: t)),
           "vm3 smaller: by the gate's own rules the tester's conversion is such a card (risk \(ArisRiskPolicy.risk(of: conversion, tools: t, home: h, request: "convert noise-long.wav on my Desktop to m4a")), asked after outside text \(ArisRiskPolicy.asksAfterOutsideText(conversion, tools: t)))")
     let runner = v3Code("ArisAgent/ArisAgentRunner.swift")
-    check(runner.contains("let escalated = ArisEscalation.card(for: ask, approvable: approvable, hardLine: hardLine, tainted: tainted)")
+    check(runner.contains("let escalated = ArisEscalation.card(for: ask, approvable: approvable, hardLine: hardLine, tainted: tainted, payment: payment)")
           && runner.contains("let ask = ArisGateReason.card(for: escalated, raised: raised)")
           && runner.contains("ArisGateReason.raised(outside: driver.taint.blocks(covered: pendingAction.covered), hardLine: hardLine != nil,"),
           "vm3 smaller: wiring: the rule is applied where every brain's card passes, so no brain's card differs")
@@ -634,7 +639,7 @@ private func v3HelperAnswersTests() {
           && v3Code("ArisAgent/ArisRoutineTurn.swift").contains("if !intent.asksAnAI { stream(.helperAnswers, on: connection) }"),
           "vm3 smaller: wiring: the why answer and the routine's own answers are marked as the helper's")
     let controller = v3Code("Aris/private/Aris/ArisController.swift")
-    check(controller.contains("stats?.answered(by: ArisTurnPath.helper)") && controller.contains("ArisTurnPath.answerer(brain: brain.rawValue, helper: helperAnswers)"),
+    check(controller.contains("stats?.answered(by: ArisTurnPath.helper)") && controller.contains("ArisTurnPath.answerer(brain: brain.rawValue, helper: state.helperAnswers)"),
           "vm3 smaller: wiring: the app records and logs it")
 }
 

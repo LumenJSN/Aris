@@ -26,6 +26,11 @@ struct ArisTurnStats {
     /// The per-turn screenshot, logged as numbers (plan D4): never the image.
     private var capture: [String: Any]?
     private var shotCount: Int?
+    /// The turn's stage clock and how its end went (ArisStageClock, ArisEndpointDriver).
+    private var stages: [String: Int] = [:]
+    private var endCase: String?
+    private var speculations = 0
+    private var speculationsCancelled = 0
 
     init(startedAt: ContinuousClock.Instant) {
         self.startedAt = startedAt
@@ -68,12 +73,21 @@ struct ArisTurnStats {
         shotCount = count
     }
 
+    /// The stages of the turn (ms since it began), the case of its end and its speculative requests.
+    mutating func hearing(stages: [String: Int], endCase: String?, speculations: Int, cancelled: Int) {
+        self.stages = stages
+        self.endCase = endCase
+        self.speculations = speculations
+        speculationsCancelled = cancelled
+    }
+
     mutating func asked(allowed: Bool) {
         confirms += 1
         if !allowed { declined += 1 }
     }
 
-    /// `outcome`: "ok", "error", "cancelled" or "unheard" (nothing in the turn was speech).
+    /// `outcome`: "ok", "error", "cancelled", "replaced" (the next turn began before it ended) or "unheard" (nothing in
+    /// the turn was speech).
     func line(outcome: String, at instant: ContinuousClock.Instant) -> [String: Any] {
         var line: [String: Any] = ["heard": said, "path": path, "tier": tier, "outcome": outcome,
                                    "confirms": confirms, "declined": declined, "totalMs": milliseconds(to: instant)]
@@ -83,6 +97,10 @@ struct ArisTurnStats {
         if let soundAt { line["firstSoundMs"] = milliseconds(to: soundAt) }
         if let capture { line["capture"] = capture }
         if let shotCount { line["shots"] = shotCount }
+        for (field, value) in stages { line[field] = value }
+        if let endCase { line["endCase"] = endCase }
+        if speculations > 0 { line["speculations"] = speculations }
+        if speculationsCancelled > 0 { line["speculationsCancelled"] = speculationsCancelled }
         return line
     }
 

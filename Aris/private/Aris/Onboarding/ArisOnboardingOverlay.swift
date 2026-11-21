@@ -25,6 +25,7 @@ final class ArisOnboardingOverlayWindow: NSPanel {
         isMovable = false
         animationBehavior = .none
         appearance = NSAppearance(named: .darkAqua)
+        ArisRecordingPrivacy.follow(self)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         level = NSWindow.Level(rawValue: ArisOnboardingStage.overlayLevel)
         title = ArisOnboardingCopy.overlayLabel

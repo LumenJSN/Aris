@@ -35,9 +35,26 @@ protocol ArisDesktopTurn: ArisMCPTurn {
     var desktopOwner: String { get }
     /// One desktop action of the turn ended: the step it could be saved as, or why not (ArisSavedSteps).
     func noteDesktopAction(_ note: Result<ArisSavedStep, ArisSavedStepsRefusal>)
+    /// Core 2's trust gate decided this very call runs without a card (ArisMindPasses.Kind.judgedRun), and that decision
+    /// still stands now for exactly the content it saw: false once content came in since, or while another call that
+    /// can bring some is under way (ArisMindJudge.judgedRunFresh, evaluated on every read). It counts as the app's yes
+    /// for this call only, never kept. Every card the desktop gate asks before the app's yes still shows.
+    var trustDecisionHolds: Bool { get }
 }
 
 extension ArisDesktopTurn {
+    var trustDecisionHolds: Bool { false }
+
+    /// The app's yes for this call: the user's yes for the app in this conversation (as the ledger keeps it), or Core 2's
+    /// decision for this call (`trustDecisionHolds`), for an app whose yes may be kept at all.
+    func appYes(_ target: ArisDesktopTarget, tainted: Bool) -> Bool {
+        guard let key = target.memoryKey else { return false }
+        if ledger.allows(key, tainted: tainted) { return true }
+        // Not the conversation's taint but the decision's own: the trust gate weighed every content read before it (a
+        // content-suggested call gets no such decision), and `trustDecisionHolds` turns false the moment any more comes in.
+        return trustDecisionHolds
+    }
+
     /// `request` has no default on purpose (audit desk-5): agy's relay turn kept the user's words private, this default
     /// quietly stood in for them, and the engine never saw what he asked. A turn must say them itself.
     var critical: Bool { true }
@@ -144,6 +161,8 @@ protocol ArisDesktopApps {
     /// The clipboard's plain text, read only for a paste in a messaging app (the user's card shows it; a brain never gets
     /// it); nil when it holds none.
     func clipboardText() -> String?
+    /// A browser's front page address (decision 2: its card names the host); nil when it can't be read.
+    func pageAddress(_ target: ArisDesktopTarget) -> String?
     /// Whether the document in the process's window at `frame` has unsaved changes (Accessibility's AXModified); nil
     /// when the window has no such mark or it can't be read.
     func documentEdited(pid: Int32, frame: CGRect) -> Bool?
@@ -155,12 +174,17 @@ struct ArisDesktopWindow: Equatable {
     let frame: CGRect
     /// Its title as the window server has it (nil when it can't be read).
     var title: String? = nil
+    /// On screen now; else minimized, hidden or on another Space (ArisDesktopWindowMerge): still read and worked in the
+    /// background.
+    var onScreen = true
+    var minimized = false
 }
 
 /// Before any key, text or press goes out for real (foreground), the app the card named must be the one in front and
 /// the window the card named its key window; else nothing is sent (QA BUG-53: a delete pressed "for real" must never
 /// land in whatever app is in front, a browser on a checkout page). Unknown counts as no. Pure.
 extension ArisDesktopApps {
+    func pageAddress(_ target: ArisDesktopTarget) -> String? { nil }
     func secureInputOwner() -> Int32? { nil }
     func secondsSinceOwnerInput(owner: String) -> Double { secondsSinceKeyDown() }
     func raiseWindow(pid: Int32, frame: CGRect) {}
@@ -310,6 +334,12 @@ protocol ArisDesktopAccess {
     /// Opens System Settings at Accessibility (or Screen Recording), once per agent run each.
     func guide()
     func guideScreen()
+    /// A capture just failed: whether Screen Recording is on as macOS has it now (asked again, whatever was seen before).
+    func captureFailed() -> Bool
+}
+
+extension ArisDesktopAccess {
+    func captureFailed() -> Bool { screenRecording }
 }
 
 /// The pointer and the front app: kept before a real (foreground) click or typing the user consented to, put back after.
@@ -386,7 +416,7 @@ final class ArisDesktopEngine {
 
     init(installer: ArisDesktopInstaller, apps: ArisDesktopApps, runner: ArisDesktopRunning = ArisDesktopProcess(), access: ArisDesktopAccess,
          windows: ArisDesktopWindows, pointer: ArisDesktopPointer, vision: ArisDesktopVision, reader: ArisDesktopTextReader,
-         identity: ArisDesktopIdentity, tools: String, computerEngine: @escaping () -> ArisComputerEngine = { .peekaboo },
+         identity: ArisDesktopIdentity, tools: String, computerEngine: @escaping () -> ArisComputerEngine = { .standard },
          lock: ArisDesktopLock? = nil, pausePolicy: ArisDesktopPause.Policy? = nil, native: ArisNativeRunner? = nil) {
         self.native = native
         self.lock = lock
@@ -433,10 +463,10 @@ final class ArisDesktopEngine {
     static func blindLine(english: Bool) -> String { english ? ArisDesktopCopy.blindLine : blindLine }
     static let notOursLine = "That ref isn't from a look Aris took in this conversation. Look first: `desktop see --app \"<App>\"`, then use its refs."
     static let quitLine = "That app quit or restarted since that look. Look again with `desktop see`."
-    static let noLine = "the user said no (or didn't answer), so it wasn't done. Don't try it another way now. A later request in a new turn gets a new card."
+    static let noLine = "The owner said no (or didn't answer), so it wasn't done. Don't try it another way now. A later request in a new turn gets a new card."
 
     /// The card closed with no answer from the user: never worded as their no (QA live on 827cfdb4: "알겠어요, … 입력하지 않을게요").
-    static let unansweredLine = "the user didn't answer the card in time, so it wasn't done. Don't try it another way now. A later request in a new turn gets a new card. " +
+    static let unansweredLine = "The owner didn't answer the card in time, so it wasn't done. Don't try it another way now. A later request in a new turn gets a new card. " +
         "Say exactly that (e.g. “카드에 답이 없어서 입력하지 않았어요”, or for a request in English “The card wasn't answered, so I didn't type it”), " +
         "never “알겠어요” or “All right” as if he said no."
 
@@ -613,7 +643,9 @@ final class ArisDesktopEngine {
         if target.sending || target.codeRunner, ArisDesktopGate.pastes(request) { context.clipboard = apps.clipboardText() }
         // The user's yes for this app in this conversation; or, in a saved-steps replay, their yes to an earlier card of the replay
         // for a step the live run did on the app's yes (ArisSavedStep.afterYes).
-        let remembered = target.memoryKey.map { turn.ledger.allows($0, tainted: taint != .none) || turn.ledger.replayCovers($0) } ?? false
+        let rememberedYes = target.memoryKey.map { turn.ledger.allows($0, tainted: taint != .none) || turn.ledger.replayCovers($0) } ?? false
+        // Core 2's trust gate let this call run without a card: the app's yes for this call (never kept, never a saved step's).
+        let remembered = rememberedYes || turn.appYes(target, tainted: taint != .none)
         let element = request.ref.flatMap { turn.ledger.element($0) }
         // What this action would be as a saved step (kept only if it is done).
         let pinnedTitle = request.title ?? request.window.flatMap { id in appWindows.first { $0.id == id } }?.title ?? appWindows.first?.title
@@ -635,7 +667,7 @@ final class ArisDesktopEngine {
             candidate.value = .success(step)
         }
         // A step done on the app's yes with no card of its own: a replay of it may run on its own earlier yes too.
-        if case .run = decision, remembered, request.verb.kind == .action, case .success(var step)? = candidate.value {
+        if case .run = decision, rememberedYes, request.verb.kind == .action, case .success(var step)? = candidate.value {
             step.afterYes = true
             candidate.value = .success(step)
         }
@@ -671,7 +703,8 @@ final class ArisDesktopEngine {
             turn.audit(["answer": "refused", "action": what, "brain": turn.brainName])
             done(.failed(why))
         case .run:
-            turn.audit(["answer": remembered ? "ran (the user's yes for this app)" : "ran (\(request.verb.kind == .read ? "read" : "action"))", "action": what, "brain": turn.brainName])
+            turn.audit(["answer": rememberedYes ? "ran (the user's yes for this app)" : remembered ? "ran (the trust gate's decision for this call)"
+                        : "ran (\(request.verb.kind == .read ? "read" : "action"))", "action": what, "brain": turn.brainName])
             done(perform(request, target: target, turn: turn, basis: ArisDesktopBasis(title: snapshotTitle, settingsPane: pane,
                                                                                     window: request.ref.flatMap { turn.ledger.observation($0.snapshot)?.window },
                                                                                     perApp: acts && scope != .global)))
@@ -717,7 +750,8 @@ final class ArisDesktopEngine {
             // Keys and a look-and-click say theirs too, even with no look at it yet (audit desk-1: no window line at all).
             let aimedTitle = request.window.flatMap { id in appWindows.first { $0.id == id } }?.title
             let shownWindow = basis.title ?? snapshotTitle ?? aimedTitle ?? ([.dialogFile, .press, .clickAt].contains(request.verb) ? appWindows.first?.title : nil)
-            let card = ArisDesktopCard.card(request, target: target, element: element, window: shownWindow, composer: basis.composer ?? basis.shownField,
+            let card = ArisDesktopCard.card(request, target: target, element: element, window: shownWindow,
+                                            host: target.browser ? ArisBrowserActs.host(apps.pageAddress(target)) ?? "" : nil, composer: basis.composer ?? basis.shownField,
                                             send: basis.send, blindField: basis.blindField, blindSend: basis.blindSend, searchFocus: basis.searchFocus, paste: basis.paste,
                                             unnamedDocument: request.verb == .dialogFile && !context.namesDocument, remember: remember,
                                             wiped: target.memoryKey.map(turn.ledger.wasWiped) ?? false, mayRaise: !turn.isTask && !target.sending,

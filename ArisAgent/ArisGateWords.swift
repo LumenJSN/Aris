@@ -46,7 +46,7 @@ enum ArisGateWords {
     /// Whole lines the gates write, and what Aris says or shows when it refuses.
     static let lines: [String: String] = [
         ArisEscalation.taintedReason: "Asking once more because outside content was read",
-        ArisEscalation.moneyReason: "I can't do anything that costs money",
+        ArisEscalation.moneyReason: "A payment needs your own yes on its card, each time",
         ArisEscalation.mailReason: "I don't send a mail I can't show in full on the card",
         ArisEscalation.literalEscapeNote: "The text to type holds the characters \\n as they are (not a line break)",
         ArisEscalation.judgedNote: "Aris judged it and went ahead",

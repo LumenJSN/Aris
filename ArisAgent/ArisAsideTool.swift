@@ -27,16 +27,22 @@ protocol ArisAsideTurn: ArisMCPTurn {
     /// A sign-in code waits for the user's approval: the turn waits too, and the notch shows `status` (the code).
     func asideWaiting(_ status: String)
     func asideEnded()
+    /// How Aside's run ended: with an answer (its exit was 0 and it said something), or without one.
+    func asideFinished(answered: Bool)
     /// The turn's request names one of Aris's own schedules by its title (ArisOwnData.namesSchedule): Aside gets nothing
     /// of such a turn, however a brief is worded.
     var asideOwnData: Bool { get }
     /// The turn's request is English: Aside's cards and lines are too (audit desk-11); else Korean.
     var asideEnglish: Bool { get }
+    /// The owner's own words for the turn (ArisPaymentBoundary: a turn about paying always asks).
+    var asideRequest: String { get }
 }
 
 extension ArisAsideTurn {
+    func asideFinished(answered: Bool) {}
     var asideOwnData: Bool { false }
     var asideEnglish: Bool { false }
+    var asideRequest: String { "" }
 }
 
 /// What the tool reaches outside itself.
@@ -223,6 +229,23 @@ enum ArisAsideTool {
         case .failure(let why): return .failed(why.text)
         case .success(let made): brief = made
         }
+        // Paying is never handed over (ArisPaymentBoundary; the eleventh VM run, R2): a brief that tells Aside to pay is
+        // refused before anything else is looked at (installed or not, card or not), and in a turn about paying the brain
+        // is told what its reply may not promise, however the hand-off ends.
+        let paying: Bool
+        switch ArisPaymentBoundary.judge(brief: brief, request: turn.asideRequest) {
+        case .refused:
+            turn.audit(["answer": "refused (it tells Aside to pay)", "action": "aside: " + String(brief.prefix(500)), "risk": "never", "brain": turn.brainName])
+            return .failed(ArisPaymentBoundary.refusedLine)
+        case .stopsAtPayment: paying = true
+        case .plain: paying = false
+        }
+        let outcome = handOver(brief, paying: paying, turn: turn, critical: critical, deps: deps)
+        return paying ? ArisMCPOutcome(status: outcome.status, output: outcome.output + "\n" + ArisPaymentBoundary.replyRule) : outcome
+    }
+
+    /// The hand-off once the brief may be one. `paying`: the turn or the brief is about paying, so it always asks.
+    private static func handOver(_ brief: String, paying: Bool, turn: ArisAsideTurn, critical: Bool, deps: ArisAsideDeps) -> ArisMCPOutcome {
         let action = "aside: " + String(brief.prefix(500))
         // Aris's own schedules, to-dos, memory, teammates, timers and settings are never Aside's, in a conversation or a
         // job, with or without a card (QA BUG-60: a job asked Aside to find and delete Aris's own schedule on websites).
@@ -252,11 +275,14 @@ enum ArisAsideTool {
             return .failed(ArisAside.busy)
         }
         defer { lock.withLock { _ = running.remove(key) } }
-        let risk = ArisAside.risk(brief: brief, taint: turn.taint, screen: turn.screen, handsFree: turn.handsFree, critical: critical,
+        var risk = ArisAside.risk(brief: brief, taint: turn.taint, screen: turn.screen, handsFree: turn.handsFree, critical: critical,
                                   privateTexts: deps.privateTexts())
+        if paying, risk == .auto { risk = .confirm }
+        // What Aside gets, and what the card shows: the brief with the owner's rule about paying as its last word.
+        let handed = ArisPaymentBoundary.bounded(brief, english: turn.asideEnglish)
         if risk != .auto {
-            let preview = brief.count > ArisAside.cardPreview ? String(brief.prefix(ArisAside.cardPreview)) + "…" : brief
-            let card = ArisMCPCard(title: ArisAside.cardTitle(english: turn.asideEnglish), detail: preview, full: preview == brief ? nil : brief, fields: [])
+            let preview = handed.count > ArisAside.cardPreview ? String(handed.prefix(ArisAside.cardPreview)) + "…" : handed
+            let card = ArisMCPCard(title: ArisAside.cardTitle(english: turn.asideEnglish), detail: preview, full: preview == handed ? nil : handed, fields: [])
             // A card nobody answered is told as that, never as the user's no (audit desk-12).
             let answer = ask(card, turn: turn)
             guard case .yes = answer else {
@@ -274,16 +300,20 @@ enum ArisAsideTool {
         turn.takeOutsideText()
         turn.asideRunning(brief)
         defer { turn.asideEnded() }
-        let result = deps.run(path, ArisAside.arguments(brief: brief), ArisAside.environment(deps.environment), ArisAside.runLimit)
+        let result = deps.run(path, ArisAside.arguments(brief: handed), ArisAside.environment(deps.environment), ArisAside.runLimit)
         // A failed run may mean Aside is no longer ready (signed out, no host): checked again next time.
         if !result.ok { deps.forget() }
-        return ArisAside.output(status: result.status, stdout: result.stdout, stderr: result.stderr, timedOut: result.timedOut)
+        let outcome = ArisAside.output(status: result.status, stdout: result.stdout, stderr: result.stderr, timedOut: result.timedOut)
+        turn.asideFinished(answered: outcome.status == 0)
+        return outcome
     }
 
     /// A card about setting Aside up may go up: on a clean, heard turn only (never after outside text, the screen or
     /// hands-free: L7), and once a turn for each kind.
+    /// Never in a background job (twelfth VM run, A1: a job's install card waited out the job's ten-minute card limit
+    /// unseen; the job now fails at once with the install line).
     private static func mayShow(_ shown: inout [String], turn: ArisAsideTurn) -> Bool {
-        guard turn.taint == .none && !turn.screen && !turn.handsFree else { return false }
+        guard turn.taint == .none && !turn.screen && !turn.handsFree && !turn.isTask else { return false }
         let key = turn.asideTurnKey
         guard !shown.contains(key) else { return false }
         shown = Array((shown + [key]).suffix(64))

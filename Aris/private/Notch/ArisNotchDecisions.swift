@@ -65,6 +65,13 @@ enum ArisNotchDecisions {
             || (!dictating && wakeHeard && phase == .listening)
     }
 
+    /// How tall the open notch may grow on a page: Aris's pages and the Claude tab up to the screen's safe maximum
+    /// (`surfaceMax`), the shelf up to the fixed cap. The Claude tab had the fixed 400 too, and a question card taller
+    /// than that lost its Terminal and Submit under the notch's edge (the user's report 2026-11-19).
+    static func growMax(surfacePage: Bool, claudePage: Bool, surfaceMax: CGFloat, fixedMax: CGFloat) -> CGFloat {
+        surfacePage || claudePage ? surfaceMax : fixedMax
+    }
+
     /// A card waiting for the user opens this display's notch, wherever the pointer is (QA retest on 8e236bff: with the
     /// pointer on the desktop the card showed only on hover): on the display the turn happened on, else the main one.
     static func cardOpens(waiting: Bool, closed: Bool, hidden: Bool, here: String?, turnDisplay: String?, mainDisplay: String?) -> Bool {
@@ -81,10 +88,16 @@ enum ArisNotchDecisions {
     static func endWaitsForCard(cardWaiting: Bool, waited: TimeInterval) -> Bool { cardWaiting && waited < cardHoldCap }
 
     /// Whether a hover-exit (or "close unless hovering", or a drop leaving) may close the notch now. `dropHold`: files
-    /// were just given to Aris (the composer waits for what to do with them).
+    /// were just given to Aris (the composer waits for what to do with them). `typing`: the composer has the keyboard and
+    /// words in it (`composerHolds`), so the notch isn't put away under the user's typing.
     static func automaticCloseAllowed(open: Bool, hovering: Bool, popover: Bool, sharing: Bool, approvalsPending: Bool, turnHolds: Bool,
-                                      dropHold: Bool = false) -> Bool {
-        open && !hovering && !popover && !sharing && !approvalsPending && !turnHolds && !dropHold
+                                      dropHold: Bool = false, typing: Bool = false) -> Bool {
+        open && !hovering && !popover && !sharing && !approvalsPending && !turnHolds && !dropHold && !typing
+    }
+
+    /// The composer holds the notch open while its field has the keyboard and words that aren't only spaces.
+    static func composerHolds(draft: String, focused: Bool) -> Bool {
+        focused && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// A press in the open notch has just opened Aris's Settings: the notch gets out of the window's way, unless

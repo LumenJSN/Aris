@@ -134,6 +134,7 @@ final class ArisWhyDesk: @unchecked Sendable {
         case .explain(let record):
             // The log keeps whole seconds (cut, never rounded up): from the second the turn began in, to its end.
             let done = ArisWhyActivity.summaries(in: log, from: Self.second(of: record.at), to: record.ended ?? asking.now)
+                .map { $0 + Self.recordLines(record.at, record.ended ?? asking.now) }
             return ArisWhyAnswer.text(record, evidence: ArisWhyEvidence(done: done, sources: sources(of: record)), asking: asking)
         case .unrecorded(let heard):
             let latest = lock.withLock { book.records.last }
@@ -144,6 +145,9 @@ final class ArisWhyDesk: @unchecked Sendable {
             return ArisWhyAnswer.nothing(since: since, asking: asking)
         }
     }
+
+    /// With `arisCore2` on, what the record says the turn did (ArisCore2Trust sets it; empty otherwise).
+    nonisolated(unsafe) static var recordLines: (Date, Date) -> [String] = { _, _ in [] }
 
     private static func second(of date: Date) -> Date { Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down)) }
 

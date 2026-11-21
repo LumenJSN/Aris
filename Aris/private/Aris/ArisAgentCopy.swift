@@ -10,7 +10,17 @@ import Foundation
 
 enum ArisAgentCopy {
     /// No helper on this Mac: said with what to do about it (ArisPrerequisites).
-    static var notSetUp: String { ArisPrerequisites.full(.helper) }
+    static var notSetUp: String {
+        notSetUp(helperInstalled: ArisPrerequisites.current().isEmpty, english: ArisUIWords.english)
+    }
+    /// No key to reach the helper with. With a helper inside the app, that is a helper that hasn't made its key yet
+    /// (it makes it when it starts) or a key file that went away: restarting the helper makes it. Only a copy of Aris
+    /// without a helper is the "developer build" line (it used to be said for both).
+    static func notSetUp(helperInstalled: Bool, english: Bool) -> String {
+        guard helperInstalled else { return ArisPrerequisites.full(.helper, english: english) }
+        return ArisUIWords.text("Aris 에이전트와 연결할 키가 아직 없어요. 에이전트를 다시 시작해 주세요.",
+                                "Aris's helper hasn't made its connection key yet. Restart the helper.", english: english)
+    }
     static var notRunning: String { notRunning(english: ArisUIWords.english) }
     static func notRunning(english: Bool) -> String {
         // No "in Settings": under this line in the notch is the button that restarts it there and then (ArisFixWords).

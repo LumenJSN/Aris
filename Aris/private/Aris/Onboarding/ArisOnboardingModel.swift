@@ -52,19 +52,22 @@ final class ArisOnboardingModel: ObservableObject {
     private var poll: Timer?
     private var popped: Set<Card> = []
 
-    init(actions: Actions, page: ArisSetupPage = .permissions) {
+    /// The cards this setup shows (ArisSetupCards: what the chosen features need).
+    var cards: [Card] { flow.cards }
+
+    init(actions: Actions, page: ArisSetupPage = .permissions, cards: [Card] = Card.allCases) {
         self.actions = actions
-        flow = ArisSetupFlow(page: page)
-        live = Self.read(actions)
-        popped = Set(Card.allCases.filter { card in card.steps.allSatisfy { live[$0] == .granted } })
+        flow = ArisSetupFlow(page: page, cards: cards)
+        live = Self.read(actions, cards: flow.cards)
+        popped = Set(flow.cards.filter { card in card.steps.allSatisfy { live[$0] == .granted } })
     }
 
-    private static func read(_ actions: Actions) -> [Step: ArisGrant] {
-        Dictionary(uniqueKeysWithValues: Card.allCases.flatMap(\.steps).map { ($0, actions.grant($0)) })
+    private static func read(_ actions: Actions, cards: [Card]) -> [Step: ArisGrant] {
+        Dictionary(uniqueKeysWithValues: cards.flatMap(\.steps).map { ($0, actions.grant($0)) })
     }
 
     func granted(_ card: Card) -> Bool { card.steps.allSatisfy { live[$0] == .granted } }
-    var grants: [Card: Bool] { Dictionary(uniqueKeysWithValues: Card.allCases.map { ($0, granted($0)) }) }
+    var grants: [Card: Bool] { Dictionary(uniqueKeysWithValues: cards.map { ($0, granted($0)) }) }
     func state(_ card: Card) -> ArisCardState { flow.state(card, granted: granted(card)) }
 
     // MARK: - Watching macOS
@@ -90,10 +93,10 @@ final class ArisOnboardingModel: ObservableObject {
     }
 
     func refresh() {
-        let now = Self.read(actions)
+        let now = Self.read(actions, cards: cards)
         if now != live { live = now }
         var flow = self.flow
-        for card in Card.allCases {
+        for card in cards {
             if granted(card) {
                 if popped.insert(card).inserted { onGranted(card) }
             } else if flow.waiting.contains(card), card.steps.contains(where: { live[$0] == .denied }) {

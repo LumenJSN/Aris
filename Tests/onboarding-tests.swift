@@ -179,7 +179,7 @@ private func near(_ a: CGFloat, _ b: CGFloat, _ eps: CGFloat = 1e-6) -> Bool { a
 @MainActor private func onboardingFlowTests() {
     typealias C = ArisPermissionCard
     var flow = ArisSetupFlow()
-    check(flow.page == .permissions && ArisSetupPage.allCases.count == 5, "onboarding v4: 권한 → 눌러서 말하기 → AI 고르기 → 아리스라고 부르기 → 받아쓰기 (fresh install F2, F4; picks of 2026-11-11)")
+    check(flow.page == .permissions && ArisSetupPage.allCases.count == 6, "onboarding v4: 권한 → 눌러서 말하기 → AI 고르기 → 아리스라고 부르기 → 받아쓰기 → 준비 끝 (fresh install F2, F4; picks of 2026-11-11 and 2026-11-17)")
     flow.begin(granted: [.mic: true])
     check(flow.active == .accessibility && flow.state(.mic, granted: true) == .granted, "onboarding v4: a permission already on is checked; the first left opens")
     flow.ask(.accessibility)
@@ -190,14 +190,15 @@ private func near(_ a: CGFloat, _ b: CGFloat, _ eps: CGFloat = 1e-6) -> Bool { a
     flow.putOff(.screen)
     check(flow.state(.screen, granted: false) == .later && flow.active == nil && flow.allDecided(granted: [.mic: true, .accessibility: true]),
           "onboarding v4: 나중에 marks it for later")
-    check(near(flow.progress(granted: [.mic: true, .accessibility: true]), 1.0 / 5), "onboarding v4: the rail: an equal share per page, the permissions by thirds")
+    check(near(flow.progress(granted: [.mic: true, .accessibility: true]), 1.0 / 6), "onboarding v4: the rail: an equal share per page, the permissions by thirds")
     var none = ArisSetupFlow()
     none.begin(granted: [:])
     check(near(none.progress(granted: [:]), 0) && none.active == .mic, "onboarding v4: nothing decided: the rail is empty, the mic opens")
     none.putOff(.mic)
-    check(near(none.progress(granted: [:]), 1.0 / 5 / 3), "onboarding v4: each decision advances the rail")
-    check(none.next() && none.page == .ask && near(none.progress(granted: [:]), 1.0 / 5), "onboarding v4: 계속 → 눌러서 말하기")
-    check(none.next() && none.next() && none.next() && none.page == .dictation && !none.next() && none.finished, "onboarding v4: 마치기 on the last page finishes")
+    check(near(none.progress(granted: [:]), 1.0 / 6 / 3), "onboarding v4: each decision advances the rail")
+    check(none.next() && none.page == .ask && near(none.progress(granted: [:]), 1.0 / 6), "onboarding v4: 계속 → 눌러서 말하기")
+    check(none.next() && none.next() && none.next() && none.page == .dictation && none.next() && none.page == .done && !none.next() && none.finished,
+          "onboarding v4: 받아쓰기's 마치기 goes on to 준비 끝, whose 시작하기 finishes")
     check(near(none.progress(granted: [:]), 1), "onboarding v4: finished: the rail is full")
     var back = ArisSetupFlow(page: .brain)
     back.back()

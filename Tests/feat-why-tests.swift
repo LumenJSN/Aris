@@ -475,9 +475,10 @@ private func whyNotIsExplainedByTheRuleAndWhatToDoInstead() {
         rig.turn("그거 해 줘", brain: .codex) { rig, _ in rig.audit(["answer": "refused (\(why))", "question": "k/c1", "scope": "종류: 결제"]) }
         return rig.why(question, context: whyContext([("그거 해 줘", "…")]))
     }
-    check(whyLead(refused(ArisEscalation.moneyReason)) == "그 일은 하지 않았어요: \(ArisEscalation.moneyReason)." && whyLine(refused(ArisEscalation.moneyReason), "대신") == "그 부분은 직접 해 주세요.",
-          "money is explained in the gate's own line, with that this part is his to do")
-    check(whyLead(refused(ArisEscalation.moneyReason, "why not?")) == "That wasn't done: Aris never pays, orders, subscribes or moves money.", "in English, in the words the AI is told")
+    check(whyLead(refused(ArisEscalation.moneyReason)) == "그 일은 하지 않았어요: \(ArisEscalation.moneyReason)." && whyLine(refused(ArisEscalation.moneyReason), "대신") == "다시 말씀하시고, 카드가 뜨면 직접 확인해 주세요.",
+          "money is explained in the gate's own line, with that a payment waits for their yes on its card")
+    check(whyLead(refused(ArisEscalation.moneyReason, "why not?")) == "That wasn't done: Aris pays only on your own yes on its card, each time.",
+          "in English, the payment rule")
     check(whyLead(refused(ArisEscalation.mailReason)) == "그 일은 하지 않았어요: \(ArisEscalation.mailReason)." && whyLead(refused(ArisEscalation.mailReason, "why not?")).hasPrefix("That wasn't done: "),
           "a mail that wasn't sent is explained in the gate's own line, whatever that line is")
     check(whyLead(refused("a rule nobody has explained yet")) == "그 일은 하지 않았어요: 기록에 남은 이유는 “a rule nobody has explained yet”예요.",

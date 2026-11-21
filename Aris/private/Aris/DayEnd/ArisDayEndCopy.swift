@@ -80,6 +80,32 @@ enum ArisDayEndCopy {
         return english ? englishSentence(counts) : koreanSentence(counts)
     }
 
+    /// The answer to a request: the card's sentence, and when the user asked what they did ("오늘 뭐 했어"), what was done
+    /// besides the plan too, in the day in review's words (ArisRecapSentences.didToday). Third VM run, D5: "오늘 뭐
+    /// 했어" with nine open plans and four things done (to-dos added, a timer) answered with the open plans only.
+    /// `phrase`: the request, lowercased with its end marks off (ArisIntent.phrase).
+    static func answer(_ counts: ArisDayEnd.Counts, unread: Bool, english: Bool, phrase: String) -> String {
+        let said = sentence(counts, unread: unread, english: english)
+        guard counts.planned > 0, asksWhatWasDone(phrase), let done = alsoDone(counts, english: english) else { return said }
+        return said + " " + done
+    }
+
+    /// The request asks what was done: "오늘 뭐 했어", "내가 한 일", "what did I do today", "what have I done".
+    static func asksWhatWasDone(_ phrase: String) -> Bool {
+        let cores = [#"뭐\s*(했|한\s*거|한\s*게)"#, #"무엇을\s*했"#, #"한\s*일"#, #"했던\s*(일|거|것)"#, #"\bwhat\s+(did|have)\s+(i|we|you)\s+(do|done|get done)\b"#,
+                     #"\bwhat\s+got\s+done\b"#, #"\bwhat\s+i\s+did\b"#]
+        return cores.contains { phrase.range(of: $0, options: .regularExpression) != nil }
+    }
+
+    /// The things done that weren't planned, in the recap's words; nil when there were none.
+    static func alsoDone(_ counts: ArisDayEnd.Counts, english: Bool) -> String? {
+        guard counts.extra > 0 else { return nil }
+        var facts = ArisRecapFacts()
+        facts.plan.planned = counts.planned
+        facts.extra = counts.extra
+        return ArisRecapSentences(facts: facts, fleet: ArisRecapFleet([], since: .distantPast), today: Date(), english: english, calendar: .current).didToday()
+    }
+
     private static func unplanned(_ counts: ArisDayEnd.Counts, unread: Bool, english: Bool) -> String {
         var said: [String]
         if counts.extra > 0 {
@@ -143,29 +169,14 @@ enum ArisDayEndCopy {
 
     // MARK: - Numbers as they are said
 
-    private static let nativeOnes = ["", "한", "두", "세", "네", "다섯", "여섯", "일곱", "여덟", "아홉"]
-    private static let aloneOnes = ["", "하나", "둘", "셋", "넷", "다섯", "여섯", "일곱", "여덟", "아홉"]
-    private static let nativeTens = ["", "열", "스물", "서른", "마흔", "쉰", "예순", "일흔", "여든", "아흔"]
-    private static let englishWords = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen",
-                                       "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"]
+    /// "다섯 가지", "스무 가지", "스물한 가지" (the recap counts with the same words: ArisRecapWords).
+    static func things(_ count: Int) -> String { ArisRecapWords.things(count) }
 
-    /// "다섯 가지", "스무 가지", "스물한 가지"; past ninety-nine in figures ("120가지").
-    static func things(_ count: Int) -> String {
-        guard (1...99).contains(count) else { return "\(count)가지" }
-        if count == 20 { return "스무 가지" }
-        return nativeTens[count / 10] + nativeOnes[count % 10] + " 가지"
-    }
-
-    /// A count standing by itself: "하나", "둘", "열둘"; past ninety-nine in figures ("120개").
-    static func alone(_ count: Int) -> String {
-        guard (1...99).contains(count) else { return "\(count)개" }
-        return nativeTens[count / 10] + aloneOnes[count % 10]
-    }
+    /// A count standing by itself: "하나", "둘", "열둘".
+    static func alone(_ count: Int) -> String { ArisRecapWords.alone(count) }
 
     /// "three"; past twenty in figures.
-    static func number(_ count: Int) -> String {
-        englishWords.indices.contains(count) ? englishWords[count] : "\(count)"
-    }
+    static func number(_ count: Int) -> String { ArisRecapWords.number(count) }
 
     // MARK: - The evening chip
 

@@ -2,19 +2,20 @@
 //  ArisDictationPillParts.swift
 //  Aris
 //
-//  The pill's pieces, drawn to the measured numbers: the shell (vertical gradient 22,22,27 → 12,12,15 at .96 over a
-//  behind-window blur, radius 24, the 1 px gradient ring or the solid .18 line), the level bars and the ring
-//  (ArisDictationPillMotion), the round 18 buttons (✕ and ↑ on white .15, .3 on hover; the hands-free lock on clear that
-//  turns into ↑ on hover) and the hover hint popup (radius 10, the tooltip surface). The recovered words' card is
-//  ArisDictationPillRecoveredCard.
+//  The pill's pieces, drawn to the numbers measured from the reference pill: its colours (ArisDictationPillLook), its
+//  body (flat, one fill in one line, the corners following the size), the level's 10 bars and the spinner
+//  (ArisDictationPillMotion), the round 18 ✕ and ■, and the tooltip (14 pt in a black capsule in a #30302f line). The
+//  glass shell, its rim and its outline below them are the notice pill's (ArisNoticePillView), kept as they were. The
+//  recovered words' card is ArisDictationPillRecoveredCard.
 //
 
 import AppKit
 import SwiftUI
 
-// MARK: - Shell
+// MARK: - The notice pill's glass shell
 
-/// The pill's surface behind its content.
+/// The notice pill's surface behind its content: vertical gradient 22,22,27 → 12,12,15 at .96 over a behind-window
+/// blur, the 1 px gradient ring or a solid .18 line.
 struct ArisDictationPillShell: View {
     let size: CGSize
     let gradientBorder: Bool
@@ -67,15 +68,17 @@ private struct ArisDictationPillRim: View {
     }
 }
 
-/// The pill's outline: a capsule while 24 is more than half its height, else 24 continuous corners. Read from the rect
-/// it is drawn in, so it stays right while the size animates.
+/// The notice pill's outline: a capsule while 24 is more than half its height, else 24 continuous corners. Read from
+/// the rect it is drawn in, so it stays right while the size animates.
 struct ArisDictationPillShape: InsettableShape {
+    static let radius: CGFloat = 24
+
     var size: CGSize = .zero
     var inset: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
         let outer = rect.size
-        let r = ArisDictationPillRules.cornerRadius(outer)
+        let r = min(Self.radius, min(outer.width, outer.height) / 2)
         let box = rect.insetBy(dx: inset, dy: inset)
         if r * 2 >= min(outer.width, outer.height) - 0.001 { return Capsule(style: .circular).path(in: box) }
         return RoundedRectangle(cornerRadius: max(0, r - inset), style: .continuous).path(in: box)
@@ -86,200 +89,303 @@ struct ArisDictationPillShape: InsettableShape {
     }
 }
 
-// MARK: - Level bars
+/// A colour as numbers (sRGB, 0…1), so a move between two looks can be drawn at any instant.
+struct ArisDictationPillRGBA: Equatable {
+    var red: Double, green: Double, blue: Double, alpha: Double
 
-/// The level while listening: 7 bars in an 18-tall slot, newest on the right.
-struct ArisDictationPillBarsView: View {
-    @ObservedObject var audio: ArisAudioLevel
-    /// Fixed heights instead of the live level (offscreen renders).
-    var preset: [CGFloat]?
-    /// 3 either side in the hands-free row, none beside the app's icon.
-    var margin: CGFloat = 0
+    init(_ red: Double, _ green: Double, _ blue: Double, _ alpha: Double = 1) {
+        self.red = red; self.green = green; self.blue = blue; self.alpha = alpha
+    }
 
-    @State private var bars = ArisDictationPillBars()
+    init(hex: Int, _ alpha: Double = 1) {
+        self.init(Double((hex >> 16) & 0xff) / 255, Double((hex >> 8) & 0xff) / 255, Double(hex & 0xff) / 255, alpha)
+    }
+
+    /// `t` of the way to `other`, premultiplied as CSS mixes.
+    func mixed(_ other: ArisDictationPillRGBA, _ t: Double) -> ArisDictationPillRGBA {
+        let a = alpha + (other.alpha - alpha) * t
+        guard a > 0 else { return ArisDictationPillRGBA(0, 0, 0, 0) }
+        func channel(_ x: Double, _ y: Double) -> Double { (x * alpha + (y * other.alpha - x * alpha) * t) / a }
+        return ArisDictationPillRGBA(channel(red, other.red), channel(green, other.green), channel(blue, other.blue), a)
+    }
+
+    var color: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: alpha) }
+}
+
+/// The dictation pill's colours, measured from the reference pill's palette (its light theme): black in a #30302f
+/// line; the sliver black .5 in white .5; under the pointer #30302f in #5b5b59; an error's line #ee6a6a; the level's
+/// bars white .4, white while listening; ✕ #fcfcfb on #4d4a42, ■ #1a1a1a on #fcfcfb; tooltips black in #30302f. No
+/// blur and no shadow: the pill is flat black, like the closed notch above it.
+enum ArisDictationPillLook {
+    /// states.css:90 (--shade-black, --vast-900).
+    static let black = ArisDictationPillRGBA(0, 0, 0)
+    static let grey900 = ArisDictationPillRGBA(hex: 0x30302f)
+    /// states.css:117.
+    static let sliverFill = ArisDictationPillRGBA(0, 0, 0, 0.5)
+    static let sliverLine = ArisDictationPillRGBA(1, 1, 1, 0.5)
+    /// states.css:305 (--vast-700).
+    static let grey700 = ArisDictationPillRGBA(hex: 0x5b5b59)
+    /// states.css:239 (--destructive-500).
+    static let red = ArisDictationPillRGBA(hex: 0xee6a6a)
+
+    static let fill = black.color
+    static let line = grey900.color
+    /// bars.css:2, 17.
+    static let bar = Color.white.opacity(0.4)
+    static let barLive = Color.white
+    /// states.css:310, 328 (--sand-950, --sand-50, --vast-950).
+    static let cancelFill = ArisDictationPillRGBA(hex: 0x4d4a42).color
+    static let cancelGlyph = ArisDictationPillRGBA(hex: 0xfcfcfb).color
+    static let stopFill = ArisDictationPillRGBA(hex: 0xfcfcfb).color
+    static let stopGlyph = ArisDictationPillRGBA(hex: 0x1a1a1a).color
+    /// The mic on the hover, white (states.css:348).
+    static let mic = Color.white
+    /// spinner.css:10.
+    static func spoke(_ opacity: Double) -> Color {
+        ArisDictationPillRGBA(ArisDictationPillSpinner.red, ArisDictationPillSpinner.green, ArisDictationPillSpinner.blue, opacity).color
+    }
+
+    static func fill(_ kind: ArisDictationPillLookKind) -> ArisDictationPillRGBA {
+        switch kind {
+        case .sliver: sliverFill
+        case .hovered: grey900
+        case .solid, .failed: black
+        }
+    }
+
+    static func line(_ kind: ArisDictationPillLookKind) -> ArisDictationPillRGBA {
+        switch kind {
+        case .sliver: sliverLine
+        case .hovered: grey700
+        case .solid: grey900
+        case .failed: red
+        }
+    }
+
+    static func lineWidth(_ kind: ArisDictationPillLookKind) -> CGFloat {
+        kind == .failed ? ArisDictationPillRules.errorLineWidth : ArisDictationPillRules.lineWidth
+    }
+}
+
+// MARK: - The dictation pill's body
+
+/// The dictation pill's outline: its corners from its height as drawn (ArisDictationPillRules.cornerRadius: the
+/// sliver's 6 fits its 8 as 4, a capsule at 30), read from the rect it is drawn in so it stays right while the size
+/// animates.
+struct ArisDictationPillOutline: InsettableShape {
+    var inset: CGFloat = 0
+
+    func path(in rect: CGRect) -> Path {
+        let r = ArisDictationPillRules.cornerRadius(rect.size)
+        let box = rect.insetBy(dx: inset, dy: inset)
+        if r * 2 >= min(rect.width, rect.height) - 0.001 { return Capsule(style: .circular).path(in: box) }
+        return RoundedRectangle(cornerRadius: max(0, r - inset), style: .circular).path(in: box)
+    }
+
+    func inset(by amount: CGFloat) -> ArisDictationPillOutline { ArisDictationPillOutline(inset: inset + amount) }
+}
+
+/// A move between two looks at one instant (offscreen renders of the motion).
+struct ArisDictationPillLookBlend: Equatable {
+    var from: ArisDictationPillLookKind
+    var to: ArisDictationPillLookKind
+    var progress: Double
+}
+
+/// The pill's body: one fill in one line, inside its edge (CSS's border box), no blur, no shadow.
+struct ArisDictationPillBody: View {
+    typealias Look = ArisDictationPillLook
+
+    let size: CGSize
+    let kind: ArisDictationPillLookKind
+    var blend: ArisDictationPillLookBlend?
+
+    private var fill: ArisDictationPillRGBA {
+        guard let blend else { return Look.fill(kind) }
+        return Look.fill(blend.from).mixed(Look.fill(blend.to), blend.progress)
+    }
+
+    private var line: ArisDictationPillRGBA {
+        guard let blend else { return Look.line(kind) }
+        return Look.line(blend.from).mixed(Look.line(blend.to), blend.progress)
+    }
+
+    private var lineWidth: CGFloat {
+        guard let blend else { return Look.lineWidth(kind) }
+        let a = Look.lineWidth(blend.from), b = Look.lineWidth(blend.to)
+        return a + (b - a) * blend.progress
+    }
 
     var body: some View {
-        TimelineView(.animation(paused: preset != nil)) { context in
+        let shape = ArisDictationPillOutline()
+        ZStack {
+            shape.fill(fill.color)
+            shape.strokeBorder(line.color, lineWidth: lineWidth)
+        }
+        .frame(width: size.width, height: size.height)
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Level bars
+
+/// What the bars show: the voice (listening), or standing still (the words are being written, an error).
+enum ArisDictationPillBarsMode: Equatable { case live, still }
+
+/// The level: 10 bars 2 wide, 2 apart, 4 in at each end of a 46 × 18 box (ArisDictationPillWave).
+struct ArisDictationPillBarsView: View {
+    @ObservedObject var audio: ArisAudioLevel
+    let level: ArisDictationPillLevel
+    var mode: ArisDictationPillBarsMode = .live
+    /// Fixed heights instead of the live level (offscreen renders).
+    var preset: [CGFloat]?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(paused: preset != nil || mode == .still)) { context in
             Canvas { canvas, size in
-                let heights: [CGFloat]
-                if let preset { heights = preset } else {
-                    bars.step(at: context.date.timeIntervalSinceReferenceDate, level: audio.value)
-                    heights = bars.heights
-                }
-                Self.draw(heights, in: &canvas, size: size)
+                Self.draw(heights(at: context.date.timeIntervalSinceReferenceDate), live: mode == .live, in: &canvas, size: size)
             }
         }
-        .frame(width: ArisDictationPillBars.width, height: ArisDictationPillBars.slotHeight)
-        .padding(.horizontal, margin)
+        .frame(width: ArisDictationPillWave.width, height: ArisDictationPillWave.boxHeight)
         .allowsHitTesting(false)
     }
 
-    static func draw(_ heights: [CGFloat], in canvas: inout GraphicsContext, size: CGSize) {
-        let pitch = ArisDictationPillBars.barWidth + 2 * ArisDictationPillBars.gap
+    private func heights(at now: Double) -> [CGFloat] {
+        if let preset { return preset }
+        guard mode == .live else { return ArisDictationPillWave.heights(audioScale: 1, t: 0, waving: false) }
+        // ArisAudioLevel is RMS × 8, up to 1.
+        let scale = level.step(at: now, rms: Double(audio.value) / 8)
+        let t = now - (level.startedAt ?? now)
+        // Reduce Motion: the voice still moves the bars, the wave doesn't.
+        return ArisDictationPillWave.heights(audioScale: scale, t: t, waving: !reduceMotion)
+    }
+
+    static func draw(_ heights: [CGFloat], live: Bool, in canvas: inout GraphicsContext, size: CGSize) {
+        typealias W = ArisDictationPillWave
+        let colour = live ? ArisDictationPillLook.barLive : ArisDictationPillLook.bar
         for (index, height) in heights.enumerated() {
-            let x = CGFloat(index) * pitch + ArisDictationPillBars.gap
-            let rect = CGRect(x: x, y: (size.height - height) / 2, width: ArisDictationPillBars.barWidth, height: height)
-            canvas.fill(Path(roundedRect: rect, cornerRadius: min(rect.width, rect.height) / 2),
-                        with: .color(Color(white: ArisDictationPillBars.grey(height))))
+            let x = W.sidePadding + CGFloat(index) * (W.barWidth + W.gap)
+            let rect = CGRect(x: x, y: (size.height - height) / 2, width: W.barWidth, height: height)
+            canvas.fill(Path(roundedRect: rect, cornerRadius: min(W.barRadius, height / 2)), with: .color(colour))
         }
     }
 }
 
-// MARK: - Ring
+// MARK: - Spinner
 
-/// The ring while the words are written down and typed.
-struct ArisDictationPillRingView: View {
-    let stage: ArisDictationPillRing.Stage
-    let recordingSeconds: Double
-    /// A fixed share instead of the motion (offscreen renders).
+/// While the words are written down and typed: 8 spokes fading round.
+struct ArisDictationPillSpinnerView: View {
+    /// A fixed time instead of the clock (offscreen renders).
     var preset: Double?
 
-    /// The motion, made at the first frame with this dictation's recording length (the view is new per dictation).
-    private final class Holder { var motion: ArisDictationPillRingMotion? }
-    @State private var holder = Holder()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(paused: preset != nil)) { context in
+        TimelineView(.animation(paused: preset != nil || reduceMotion)) { context in
             Canvas { canvas, size in
-                let share: Double
-                if let preset { share = preset } else {
-                    let motion = holder.motion ?? ArisDictationPillRingMotion(recordingSeconds: recordingSeconds)
-                    holder.motion = motion
-                    share = motion.step(at: context.date.timeIntervalSinceReferenceDate, stage: stage)
-                }
-                Self.draw(share, in: &canvas, size: size)
+                // Reduce Motion: it holds still at its first instant.
+                let t = preset ?? (reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate)
+                Self.draw(at: t, in: &canvas, size: size)
             }
         }
-        .frame(width: ArisDictationPillRing.size, height: ArisDictationPillRing.size)
+        .frame(width: ArisDictationPillSpinner.size, height: ArisDictationPillSpinner.size)
         .allowsHitTesting(false)
     }
 
-    static func draw(_ share: Double, in canvas: inout GraphicsContext, size: CGSize) {
-        let stroke = ArisDictationPillRing.stroke
-        let radius = (min(size.width, size.height) - stroke) / 2
+    static func draw(at t: Double, in canvas: inout GraphicsContext, size: CGSize) {
+        typealias S = ArisDictationPillSpinner
         let centre = CGPoint(x: size.width / 2, y: size.height / 2)
-        let circle = Path(ellipseIn: CGRect(x: centre.x - radius, y: centre.y - radius, width: 2 * radius, height: 2 * radius))
-        canvas.stroke(circle, with: .color(.white.opacity(ArisDictationPillRing.trackWhite)), lineWidth: stroke)
-        guard share > 0 else { return }
-        var arc = Path()
-        arc.addArc(center: centre, radius: radius, startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * share), clockwise: false)
-        canvas.stroke(arc, with: .color(Color(white: ArisDictationPillRing.arcGrey)),
-                      style: StrokeStyle(lineWidth: stroke, lineCap: .round))
+        for spoke in 0..<S.spokes {
+            var context = canvas
+            context.translateBy(x: centre.x, y: centre.y)
+            context.rotate(by: .degrees(S.angle(spoke)))
+            let rect = CGRect(x: -S.spokeWidth / 2, y: -S.reach - S.spokeLength / 2, width: S.spokeWidth, height: S.spokeLength)
+            context.fill(Path(roundedRect: rect, cornerRadius: S.spokeRadius), with: .color(ArisDictationPillLook.spoke(S.alpha(spoke, at: t))))
+        }
     }
 }
 
 // MARK: - Buttons
 
-/// A round button of the recording row.
+/// The hands-free row's round 18 buttons: ✕ (cancel) and ■ (finish and put it in).
 struct ArisDictationPillButton: View {
-    enum Glyph { case cancel, submit, lock }
+    enum Glyph { case cancel, stop }
 
     let glyph: Glyph
-    var size: CGFloat = 18
     let label: String
     let action: () -> Void
+    var hovered: (Bool) -> Void = { _ in }
 
-    @State private var hovered = false
+    static let size: CGFloat = 18
 
     var body: some View {
         Button(action: action) {
             ZStack {
-                Circle().fill(Color.white.opacity(fill))
+                Circle().fill(glyph == .cancel ? ArisDictationPillLook.cancelFill : ArisDictationPillLook.stopFill)
                 switch glyph {
-                case .cancel: ArisDictationPillGlyphs.cross.frame(width: 10, height: 10)
-                case .submit: ArisDictationPillGlyphs.arrow.frame(width: 12, height: 12)
-                case .lock:
-                    ArisDictationPillGlyphs.lock.frame(width: 12, height: 15).opacity(hovered ? 0 : 1)
-                    ArisDictationPillGlyphs.arrow.frame(width: 12, height: 12).opacity(hovered ? 1 : 0)
+                case .cancel: ArisDictationPillGlyphs.cross.frame(width: 8, height: 8)
+                case .stop: ArisDictationPillGlyphs.stop.frame(width: 7, height: 7)
                 }
             }
-            .frame(width: size, height: size)
+            .frame(width: Self.size, height: Self.size)
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
-        .onHover { hovered = $0 }
-        .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.15), value: hovered)
+        .onHover(perform: hovered)
     }
-
-    /// ✕ and ↑ sit on white .15 (.3 on hover); the lock on nothing (.3 on hover).
-    private var fill: Double { hovered ? 0.3 : (glyph == .lock ? 0 : 0.15) }
 }
 
-/// The measured icons, in their own view boxes.
+/// Aris's own icons.
 enum ArisDictationPillGlyphs {
-    /// M6 6 L18 18 M6 18 L18 6 in 24, stroke 3 round.
+    /// Two strokes corner to corner, 1.6 round.
     static var cross: some View {
         Canvas { canvas, size in
-            let s = size.width / 24
             var path = Path()
-            path.move(to: CGPoint(x: 6 * s, y: 6 * s)); path.addLine(to: CGPoint(x: 18 * s, y: 18 * s))
-            path.move(to: CGPoint(x: 6 * s, y: 18 * s)); path.addLine(to: CGPoint(x: 18 * s, y: 6 * s))
-            canvas.stroke(path, with: .color(.white), style: StrokeStyle(lineWidth: 3 * s, lineCap: .round))
+            path.move(to: .zero); path.addLine(to: CGPoint(x: size.width, y: size.height))
+            path.move(to: CGPoint(x: 0, y: size.height)); path.addLine(to: CGPoint(x: size.width, y: 0))
+            canvas.stroke(path, with: .color(ArisDictationPillLook.cancelGlyph), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
         }
     }
 
-    /// M12 19 V5 M12 5 L6 11 M12 5 L18 11 in 24, stroke 3 round.
-    static var arrow: some View {
-        Canvas { canvas, size in
-            let s = size.width / 24
-            var path = Path()
-            path.move(to: CGPoint(x: 12 * s, y: 19 * s)); path.addLine(to: CGPoint(x: 12 * s, y: 5 * s))
-            path.move(to: CGPoint(x: 6 * s, y: 11 * s)); path.addLine(to: CGPoint(x: 12 * s, y: 5 * s)); path.addLine(to: CGPoint(x: 18 * s, y: 11 * s))
-            canvas.stroke(path, with: .color(.white), style: StrokeStyle(lineWidth: 3 * s, lineCap: .round, lineJoin: .round))
-        }
+    /// A square, round 1.5.
+    static var stop: some View {
+        RoundedRectangle(cornerRadius: 1.5, style: .continuous).fill(ArisDictationPillLook.stopGlyph)
     }
 
-    /// The hands-free lock, in 14 × 18: body 12 × 9.5 r2 at 1, 7.5; shackle M3.5 7.5 V5 a3.5 3.5 0 0 1 7 0 v2.5 (1.6);
-    /// the keyhole a 1.5 dot at 7, 11.6 with a 1.5 × 3 stem, in #1c1c1e.
-    static var lock: some View {
-        Canvas { canvas, size in
-            let s = size.width / 14
-            canvas.fill(Path(roundedRect: CGRect(x: 1 * s, y: 7.5 * s, width: 12 * s, height: 9.5 * s), cornerRadius: 2 * s), with: .color(.white))
-            var shackle = Path()
-            shackle.move(to: CGPoint(x: 3.5 * s, y: 7.5 * s))
-            shackle.addLine(to: CGPoint(x: 3.5 * s, y: 5 * s))
-            shackle.addArc(center: CGPoint(x: 7 * s, y: 5 * s), radius: 3.5 * s, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
-            shackle.addLine(to: CGPoint(x: 10.5 * s, y: 7.5 * s))
-            canvas.stroke(shackle, with: .color(.white), style: StrokeStyle(lineWidth: 1.6 * s, lineCap: .round))
-            let hole = Color(.sRGB, red: 0x1c / 255, green: 0x1c / 255, blue: 0x1e / 255, opacity: 1)
-            canvas.fill(Path(ellipseIn: CGRect(x: 5.5 * s, y: 10.1 * s, width: 3 * s, height: 3 * s)), with: .color(hole))
-            canvas.fill(Path(roundedRect: CGRect(x: 6.25 * s, y: 11.6 * s, width: 1.5 * s, height: 3 * s), cornerRadius: 0.75 * s), with: .color(hole))
-        }
+    /// The mic, 16 tall.
+    static var mic: some View {
+        Image(systemName: "mic.fill").resizable().scaledToFit()
+            .frame(width: 16, height: 16)
+            .foregroundStyle(ArisDictationPillLook.mic)
     }
 }
 
-// MARK: - Hover hint
+// MARK: - Tooltip
 
-/// "Click or hold [key] to dictate" over the hovered sliver: the popup shell (radius 10, the tooltip surface, 0.8 px
-/// white .09, its shadow), 12 / 500 white .85, the key as an inline cap.
-struct ArisDictationPillHint: View {
+/// A tooltip over the pill: 14 / 20 in white, the key bold, 6 × 14 in, a black capsule in a 1 px #30302f line
+/// (states.css:486).
+struct ArisDictationPillTooltip: View {
     let before: String
-    let key: String
-    let after: String
-
-    static let surfaceTop = Color(.sRGB, red: 20 / 255, green: 20 / 255, blue: 24 / 255, opacity: 0.98)
-    static let surfaceBottom = Color(.sRGB, red: 16 / 255, green: 16 / 255, blue: 20 / 255, opacity: 0.98)
+    var key: String = ""
+    var after: String = ""
 
     var body: some View {
-        HStack(spacing: 6) {
-            if !before.isEmpty { Text(before).foregroundStyle(.white.opacity(0.85)) }
-            Text(key)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.9))
-                .padding(.horizontal, 6).padding(.vertical, 2)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.12)))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.02), lineWidth: 1))
-            if !after.isEmpty { Text(after).foregroundStyle(.white.opacity(0.85)) }
+        HStack(spacing: 4) {
+            if !before.isEmpty { Text(before) }
+            if !key.isEmpty { Text(key).fontWeight(.bold) }
+            if !after.isEmpty { Text(after) }
         }
-        .font(.system(size: 12, weight: .medium))
+        .font(.system(size: 14, weight: .regular))
+        .foregroundStyle(Color.white)
         .lineLimit(1)
         .fixedSize()
-        .padding(.vertical, 7).padding(.horizontal, 10)
-        .background(LinearGradient(colors: [Self.surfaceTop, Self.surfaceBottom], startPoint: .top, endPoint: .bottom))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.white.opacity(0.09), lineWidth: 0.8))
-        .shadow(color: .black.opacity(0.28), radius: 9, y: 6)
+        .frame(height: 20)
+        .padding(.vertical, 6).padding(.horizontal, 14)
+        .background(Capsule(style: .circular).fill(ArisDictationPillLook.fill))
+        .overlay(Capsule(style: .circular).strokeBorder(ArisDictationPillLook.line, lineWidth: 1))
         .allowsHitTesting(false)
     }
 }

@@ -42,7 +42,7 @@ func runQAWakeTests() {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../Aris/private/Aris")
     let wake = (try? String(contentsOf: root.appendingPathComponent("ArisController+Wake.swift"), encoding: .utf8)) ?? ""
     let controller = (try? String(contentsOf: root.appendingPathComponent("ArisController.swift"), encoding: .utf8)) ?? ""
-    check(wake.contains("if screenAway, !Self.screenIsAwayNow()") && wake.contains("wakeArmLog.line(for: blocker)"),
+    check(wake.contains("let awayNow = Self.screenIsAwayNow()") && wake.contains("wakeArmLog.line(for: blocker)"),
           "BUG-38: the screen is asked directly, and the reason logged")
     check(controller.contains("screenAway = false\n"), "BUG-38: the talk key says the screen is on")
 }

@@ -553,7 +553,10 @@ private func runDesktopGateTests() {
               == .refuse(ArisDesktopGate.secureRefusal),
               "desktop gate: \(app.name) is an ordinary app (a read runs, an action shows the card, a password field still stops typing)")
     }
-    if case .refuse = ArisDesktopGate.decide(read, target: deskSafari, context: clean, remembered: true, secureInput: false) {} else { check(false, "desktop gate: a browser goes to Aside") }
+    // Decision 2: a browser's reads run as any app's; every action asks each time, never kept.
+    check(ArisDesktopGate.decide(read, target: deskSafari, context: clean, remembered: true, secureInput: false) == .run
+          && ArisDesktopGate.decide(act, target: deskSafari, context: clean, remembered: true, secureInput: false) == .ask(remember: false),
+          "desktop gate: a browser's read runs, and its action asks every time (it went to Aside)")
     check(ArisDesktopGate.decide(ArisDesktopRequest(verb: .type, ref: act.ref, text: "x"), target: deskBench, context: clean, remembered: true, secureInput: true) == .refuse(ArisDesktopGate.secureRefusal)
           && ArisDesktopGate.decide(ArisDesktopRequest(verb: .press, app: "X", keys: ["return"]), target: deskBench, context: clean, remembered: true, secureInput: true) == .refuse(ArisDesktopGate.secureRefusal)
           && ArisDesktopGate.decide(ArisDesktopRequest(verb: .type, ref: act.ref, text: "a\u{202E}b"), target: deskBench, context: clean, remembered: true, secureInput: false) == .refuse(ArisDesktopGate.hiddenRefusal)
@@ -806,9 +809,8 @@ private func runDesktopActionTests() {
     let count = rig.calls.count
     check(rig.run(["click", "@s8f3k2:e5"], turn: stranger).output == ArisDesktopEngine.notOursLine
           && rig.run(["see", "--app", "설치 프로그램"], turn: stranger).output == ArisDesktopGate.neverRefusal
-          && rig.run(["see", "--app", "Safari"], turn: stranger).output.contains("Aside")
           && rig.run(["see", "--app", "Nope"], turn: stranger).output == ArisDesktopGate.unknownRefusal && rig.calls.count == count,
-          "desktop actions (never-list): a ref Aris didn't make, the installer, a browser, an unknown app: nothing runs")
+          "desktop actions (never-list): a ref Aris didn't make, the installer, an unknown app: nothing runs")
     let capped = FakeDesktopTurn(brain: .claude)
     capped.steps = ArisDesktopEngine.maxSteps
     check(rig.run(["see", "--app", "Aris Testbench"], turn: capped).output == ArisDesktopEngine.stepsLine(job: false) && rig.calls.count == count
@@ -2136,7 +2138,8 @@ private func runBatchGateTests() {
     func acted(_ rig: DesktopRig) -> Bool { rig.calls.contains { !$0.hasPrefix("see") } }
 
     // The never-list, browsers, the panes and places only a single call can tell: refused whole, nothing done.
-    for (target, line) in [(deskInstaller, ArisDesktopGate.neverRefusal), (deskSafari, ArisRiskPolicy.browserRefusal)] {
+    // A browser (decision 2): its actions go one at a time, each on its own card, never as a batch.
+    for (target, line) in [(deskInstaller, ArisDesktopGate.neverRefusal), (deskSafari, ArisDesktopBatch.oneAtATimeLine)] {
         let rig = DesktopRig(), turn = FakeDesktopTurn(brain: .claude)
         rig.apps.apps["aris testbench"] = target
         let out = batch(rig, turn, "press return")

@@ -254,7 +254,7 @@ final class ArisGestureCapture: ArisGestureCapturing {
         guard let composed, isCurrent(generation, r.captureId), !deps.secureInput() else { return false }
         let shot = ArisGestureShot(badge: r.badge, app: r.hit?.app, title: r.hit?.title, jpeg: composed.jpeg,
                                             thumb: composed.thumb, voicedMsAtCapture: detection?.voicedMs ?? speech.voicedMsNow,
-                                            capturedAtMs: through, display: r.screen.id)
+                                            capturedAtMs: through, display: r.screen.id, region: box)
         // A shot finished after the release goes to the result that waits for it, not to a session that is gone.
         if generation == self.generation {
             made[r.captureId] = shot

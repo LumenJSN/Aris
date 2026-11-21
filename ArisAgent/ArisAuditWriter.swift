@@ -9,6 +9,13 @@
 //  budgets bound a flood's growth, and real action lines are bounded by use. Each written line carries the caller key
 //  and time it belongs to.
 //
+//  What the file keeps of a message or a file's text: only a short head. Nothing reads actions.log back: "왜 그렇게
+//  했어?" (ArisWhyDesk) and the work desk get each line in memory as it is written, and undo reads the activity log
+//  (activity.jsonl). The file is the user's own record of what was done, so a line keeps what identifies the action (the
+//  command, its program and subcommand, recipients, paths, flags, the risk and the answer), and of each body in it (a
+//  quoted argument longer than `bodyHead` characters, and every line after a command's first) only its first
+//  `bodyHead` characters and how long it was; the whole field's length and SHA-256 stay beside it as evidence.
+//
 
 import CryptoKit
 import Foundation
@@ -20,6 +27,9 @@ struct ArisAuditWriter {
     static let fieldLimit = 256
     static let lineLimit = 4_096
     static let callerLimit = 64
+    /// The characters kept of a body: a long quoted argument (a message, a note, a mail's text, JSON arguments) and what
+    /// follows a command's first line (a heredoc's text).
+    static let bodyHead = 40
     /// The audit's copies are never pruned by size (ArisLogRotation's total cap is for other logs). At this much,
     /// live file and copies together, refusal lines stop being written (one notice an hour says so); action lines
     /// still are, and nothing is deleted.
@@ -77,9 +87,10 @@ struct ArisAuditWriter {
                 continue
             }
             let identifying = identifyingFields.contains(name)
-            let trimmed = trim(text, to: identifying ? identifyingLimit : fieldLimit)
+            let short = withoutBodies(text)
+            let trimmed = trim(short, to: identifying ? identifyingLimit : fieldLimit)
             cut[name] = trimmed.text
-            if trimmed.cut || (always && identifying) {
+            if trimmed.cut || short != text || (always && identifying) {
                 cut[name + "_len"] = text.utf8.count
                 cut[name + "_sha256"] = sha256(text)
             }
@@ -101,6 +112,59 @@ struct ArisAuditWriter {
     }
 
     static func cappedCaller(_ key: String) -> String { trim(key, to: callerLimit).text }
+
+    /// `text` with each body cut to its head: a quoted argument ('…', "…" or $'…') longer than `bodyHead` characters,
+    /// and everything after the first line. A cut body reads `<head>…‹+N자›` (N: the characters left out). The rest —
+    /// the program, its subcommand, flags, short words, paths — stays as it was.
+    static func withoutBodies(_ text: String) -> String {
+        var lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        var out = shortenedQuotes(lines.removeFirst())
+        if let rest = lines.first { out += "\n" + head(rest) }
+        return out
+    }
+
+    /// `body`'s first `bodyHead` characters and how many more there were (`body` itself when it is that short).
+    static func head(_ body: String) -> String {
+        guard body.count > bodyHead else { return body }
+        return String(body.prefix(bodyHead)) + "…‹+\(body.count - bodyHead)자›"
+    }
+
+    /// Each quoted argument of a shell line that is longer than a short word, cut to its head. A quote left open runs
+    /// to the end of the line and is cut the same way.
+    private static func shortenedQuotes(_ line: String) -> String {
+        var out = ""
+        var index = line.startIndex
+        while index < line.endIndex {
+            let character = line[index]
+            guard character == "'" || character == "\"" else {
+                out.append(character)
+                index = line.index(after: index)
+                continue
+            }
+            // The body runs to the closing quote: a single quote takes nothing as an escape (but $'…' takes \'), a
+            // double quote skips an escaped one.
+            let escapes = character == "\"" || out.hasSuffix("$")
+            var end = line.index(after: index)
+            var body = ""
+            while end < line.endIndex, line[end] != character {
+                if escapes, line[end] == "\\", line.index(after: end) < line.endIndex {
+                    body.append(line[end])
+                    end = line.index(after: end)
+                }
+                body.append(line[end])
+                end = line.index(after: end)
+            }
+            out.append(character)
+            out += head(body)
+            if end < line.endIndex {
+                out.append(character)
+                index = line.index(after: end)
+            } else {
+                index = end
+            }
+        }
+        return out
+    }
 
     static func sha256(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()

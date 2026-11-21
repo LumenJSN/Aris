@@ -25,6 +25,10 @@ APP="${1:?usage: assemble-app.sh <Aris.app> <folder with aris-agent and aris-too
 FROM="${2:?the folder holding aris-agent and aris-tools}"
 SIGN_ID="${3:-Apple Development}"
 fail() { echo "assemble-app FAILED: $*" >&2; exit 1; }
+# ARIS_SIGN_KEYCHAIN: a keychain file to take the signing identity from (the public release's own, outside the search
+# list: release/signing-identity.sh); unset, codesign looks in the user's keychains as before.
+KEYCHAIN="${ARIS_SIGN_KEYCHAIN:-}"
+[ -z "$KEYCHAIN" ] || [ -f "$KEYCHAIN" ] || fail "ARIS_SIGN_KEYCHAIN: no keychain at $KEYCHAIN"
 
 [ -x "$APP/Contents/MacOS/Aris" ] || fail "$APP is not a built Aris.app"
 for name in aris-agent aris-tools; do [ -f "$FROM/$name" ] || fail "no $name in $FROM (Tests/build-agent.sh makes them)"; done
@@ -42,7 +46,7 @@ fi
 # codesign's own complaint is shown; its note that it replaced a signature is not.
 sign() {
   local said
-  said="$(codesign --force --sign "$SIGN_ID" "$@" 2>&1)" || { [ -n "$said" ] && printf '%s\n' "$said" >&2; fail "codesign could not sign ${*: -1} with \"$SIGN_ID\" (is the keychain unlocked?)"; }
+  said="$(codesign --force --sign "$SIGN_ID" ${KEYCHAIN:+--keychain "$KEYCHAIN"} "$@" 2>&1)" || { [ -n "$said" ] && printf '%s\n' "$said" >&2; fail "codesign could not sign ${*: -1} with \"$SIGN_ID\" (is the keychain unlocked?)"; }
 }
 
 # 1. The two programs, into the app.

@@ -25,6 +25,11 @@ struct ArisInboxItem: Decodable, Equatable, Identifiable {
     let text: String
     let file: String?
     let confirm: Question?
+    /// The background job it came from (its id), when it is a handed-out job's: the app follows that job by it.
+    var job: String? = nil
+
+    /// The handed-out job it came from.
+    var jobId: UUID? { job.flatMap(UUID.init(uuidString:)) }
 
     /// The card to ask with, for a parked question.
     var confirmation: ArisConfirmation? {
@@ -35,7 +40,9 @@ struct ArisInboxItem: Decodable, Equatable, Identifiable {
     /// What Aris says: a result or note as it is; a failure in a sentence of its own.
     var spoken: String {
         guard kind == "failure" else { return text }
-        return ArisSpeech.language(of: title) == "ko-KR" ? "예약한 일 ‘\(title)’, 못 끝냈어요." : "A scheduled job didn't finish: \(title)."
+        let korean = ArisSpeech.language(of: title) == "ko-KR"
+        if job != nil { return korean ? "맡긴 일 ‘\(title)’, 못 끝냈어요. \(text)" : "A job didn't finish: \(title). \(text)" }
+        return korean ? "예약한 일 ‘\(title)’, 못 끝냈어요." : "A scheduled job didn't finish: \(title)."
     }
 
     /// The body of POST /inbox's answer; nil when it isn't one.

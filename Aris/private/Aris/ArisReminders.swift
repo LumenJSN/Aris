@@ -113,6 +113,11 @@ final class ArisReminders: ObservableObject {
         return authorized
     }
 
+    /// Whether a request from a turn should have macOS asked first (ArisRemindersAccess.asksFirst).
+    func asksFirst(demo: Bool) -> Bool {
+        ArisRemindersAccess.asksFirst(fresh: Self.plain(EKEventStore.authorizationStatus(for: .reminder)), answeredThisRun: answeredThisRun, demo: demo)
+    }
+
     /// The same for a request that would otherwise be answered "Aris can't use Reminders yet" (an add, the list,
     /// "Try again"): when macOS's prompt was already answered in this run and this process still reads "not asked
     /// yet", macOS is asked once more, which shows nothing and only brings its answer here (ArisRemindersAccess.asksAgain).
@@ -139,6 +144,8 @@ final class ArisReminders: ObservableObject {
         if let granted = await ready().requestAccess() {
             answeredThisRun = true
             grantedByRequest = granted
+            // Every other reader of Reminders access keeps this answer too (ArisEventGrants).
+            ArisEventGrants.shared.note(.reminders, granted: granted)
             // The calendar's due to-dos keep this yes too (ArisCalendarStore.remindersGranted).
             if granted { Task { await ArisCalendarStore.shared.remindersGranted() } }
             if granted { replaceStore() }

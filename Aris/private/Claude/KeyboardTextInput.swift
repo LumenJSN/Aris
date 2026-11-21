@@ -35,5 +35,9 @@ enum KeyboardTextInput {
     }
 
     /// A card's key (Y/N, 1–9, ↩, Esc) counts only while Aris is the active app.
-    static func answersCardKey(arisActive: Bool) -> Bool { arisActive }
+    /// And only a key from the keyboard itself: `sourcePid` is the process that posted the event (0: the hardware; the
+    /// window server stamps a posting process's pid; -1: unknown, which is no keyboard). Eleventh VM run, item 8: a
+    /// "y" another process posted answered a card ("card answer: yes (Y/N key)"). The session key tap had this check
+    /// (KeyboardFocus.fromHardware); the panel's own key monitor, which takes the keys while Aris is active, had none.
+    nonisolated static func answersCardKey(arisActive: Bool, sourcePid: Int64) -> Bool { arisActive && sourcePid == 0 }
 }

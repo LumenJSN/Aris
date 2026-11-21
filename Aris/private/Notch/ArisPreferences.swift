@@ -103,7 +103,10 @@ extension Defaults.Keys {
 }
 
 
+/// No default keys: a default is written into the defaults on first launch and then registered globally, taking ⇧⌘I
+/// and ⇧⌘H from every other app. A new install has neither until the user sets one in Settings; an install that
+/// launched before keeps the keys already written for it (KeyboardShortcuts stores the value, not the default).
 extension KeyboardShortcuts.Name {
-    static let toggleNotchOpen = Self("toggleNotchOpen", default: .init(.i, modifiers: [.shift, .command]))
-    static let toggleSneakPeek = Self("toggleSneakPeek", default: .init(.h, modifiers: [.shift, .command]))
+    static let toggleNotchOpen = Self("toggleNotchOpen")
+    static let toggleSneakPeek = Self("toggleSneakPeek")
 }

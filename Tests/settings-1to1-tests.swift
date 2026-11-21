@@ -55,7 +55,7 @@ private func oneSidebarTests() {
     check(M.width == 220 && M.padding == 16 && M.top == 40 && M.greetingGap == 16, "sidebar: 220 wide, px-4, the header pt-10 pb-4")
     check(M.row == 44 && M.rowGap == 4 && M.rowRadius == 12 && M.rowLeading == 15.5 && M.rowTrailing == 16 && M.iconGap == 12 && M.iconSize == 20 && M.labelSize == 14,
           "sidebar: items 44 tall, 4 apart, r12, 15.5 / 16 in, a 20-pt icon 12 from a 14-pt label")
-    check(M.height() > M.windowSize.height, "sidebar: 14 pages at 44 are taller than the window, so the list scrolls (and fades at its end)")
+    check(M.tallest <= M.windowMinimum.height, "sidebar: option A's four pages at 44 and the open page's parts fit even the smallest window (\(M.tallest)); the fade stays for a shorter one")
     let theme = oneSource(settingsDir + "ArisSettingsTheme.swift")
     check(theme.contains("var sidebarTint: Color { pick(Color(arisHex: 0xf5f7fa, 0x26 / 255.0), Color(arisHex: 0x1a1d24, 0x29 / 255.0)) }"),
           "sidebar: the tint is #f5f7fa .149 / #1a1d24 .161 over the material")
@@ -85,7 +85,7 @@ private func onePageTests() {
     check(ArisSettingsLayout.blocks(ArisSettingSection(id: "a", rows: rows)).count == 3, "pages: each settings row is its own card")
     check(ArisSettingsLayout.blocks(ArisSettingSection(id: "b", grouped: true, rows: rows)).count == 1, "pages: a list stays one card")
     let keys = ArisSettingsBuilder.sections(.keys, ArisSettingsSnapshot())
-    check(keys.allSatisfy { !$0.grouped } && ArisSettingsLayout.blocks(keys[0]).count == keys[0].rows.count, "단축키: one card per shortcut")
+    check(keys.first { $0.id == "keys.all" }.map { $0.grouped && ArisSettingsLayout.blocks($0).count == 1 } == true, "단축키: the shortcuts are one list (option A's 단축키 card)")
     let shell = oneSource(settingsDir + "ArisSettingsShell.swift")
     check(!shell.contains("Text(w.frame(nav.page.subtitle)).font"), "pages: the title carries no line under it")
     let controls = oneSource(settingsDir + "ArisSettingsControls.swift")
@@ -143,9 +143,11 @@ private func oneFeatureTests() {
         check(c.cells.allSatisfy { ($0.icon == nil) != ($0.value == nil) && ($0.icon.map { ArisLineIconPath.glyph($0) != nil } ?? true) },
               "feature sheets: \(feature.rawValue)'s cells each show an icon or a value")
         if feature != .skills {
-            let sections = ArisSettingsBuilder.sections(feature.page, full)
+            // Option A: one link per part (a long page holds several features' parts).
+            let part = ArisSettingsBuilder.parts(feature.page, full).first { $0.sections.contains { $0.id == feature.sectionID } }
+            let sections = part?.sections ?? []
             check(sections.first { $0.id == feature.sectionID }?.feature == feature && sections.filter { $0.feature != nil }.count == 1,
-                  "feature sheets: \(feature.rawValue)'s 알아보기 link sits at the end of its section's title, and nowhere else on the page")
+                  "feature sheets: \(feature.rawValue)'s 알아보기 link sits at the end of its section's (or part's) title, and nowhere else in its part")
             check(!sections.flatMap(\.rows).contains { $0.id.hasPrefix("feature.") }, "feature sheets: \(feature.rawValue)'s page has no extra row for it")
         }
     }

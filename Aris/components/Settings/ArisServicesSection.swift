@@ -294,12 +294,12 @@ struct ArisMCPAddRow: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    ArisTextField(placeholder: "이름 (예: github)", text: $model.name, width: 160)
+                    ArisTextField(placeholder: "이름 (예: github)", text: $model.name, width: 176)
                     ArisTextField(placeholder: "명령 또는 URL", text: $model.target) { Task { await model.saveServer() } }
                 }
                 HStack(spacing: 8) {
                     ArisTextField(placeholder: model.editing == nil ? "토큰 (없으면 비워 두기)" : "새 토큰 (그대로면 비워 두기)", text: $model.token, secure: true)
-                    ArisTextField(placeholder: "헤더 또는 환경 변수 이름 (선택)", text: $model.tokenName, width: 220)
+                    ArisTextField(placeholder: "헤더 또는 환경 변수 이름 (선택)", text: $model.tokenName, width: 248)
                     ArisSettingsButton(title: model.busy.contains("form") ? "확인 중…" : model.editing == nil ? "추가" : "저장", kind: .primary,
                                        enabled: !model.busy.contains("form")) { Task { await model.saveServer() } }
                     if model.editing != nil { ArisSettingsButton(title: "취소") { model.cancelEditing() } }

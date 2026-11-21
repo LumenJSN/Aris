@@ -30,7 +30,7 @@ extension ArisController {
             log.error("a turn ended and left the notch \(self.session.phase == .thinking ? "thinking" : "speaking", privacy: .public): back to idle")
             self.finishTurn("left")
             self.dropPendingAnswer()
-            self.session = self.session.done()
+            self.setSession(self.session.done())
             self.resumeMusicIfPaused()
         }
     }

@@ -63,6 +63,8 @@ final class ArisTurnCapture {
     private var expiry: Task<Void, Never>?
     /// The turn's circled shots and drawing references (P1.9), held under the same generation and expiry.
     private var gesture: (images: [ArisTurnImage], turn: Int)?
+    /// The circled regions of this turn's drawing (jv-focus), in global points.
+    private var circled: (regions: [CGRect], turn: Int)?
 
     /// A capture was tried this turn (for the turn log: ok or not).
     private(set) var attempted = false
@@ -133,10 +135,17 @@ final class ArisTurnCapture {
     }
 
     /// The turn's circled shots arrived (collected at the end of listening): they replace the screenshot.
-    func attachGesture(_ images: [ArisTurnImage]) {
+    func attachGesture(_ images: [ArisTurnImage], regions: [CGRect] = []) {
         guard !images.isEmpty else { return }
         gesture = (images, generation)
+        circled = (regions, generation)
         armExpiry()
+    }
+
+    /// This turn's circled regions (not taken: the shots still go with the ask); nothing from an earlier turn.
+    var gestureRegions: [CGRect] {
+        guard let circled, circled.turn == generation else { return [] }
+        return circled.regions
     }
 
     /// This turn's circled shots, handed out once; nothing from an earlier turn.
@@ -172,5 +181,6 @@ final class ArisTurnCapture {
         expiry?.cancel()
         expiry = nil
         gesture = nil
+        circled = nil
     }
 }

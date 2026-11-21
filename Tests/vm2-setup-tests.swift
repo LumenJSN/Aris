@@ -63,7 +63,7 @@ private func vm2PagesTests() {
         while flow.next(skipping: plan.skipped) { pages.append(flow.page) }
         return pages
     }
-    let all: [P] = [.permissions, .ask, .brain, .wake, .dictation]
+    let all: [P] = [.permissions, .ask, .brain, .wake, .dictation, .done]
     check(walk(.make(permissionsSettled: false, readyAIs: 0)) == all, "vm2 bug 5: no AI: every page, the try page before the AI page")
     check(walk(.make(permissionsSettled: false, readyAIs: 2)) == all, "vm2 bug 5: several AIs: every page")
 
@@ -156,18 +156,19 @@ private func vm2LeaveTests() {
     late.cameForward(.systemSettings, bundleID: settingsID, settingsPid: 500, sinceForward: ArisOnboardingFront.settle)
     check(!late.plan(runningPid: 500, quitting: false).hidesSettings, "vm2 bug 5: after that moment it is")
 
-    // A System Settings the user already had open.
+    // A System Settings that was already open (sixth VM run, item 8: changed from "never touched"): the card brought it
+    // forward and moved it to a privacy pane, so it is the setup's errand and is hidden at the end (never quit).
     var theirs = L(frontApp: terminal)
     theirs.sending(runningPid: 77)
     theirs.cameForward(.systemSettings, bundleID: settingsID, settingsPid: 77, sinceForward: nil)
     theirs.cameForward(.aris, bundleID: nil, settingsPid: 77, sinceForward: 0.1)
-    check(theirs.startedPid == nil && theirs.plan(runningPid: 77, quitting: false) == nothing,
-          "vm2 bug 5: a System Settings that was already open when the card sent the user there is the user's: never hidden")
+    check(theirs.startedPid == 77 && theirs.plan(runningPid: 77, quitting: false) == L.Plan(hidesSettings: true, activates: terminal),
+          "vm2 bug 5 / vmfix9 item 8: a System Settings already open when the card sent the user there is hidden at the end")
     var replaced = L(frontApp: terminal)
     sentAndBack(&replaced)
     replaced.sending(runningPid: 612)
-    check(replaced.plan(runningPid: 612, quitting: false) == nothing && replaced.plan(runningPid: 500, quitting: false) == nothing,
-          "vm2 bug 5: the user quit the setup's System Settings and opened their own before the next card: theirs")
+    check(replaced.plan(runningPid: 612, quitting: false).hidesSettings && replaced.plan(runningPid: 500, quitting: false) == nothing,
+          "vm2 bug 5 / vmfix9 item 8: the one the next card sent the user to is the one hidden; another process is never touched")
 
     // Who the user was with.
     var apps = L()

@@ -97,7 +97,8 @@ let vmEnglishOnPurpose: [String: Set<String>] = [
     // said after `guard korean`: the spoken summary's Korean sentence
     "ArisTodoModel.swift": ["Canvas 마감은 \\(canvas.joined(separator: \", \"))예요."],
     // the agent's special yes words, matched as they come
-    "Home/ArisConfirmWords.swift": ["설치", "로그인"],
+    // the yes words the agent may send, matched in either language (계속: a replay's go-on card, fifth VM run D7)
+    "Home/ArisConfirmWords.swift": ["설치", "로그인", "계속"],
     // words matched in a place's name, and the Korean halves of times whose English a formatter writes
     "ArisWidget.swift": ["여기", "집", "\\(clock)시", "오후", "오전", "\\(afternoon ? \"오후\" : \"오전\") \\(clock)시", "\\(minutes)분 뒤", "\\(hours)시간 뒤", "\\(hours)시간 \\(rest)분 뒤", "오늘", "내일", "어제", "M월 d일"],
     // the Korean halves of times whose English a formatter writes
@@ -475,9 +476,10 @@ private func vmEnglishChipTests() {
 private func vmEnglishCard(_ title: String, _ detail: String = "") -> ArisConfirmation { ArisConfirmation(id: "c", title: title, detail: detail) }
 
 private func vmEnglishCardTests() {
-    check(ArisCardEnglish.isEnglish(request: "make a folder called qa on my desktop", uiEnglish: false) && !ArisCardEnglish.isEnglish(request: "바탕화면에 qa 폴더 만들어 줘", uiEnglish: true)
+    // Third VM run, D4: the rule is now the UI's language whatever the request's (was: the request's).
+    check(!ArisCardEnglish.isEnglish(request: "make a folder called qa on my desktop", uiEnglish: false) && ArisCardEnglish.isEnglish(request: "바탕화면에 qa 폴더 만들어 줘", uiEnglish: true)
           && ArisCardEnglish.isEnglish(request: "", uiEnglish: true) && !ArisCardEnglish.isEnglish(request: " ", uiEnglish: false),
-          "card: a card is in the language of the request it answers; with no request, the Mac's")
+          "card: a card is in the UI's language, whatever language the request was in")
     // The buttons follow the card, so it is one language through and through.
     check(ArisConfirmWords.cancel(english: true) == "Cancel" && ArisConfirmWords.allow(nil, sends: false, english: true) == "Allow" && ArisConfirmWords.allow(nil, sends: true, english: true) == "Send"
           && ArisConfirmWords.allow(nil, sends: false, english: false) == "허용" && ArisConfirmWords.allow(nil, sends: true, english: false) == "보내기" && ArisConfirmWords.cancel(english: false) == "취소"
@@ -524,10 +526,10 @@ private func vmEnglishCardTests() {
 
     // What Aris says when it asks.
     let folder = vmEnglishCard("폴더 만들기", "바탕화면 › qa")
-    check(ArisConfirmReply.question(for: folder, english: true) == "New folder. Shall I go ahead?" && ArisConfirmReply.question(for: folder, english: false) == "폴더 만들기, 해도 될까요?"
-          && ArisConfirmReply.question(for: folder) == "폴더 만들기, 해도 될까요?" && ArisConfirmReply.question(for: vmEnglishCard("Click")) == "Click. Shall I go ahead?"
-          && ArisConfirmReply.question(for: folder, voiceYes: false, english: true) == "New folder. Shall I go ahead? To allow it, press Allow or the Y key."
-          && ArisConfirmReply.question(for: folder, voiceYes: false) == "폴더 만들기, 해도 될까요? 허락하시려면 허용을 누르거나 Y를 눌러 주세요.",
+    check(ArisConfirmReply.question(for: folder, english: true) == "New folder. Go ahead?" && ArisConfirmReply.question(for: folder, english: false) == "폴더 만들기, 할까요?"
+          && ArisConfirmReply.question(for: folder) == "폴더 만들기, 할까요?" && ArisConfirmReply.question(for: vmEnglishCard("Click")) == "Click. Go ahead?"
+          && ArisConfirmReply.question(for: folder, voiceYes: false, english: true) == "New folder. Go ahead? To allow it, press Allow or the Y key."
+          && ArisConfirmReply.question(for: folder, voiceYes: false) == "폴더 만들기, 할까요? 허락하시려면 허용을 누르거나 Y를 눌러 주세요.",
           "card: the question is asked in the card's language and names the button as the card draws it")
 
     // The app's own save cards follow the request too.
@@ -594,26 +596,29 @@ private func vmEnglishSettingsPathTests() {
     let file = vmEnglishRoot().appendingPathComponent("Aris/components/Settings/Settings.xcstrings")
     let pairs = ArisSettingsCopy.pairs(catalog: (try? Data(contentsOf: file)) ?? Data())
     ArisSettingsCopy.install(pairs)
-    check(ArisSettingsPath.path(.todo, english: true) == "Settings › " + (pairs["할 일 · 캘린더"] ?? "?") && pairs["할 일 · 캘린더"] == "To-dos · Calendar" && ArisSettingsPath.path(.todo, english: false) == "설정 › 할 일 · 캘린더"
-          && ArisSettingsPath.path(.team, english: true) == "Settings › Teammates" && ArisSettingsPath.path(.control, english: true) == "Settings › Computer control",
-          "settings path: a page is named as the settings window's sidebar names it on this Mac (“Settings › To-dos · Calendar” on an English one)")
+    // Option A: four pages; a row is named with the part it is in, on the page that has it now.
+    let t = { (korean: String) in ArisSettingsCopy.t(korean) }
+    check(ArisSettingsPath.path(.todo, english: true) == "Settings › " + t("할 수 있는 일") && t("할 수 있는 일") == "What Aris can do"
+          && ArisSettingsPath.path(.todo, english: false) == "설정 › 할 수 있는 일" && ArisSettingsPath.path(.team, english: true) == "Settings › What Aris can do",
+          "settings path: a page is named as the settings window's sidebar names it on this Mac (“Settings › What Aris can do” on an English one)")
     let row = ArisSettingsPath.path(.todo, "미리 알림 접근", english: true)
-    check(row == "Settings › To-dos · Calendar › " + (ArisSettingsCopy.translatedPages.contains(.todo) ? ArisSettingsCopy.t("미리 알림 접근") : "미리 알림 접근")
-          && ArisSettingsPath.path(.todo, "미리 알림 접근", english: false) == "설정 › 할 일 · 캘린더 › 미리 알림 접근",
-          "settings path: a row is named as its page shows it: in Korean until that page has its English")
-    check(ArisSettingsPath.shown("Turn it on in Settings › 할 일.", english: true) == "Turn it on in Settings › To-dos · Calendar."
-          && ArisSettingsPath.shown("설정 › 캘린더에서 골라요. 설정 › 모양도 봐요.", english: false) == "설정 › 할 일 · 캘린더에서 골라요. 설정 › 일반도 봐요."
-          && ArisSettingsPath.shown("설정 › 할 일 · 캘린더 › 미리 알림 접근", english: false) == "설정 › 할 일 · 캘린더 › 미리 알림 접근"
-          && ArisSettingsPath.shown("Settings > 노치 기능", english: true) == "Settings › Music · Shelf"
-          && ArisSettingsPath.shown("설정 › 팀원 › 쓸 수 있는 것에서 켜 주세요.", english: true) == "Settings › Teammates › 쓸 수 있는 것에서 켜 주세요."
-          && ArisSettingsPath.shown("Open Settings > 기억 to see it.", english: true) == "Open Settings › Memory to see it."
-          && ArisSettingsPath.shown("설정 › 노치 · 사이드 노치", english: true) == "Settings › Notch"
-          && ArisSettingsPath.shown("설정 › 할 일에서 켜 주세요.", english: false) == "설정 › 할 일 · 캘린더에서 켜 주세요." && ArisSettingsPath.shown("설정 › 팀원에서 봐요.", english: false) == "설정 › 팀원에서 봐요."
+    check(row == ["Settings", t("앱"), t("권한"), t("미리 알림 접근")].joined(separator: " › ")
+          && ArisSettingsPath.path(.todo, "미리 알림 접근", english: false) == "설정 › 앱 › 권한 › 미리 알림 접근",
+          "settings path: a row is named on the page and in the part that have it now")
+    check(ArisSettingsPath.shown("Turn it on in Settings › 할 일.", english: true) == "Turn it on in Settings › What Aris can do › \(t("할 일"))."
+          && ArisSettingsPath.shown("설정 › 캘린더에서 골라요. 설정 › 모양도 봐요.", english: false) == "설정 › 할 수 있는 일 › 캘린더에서 골라요. 설정 › 모양도 봐요."
+          && ArisSettingsPath.shown("Settings > 노치 기능", english: true) == "Settings › \(t("모양")) › \(t("음악"))"
+          && ArisSettingsPath.shown("설정 › 팀원 › 쓸 수 있는 것에서 켜 주세요.", english: true) == "Settings › What Aris can do › \(t("팀원")) › 쓸 수 있는 것에서 켜 주세요."
+          && ArisSettingsPath.shown("Open Settings > 기억 to see it.", english: true) == "Open Settings › What Aris can do › \(t("기억")) to see it."
+          && ArisSettingsPath.shown("설정 › 노치 · 사이드 노치", english: true) == "Settings › \(t("모양")) › \(t("노치"))"
+          && ArisSettingsPath.shown("Pick one in Settings › AI services.", english: true) == "Pick one in Settings › Talking to Aris › AI · Model."
+          && ArisSettingsPath.shown("설정 › 할 일에서 켜 주세요.", english: false) == "설정 › 할 수 있는 일 › 할 일에서 켜 주세요."
           && ArisSettingsPath.shown("할 일 3개 있어요.", english: true) == "할 일 3개 있어요.",
-          "settings path: a reply that points to a page reads as the window names it, a page's former name as the page that has its rows now (settings pick 6-B); a reply that names no page is untouched")
-    check(ArisLocalReply.noRemindersAccess(korean: true) == "미리 알림 접근이 꺼져 있어요. 설정 › 할 일 · 캘린더 › 미리 알림 접근에서 켜 주세요."
-          && ArisLocalReply.noRemindersAccess(korean: false) == "Aris can't use Reminders yet. Turn it on in Settings (설정 › 할 일 · 캘린더 › 미리 알림 접근)."
-          && ArisSession().listening().hearing("x").thinking().answering("설정 › 팀원").reply == "설정 › 팀원",
-          "settings path: the Korean reply is as it was, and an English reply on a Korean Mac names the page as that Mac's window does")
+          "settings path: a reply that points to an old page reads as the page and part that have its rows now (option A); a reply that names no page is untouched")
+    check(ArisLocalReply.noRemindersAccess(korean: true) == "미리 알림 접근이 꺼져 있어요. 설정 › 앱 › 권한 › 미리 알림 접근에서 켜 주세요.",
+          "settings path: the Korean reply names where the row is now (\(ArisLocalReply.noRemindersAccess(korean: true)))")
+    let sessionReply = ArisSession().listening().hearing("x").thinking().answering("설정 › 팀원").reply
+    check(sessionReply == "설정 › 팀원" || sessionReply == "설정 › 할 수 있는 일 › 팀원",
+          "settings path: a reply's old page name is kept or read as its new place (\(sessionReply))")
     ArisSettingsCopy.install([:])
 }

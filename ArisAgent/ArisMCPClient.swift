@@ -24,6 +24,12 @@ enum ArisMCPError: Error, Equatable {
         case .malformed: return "the server's answer couldn't be read"
         }
     }
+
+    /// The message is the server's own words (outside text), not Aris's.
+    var isFromServer: Bool {
+        if case .server = self { return true }
+        return false
+    }
 }
 
 /// What one tools/call brought back, before the gate wraps it for a brain.
@@ -45,6 +51,8 @@ final class ArisMCPClient {
     private let lock = NSLock()
     private var nextId = 0
     private var waiting: [Int: (DispatchSemaphore, Result<[String: Any], ArisMCPError>?)] = [:]
+    /// When the server last said a call is still going (notifications/progress for its token), by request id.
+    private var heard: [Int: Date] = [:]
     private var closedWhy: String?
     private var pings: [Date] = []
 
@@ -68,6 +76,9 @@ final class ArisMCPClient {
     }
 
     var isClosed: Bool { lock.withLock { closedWhy != nil } }
+
+    /// Requests still waiting for their answer (a long tool call keeps its connection from closing as idle).
+    var inFlight: Int { lock.withLock { waiting.values.filter { $0.1 == nil }.count } }
 
     /// What the server itself said about a failure (ArisMCPTransport.diagnostics): for the user's settings, never a brain.
     var diagnostics: String { transport.diagnostics }
@@ -122,8 +133,11 @@ final class ArisMCPClient {
                            inputSchema: schema, readOnlyHint: hint("readOnlyHint"), destructiveHint: hint("destructiveHint"))
     }
 
-    func call(_ tool: String, arguments: [String: Any], timeout: TimeInterval) -> Result<ArisMCPCallResult, ArisMCPError> {
-        switch request("tools/call", ["name": tool, "arguments": arguments], timeout: timeout) {
+    /// One tools/call. `timeout` is how long the server may stay silent: each progress notice it sends for the call
+    /// (its progressToken is the request id) starts that wait again, up to `ceiling` in all (audit item 11: a flat
+    /// limit cut off long tools that were still reporting progress).
+    func call(_ tool: String, arguments: [String: Any], timeout: TimeInterval, ceiling: TimeInterval? = nil) -> Result<ArisMCPCallResult, ArisMCPError> {
+        switch request("tools/call", ["name": tool, "arguments": arguments], timeout: timeout, ceiling: ceiling ?? timeout) {
         case .failure(let error): return .failure(error)
         case .success(let result): return .success(Self.result(result))
         }
@@ -163,8 +177,10 @@ final class ArisMCPClient {
 
     // MARK: - JSON-RPC
 
-    private func request(_ method: String, _ params: [String: Any], timeout: TimeInterval) -> Result<[String: Any], ArisMCPError> {
+    /// `ceiling` past `timeout`: the request asks for progress notices, and each one heard starts the silent wait again.
+    private func request(_ method: String, _ params: [String: Any], timeout: TimeInterval, ceiling: TimeInterval? = nil) -> Result<[String: Any], ArisMCPError> {
         let signal = DispatchSemaphore(value: 0)
+        let started = Date()
         let id: Int? = lock.withLock {
             guard closedWhy == nil else { return nil }
             nextId += 1
@@ -172,15 +188,40 @@ final class ArisMCPClient {
             return nextId
         }
         guard let id else { return .failure(.closed(lock.withLock { closedWhy } ?? "closed")) }
-        transport.send(["jsonrpc": "2.0", "id": id, "method": method, "params": params])
-        let timedOut = signal.wait(timeout: .now() + timeout) == .timedOut
-        let outcome = lock.withLock { waiting.removeValue(forKey: id)?.1 }
+        let limit = max(timeout, ceiling ?? timeout)
+        var sent = params
+        if limit > timeout {
+            var meta = params["_meta"] as? [String: Any] ?? [:]
+            meta["progressToken"] = id
+            sent["_meta"] = meta
+        }
+        transport.send(["jsonrpc": "2.0", "id": id, "method": method, "params": sent])
+        let timedOut = Self.wait(signal, started: started, silence: timeout, ceiling: limit) { [weak self] in
+            self?.lock.withLock { self?.heard[id] }
+        }
+        let outcome = lock.withLock { () -> Result<[String: Any], ArisMCPError>? in
+            heard[id] = nil
+            return waiting.removeValue(forKey: id)?.1
+        }
         if let outcome { return outcome }
         if timedOut {
             notify("notifications/cancelled", ["requestId": id, "reason": "timeout"])
             return .failure(.timeout)
         }
         return .failure(.closed(lock.withLock { closedWhy } ?? "closed"))
+    }
+
+    /// Waits for `signal` until the server has been silent for `silence` (from the start, or from the last progress
+    /// `lastHeard` gives) or `ceiling` has passed since `started`. True when it gave up.
+    static func wait(_ signal: DispatchSemaphore, started: Date, silence: TimeInterval, ceiling: TimeInterval, lastHeard: () -> Date?) -> Bool {
+        while true {
+            let quietSince = max(started, lastHeard() ?? started)
+            let until = min(quietSince.addingTimeInterval(silence), started.addingTimeInterval(ceiling))
+            let left = until.timeIntervalSinceNow
+            guard left > 0 else { return true }
+            if signal.wait(timeout: .now() + left) == .success { return false }
+            // Woken by the clock: a progress notice since then moves the end, else the loop finds no time left.
+        }
     }
 
     private func notify(_ method: String, _ params: [String: Any]) {
@@ -201,6 +242,13 @@ final class ArisMCPClient {
                 if JSONSerialization.isValidJSONObject(reply) { transport.send(reply) }
             } else if method == "notifications/tools/list_changed" {
                 onToolsChanged?()
+            } else if method == "notifications/progress" {
+                // Only a call that asked (its own id as the token) and is still waiting counts as heard from.
+                let params = message["params"] as? [String: Any] ?? [:]
+                let token = (params["progressToken"] as? NSNumber)?.intValue ?? (params["progressToken"] as? String).flatMap(Int.init)
+                if let token {
+                    lock.withLock { if waiting[token]?.1 == nil, waiting[token] != nil { heard[token] = Date() } }
+                }
             }
             return
         }

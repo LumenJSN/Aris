@@ -59,8 +59,8 @@ private func qaUndoAnswersTests() {
           && rows[0].title == "데스크탑 폴더", "BUG-17: settings show the Desktop, Documents and Downloads access (one row: macOS asks for Aris)")
     var snapshot = ArisSettingsSnapshot()
     snapshot.permissions = rows
-    let section = ArisSettingsBuilder.sections(.control, snapshot).first { $0.id == "control.permissions" }
-    check(section?.rows.map(\.id) == ["control.folders"],
+    let section = ArisSettingsBuilder.sections(.app, snapshot).first { $0.id == "control.permissions" }
+    check(section?.rows.map(\.id).first == "control.folders" && section?.rows.filter { $0.id.hasPrefix("control.") }.map(\.id) == ["control.folders"],
           "BUG-17: they are a row of 권한 like the others (one row for the three folders: settings item 11)")
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("aris-qa4-lock-\(UUID().uuidString)")
     try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

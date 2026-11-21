@@ -157,7 +157,8 @@ final class HookConnection: @unchecked Sendable {
         if hookEvent {
             context.clock.asyncAfter(deadline: .now() + limits.answer) { [weak self] in self?.answerLimitPassed(request.path) }
         } else {
-            context.clock.asyncAfter(deadline: .now() + limits.slow) { [weak self] in self?.slowLimitPassed(request.path) }
+            let slow = limits.slow(path: request.path, body: request.body)
+            context.clock.asyncAfter(deadline: .now() + slow) { [weak self] in self?.slowLimitPassed(request.path, after: slow) }
         }
 
         // Looking at a request is where a wedged Aris can stop a thread for good; the deadline above answers it anyway.
@@ -286,9 +287,9 @@ final class HookConnection: @unchecked Sendable {
         NSLog("[Claude] hook server: %@ wasn't answered in %.0f ms; the neutral reply was sent", path, context.limits.answer * 1000)
     }
 
-    private func slowLimitPassed(_ path: String) {
+    private func slowLimitPassed(_ path: String, after seconds: TimeInterval) {
         guard finish(.refusal("504 Gateway Timeout")) else { return }
         context.stats.count(.slowTimedOut)
-        NSLog("[Claude] hook server: %@ wasn't answered in %.0f s; its connection was closed", path, context.limits.slow)
+        NSLog("[Claude] hook server: %@ wasn't answered in %.0f s; its connection was closed", path, seconds)
     }
 }

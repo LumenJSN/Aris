@@ -125,7 +125,8 @@ final class ArisWakeRestLive: ObservableObject {
     /// The facts as last read ask for a rest (the lid, the battery, another app's microphone).
     private var wanted = false
     private var watching = false
-    private var deviceWatch: ArisMicWatch?
+    private var deviceWatch: ArisWorldSubscription?
+    private var displayWatch: ArisWorldSubscription?
     private var deviceListeners: [(AudioDeviceID, AudioObjectPropertyListenerBlock)] = []
     private let queue = DispatchQueue(label: "com.lumenjsn.aris.wake-rest", qos: .utility)
 
@@ -194,8 +195,11 @@ final class ArisWakeRestLive: ObservableObject {
         watching = true
         let look: @Sendable (Notification) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.look() } }
         NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main, using: look)
-        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main, using: look)
-        deviceWatch = ArisMicWatch { [weak self] in
+        // A display coming or going (the lid's facts), as ArisWorld hears it.
+        displayWatch = ArisWorld.shared.subscribe([.displays]) { [weak self] _, _ in self?.look() }
+        // The device list and the default input, as ArisWorld hears them (one watch for every feature).
+        deviceWatch = ArisWorld.shared.subscribe([.audio]) { [weak self] change, _ in
+            guard change == .audioDevices else { return }
             self?.listenToDevices()
             self?.look()
         }
@@ -261,6 +265,8 @@ extension ArisController {
     func wakeRestChanged() -> Bool {
         guard session.phase == .idle, training == nil, listener == nil, wakeListener == nil else { return false }
         guard !conversation.isOpen else { return true }
+        // Another app letting the microphone go (a call ended) often frees a microphone that wouldn't open.
+        wakeMicMayWorkAgain("the reason to rest changed")
         waitForWakeWord()
         return true
     }

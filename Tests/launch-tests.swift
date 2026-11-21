@@ -9,5 +9,6 @@ func runLaunchTests() {
     check(L.crossesWindowSets(from: .allDisplays, to: .activeDisplay) && L.crossesWindowSets(from: .preferredDisplay, to: .allDisplays)
           && !L.crossesWindowSets(from: .preferredDisplay, to: .activeDisplay) && !L.crossesWindowSets(from: nil, to: .allDisplays),
           "launch: only a change across all displays / single display tears the other windows down")
-    check(L.toggleAutoClose == .seconds(3) && L.peekShortcutDuration == 3, "launch: the toggle closes after 3 s, the peek shortcut shows 3 s")
+    check(L.toggleClosesOnClickElsewhere(open: true) && !L.toggleClosesOnClickElsewhere(open: false) && L.peekShortcutDuration == 3,
+          "launch: the toggle's notch stays until a click elsewhere (no 3 s timer), the peek shortcut shows 3 s")
 }

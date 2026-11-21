@@ -63,6 +63,16 @@ enum ArisActivityBridge {
         return undo["removeTodo"] != nil || undo["reopenTodo"] != nil || undo["restoreTodoDue"] != nil
     }
 
+    /// The exact grant key of undoing entry `id` (or the latest change) when it removes an event an add made: it goes
+    /// through the app's EventKit by Calendar's uid (POST /aris/events remove-uid, jv-prompts), with a one-shot grant
+    /// for exactly that uid. Nil for any other entry, or a uid that isn't a plain one.
+    static func eventUndoKey(ofEntry id: String?, file: URL = defaultLog, now: Date = Date()) -> String? {
+        let all = objects(file)
+        let object = id.map { id in all.first { ($0["id"] as? String)?.lowercased() == id.lowercased() } } ?? latestObject(all, now: now)
+        guard let uid = ((object?["undo"] as? [String: Any])?["deleteEvent"] as? [String: Any])?["id"] as? String else { return nil }
+        return ArisActionGrant.eventUndoKey(uid: uid)
+    }
+
     /// The arguments for `aris-tools undo`; nil when `id` isn't a UUID (it is never passed on as is), or when a yes
     /// (`confirmed`) comes without the id of the entry it was given for.
     static func undoArguments(id: String?, confirmed: Bool) -> [String]? {
@@ -129,7 +139,7 @@ enum ArisActivityBridge {
     }
 
     /// The log's entries as JSON objects, read only from the user's own private file (never through a link). Read-only.
-    private static func objects(_ file: URL) -> [[String: Any]] {
+    static func objects(_ file: URL) -> [[String: Any]] {
         guard let data = ArisPrivateFile.read(file) else { return [] }
         return data.split(separator: 0x0A).compactMap { (try? JSONSerialization.jsonObject(with: Data($0))) as? [String: Any] }
     }

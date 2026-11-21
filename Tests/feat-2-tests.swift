@@ -231,13 +231,15 @@ private func feat2MicWiringTests() {
     check(speaker.contains("ArisMicDevices.voiceRoute()") && speaker.contains("try ownOutput.start(engine)") && speaker.contains("ArisOwnOutput.detach(engine)")
           && !speaker.contains("inputNode") && !speaker.contains("setVoiceProcessingEnabled"),
           "wiring: the voice chooses its way out each time it starts, and never touches an input or voice processing")
-    check(controller.contains("state.headsetOnly = micPlan == .pause(.headsetOnly)") && controller.contains("ArisMicWatch { [weak self] in self?.micDevicesChanged() }")
+    check(controller.contains("state.headsetOnly = micPlan == .pause(.headsetOnly)") && controller.contains("if change == .audioDevices { self?.micDevicesChanged() }")
           && controller.contains("case .settingOff?, .otherAudio?, .headsetOnly?: return stopWaitingForWakeWord()"),
           "wiring: the wake word asks the plan each time it arms, closes its microphone when it must pause, and watches the devices")
     // wake-net: 호출어 녹음's own microphone (ArisWakeRecorderMic), open only while its sheet records, pinned and
     // logged through ArisMicDevices like the others.
     let engines = ["Aris/private/Aris/ArisWakeDetector.swift", "Aris/private/Aris/ArisListener.swift", "Aris/private/Aris/ArisSpeaker.swift",
-                   "Aris/private/Aris/Onboarding/ArisOnboardingAudio.swift", "Aris/private/Aris/ArisWakeRecorderMic.swift"]
+                   "Aris/private/Aris/Onboarding/ArisOnboardingAudio.swift", "Aris/private/Aris/ArisWakeRecorderMic.swift",
+                   // jv-duplex: the duplex engine (arisDuplexAudio, off by default), voice processing on, made only with the switch on.
+                   "Aris/private/Aris/Audio/ArisVoiceProcessingHardware.swift"]
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("..").standardized
     var found: [String] = []
     for folder in ["Aris", "ArisAgent", "ArisTools", "ArisXPCHelper"] {
@@ -249,7 +251,7 @@ private func feat2MicWiringTests() {
             }
         }
     }
-    check(Set(found) == Set(engines), "wiring: no new audio engine or recorder has appeared outside the five known files (\(found.sorted()))")
+    check(Set(found) == Set(engines), "wiring: no new audio engine or recorder has appeared outside the six known files (\(found.sorted()))")
 }
 
 // MARK: - Quiet hours: any hours
@@ -384,7 +386,7 @@ private func feat2QuietRowTests() {
         return ArisSettingsBuilder.sections(.aris, snapshot).first { $0.id == "aris.alerts" }?.rows.filter { $0.id.hasPrefix("aris.quiet") } ?? []
     }
     let standard = rows("23-7")
-    if standard.count == 1, case .choice(let key, let options, let selected, _, _) = standard[0].control {
+    if standard.count == 1, case .menu(let key, let options, let selected) = standard[0].control {
         check(key == .quietHours && options.map(\.id) == ["off", "22-7", "23-7", "0-8", "custom"] && options.last?.title == "직접 고르기" && selected == "23-7",
               "settings: 밤에는 조용히 offers 끄기, the three nights and 직접 고르기, and no menus until it is picked")
     } else {
@@ -394,7 +396,7 @@ private func feat2QuietRowTests() {
     let own = rows("22:30-6:00")
     check(own.map(\.id) == ["aris.quietHours", "aris.quietStart", "aris.quietEnd"] && own.map(\.title) == ["밤에는 조용히", "시작", "끝"],
           "settings: with 직접 고르기 picked, 시작 and 끝 sit under it")
-    if own.count == 3, case .choice(_, _, let selected, _, _) = own[0].control, case .menu(let startKey, let starts, let start) = own[1].control,
+    if own.count == 3, case .menu(_, _, let selected) = own[0].control, case .menu(let startKey, let starts, let start) = own[1].control,
        case .menu(let endKey, let ends, let end) = own[2].control {
         check(selected == "custom" && startKey == .quietStart && endKey == .quietEnd && start == "22:30" && end == "6:00" && starts.count == 48 && ends.count == 48
               && starts.first?.title == "00:00" && starts[45].id == "22:30" && starts[45].title == "22:30" && ends[12].title == "06:00",
@@ -489,14 +491,20 @@ private func feat2TerminalPlanTests() {
     check(command == "cd '/Users/p/it'\\''s \"quoted\" $(rm -rf ~) `id` \\ ; & | proj' && '/Users/p/.local/bin/claude' \(ArisClaudeLaunch.flags) \"$(cat '/Users/p/.config/aris/aris/work/cc-0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9.txt')\"",
           "launch: the command single-quotes the folder, the checked claude and the prompt file, as before")
     let plan = { (terminal: ArisTerminal) in L.plan(terminal, command: command, shell: "/bin/zsh", folder: work, warpFolder: warp, id: id) }
-    check(plan(.terminal) == .script(ArisClaudeLaunch.script(command: command, host: .terminal)) && plan(.iTerm) == .script(ArisClaudeLaunch.script(command: command, host: .iTerm)),
-          "launch: Terminal and iTerm2 are still opened by the same AppleScript")
-    if case .script(let text) = plan(.terminal) {
-        check(text == "tell application id \"com.apple.Terminal\"\n    activate\n    do script \"cd '/Users/p/it'\\\\''s \\\"quoted\\\" $(rm -rf ~) `id` \\\\ ; & | proj' && '/Users/p/.local/bin/claude' \(ArisClaudeLaunch.flags.replacingOccurrences(of: "\"", with: "\\\"")) \\\"$(cat '/Users/p/.config/aris/aris/work/cc-0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9.txt')\\\"\"\nend tell",
-              "launch: Terminal's script, word for word, with a hostile folder escaped twice (shell, then AppleScript)")
+    // jv-prompts: Terminal opens the launch script as its document (no Apple event, so no Automation dialog);
+    // iTerm2 is still opened by the same AppleScript.
+    let terminalScript = work + "/cc-0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9.sh"
+    check(plan(.terminal) == .document(scriptPath: terminalScript, launchScript: "#!/bin/sh\n" + L.launchScript(command: command, shell: "/bin/zsh", path: terminalScript))
+          && plan(.iTerm) == .script(ArisClaudeLaunch.script(command: command, host: .iTerm)),
+          "launch: Terminal runs the launch script as a document; iTerm2 is still opened by the same AppleScript")
+    if case .document(_, let text) = plan(.terminal) {
+        check(text.hasPrefix("#!/bin/sh\nrm -f -- '\(terminalScript)'\n") && text.contains(command + "\nexec '/bin/zsh' -l -i\n"),
+              "launch: Terminal's script deletes itself, runs the command word for word, then leaves a login shell")
     } else {
-        check(false, "launch: Terminal's script, word for word, with a hostile folder escaped twice (shell, then AppleScript)")
+        check(false, "launch: Terminal's script deletes itself, runs the command word for word, then leaves a login shell")
     }
+    check(ArisClaudeLaunch.script(command: command, host: .terminal) == "tell application id \"com.apple.Terminal\"\n    activate\n    do script \"cd '/Users/p/it'\\\\''s \\\"quoted\\\" $(rm -rf ~) `id` \\\\ ; & | proj' && '/Users/p/.local/bin/claude' \(ArisClaudeLaunch.flags.replacingOccurrences(of: "\"", with: "\\\"")) \\\"$(cat '/Users/p/.config/aris/aris/work/cc-0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9.txt')\\\"\"\nend tell",
+          "launch: Terminal's script, word for word, with a hostile folder escaped twice (shell, then AppleScript)")
     let script = work + "/cc-0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9.sh"
     let run = ["/bin/zsh", "-l", "-i", script]
     let expected: [(ArisTerminal, [String])] = [(.ghostty, ["--window-save-state=never", "-e"] + run), (.kitty, run),
@@ -565,7 +573,8 @@ private func feat2TerminalSettingTests() {
         check(false, "settings: a pinned terminal that is gone shows as 자동; Terminal is always listed")
     }
     if case .menu(_, _, let selected) = S.row(pinned: "ghostty", installed: [.ghostty]).control { check(selected == "ghostty", "settings: the pinned terminal is shown as picked") }
-    check(ArisSettingsIndex.entry("team.terminal")?.page == .team && ArisSettingsIndex.teamAnchors.contains("team.terminal")
+    // Option A: the terminal is a row of 할 수 있는 일 › 팀원 itself (the team's own view is a sheet).
+    check(ArisSettingsIndex.entry("team.terminal")?.page == .team && ArisSettingsBuilder.sections(part: "able.team", ArisSettingsSnapshot()).flatMap(\.rows).contains { $0.id == "team.terminal" }
           && ArisSettingsIndex.search("터미널").first?.id == "team.terminal" && ArisSettingsIndex.search("ghostty").contains { $0.id == "team.terminal" },
           "settings: a search finds the row on the 팀원 page")
     ArisSettingsCopy.install([:])
@@ -613,7 +622,7 @@ private func feat2TerminalWiringTests() {
           "wiring: the app sends the pinned terminal and the last one used with each launch")
     check(teammate.contains("setState(job.id, .running(step: launch.note ?? \"Claude Code 작업 중\"))") && teammate.contains("teammate: teammateWatch.isTeammate(session: event.sessionId)"),
           "wiring: the job's row shows the agent's note, and only the user's own sessions teach the terminal")
-    check(live.contains("ArisTerminalSetting.section(pinned: teammateTerminal, installed: Self.installedTerminals())")
+    check(live.contains("s.teammateTerminal = teammateTerminal") && live.contains("s.terminals = Self.installedTerminals()")
           && live.contains("case .teammateTerminal: teammateTerminal = ArisTerminalMemory.pinned(text) ?? ArisTerminal.automatic"),
           "wiring: the 팀원 page draws the row and its menu writes the preference")
     let job = UUID(), at = Date(timeIntervalSince1970: 1_800_000_000)
@@ -769,11 +778,15 @@ private func feat2LearnedLabelTests() {
 }
 
 private func feat2LearnedWiringTests() {
-    let model = feat2Source("Aris/private/Aris/Drop/ArisDropModel.swift"), controller = feat2Source("Aris/private/Aris/ArisController.swift")
+    let model = feat2Source("Aris/private/Aris/Drop/ArisDropModel.swift")
     let rows = feat2Source("Aris/private/Aris/Drop/ArisDropChipRows.swift"), view = feat2Source("Aris/private/Aris/Drop/ArisDropChipsView.swift")
-    if let take = controller.range(of: "let heard = ArisAttachments.shared.take(into: said"), let learn = controller.range(of: "ArisDropModel.shared.learn(from: heard)"),
-       let practice = controller.range(of: "if practiceTurn { return await answerPractice(said) }") {
-        check(practice.lowerBound < take.lowerBound && take.lowerBound < learn.lowerBound,
+    let funnel = feat2Source("Aris/private/Aris/Routing/ArisController+Funnel.swift"), handlers = feat2Source("Aris/private/Aris/Routing/ArisTurnFunnel.swift")
+    if let take = funnel.range(of: "let heard = ArisAttachments.shared.take(into: request.said"), let learn = funnel.range(of: "ArisDropModel.shared.learn(from: heard)"),
+       let practice = handlers.range(of: "ArisPracticeHandler(), ArisMadeCardHandler()"), handlers.contains("request.context.practice ? .practice : nil"),
+       handlers.contains("if handler.needs >= .heard, request.heard == nil { request.heard = await host.hear(request) }") {
+        // The practice turn is the funnel's first handler, claimed before the request is heard (no files taken, nothing learned).
+        _ = practice
+        check(take.lowerBound < learn.lowerBound,
               "wiring: a real turn's words are learned from once its files are in them; the setup's practice turn never is")
     } else {
         check(false, "wiring: a real turn's words are learned from once its files are in them; the setup's practice turn never is")

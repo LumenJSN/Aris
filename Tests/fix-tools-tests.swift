@@ -34,8 +34,10 @@ private func fixToolsRunLimitTests() {
     let failed = ArisBoundedRun.capture("/bin/sh", ["-c", "echo oops >&2; exit 3"], limit: 5)
     check(failed?.status == 3 && failed?.complaint == "oops\n" && failed?.timedOut == false, "tools-imp-3: a failure keeps its own status and complaint")
     check(ArisBoundedRun.capture("/nonexistent/program", [], limit: 1) == nil, "tools-imp-3: a program that can't start is told apart from one that failed")
-    check(ArisBoundedRun.defaultLimit(for: "/usr/bin/osascript") == ArisBoundedRun.appleScriptLimit && ArisBoundedRun.defaultLimit(for: "/usr/bin/shortcuts") == nil,
-          "tools-imp-3: AppleScript always has a limit; a shortcut may run as long as it needs")
+    // A shortcut has a limit too now (jv-helperbugs, audit 15): minutes of work, never forever.
+    check(ArisBoundedRun.defaultLimit(for: "/usr/bin/osascript") == ArisBoundedRun.appleScriptLimit
+          && ArisBoundedRun.defaultLimit(for: "/usr/bin/shortcuts") == ArisBoundedRun.shortcutLimit,
+          "tools-imp-3: AppleScript always has a limit; a shortcut has a longer one")
     let line = ArisBoundedRun.timeoutLine(app: "Calendar")
     check(line.hasPrefix("Calendar didn't answer within 30 seconds") && line.contains("isn't known") && line.contains("don't repeat it")
           && !line.lowercased().contains("added") && !line.lowercased().contains("done"),

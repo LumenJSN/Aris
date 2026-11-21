@@ -11,6 +11,8 @@
 //    "activate" {"id"}  |  "remove" {"id"}       ->  {} or {"error"}
 //    "models" {"id"}                           ->  {"models": [{"id", "vision", "tools"}], "fromProvider": bool}
 //    "test" {"id", "model"?}                   ->  {"ok", "passed", "failed", "message"}  (the smoke check; nothing runs)
+//    "route" {"id" | "auto", "system", "user", "schema", "timeout"}  ->  {"text", "profile", "model"}, {"none": true} or
+//            {"error", "kind"}  (the quick understanding on an API brain: ArisAPIRouterCall)
 //
 
 import Foundation
@@ -30,6 +32,10 @@ enum ArisAPIRoutes {
                                   "hasKey": hasKey, "vision": profile.takesImages, "tools": profile.callsTools]
         if hasKey, unchecked { row["unchecked"] = true }
         if let base = profile.baseURL { row["baseURL"] = base }
+        // The model that does the quick understanding with this profile, and what it costs when Aris knows.
+        let router = ArisAPIRouterCall.model(for: profile)
+        row["router"] = router
+        if let price = ArisAPIRouterCall.prices[router] { row["routerPrice"] = ["input": price.input, "output": price.output] }
         return row
     }
 
@@ -77,6 +83,10 @@ enum ArisAPIRoutes {
             }
             if let vision = object["vision"] as? Bool { profile.vision = vision }
             if let tools = object["tools"] as? Bool { profile.tools = tools }
+            if let router = object["router"] as? String {
+                guard let model = checkModel(router) else { return bad("모델 이름이 맞지 않아요.") }
+                profile.router = model.isEmpty ? nil : model
+            }
             if let key = object["key"] as? String {
                 guard preset.needsKey else { return bad("이 서비스는 키가 없어도 돼요.") }
                 if key.isEmpty {
@@ -138,6 +148,8 @@ enum ArisAPIRoutes {
                 ok(["ok": outcome.ok, "passed": outcome.passed, "failed": outcome.failed,
                     "message": outcome.ok ? "잘 돼요." : ArisAPISecrets.redacted(outcome.message)])
             }
+        case "route":
+            ArisAPIRouterCall.route(object, store: store, secrets: secrets, strictOrigin: strictOrigin, reply: reply)
         default:
             // 다른 AI 연결…: "probe", "connect", "disconnect" (ArisAPIConnections).
             ArisAPIConnectionRoutes.settings(object, store: store, secrets: secrets, changed: changed, reply: reply)

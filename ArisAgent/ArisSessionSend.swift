@@ -68,18 +68,27 @@ enum ArisSessionSend {
         }
     }
 
-    static func send(which: String, text raw: String, turn: ArisDesktopTurn, deps: ArisSessionDeps) -> ArisMCPOutcome {
+    /// `label`: how the fleet named the session it resolved ("3번 aris-jv-world"): the card and the spoken line say it.
+    static func send(which: String, text raw: String, turn: ArisDesktopTurn, deps: ArisSessionDeps, label: String? = nil) -> ArisMCPOutcome {
         let english = ArisDesktopCopy.isEnglish(turn.request)
         let action = "session send: " + String(raw.prefix(300))
         func stop(_ why: ArisSessionStop, _ answer: String = "not sent") -> ArisMCPOutcome {
             turn.audit(["answer": "\(answer) (\(why))", "action": action, "brain": turn.brainName])
             return .failed(why.note(english: english))
         }
-        let text: String
+        var text: String
         switch ArisSessionPick.text(raw) {
         case .failure(let why): return stop(why, "refused")
         case .success(let checked): text = checked
         }
+        // A prompt that tells the session to pay, buy, order, subscribe or move money is never typed, on any card
+        // (ArisPaymentBoundary; the eleventh VM run, R2).
+        if ArisPaymentBoundary.judge(brief: text, request: turn.request, coding: true) == .refused {
+            turn.audit(["answer": "refused (it tells the session to pay)", "action": action, "risk": "never", "brain": turn.brainName])
+            return .failed(ArisPaymentBoundary.refusedLine)
+        }
+        // One about paying carries the owner's rule as its last words, shown on the card as typed (exp11, Core 2's hand-offs).
+        text = ArisPaymentHandOff.sessionWords(text, request: turn.request, english: english)
         guard let sessions = deps.sessions() else { return stop(.appUnreachable) }
         let session: ArisLiveSession
         switch ArisSessionPick.pick(which, among: sessions, home: deps.home) {
@@ -94,7 +103,7 @@ enum ArisSessionSend {
         // A session plainly busy isn't put on a card at all.
         if let why = ArisSessionPick.busy(session) { return stop(why, "refused") }
         // The user's card, always: the exact text, the session it goes to.
-        switch ask(ArisSessionPick.card(session, text: text, home: deps.home, english: english), turn: turn) {
+        switch ask(ArisSessionPick.card(session, text: text, home: deps.home, english: english, label: label), turn: turn) {
         case .no:
             turn.audit(["answer": "no", "action": action, "brain": turn.brainName])
             return .failed("[Aris] The user said no on the card: nothing was sent. Say in a few words that you didn't send it.")
@@ -136,8 +145,11 @@ enum ArisSessionSend {
         deps.watch(session.id)
         turn.audit(["answer": took ? "sent" : "sent (no word from the session yet)", "action": action, "brain": turn.brainName,
                     "note": now.terminalName])
-        let folder = session.folder(home: deps.home)
-        let said = took
+        let folder = label ?? session.folder(home: deps.home)
+        let said = label != nil
+            ? (took ? (english ? "Sent it to \(folder); it started. I'll tell you when it's done." : "\(folder)에 보냈어요. 시작했어요. 끝나면 알려 드릴게요.")
+                : (english ? "Typed it into \(folder) and pressed Return, but it hasn't said it started yet." : "\(folder)에 입력하고 엔터를 눌렀는데, 아직 시작했다는 신호는 없어요."))
+            : took
             ? (english ? "Sent it to the \(folder) session; it started. I'll tell you when it's done." : "\(folder) 세션에 보냈어요. 시작했어요. 끝나면 알려 드릴게요.")
             : (english ? "Typed it into the \(folder) session and pressed Return, but it hasn't said it started yet." : "\(folder) 세션에 입력하고 엔터를 눌렀는데, 아직 시작했다는 신호는 없어요.")
         return ArisMCPOutcome(status: 0, output: "[Aris] Done: the user's card said yes and Aris typed the text into that session and pressed Return. "

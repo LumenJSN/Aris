@@ -297,6 +297,7 @@ private struct ArisUsageDetail: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 if let model = cost.topModel { Text(ArisUsageWords.topModel(model)) }
+                if let unpriced = cost.unpricedModels, !unpriced.isEmpty { Text(ArisUsageWords.unpriced(unpriced)) }
                 Text(ArisUsageWords.costNote())
             }
             .font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.4))

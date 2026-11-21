@@ -106,7 +106,9 @@ private func countdownCopyTests() {
 
     guard let (strings, catalog) = countdownCatalog() else { return check(false, "countdown words: the catalog reads") }
     let used = ["countdown.title", "countdown.to", "countdown.message", "countdown.hint", "countdown.cancel", "countdown.send",
-                "countdown.notsent", "countdown.cancelled", "countdown.sent", "countdown.sending"]
+                "countdown.notsent", "countdown.cancelled", "countdown.sent", "countdown.sending",
+                // jv-vmfix2: the same card with no microphone, an action's countdown, and a card nobody answered.
+                "countdown.presshint", "countdown.go", "countdown.gopresshint", "countdown.doing", "countdown.notdone", "countdown.noanswer"]
     check(Set(strings.keys) == Set(used), "countdown words: every key the card uses is in the catalog, and no other")
     check(used.allSatisfy { strings[$0]?["ko"]?.isEmpty == false && strings[$0]?["en"]?.isEmpty == false },
           "countdown words: each one in Korean and English")

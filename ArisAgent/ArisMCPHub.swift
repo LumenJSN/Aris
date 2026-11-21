@@ -52,6 +52,8 @@ struct ArisMCPCard: Equatable {
     var desktop: ArisCardTarget? = nil
     /// The automatic check's stopped card (ArisConfirmation.stopped).
     var stopped = false
+    /// A `fleet.answer` allow card's one request (ArisConfirmation.fleetGrant).
+    var fleetGrant: ArisFleetGrant? = nil
 
     /// The card about a desktop action in `pid`'s window, named by its bundle id and start (none: no handoff).
     func aimed(pid: Int32, bundle: String?) -> ArisMCPCard {
@@ -72,7 +74,12 @@ enum ArisMCPAnswer: Equatable {
 /// Why a server can't be reached, already safe to show (no secret in it).
 struct ArisMCPWhy: Error, Equatable {
     let text: String
-    init(_ text: String) { self.text = text }
+    /// The text is the server's own words (a JSON-RPC error it sent): outside text, fenced before a brain reads it.
+    let fromServer: Bool
+    init(_ text: String, fromServer: Bool = false) {
+        self.text = text
+        self.fromServer = fromServer
+    }
 }
 
 /// What aris-tools prints, and its exit status.
@@ -89,8 +96,11 @@ final class ArisMCPHub {
         return ArisMCPHub(store: ArisMCPStore(secrets: keychain), secrets: keychain)
     }()
 
-    /// How long one tool may run, and how long a listing waits for each server.
+    /// How long one tool may stay silent (each progress notice it sends starts this again), the most it may run in
+    /// all, and how long a listing waits for each server. aris-tools waits 12 minutes for the whole call, a card
+    /// included (ArisMCPCommand).
     static let callTimeout: TimeInterval = 45
+    static let callCeiling: TimeInterval = 600
     static let listTimeout: TimeInterval = 15
     /// How long a program Aris starts may take to say hello: `npx`, `bunx` and `uvx` download the server the first
     /// time, which takes longer than a listing (audit mcp-4).
@@ -104,6 +114,7 @@ final class ArisMCPHub {
     var idleTimeout = ArisMCPHub.idleTimeout
     /// How long this hub lets one tool run (the tests shorten it).
     var callTimeout = ArisMCPHub.callTimeout
+    var callCeiling = ArisMCPHub.callCeiling
     /// Makes the transport for a server and its secret (the tests swap in their own).
     var makeTransport: (ArisMCPServer, String?) -> Result<ArisMCPTransport, ArisMCPWhy> = ArisMCPHub.liveTransport
 
@@ -111,6 +122,9 @@ final class ArisMCPHub {
         let client: ArisMCPClient
         var tools: [ArisMCPTool]
         var idle: DispatchWorkItem?
+        /// The server said its tool list changed: listed again on this same connection before its next use, so a
+        /// call still running on it goes on (audit item 11).
+        var stale = false
     }
     private let lock = NSLock()
     private var connections: [String: Connection] = [:]
@@ -300,8 +314,21 @@ final class ArisMCPHub {
         serverLock.lock()
         defer { serverLock.unlock() }
         if let live = lock.withLock({ connections[server.id] }), !live.client.isClosed {
-            touch(server.id)
-            return .success(live.tools)
+            guard live.stale else {
+                touch(server.id)
+                return .success(live.tools)
+            }
+            if case .success(let tools) = live.client.listTools(timeout: Self.listTimeout) {
+                lock.withLock {
+                    guard connections[server.id]?.client === live.client else { return }
+                    connections[server.id]?.tools = tools
+                    connections[server.id]?.stale = false
+                    lastTools[server.id] = tools
+                }
+                touch(server.id)
+                return .success(tools)
+            }
+            // It can't list now: a fresh connection below (which replaces this one).
         }
         let looked = server.hasSecret ? secrets.lookup(server.id) : .missing
         if server.hasSecret, looked == .unreadable { return remember(server.id, error: "키체인을 읽지 못했어요. Mac의 잠금을 풀거나 키체인 접근을 허용한 뒤 다시 해 주세요.") }
@@ -318,18 +345,21 @@ final class ArisMCPHub {
             client.close()
             let own = [secret].compactMap { $0 }
             return remember(server.id, error: ArisMCPPolicy.redacted(error.message, secrets: own),
-                            shown: ArisMCPPolicy.redacted(Self.reasonLine(error.message, stdio: stdio, said: client.diagnostics), secrets: own))
+                            shown: ArisMCPPolicy.redacted(Self.reasonLine(error.message, stdio: stdio, said: client.diagnostics), secrets: own),
+                            fromServer: error.isFromServer)
         }
         if let error = client.connect(timeout: stdio ? Self.startTimeout : Self.listTimeout) { return failed(error) }
         switch client.listTools(timeout: Self.listTimeout) {
         case .failure(let error): return failed(error)
         case .success(let tools):
-            // Heard on the transport's own queue, which closing it waits for: closed from elsewhere, and listed afresh next time.
-            // Only this connection's own notice closes it (M6): a stale one's can't close a newer connection.
+            // Heard on the transport's own queue: only marked, and listed afresh on this connection at its next use, so a
+            // call still running on it is never cut off (audit item 11). Only this connection's own notice marks it
+            // (M6): a stale one's can't touch a newer connection.
             client.onToolsChanged = { [weak self, weak client] in
-                DispatchQueue.global().async {
-                    guard let self, let client else { return }
-                    self.disconnect(server.id, only: client)
+                guard let self, let client else { return }
+                self.lock.withLock {
+                    guard self.connections[server.id]?.client === client else { return }
+                    self.connections[server.id]?.stale = true
                 }
             }
             // A dead connection this one replaces: its idle clock stops (it would close this one) and its client is
@@ -349,9 +379,9 @@ final class ArisMCPHub {
     }
 
     /// `error` is what a brain is told; `shown` (else `error`) is the settings row's and 연결 테스트's line.
-    private func remember(_ id: String, error: String, shown: String? = nil) -> Result<[ArisMCPTool], ArisMCPWhy> {
+    private func remember(_ id: String, error: String, shown: String? = nil, fromServer: Bool = false) -> Result<[ArisMCPTool], ArisMCPWhy> {
         lock.withLock { lastError[id] = shown ?? error }
-        return .failure(ArisMCPWhy(error))
+        return .failure(ArisMCPWhy(error, fromServer: fromServer))
     }
 
     /// The most of a server's own words shown with a failure.
@@ -382,6 +412,8 @@ final class ArisMCPHub {
             guard let client = connections[id]?.client else { return nil }
             let item = DispatchWorkItem { [weak self, weak client] in
                 guard let self, let client else { return }
+                // A call still running keeps its connection: the clock starts again (it ends with the call's own limit).
+                if client.inFlight > 0 { return self.touch(id) }
                 self.disconnect(id, only: client)
             }
             connections[id]?.idle?.cancel()
@@ -421,7 +453,7 @@ final class ArisMCPHub {
         let enabled = servers().filter(\.enabled)
         guard !enabled.isEmpty else {
             ArisFixTurns.shared.note(.settings(.services))
-            return ArisMCPOutcome(status: 0, output: "No external services are connected. the user adds them in 설정 › AI 서비스 › 연결된 서비스.")
+            return ArisMCPOutcome(status: 0, output: "No external services are connected. The user adds them in " + ArisSettingsNames.connectPlace(english: false) + " (" + ArisSettingsNames.connectPlace(english: true) + ").")
         }
         let chosen = only.map { name in enabled.filter { $0.name == name.lowercased() } } ?? enabled
         guard !chosen.isEmpty else { return .failed("no connected service named \(only ?? ""). Services: " + enabled.map(\.name).joined(separator: ", ")) }
@@ -448,6 +480,13 @@ final class ArisMCPHub {
         let body = ArisMCPPolicy.wrapped(text, server: "the services' own tool lists", tool: "names and descriptions", secrets: allSecrets(), isError: false)
         return ArisMCPOutcome(status: 0, output: body + "\nCall one with: aris-tools mcp call <service> <tool> '<json arguments>'. "
                               + "Reads run at once (on a careful turn after Aris's quick check); anything else shows the user a card and waits for their yes.")
+    }
+
+    /// What a brain reads about a failure: Aris's own words as they are; the server's own words (its JSON-RPC error)
+    /// fenced as outside text, like a result (audit item 11), with every secret replaced.
+    static func failure(_ head: String, _ why: String, fromServer: Bool, server: String, tool: String, secrets: [String]) -> String {
+        guard fromServer else { return head + ": " + ArisMCPPolicy.redacted(why, secrets: secrets) }
+        return head + ":\n" + ArisMCPPolicy.wrapped(why, server: server, tool: tool, secrets: secrets, isError: true)
     }
 
     static func describe(server: ArisMCPServer, tools: [ArisMCPTool], detailed: Bool) -> String {
@@ -495,7 +534,8 @@ final class ArisMCPHub {
         turn.takeOutsideText()
         let tools: [ArisMCPTool]
         switch connection(server) {
-        case .failure(let why): return done(.failed("\(server.name): couldn't connect (\(why.text))"))
+        case .failure(let why): return done(.failed(Self.failure("\(server.name): couldn't connect", why.text, fromServer: why.fromServer, server: server.name,
+                                                                 tool: name, secrets: allSecrets())))
         case .success(let found): tools = found
         }
         guard let tool = tools.first(where: { $0.name == name }) else {
@@ -572,7 +612,7 @@ final class ArisMCPHub {
         let what = "\(server.name) \(tool.name)"
         guard case .yes(let edits) = answer else {
             turn.audit(["answer": "no", "action": what, "brain": turn.brainName])
-            return done(.failed("the user said no (or didn't answer), so \(tool.name) didn't run. Don't try it another way now. A later request in a new turn gets a new card."))
+            return done(.failed("The owner said no (or didn't answer), so \(tool.name) didn't run. Don't try it another way now. A later request in a new turn gets a new card."))
         }
         switch ArisMCPPolicy.verdict(edits: edits, fields: fields, tool: tool, arguments: arguments) {
         case .refuse(let why):
@@ -589,7 +629,7 @@ final class ArisMCPHub {
             turn.audit(["answer": applied.isEmpty ? "yes" : "yes, changed on the card", "action": what, "brain": turn.brainName])
             var outcome = run(server: server, tool: tool, arguments: changed)
             if !applied.isEmpty, outcome.status == 0 {
-                outcome = ArisMCPOutcome(status: 0, output: "the user changed " + applied.keys.sorted().joined(separator: ", ")
+                outcome = ArisMCPOutcome(status: 0, output: "The owner changed " + applied.keys.sorted().joined(separator: ", ")
                                          + " on the card before saying yes; this ran with their values.\n" + outcome.output)
             }
             done(outcome)
@@ -601,10 +641,10 @@ final class ArisMCPHub {
             guard case .success = connection(server), let again = lock.withLock({ connections[server.id]?.client }) else {
                 return .failed("\(server.name): the connection closed")
             }
-            return finish(again.call(tool.name, arguments: arguments, timeout: callTimeout), server: server, tool: tool, client: again)
+            return finish(again.call(tool.name, arguments: arguments, timeout: callTimeout, ceiling: callCeiling), server: server, tool: tool, client: again)
         }
         touch(server.id)
-        return finish(client.call(tool.name, arguments: arguments, timeout: callTimeout), server: server, tool: tool, client: client)
+        return finish(client.call(tool.name, arguments: arguments, timeout: callTimeout, ceiling: callCeiling), server: server, tool: tool, client: client)
     }
 
     private func finish(_ result: Result<ArisMCPCallResult, ArisMCPError>, server: ArisMCPServer, tool: ArisMCPTool,
@@ -614,7 +654,8 @@ final class ArisMCPHub {
             // A server that didn't answer is hung: its connection goes, so the next call starts afresh instead of
             // waiting the whole limit on it again (audit imp-mcp-test).
             if error == .timeout { disconnect(server.id, only: client) }
-            return .failed("\(server.name) \(tool.name) failed: " + ArisMCPPolicy.redacted(error.message, secrets: allSecrets()))
+            return .failed(Self.failure("\(server.name) \(tool.name) failed", error.message, fromServer: error.isFromServer, server: server.name,
+                                        tool: tool.name, secrets: allSecrets()))
         case .success(let answer):
             return ArisMCPOutcome(status: answer.isError ? 1 : 0,
                                   output: ArisMCPPolicy.wrapped(answer.text, server: server.name, tool: tool.name, secrets: allSecrets(), isError: answer.isError))

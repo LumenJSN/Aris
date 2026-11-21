@@ -25,8 +25,9 @@ extension ArisController {
         // An answer from a conversation that read outside text says so on the card.
         let card = request.note ? ArisSaveAnswer.noteCard(text: text, outside: outsideConversation, korean: korean)
             : ArisSaveAnswer.card(path: request.path, text: text, outside: outsideConversation, korean: korean)
-        let allow = await askUser(ArisConfirmation(id: "save-answer-" + UUID().uuidString, title: card.title, detail: card.detail))
-        withAnimation(ArisGlass.resize) { session = session.answered() }
+        // Nil: the turn ended over the card; nothing is saved, shown or said.
+        guard let allow = await askUser(ArisConfirmation(id: "save-answer-" + UUID().uuidString, title: card.title, detail: card.detail)) else { return "" }
+        withAnimation(ArisGlass.resize) { setSession(session.answered()) }
         guard allow else {
             let reply = await saidNotDone(korean: korean, declined: ArisSaveAnswer.declinedLine(korean: korean))
             recordTurn(heard: heard, reply: reply)
@@ -61,11 +62,11 @@ extension ArisController {
     /// The note's reply from what the agent did (nil: the note was made).
     static func noteReply(_ failure: String?, korean: Bool) -> String {
         guard let failure else { return korean ? "방금 답을 메모 앱에 새 메모로 저장했어요." : "Saved the last answer as a new note in Notes." }
-        return korean ? "메모에 저장하지 못했어요: \(failure)" : "It wasn't saved to Notes: \(failure)"
+        return ArisToolErrorWords.line("메모에 저장하지 못했어요", "It wasn't saved to Notes", problem: failure, inEnglish: !korean)
     }
 
     private func sayLocal(_ reply: String, heard: String) async -> String {
-        session = session.answering(reply)
+        setSession(session.answering(reply))
         stats?.firstSound(at: .now)
         recordTurn(heard: heard, reply: reply)
         await speak { await self.speaker.speak(reply) }

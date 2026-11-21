@@ -2,14 +2,17 @@
 //  ArisOnboardingFlow.swift
 //  Aris
 //
-//  Where the user is in the setup window after the intro (mockups/onboarding2/js/setup.js, perms.js), as he picked it
-//  on 2026-11-11 (qa/design-1111/PICKS.md): 권한 → 눌러서 말하기 → AI 고르기 → 아리스라고 부르기 → 받아쓰기. The permissions page walks
-//  three cards once (마이크, 손쉬운 사용, 화면 기록), the open one with its ask; 계속 shows once the mic and Accessibility are on,
-//  or every card is decided. 눌러서 말하기 is the shortcut's practice and the first request in one (pick 4-A): holding the
-//  talk key lights its keycaps and listens, and the request is answered by the app itself (a timer, pick 1-A), so it
-//  shows for everyone. AI 고르기 (fresh install F2) shows which AIs are set up on this Mac and lets one be picked; 아리스라고
-//  부르기 (F4) asks whether the wake word is on. Which of these one person sees, and how far along the rail is, is
-//  ArisSetupPlan's. Pure: what macOS says comes in from ArisOnboardingSystem.
+//  Where the user is in the setup window after the intro (mockups/onboarding2/js/setup.js, perms.js; account pages
+//  removed), as he picked it on 2026-11-11 (qa/design-1111/PICKS.md):
+//  권한 → 눌러서 말하기 → AI 고르기 → 아리스라고 부르기 → 받아쓰기 → 준비 끝 (since 2026-11-17: a short last page with the
+//  repository card, ArisStarCard; 받아쓰기's 마치기 goes on to it and its 시작하기 finishes). The permissions page walks three cards once (마이크,
+//  손쉬운 사용, 화면 기록), the open one with its ask; 계속 shows once the mic and Accessibility are on, or every card is
+//  decided. 눌러서 말하기 is the shortcut's practice and the
+//  first request in one (pick 4-A): holding the talk key lights its keycaps and listens, and the request is answered
+//  by the app itself (a timer, pick 1-A), so it shows for everyone. AI 고르기 (fresh install F2) shows which AIs are
+//  set up on this Mac and lets one be picked; 아리스라고 부르기 (F4) asks whether the wake word is on. Which of these
+//  one person sees, and how far along the rail is, is ArisSetupPlan's. Pure: what macOS says comes in from
+//  ArisOnboardingSystem.
 //
 //  Also the onboarding's keys and launch rules (ArisOnboarding): 나중에 할게요, and since 2026-11-11 the window's ×, Esc
 //  and the veil's ✕ too, leave it unseen so the pages left resume at a launch (at most once a day, never for a login
@@ -56,6 +59,15 @@ enum ArisOnboardingStep: String, CaseIterable, Identifiable {
 enum ArisGrant: Equatable {
     case undecided, granted, denied
 
+    /// ArisAutomationAccess's reading as a grant: anything but granted or refused is open.
+    static func automation(_ state: ArisPermissionState) -> ArisGrant {
+        switch state {
+        case .granted: .granted
+        case .denied: .denied
+        case .notAsked, .unknown: .undecided
+        }
+    }
+
     /// AEDeterminePermissionToAutomateTarget's answer: noErr, errAEEventNotPermitted (-1743); anything else is open.
     static func automation(status: Int32) -> ArisGrant {
         switch status {
@@ -66,11 +78,12 @@ enum ArisGrant: Equatable {
     }
 }
 
-/// The setup window's pages in order, among them two questions: which AI answers, and the wake word.
+/// The setup window's pages in order, with Aris's two questions (which AI answers, and the wake word) and
+/// the short last page (준비 끝).
 /// The numbers are what a setup put off for later saved (ArisOnboarding.pageKey); 1 was the shortcut page and 3 the
 /// question page before they became one.
 enum ArisSetupPage: Int, CaseIterable, Equatable {
-    case permissions = 0, ask = 1, brain = 2, wake = 4, dictation = 5
+    case permissions = 0, ask = 1, brain = 2, wake = 4, dictation = 5, done = 6
 
     /// A page saved before a quit (Quit & Reopen after Screen Recording); the old question page is the one page the
     /// shortcut and the question now share; anything unknown starts at 권한.
@@ -90,7 +103,7 @@ enum ArisOnboardingTalk: Equatable {
         guard phase == .setup else { return .turn }
         switch page {
         case .ask: return .practice
-        case .permissions, .brain, .wake, .dictation: return .turn
+        case .permissions, .brain, .wake, .dictation, .done: return .turn
         }
     }
 }
@@ -133,8 +146,13 @@ struct ArisSetupFlow: Equatable {
     /// The cards macOS last said are on.
     private(set) var on: Set<ArisPermissionCard> = []
     private(set) var finished = false
+    /// The cards this person's setup shows: only what the features they use need (ArisSetupCards), in this order.
+    let cards: [ArisPermissionCard]
 
-    init(page: ArisSetupPage = .permissions) { self.page = page }
+    init(page: ArisSetupPage = .permissions, cards: [ArisPermissionCard] = ArisPermissionCard.allCases) {
+        self.page = page
+        self.cards = ArisPermissionCard.allCases.filter(cards.contains)
+    }
 
     func state(_ card: ArisPermissionCard, granted: Bool) -> ArisCardState {
         if granted { return .granted }
@@ -147,12 +165,12 @@ struct ArisSetupFlow: Equatable {
         granted[card] == true || putOff.contains(card)
     }
 
-    func allDecided(granted: [ArisPermissionCard: Bool]) -> Bool { ArisPermissionCard.allCases.allSatisfy { decided($0, granted) } }
+    func allDecided(granted: [ArisPermissionCard: Bool]) -> Bool { cards.allSatisfy { decided($0, granted) } }
 
     /// Opens the first card not decided yet (cards already on show their check).
     mutating func begin(granted: [ArisPermissionCard: Bool]) {
         on = Set(granted.filter(\.value).keys)
-        active = ArisPermissionCard.allCases.first { !decided($0, granted) }
+        active = cards.first { !decided($0, granted) }
     }
 
     /// 허용: macOS's dialog or System Settings is up for this card.
@@ -173,17 +191,18 @@ struct ArisSetupFlow: Equatable {
         on = Set(granted.filter(\.value).keys)
         for card in waiting where granted[card] == true { waiting.remove(card) }
         if let open = active, granted[open] == true { active = nil }
-        if active == nil { active = ArisPermissionCard.allCases.first { !decided($0, granted) && !waiting.contains($0) } }
+        if active == nil { active = cards.first { !decided($0, granted) && !waiting.contains($0) } }
     }
 
     private func nextOpen(after card: ArisPermissionCard) -> ArisPermissionCard? {
-        let all = ArisPermissionCard.allCases, i = all.firstIndex(of: card) ?? 0
+        let all = cards, i = all.firstIndex(of: card) ?? 0
         return (all[(i + 1)...] + all[..<i]).first { !putOff.contains($0) && !waiting.contains($0) && !on.contains($0) && $0 != card }
     }
 
-    /// 계속 on the permissions page: the mic and Accessibility are on, or every card is decided.
+    /// 계속 on the permissions page: the mic and Accessibility are on (those of them this setup shows), or every card is
+    /// decided.
     func continueShown(granted: [ArisPermissionCard: Bool]) -> Bool {
-        (granted[.mic] == true && granted[.accessibility] == true) || allDecided(granted: granted)
+        cards.filter { $0 != .screen }.allSatisfy { granted[$0] == true } || allDecided(granted: granted)
     }
 
     /// The rail: an equal share for each page this person sees (`shown`: ArisSetupPlan), so a page left out never
@@ -195,9 +214,9 @@ struct ArisSetupFlow: Equatable {
         let index = pages.firstIndex(of: page) ?? pages.filter { $0.rawValue < page.rawValue }.count
         let within: Double
         switch page {
-        case .permissions: within = Double(ArisPermissionCard.allCases.filter { decided($0, granted) }.count) / Double(ArisPermissionCard.allCases.count)
+        case .permissions: within = cards.isEmpty ? 1 : Double(cards.filter { decided($0, granted) }.count) / Double(cards.count)
         case .ask: within = tryDone ? 1 : 0
-        case .brain, .wake, .dictation: within = 0
+        case .brain, .wake, .dictation, .done: within = 0
         }
         return min(1, (Double(index) + within) / Double(pages.count))
     }
@@ -254,6 +273,14 @@ enum ArisOnboarding {
     static func closing(_ reason: Close, phase: ArisOnboardingPhase, doneBefore: Bool) -> Close {
         guard reason == .dismissed else { return reason }
         return phase == .finish || doneBefore ? .finished : .later
+    }
+
+    /// The first-run guide has been through once, finished or put off (its ×, Esc, 나중에 할게요): the key taps and the
+    /// wake word may start. Closing it early used to leave both dead (seen goes false then, later true).
+    static func pastFirstRun(seen: Bool, later: Bool) -> Bool { seen || later }
+
+    static var pastFirstRunNow: Bool {
+        pastFirstRun(seen: UserDefaults.standard.bool(forKey: seenKey), later: UserDefaults.standard.bool(forKey: laterKey))
     }
 
     /// The setup was finished at some earlier time and is not waiting to be continued.

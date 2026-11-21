@@ -427,8 +427,9 @@ extension ArisConvert {
         for _ in 0..<50 {
             let name = freeName(stem: stem, ext: ext) { taken.contains($0) || FileManager.default.fileExists(atPath: destination.folder + "/" + $0) }
             let target = try ArisActivity.checkedPath(destination.folder + "/" + name, home: job.home)
-            var moved = renamex_np(temporary.path, target, UInt32(RENAME_EXCL)) == 0
-            var failure = moved ? 0 : errno
+            // On a disk that can't rename exclusively (exFAT, FAT) still never over anything (ArisExclusiveRename).
+            var failure = ArisExclusiveRename.rename(temporary.path, target)
+            var moved = failure == 0
             if !moved, failure == EXDEV {
                 // Another disk: copied under a name of Aris's own there first (removed if the copy fails), then renamed into
                 // place, still never over anything.
@@ -443,8 +444,8 @@ extension ArisConvert {
                     try? FileManager.default.removeItem(atPath: staged)
                     throw error
                 }
-                moved = renamex_np(staged, target, UInt32(RENAME_EXCL)) == 0
-                failure = moved ? 0 : errno
+                failure = ArisExclusiveRename.rename(staged, target)
+                moved = failure == 0
                 if !moved { try? FileManager.default.removeItem(atPath: staged) }
             }
             if moved {

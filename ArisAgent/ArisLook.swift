@@ -33,6 +33,15 @@ struct ArisLook {
     var needs: [String] = []
     /// The window read was still the app's own topmost when the read was over (ArisFrontNow.confirmed).
     var confirmed = true
+    /// What the owner's words point at, resolved from the window's Accessibility tree (jv-focus), and its block for the
+    /// AI (Aris's own lines first, other people's words last in their fence: ArisFocusContext).
+    var focus: ArisFocusResolution? = nil
+    var focusBlock: String? = nil
+    /// The field the selection (or the caret) is in, by its Accessibility element: a rewrite or a draft is written there
+    /// (ArisFieldWrite), never into whatever has the keyboard when the answer comes. `fieldToken`: the app's handle on it,
+    /// given only for a confirmed look.
+    var field: ArisFieldTarget? = nil
+    var fieldToken: String? = nil
 
     static let limit = 4_000
     static let pointerLimit = 1_500
@@ -46,6 +55,8 @@ struct ArisLook {
         var lines = ["Front app: \(app)"]
         // First, so no cut of the screen text loses it (ArisLookTrust reads it in the prompt).
         if !confirmed { lines.append(ArisLookTrust.unconfirmedLine) }
+        // Before every other look line: the focus's own fence holds its outside words, and the rest follow it.
+        if let focusBlock { lines.append(focusBlock) }
         if let pointer { lines.append("Under the pointer (what \"this\" most likely means):\n\(pointer.prefix(Self.pointerLimit))") }
         if let window, !window.isEmpty { lines.append("Window: \(window)") }
         if let selection { lines.append("Selected text:\n\(selection.prefix(Self.limit))") }
@@ -59,7 +70,9 @@ struct ArisLook {
     /// neither Aris's nor a macOS prompt's (ArisFrontNow.lookTarget): never what NSWorkspace says is in front, which in
     /// this process can be an app he left minutes ago (second upgrade run, bug 1). A look whose window was no longer
     /// that app's topmost when the read was over says so (ArisLookTrust), and teaches no note.
-    static func gather(tools: String, environment: [String: String], aris: Int32? = nil, told: Int32? = nil) -> ArisLook {
+    /// `words`: the owner's words of the turn (what "이거", "여기", "이 사람" aim at); `regions`: what he circled in it.
+    static func gather(tools: String, environment: [String: String], words: String? = nil, regions: [ArisFocusRect] = [],
+                       aris: Int32? = nil, told: Int32? = nil) -> ArisLook {
         let own = ProcessInfo.processInfo.processIdentifier
         let steppedOver = { (pid: Int32) in
             ArisLookTarget.steppedOver(pid: pid, bundleId: ArisFrontLive.bundleId(pid) ?? "", aris: aris, own: own)
@@ -73,32 +86,73 @@ struct ArisLook {
         // Asked without a prompt, and as macOS has them now: a switch turned on while the agent runs counts at once.
         let trusted = AXIsProcessTrusted()
         let allowed = ArisScreenAccess.allowed(tools: tools, environment: environment)
-        var look = seen(app: front.name, id: id, pid: target.pid, windowId: target.window, trusted: trusted, allowed: allowed, tools: tools, environment: environment)
-        look.needs = ArisScreenRead.needs(accessibility: trusted, screen: allowed)
+        // The focus first (Accessibility only): files selected in a file browser are read whole there, so the window's
+        // words aren't captured and no Screen Recording line or button comes of a look that needed none (VM run 2, H2).
+        let app = ArisFocusApp(name: front.name, bundleID: front.bundleId, pid: target.pid)
+        let observation = ArisFocusLive.observe(app: app, windowID: target.window, windowTitle: nil, regions: regions, trusted: trusted)
+        let resolution = ArisFocusResolver.resolve(words ?? "", observation)
+        let windowText = ArisFocusContext.needsWindowText(resolution)
+        var look = seen(app: front.name, id: id, pid: target.pid, windowId: target.window, trusted: trusted, allowed: allowed, windowText: windowText,
+                        tools: tools, environment: environment)
+        // A focus read whole through Accessibility misses nothing when the screen couldn't be read: no line about
+        // Screen Recording goes to the model and no button for it under the answer (ArisFocusContext.missesScreen).
+        look.needs = ArisScreenRead.needs(accessibility: trusted, screen: windowText ? allowed : nil)
+        if !ArisFocusContext.missesScreen(resolution) {
+            if ArisScreenRead.saysPermissionOff(look.unread) {
+                look.unread = nil
+                ArisFixTurns.shared.looked(nil)
+            }
+            look.needs.removeAll { $0 == "screen" }
+        }
         look.unselected = trusted ? nil : ArisScreenRead.unselectedLine
         look.confirmed = ArisFrontNow.confirmed(target, after: ArisFrontLive.windows(), steppedOver: steppedOver, ordinary: ordinary)
+        if look.confirmed, let field = look.field { look.fieldToken = ArisFieldTargetDesk.shared.keep(field) }
+        focus(&look, resolution: resolution, cut: observation.cut, words: words ?? "")
         if !look.confirmed { FileHandle.standardError.write(Data("aris-agent: look: the window read was no longer \(front.name)'s topmost when the read was over\n".utf8)) }
         return look
     }
 
-    /// The look itself: the selection, else the browser's tab, else the front window's words.
-    private static func seen(app: String, id: String, pid: pid_t, windowId: Int?, trusted: Bool, allowed: Bool?, tools: String, environment: [String: String]) -> ArisLook {
-        let pointer = pointed(tools: tools, environment: environment, trusted: trusted, records: allowed == true)
+    /// The focus (jv-focus): the window's tree read through Accessibility, resolved against the words, kept on the desk
+    /// for the turn when the window read was confirmed (a look that can't be confirmed teaches nothing, ArisLookTrust).
+    private static func focus(_ look: inout ArisLook, resolution: ArisFocusResolution, cut: Bool, words: String) {
+        look.focus = resolution
+        look.focusBlock = ArisFocusContext.lines(resolution, textShown: look.selection != nil)
+        if look.confirmed { ArisFocusDesk.shared.keep(resolution, words: words) }
+        if let focus = resolution.focus {
+            FileHandle.standardError.write(Data("aris-agent: look: focus \(focus.kind.rawValue) (\(focus.how))\(cut ? ", read cut short" : "")\n".utf8))
+        }
+    }
+
+    /// The look itself: the selection, else the browser's tab, else the front window's words (`windowText`: false when
+    /// the focus already holds what is pointed at, files selected in a file browser: nothing is captured then).
+    private static func seen(app: String, id: String, pid: pid_t, windowId: Int?, trusted: Bool, allowed: Bool?, windowText: Bool = true,
+                             tools: String, environment: [String: String]) -> ArisLook {
+        let pointer = pointed(tools: tools, environment: environment, trusted: trusted, records: allowed == true && windowText)
         guard trusted else { return tabOrWindow(app: app, id: id, pid: pid, windowId: windowId, pointer: pointer, allowed: allowed, tools: tools, environment: environment) }
         let element = AXUIElementCreateApplication(pid)
         let window = string(attribute(element, kAXFocusedWindowAttribute).flatMap { asElement($0) }.map { attribute($0, kAXTitleAttribute) } ?? nil)
-        var selection: String?, editable = false
+        var selection: String?, editable = false, kept: ArisFieldTarget?
         // The focused element of the app that is read (the same one system-wide when that app is in front).
         if let focused = attribute(element, kAXFocusedUIElementAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID() {
             let field = focused as! AXUIElement
             selection = string(attribute(field, kAXSelectedTextAttribute)).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
             var settable: DarwinBoolean = false
             editable = AXUIElementIsAttributeSettable(field, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
+            // Kept by its element, for a rewrite or a draft to land in it (VM run 2, h1).
+            kept = ArisFieldTargetLive.capture(field: field, pid: pid, app: app, bundleId: ArisFrontLive.bundleId(pid))
         }
+        var look: ArisLook
         if selection != nil {
-            return ArisLook(app: app, window: window, selection: selection, editable: editable, tab: nil, screen: nil, pointer: pointer)
+            look = ArisLook(app: app, window: window, selection: selection, editable: editable, tab: nil, screen: nil, pointer: pointer)
+        } else if !windowText {
+            // A look that needed no capture drops an older note about Screen Recording.
+            ArisFixTurns.shared.looked(nil)
+            look = ArisLook(app: app, window: window, selection: nil, editable: false, tab: nil, screen: nil, pointer: pointer)
+        } else {
+            look = tabOrWindow(app: app, id: id, pid: pid, windowId: windowId, window: window, pointer: pointer, allowed: allowed, tools: tools, environment: environment)
         }
-        return tabOrWindow(app: app, id: id, pid: pid, windowId: windowId, window: window, pointer: pointer, allowed: allowed, tools: tools, environment: environment)
+        look.field = kept
+        return look
     }
 
     /// With nothing selected (or no way to tell): the browser's front tab, else the front window's words.

@@ -52,7 +52,8 @@ enum ArisBrainFix {
 
     /// The start of the limit line, before its reset time.
     static func limitLead(_ brain: ArisBrain, korean: Bool = true) -> String {
-        let line = ArisBrainFailure.friendly("rate limit", brain: brain, korean: korean)
+        // The plan's own limit: every brain's limit line (Claude's rate limit is a busy line, ArisBrainFailure.isBusy).
+        let line = ArisBrainFailure.friendly("usage limit", brain: brain, korean: korean)
         return line.range(of: ". ").map { String(line[..<$0.lowerBound]) + "." } ?? line
     }
 
@@ -68,6 +69,8 @@ enum ArisBrainFix {
             lines.insert(ArisBrainFailure.slowLine(brain: brain, korean: korean))
             lines.insert(ArisBrainFailure.silentLine(brain: brain, korean: korean))
             lines.insert(ArisBrainFailure.unreachableLine(brain: brain, korean: korean))
+            // Claude busy (a rate limit, an overload): it passes, so asking again is the button, not another AI.
+            if ArisBrainFailure.isBusy("rate limit", brain: brain) { lines.insert(ArisBrainFailure.friendly("rate limit", brain: brain, korean: korean)) }
             if case .say(let line) = ArisBrainFailure.death(stderr: "", brain: brain, korean: korean, acted: true, isTask: false,
                                                             events: 1, retried: true) { lines.insert(line) }
         }

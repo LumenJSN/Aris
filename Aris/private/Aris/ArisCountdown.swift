@@ -48,6 +48,17 @@ enum ArisCountdownCopy {
     static var send: String { String(localized: "countdown.send", defaultValue: "Send", bundle: bundle, locale: locale, comment: "Dictated message card: sends at once") }
     static var notSent: String { String(localized: "countdown.notsent", defaultValue: "Not sent", bundle: bundle, locale: locale, comment: "Dictated message card, stopped") }
     static var cancelled: String { String(localized: "countdown.cancelled", defaultValue: "Cancelled", bundle: bundle, locale: locale, comment: "Dictated message card, stopped: the note on the right") }
+    /// With no microphone "cancel" can't be heard: the same card waits for a press instead (VM run 2026-11-19, D7).
+    static var pressHint: String { String(localized: "countdown.presshint", defaultValue: "No microphone: press Send or Cancel", bundle: bundle, locale: locale, comment: "Countdown card with no microphone: how to answer it") }
+    /// An action's countdown (not a message): its go button, its press hint, and its settled lines.
+    static var go: String { String(localized: "countdown.go", defaultValue: "Go ahead", bundle: bundle, locale: locale, comment: "Action countdown card: does it at once") }
+    static var goPressHint: String { String(localized: "countdown.gopresshint", defaultValue: "No microphone: press Go ahead or Cancel", bundle: bundle, locale: locale, comment: "Action countdown card with no microphone: how to answer it") }
+    static var noAnswer: String { String(localized: "countdown.noanswer", defaultValue: "No answer", bundle: bundle, locale: locale, comment: "Countdown card nobody answered: the note on the right") }
+    static var doing: String { String(localized: "countdown.doing", defaultValue: "Doing it…", bundle: bundle, locale: locale, comment: "Action countdown card, let go") }
+    static var notDone: String { String(localized: "countdown.notdone", defaultValue: "Not done", bundle: bundle, locale: locale, comment: "Action countdown card, stopped") }
+
+    /// The hint under the card: by voice while Aris listens for "취소", by a press when it can't.
+    static func hint(listening: Bool, action: Bool) -> String { listening ? hint : action ? goPressHint : pressHint }
 
     /// "엄마에게 ‘곧 갈게’ 보내는 중…": what the card says once the countdown let the message go. The app only hands the
     /// yes to the agent; whether Messages really sent it is known later and told in the answer, so the card never says

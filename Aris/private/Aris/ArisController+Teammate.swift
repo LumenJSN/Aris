@@ -34,19 +34,32 @@ enum ArisTeammateEnd: Equatable {
 extension ArisController {
     /// Claude hook events reach the teammate watch, and the user's teammate list is read (the jobs block may name them).
     func watchTeammates() {
-        ClaudeStore.shared.onEvent = { [weak self] event, now in self?.heardClaude(event, at: now) }
+        // Claude Code's hook events, as ArisWorld hears them (it holds the store's one slot).
+        ArisWorld.shared.subscribe([.claude]) { [weak self] change, _ in
+            guard case .claude(let heard) = change, let event = ArisWorld.shared.lastHook else { return }
+            self?.heardClaude(event, at: heard.at)
+        }
         director.onWindowClosed = { [weak self] id in self?.teammateWindowClosed(id) }
+        // The fleet hears the same events after the teammate watch, so it knows which sessions are Aris's (ArisFleetStore).
+        watchFleet()
         ArisTeamModel.shared.refresh()
         ArisTeamModel.shared.refreshBrains()
-        // The jobs the last run of the app left unfinished (it quit, crashed or was relaunched under them).
-        Task { [weak self] in self?.reportLostJobs() }
+        // The jobs the last run of the app left unfinished (it quit, crashed or was relaunched under them): the helper
+        // may still have them (ArisTaskFollowing).
+        // Outlives any turn: its writes are never a turn's (ArisTurnScope).
+        ArisTurnScope.outside { Task { [weak self] in await self?.reportLostJobs() } }
     }
 
     /// Jobs that were under way when the app last stopped are gone with it (the agent ends a job whose app is gone).
     /// They are never run again by themselves, since a job half done may already have sent or changed something: each
     /// is shown in the done chip and its 기록 entry as cut off, and Aris says so once (audit team-2).
-    func reportLostJobs() {
-        let lost = ArisJobLedger.load()
+    func reportLostJobs() async {
+        let left = ArisJobLedger.load()
+        guard !left.isEmpty else { return }
+        // The helper keeps each job's journal and takes a job back when it starts again: the ones it still has go on,
+        // and their end comes through the inbox. Only the rest were cut off.
+        let (goOn, lost) = ArisTaskFollowing.split(left, seen: await ArisAgentClient.tasksSoon(left.map(\.id)))
+        if !goOn.isEmpty { followAgain(goOn) }
         guard !lost.isEmpty else { return }
         log.notice("\(lost.count, privacy: .public) job(s) were cut off when the app last stopped")
         let isKorean = { (title: String) in ArisSpeech.language(of: title) == "ko-KR" }
@@ -64,6 +77,25 @@ extension ArisController {
         Task { [weak self] in
             await self?.notify(ArisNoticeRoute.lostJobs(title: title, said: said), saying: said, parking: said)
         }
+    }
+
+    /// Jobs the last run of the app left that the helper still has: shown as going on, said once.
+    private func followAgain(_ records: [ArisJobRecord]) {
+        log.notice("\(records.count, privacy: .public) job(s) go on in the helper after the app restarted")
+        let korean = ArisSpeech.language(of: records[0].title) == "ko-KR"
+        jobs += records.map { record in
+            ArisJob(id: record.id, title: record.title, prompt: "", assignee: .clone, cwd: nil, appHint: nil, target: .notch,
+                    state: .running(step: ArisTaskFollowing.pickedUpLine(recovered: nil, korean: ArisSpeech.language(of: record.title) == "ko-KR")),
+                    created: record.created)
+        }
+        ArisJobLedger.note(jobs)
+        let said = ArisTaskFollowing.pickedUpSaid(records, korean: korean)
+        ArisTurnScope.outside { Task { [weak self] in
+            await self?.notify(ArisNotice(kind: .system, title: records.count == 1 ? records[0].title : ArisJobLedger.lostTitle(records, korean: korean),
+                                          body: said), saying: said, parking: said)
+            // What they left while the app was away.
+            self?.deliverInbox()
+        } }
     }
 
     /// Before a turn reaches the brain: the list again when it isn't in yet (the agent was still starting), so the turn's

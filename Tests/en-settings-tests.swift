@@ -148,7 +148,7 @@ private func enSettingsVariants(_ page: ArisSettingsPage) -> [ArisSettingsSnapsh
                 with { $0.memoriesLoaded = true; $0.memories = enMemories(); $0.autoMemory = false },
                 with { $0.memoriesLoaded = true; $0.memories = enMemories(); $0.memoryQuery = "zzz"; $0.confirmingMemoryClear = true }]
     case .voice:
-        return [base, with { $0.hasVoiceKey = true; $0.voiceName = "Rachel"; $0.speed = 0.9; $0.cloud = false; $0.languages = [.init(id: "en", title: "English")] },
+        return [base, with { $0.hasVoiceKey = true; $0.voiceName = "Rachel"; $0.speed = 0.9; $0.languages = [.init(id: "en", title: "English")] },
                 with { $0.speed = 1.15 }]
     case .dictation:
         return [base, with { $0.words = 12; $0.brainPolish = true; $0.pasteLastCaps = []; $0.styles = ["chat": "formal", "code": "standard"]
@@ -416,7 +416,7 @@ private func enSettingsSourceTests() {
         let source = enSettingsSource(file)
         // The index's keywords are Korean words to type, matched and never shown: its titles are checked by name above.
         let literals = file.hasSuffix("ArisSettingsCatalog.swift")
-            ? (ArisSettingsPage.allCases.flatMap { [$0.title, $0.subtitle] } + ArisSettingsGroup.allCases.map(\.rawValue) + ArisSettingsIndex.entries.map(\.title)).filter(enHasHangul)
+            ? (ArisSettingsPage.allCases.flatMap { [$0.title, $0.subtitle] } + ArisSettingsParts.all.map(\.title) + ArisSettingsIndex.entries.map(\.title)).filter(enHasHangul)
             : enKoreanLiterals(source)
         let missing = literals.filter { !enSettingsHasEnglish($0, pairs) }
         check(!source.isEmpty && missing.isEmpty, "settings in English: every Korean string in \((file as NSString).lastPathComponent) has its English"

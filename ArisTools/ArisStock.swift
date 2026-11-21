@@ -12,6 +12,14 @@
 import Foundation
 
 enum ArisStock {
+    /// Why no quote came back: Yahoo said 429 (too many requests; the stock may well exist), it answered and nothing
+    /// matched, or it never answered.
+    static func notFoundLine(_ query: String, reached: Bool, limited: Bool) -> String {
+        if limited { return "the stock service is busy right now (Yahoo answered 429: too many requests), so \(query) couldn't be looked up. It doesn't mean there is no such stock: try again in a minute." }
+        return reached ? "couldn't find a stock called \(query): try its ticker (AAPL, 005930.KS) or its English name"
+            : "the stock service didn't answer; try again in a moment"
+    }
+
     struct Alias: Equatable {
         let symbol: String
         /// The card's name; nil takes Yahoo's (a Korean listing's short name reads "SamsungElec").

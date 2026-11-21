@@ -111,6 +111,9 @@ struct ArisUsageCost: Codable, Equatable {
     /// The current weekly window, then the two before it.
     var windows: [ArisUsageSpendWindow]
     var topModel: String?
+    /// The models of the last 30 days with no known price: their tokens are counted, the dollars leave them out (never a
+    /// guess). Nil when every model had a price.
+    var unpricedModels: [String]? = nil
 }
 
 struct ArisUsageProvider: Codable, Equatable, Identifiable {

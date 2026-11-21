@@ -19,7 +19,8 @@ enum ArisCardWords {
     /// visible (ArisDesktopCard.shown), and anything longer than `limit` cut with a visible "…", never silently.
     static func clean(_ text: String, limit: Int = 120) -> String {
         let shown = ArisDesktopCard.shown(text)
-        return shown.count > limit ? String(shown.prefix(limit)) + "…" : shown
+        // At a whole word where it can be (sixth VM run, item 5).
+        return shown.count > limit ? ArisTextClip.clip(shown, limit + 1) : shown
     }
 
     /// The path as it really resolves (~, $HOME and ${HOME} expanded, .. and . taken out), then as Finder names it from
@@ -100,14 +101,37 @@ enum ArisCardWords {
         return (english ? "In: " : "입력할 곳: ") + typedShown(app) + "\n" + line
     }
 
+    /// "폴더 전체예요: 항목 3개가 함께 옮겨져요" under a folder's path.
+    static func wholeFolderLine(items: Int?, english: Bool) -> String {
+        switch (items, english) {
+        case (let count?, false): "폴더 전체예요: 안의 항목 \(count)개가 함께 옮겨져요"
+        case (let count?, true): "This is the whole folder: the \(count) item\(count == 1 ? "" : "s") inside go with it"
+        case (nil, false): "폴더 전체예요: 안의 항목 수는 읽지 못했어요"
+        case (nil, true): "This is the whole folder: its items couldn't be counted"
+        }
+    }
+
     /// The card for `aris-tools <words…>` when these words make one: file actions and desktop actions; nil otherwise.
     /// `text`: what a desktop call takes on stdin (the text to type, or a batch's steps), shown too.
     /// `english`: only what can't be said from ArisGateWords' tables afterwards (a path's folders, a count of lines).
-    static func card(_ words: [String], home: String, text: String? = nil, english: Bool = false) -> (title: String, detail: String)? {
+    /// `pathKind`: what a path is right now (a whole folder's card says so, and how many items it holds).
+    static func card(_ words: [String], home: String, text: String? = nil, english: Bool = false,
+                     pathKind: (String) -> ArisPathKind = ArisRiskPolicy.pathKind) -> (title: String, detail: String)? {
         guard let verb = words.first else { return nil }
         let rest = Array(words.dropFirst())
         func friendlyPath(_ path: String, home: String) -> String { Self.friendlyPath(path, home: home, english: english) }
         switch verb {
+        case "trash":
+            // A whole folder says that it is one and how many items go with it (eleventh VM run, R6b); files alone keep
+            // the plain card.
+            let paths = rest.filter { $0 != "--" }
+            let lines = paths.map { path -> (String, Bool) in
+                let full = path == "~" ? home : path.hasPrefix("~/") ? home + path.dropFirst(1) : path
+                guard case .folder(let items) = pathKind(full) else { return (path, false) }
+                return (path + "\n" + wholeFolderLine(items: items, english: english), true)
+            }
+            guard lines.contains(where: \.1) else { return nil }
+            return ("휴지통으로 옮기기", lines.map(\.0).joined(separator: "\n"))
         case "folder" where rest.first == "new":
             guard rest.count >= 2 else { return ("폴더 만들기", ArisGateWords.word("새 폴더", english: english)) }
             return ("폴더 만들기", friendlyPath(rest[1], home: home))

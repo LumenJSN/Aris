@@ -138,7 +138,7 @@ private func autoIntReadToEndTests() {
           "automode int: the stopped card tells the reader how far it has been seen, and 그래도 하기 waits at rest until its end")
     // The controller's rule has no exception for the stopped card.
     let controller = aiSource("Aris/private/Aris/ArisController.swift")
-    let answer = controller.components(separatedBy: "func answerQuestion(_ allow: Bool").last?.components(separatedBy: "typedAnswer = allow").first ?? ""
+    let answer = controller.components(separatedBy: "func answerQuestion(_ allow: Bool").last?.components(separatedBy: "kernel.answerCard(question.id, allow: allow)").first ?? ""
     check(answer.contains("ArisCardRead.applies(allow: allow, source: source, countdown: question.countdown), !ArisCardReadLive.shared.yesCounts(card: question.id)")
           && !answer.contains("stopped"), "automode int: a pressed yes on any card, the stopped one included, counts only once the card was read to its end")
     let keys = aiSource("Aris/private/Claude/KeyboardFocus.swift")

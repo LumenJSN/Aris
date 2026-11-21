@@ -68,9 +68,11 @@ private func qaAttachmentDeixisTests() {
 
 /// BUG-23: every path takes the files (ArisController.answer), and a turn with files takes no screenshot.
 private func qaAttachmentWiringTests() {
-    let controller = dropSource("Aris/private/Aris/ArisController.swift")
-    let answer = body(of: "func answer(_ said: String, gesture: ArisGestureTurn? = nil, typed: Bool = false) async {", in: controller)
-    check(answer.contains("ArisAttachments.shared.take(into: said, handsFree: turnHandsFree, shown: ArisNotchPresence.shared.isOpen)"),
+    let funnel = dropSource("Aris/private/Aris/Routing/ArisController+Funnel.swift")
+    let answer = body(of: "func hear(_ request: ArisTurnRequest) async -> ArisTurnRequest.Heard {", in: funnel)
+        + dropSource("Aris/private/Aris/Routing/ArisTurnRequest.swift")
+    check(funnel.contains("guard let found = await ArisTurnFunnel.claim(request, host: self) else { return }")
+          && answer.contains("ArisAttachments.shared.take(into: request.said, handsFree: turnHandsFree, shown: ArisNotchPresence.shared.isOpen)"),
           "BUG-23: the voice, wake-word and follow-up turn takes the files (never hands-free or out of sight: follow-up M6)")
     check(answer.contains("seeEnded()"), "BUG-23: a turn with files drops its screenshot")
     check(answer.contains("ArisFollowUp.isDone(ArisPendingFiles.words(of: text)"), "BUG-23: the done check reads only the words")

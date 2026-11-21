@@ -161,11 +161,12 @@ enum ArisSessionPick {
     }
 
     /// The user's card: the session (its folder, where it lives, its terminal) and the exact text, all of it.
-    static func card(_ session: ArisLiveSession, text: String, home: String, english: Bool) -> ArisMCPCard {
+    static func card(_ session: ArisLiveSession, text: String, home: String, english: Bool, label: String? = nil) -> ArisMCPCard {
         let place = ArisCardWords.friendlyPath(session.cwd, home: home, english: english)
+        let name = ArisCardWords.clean(label ?? session.folder(home: home), limit: 60)
         let detail = english
-            ? "Session: \(ArisCardWords.clean(session.folder(home: home), limit: 60)) (\(place)) · \(session.terminalName)\nText to send: \(ArisCardWords.typedShown(text))"
-            : "세션: \(ArisCardWords.clean(session.folder(home: home), limit: 60)) (\(place)) · \(session.terminalName)\n보낼 글: \(ArisCardWords.typedShown(text))"
+            ? "Session: \(name) (\(place)) · \(session.terminalName)\nText to send: \(ArisCardWords.typedShown(text))"
+            : "세션: \(name) (\(place)) · \(session.terminalName)\n보낼 글: \(ArisCardWords.typedShown(text))"
         return ArisMCPCard(title: english ? "Send to a Claude Code session" : "Claude Code 세션에 보내기", detail: detail, full: nil, fields: [])
     }
 

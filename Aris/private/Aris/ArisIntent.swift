@@ -24,7 +24,8 @@ enum ArisIntent: Equatable {
             }
         }
     }
-    enum Level: Equatable { case up, down, set(Int), mute }
+    /// `up` and `down` are the device's own step; `change` moves from the level now ("10 줄여", "조금", "반으로": ArisLevelChange).
+    enum Level: Equatable { case up, down, set(Int), mute, change(ArisLevelChange) }
 
     /// The app's name as macOS knows it (e.g. "Safari"), not yet checked to exist.
     case openApp(String)
@@ -102,6 +103,8 @@ enum ArisIntent: Equatable {
         if ArisRoutineWords.mentions(spoken) { if case .ask = intent { return intent } else { return .ask(spoken) } }
         // A request that goes on after this act ("메모 앱 열고 어제 회의 내용 정리해 줘") is the AI's, whole (audit intent-1).
         if intent.isOneAct, ArisIntentScope.goesOn(phrase) { return .ask(spoken) }
+        // A keyword inside a longer request, a story or a question about something else is the AI's (audit intent-3).
+        if !isWhole(intent, phrase: phrase) { return .ask(spoken) }
         guard !intent.isReadOnly, holdsBack(spoken, phrase: phrase) else { return intent.resolved(said: spoken) }
         return .ask(spoken)
     }
@@ -118,9 +121,31 @@ enum ArisIntent: Equatable {
     /// An act on something that only points back ("add that to my to-dos", "그거 할 일에 추가해 줘", "open it") is the
     /// AI's, whole: it has the conversation the word points into (ArisPointsBack; third VM run, bug A).
     func resolved(said spoken: String) -> ArisIntent {
-        guard let argument, ArisPointsBack.only(argument) else { return self }
-        return .ask(spoken)
+        if let argument, ArisPointsBack.only(argument) { return .ask(spoken) }
+        return refersElsewhere(said: spoken) ? .ask(spoken) : self
     }
+
+    /// The words this act would take: a to-do's item, the app to open or to lay out.
+    private var takenWords: String? {
+        if case .arrange(let app, _) = self { return app }
+        return argument
+    }
+
+    /// An act that takes words, asked about content that is somewhere else ("이 문서에 적힌 할 일 미리 알림에 추가해 줘",
+    /// "선택한 파일 열어 줘", "add the tasks in this email to my reminders"), is the AI's, whole: the sentence speaks of
+    /// a document, a page, the screen or a selection, the words taken point at something, or a to-do's item still
+    /// holds the list's own name, so the rule didn't account for all of it (ArisContentReference; tenth VM run, turn
+    /// 62: a to-do called "이 문서에 적힌 미리 알림에"). The rules that take no words read the whole sentence themselves
+    /// (ArisWholeCommand, ArisIntentScope.isOnly, a pattern to the sentence's end).
+    func refersElsewhere(said spoken: String) -> Bool {
+        guard let taken = takenWords else { return false }
+        if ArisContentReference.inSentence(spoken) || ArisContentReference.inArgument(taken) { return true }
+        if case .addTodo = self { return taken.range(of: Self.listName, options: [.regularExpression, .caseInsensitive]) != nil }
+        return false
+    }
+
+    /// The to-do list by any of its names, left inside what would be the item.
+    private static let listName = #"할\s?일|투두|미리\s?알림|리마인더|\bto-?dos?\b|\breminders?\b"#
 
     /// One act and nothing after it: opening an app, the music, the volume, the brightness, the timer. (Laying windows
     /// out, a to-do's own words and a save carry an "and" of their own.)
@@ -137,9 +162,52 @@ enum ArisIntent: Equatable {
         // "좀" (please, a bit) sits anywhere: "노래 좀 꺼줘" is "노래 꺼줘".
         let phrase = phrase(of: spoken)
         let found = match(spoken, phrase: phrase)
-        // Cut down to its first act, the rest of the request would never be done (audit intent-1).
-        return found.isOneAct && ArisIntentScope.goesOn(phrase) ? .ask(spoken) : found.resolved(said: spoken)
+        // Cut down to its first act, the rest of the request would never be done (audit intent-1); and only the whole
+        // utterance is a command (audit intent-3).
+        return found.isOneAct && ArisIntentScope.goesOn(phrase) || !isWhole(found, phrase: phrase) ? .ask(spoken) : found.resolved(said: spoken)
     }
+
+    // MARK: - The whole utterance
+
+    /// Whether `phrase` is nothing but this command (ArisWholeCommand): the volume, the brightness, the timer and the
+    /// music act on a word, so they take only a sentence that is that command. The other intents' matchers already read
+    /// the whole sentence (a regex to its end, ArisIntentScope.isOnly, a to-do's own item, an app's name before its verb).
+    static func isWhole(_ intent: ArisIntent, phrase: String) -> Bool {
+        let said = ArisEnglishAsk.core(phrase)
+        switch intent {
+        case .volume:
+            return ArisWholeCommand.isWhole(said, core: volumeWords + ["sound", "audio"], words: levelSmall + volumeUp + volumeDown, numbers: true)
+        case .brightness:
+            return ArisWholeCommand.isWhole(said, core: brightnessWords + ["화면", "screen", "display"],
+                                            words: levelSmall + brightnessUp + brightnessDown + ["밝게", "어둡게", "dim", "darken", "brighten", "lighten"], numbers: true)
+        case .timer, .pomodoro, .cancelTimer, .pauseTimer, .resumeTimer, .addTime, .timerLeft:
+            return ArisWholeCommand.isWhole(said, core: timerWords, words: timerSmall, numbers: true)
+        case .media:
+            return ArisWholeCommand.isWhole(said, core: nextWords + previousWords + pauseWords + playWords + ["다음", "next", "previous", "stop", "틀어"],
+                                            words: mediaSmall)
+        default:
+            return true
+        }
+    }
+
+    /// What a volume or brightness request may carry besides its subject and direction.
+    private static let levelSmall = ["좀", "조금", "조금만", "살짝", "약간", "더", "많이", "훨씬", "반", "절반", "배", "칸", "단계", "최대", "최소", "끝까지", "맞춰", "맞춰줘",
+                                     "설정", "설정해", "바꿔", "하게", "해", "해줘", "줘", "맥", "스피커", "음악", "노래",
+                                     "up", "down", "to", "at", "by", "a", "bit", "little", "touch", "slightly", "lot", "way", "much", "half", "in", "double", "twice",
+                                     "percent", "points", "point", "notch", "notches", "step", "steps", "max", "maximum", "min", "minimum", "full", "level", "set",
+                                     "turn", "make", "put", "change", "it", "of", "mac", "speaker", "speakers", "music", "more", "less", "louder", "quieter", "all", "way",
+                                     "꺼", "켜", "음소거", "mute", "unmute", "off", "on"]
+    /// What a timer request may carry besides "타이머" and its length.
+    private static let timerSmall = ["시간", "분", "초", "반", "짜리", "동안", "후", "뒤", "후에", "뒤에", "맞춰", "맞춰줘", "맞춰서", "설정", "설정해", "시작", "시작해", "켜", "켜줘",
+                                     "재", "재줘", "걸어", "돌려", "새로", "다시", "계속", "재개", "취소", "꺼", "그만", "멈춰", "일시정지", "일시", "정지", "잠깐", "추가", "연장", "늘려",
+                                     "더", "얼마나", "얼마", "몇", "남았", "남았어", "남았지", "남았나", "남았니", "남은", "남았는지", "끝나", "세션", "모드",
+                                     "set", "start", "a", "for", "of", "minutes", "minute", "mins", "min", "seconds", "second", "secs", "sec", "hours", "hour", "hrs", "hr",
+                                     "countdown", "begin", "new", "cancel", "stop", "turn", "off", "end", "clear", "dismiss", "kill", "get", "rid", "pause", "hold", "freeze",
+                                     "resume", "continue", "unpause", "keep", "going", "add", "more", "extend", "extra", "another", "left", "remaining", "how", "much",
+                                     "longer", "long", "time", "is", "on", "there", "the", "session", "to", "by", "my", "until", "goes"]
+    /// What a music request may carry besides its verb.
+    private static let mediaSmall = ["노래", "음악", "곡", "꼭", "거", "이", "이거", "그거", "지금", "다시", "계속", "틀어", "재생", "해", "줘", "멈춰", "꺼",
+                                     "the", "music", "song", "track", "this", "it", "playing", "playback", "some", "again", "one", "a"]
 
     private static func match(_ spoken: String, phrase: String) -> ArisIntent {
         if phrase.isEmpty { return .ask("") }
@@ -152,6 +220,8 @@ enum ArisIntent: Equatable {
         if asksDate(phrase) { return .tellDate }
         if asksForBrief(phrase) { return .brief }
         if ArisDayEndAsk.asks(phrase) { return .dayEnd }
+        // "뭐 남았어" is the same card's other half once the day in review is on (ArisRecapAsk).
+        if ArisRecapAsk.asksLeftWhenOn(phrase) { return .dayEnd }
         // One guard before every local action (QA BUG-58 audit: "5분 타이머 맞춰야 할까?" set a real timer, "할 일 추가하지
         // 마" added one): a question, a request for advice or a "don't" goes to the AI; only the read-only answers below
         // may still answer it.
@@ -212,7 +282,10 @@ enum ArisIntent: Equatable {
                                                     "뭐", "뭐가", "뭐지", "있어", "있는지", "있나", "있니", "있지", "보여", "읽어", "목록", "리스트", "을", "를", "에", "다", "전부",
                                                     "what", "what's", "whats", "is", "are", "on", "my", "the", "list", "show", "me", "read", "left", "today",
                                                     "do", "i", "have", "for", "tell", "any", "there", "all", "of", "anything", "remaining", "still", "open",
-                                                    "out", "loud", "got", "i've", "can", "could", "you", "in", "items"]
+                                                    "out", "loud", "got", "i've", "can", "could", "you", "in", "items",
+                                                    // What was put on it: "할 일 목록에 넣어둔 거 뭐야", "what did I put on my to-do list".
+                                                    "넣어", "넣어둔", "둔", "넣은", "적어", "적어둔", "적은", "추가한", "추가된", "등록한", "등록된", "놨어", "놨지", "놨나", "뒀어", "들어", "있는",
+                                                    "거", "것", "게", "몇", "개", "뭐야", "did", "put", "added", "wrote", "written", "saved", "onto"]
     /// Small words any of these questions may carry: Aris's name, "지금", "알려 줘", a sentence ending.
     private static let sentenceSmall = ["아리스", "aris", "지금", "현재", "야", "이야", "예요", "이에요", "에요", "지", "이지", "죠", "이죠", "인지", "니", "이니", "냐", "이냐",
                                         "인가", "인가요", "알려", "말해", "줘", "주세요", "줄래", "좀", "요", "이", "가", "은", "는", "now", "right", "please", "hey"]
@@ -409,13 +482,17 @@ enum ArisIntent: Equatable {
 
     private static func level(in phrase: String, subjects: [String], up: [String], down: [String], mute: Bool) -> Level? {
         guard contains(phrase, any: subjects) else { return nil }
-        if let number = firstNumber(in: phrase) { return .set(min(100, max(0, number))) }
-        if contains(phrase, any: ["최대", "max", "maximum", "full"]) { return .set(100) }
-        if contains(phrase, any: ["최소", "min", "minimum"]) { return .set(0) }
         if mute && contains(phrase, any: ["음소거", "mute", "소리 꺼", "볼륨 꺼"]) { return .mute }
-        if contains(phrase, any: up) { return .up }
-        if contains(phrase, any: down) { return .down }
-        return nil
+        let direction = contains(phrase, any: down) ? -1 : contains(phrase, any: up) ? 1 : nil
+        // An absolute number sets it; a relative one moves it from where it is ("10 줄여" is not "set to 10").
+        if let change = ArisLevelChange.read(phrase, direction: direction) { return level(change) }
+        return direction.map { $0 > 0 ? .up : .down }
+    }
+
+    /// The level for a change: an absolute one is a set, as before.
+    static func level(_ change: ArisLevelChange) -> Level {
+        if case .to(let value) = change { return .set(min(100, max(0, value))) }
+        return .change(change)
     }
 
     private static func asksTime(_ phrase: String) -> Bool {
@@ -497,21 +574,11 @@ enum ArisIntent: Equatable {
     }
 
     /// "1시간 30분", "30초", "5 minutes" in seconds; nil when no length is said.
-    private static func seconds(in phrase: String) -> Int? {
-        // "5 more minutes" is five minutes too.
-        let units: [(String, Int)] = [("시간", 3_600), ("분", 60), ("초", 1), (#"(?:more\s+)?(?:hours?|hrs?)\b"#, 3_600),
-                                      (#"(?:more\s+)?(?:minutes?|mins?)\b"#, 60), (#"(?:more\s+)?(?:seconds?|secs?)\b"#, 1)]
-        let seconds = units.reduce(0) { total, unit in
-            total + (phrase.range(of: "[0-9]+(?=\\s*\(unit.0))", options: .regularExpression).flatMap { Int(phrase[$0]) } ?? 0) * unit.1
-        }
-        return seconds > 0 ? seconds : nil
-    }
+    /// "5 more minutes" is five minutes too; "1.5시간", "한 시간 반", "an hour and a half" are 90 (ArisSpokenDuration).
+    private static func seconds(in phrase: String) -> Int? { ArisSpokenDuration.seconds(in: phrase) }
 
     /// "1분 30초", "25분", "1시간".
-    static func duration(_ seconds: Int) -> String {
-        let parts = [(seconds / 3_600, "시간"), (seconds % 3_600 / 60, "분"), (seconds % 60, "초")].filter { $0.0 > 0 }
-        return parts.map { "\($0.0)\($0.1)" }.joined(separator: " ")
-    }
+    static func duration(_ seconds: Int) -> String { ArisSpokenDuration.korean(seconds) }
 
     /// Words that undo, cancel or take away, say no, or ask for advice: never a local add (QA BUG-58: "방금 추가한 할 일
     /// 되돌려 줘", "할 일 추가하지 마" and "할 일에 추가할 만한 거 추천해 줘" each added a to-do). Such words go to undo or
@@ -530,7 +597,8 @@ enum ArisIntent: Equatable {
     private static func koreanTodoToAdd(_ spoken: String) -> String? {
         let noun = #"(할\s?일|투두|to-?do|미리\s?알림|리마인더)\s*(목록|리스트)?\s*(에다가|에다|에|으로|로)?"#
         // A present imperative only: "추가해 줘", "넣어", "적어 둬", or a bare "추가" that ends the request (never 추가한, 추가할).
-        let verb = #"(추가해\s?줘|추가해줄래|추가해\s?주세요|추가해\s?둬|추가해|추가(?![가-힣])|등록해\s?줘|등록해\s?주세요|등록해|등록(?![가-힣])|넣어\s?줘|넣어줄래|넣어\s?주세요|넣어\s?둬|넣어|넣기(?![가-힣])|적어\s?줘|적어줄래|적어\s?주세요|적어\s?둬|적어)"#
+        // Each form ends the verb: "넣어둔", "적어 놨어" and "넣어 둘까" are past or asking, never an add (audit todo-1).
+        let verb = #"(?:(?:추가해|등록해|넣어|적어)\s?(?:놔|둬)?\s?(?:줘|줄래|주세요|줘요)|(?:추가해|등록해|넣어|적어)\s?(?:놔|둬)|추가해|추가|등록해|등록|넣어|넣기|적어)(?![가-힣])(?!\s*(?:놨|뒀|둘|놓|둔|봤|본|있))"#
         let lowered = spoken.lowercased()
         guard !contains(lowered, any: notAnAdd) else { return nil }
         guard let nounRange = spoken.range(of: noun, options: [.regularExpression, .caseInsensitive]) else { return nil }
@@ -538,6 +606,8 @@ enum ArisIntent: Equatable {
         rest.removeSubrange(nounRange)
         guard let verbRange = rest.range(of: verb, options: .regularExpression) else { return nil }
         rest.removeSubrange(verbRange)
+        // A question about what is on the list ("할 일에 뭐 넣어", "몇 개 적어"): the list is read, nothing added.
+        guard rest.range(of: #"(?<![가-힣])(?:뭐|뭘|무엇|몇|언제|어디|왜|어떻게|누구)"#, options: .regularExpression) == nil else { return nil }
         return rest.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
     }
 
@@ -624,7 +694,10 @@ extension ArisIntent {
             }
         case .volume(let level): return Self.acknowledge(level, korean: korean, subject: korean ? "볼륨" : "Volume")
         case .brightness(let level): return Self.acknowledge(level, korean: korean, subject: korean ? "밝기" : "Brightness")
-        case .openApp(let name): return korean ? "\(name) 열게요." : "Opening \(name)."
+        // Said once it is open: by the name the user sees on the Mac (텍스트 편집기, not TextEdit).
+        case .openApp(let name):
+            let shown = Self.displayName(name, korean: korean)
+            return korean ? "\(ArisJosa.attach(shown, "을", "를")) 열었어요." : "Opened \(shown)."
         case .arrange(let app, let count):
             let name = Self.displayName(app, korean: korean)
             if korean { return "\(name) 창 \(count)개를 띄워서 나눌게요." }
@@ -640,12 +713,14 @@ extension ArisIntent {
         case .timer(let seconds, let focus):
             let length = Self.duration(seconds)
             if korean { return focus ? "\(length) 집중 시작할게요." : "\(length) 타이머 맞췄어요." }
-            return focus ? "Focus for \(seconds / 60) minutes." : "Timer set."
+            // Its length said back, so a wrong match is heard at once (audit read-back).
+            let english = ArisSpokenDuration.english(seconds)
+            return focus ? "Focus for \(english)." : "Timer set for \(english)."
         case .cancelTimer: return korean ? "타이머 껐어요." : "Timer cancelled."
         case .pomodoro: return korean ? "뽀모도로 시작할게요. 25분 집중이에요." : "Pomodoro: 25 minutes of focus."
         case .pauseTimer: return korean ? "타이머 잠깐 멈췄어요." : "Timer paused."
         case .resumeTimer: return korean ? "타이머 다시 갈게요." : "Timer resumed."
-        case .addTime(let seconds): return korean ? "\(Self.duration(seconds)) 늘렸어요." : "Added \(seconds / 60) minutes."
+        case .addTime(let seconds): return korean ? "타이머를 \(Self.duration(seconds)) 늘렸어요." : "Added \(ArisSpokenDuration.english(seconds)) to the timer."
         case .timerLeft, .listTodos: return nil
         case .ask, .brief, .dayEnd, .undo, .readAgain, .saveAnswer, .whatsPlaying, .arisMute, .quietHours: return nil
         }
@@ -664,6 +739,15 @@ extension ArisIntent {
         case .down: return korean ? "\(subject) 낮췄어요." : "\(subject) down."
         case .set(let value): return korean ? "\(subject) \(value)으로 맞췄어요." : "\(subject) set to \(value)."
         case .mute: return korean ? "음소거를 바꿨어요." : "Toggled mute."
+        case .change(let change):
+            let up: Bool
+            switch change {
+            case .to: return acknowledge(ArisIntent.level(change), korean: korean, subject: subject)
+            case .by(let points): up = points > 0
+            case .steps(let count): up = count > 0
+            case .scaled(let factor): up = factor > 1
+            }
+            return acknowledge(up ? .up : .down, korean: korean, subject: subject)
         }
     }
 }

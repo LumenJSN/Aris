@@ -34,6 +34,8 @@ final class ArisFirstTries: ObservableObject {
     private var hostScreen: NSScreen?
     private var turns: AnyCancellable?
     private var clocks: [Task<Void, Never>] = []
+    /// Watches for a click in another app while the notch Aris opened is still up (watching only: no event is taken).
+    private var outsideClick: Any?
 
     var offered: Bool { !tries.isEmpty }
 
@@ -59,6 +61,12 @@ final class ArisFirstTries: ObservableObject {
             }
         showSliver()
         after(ArisFirstTriesPlan.staysOpen) { $0.closeIfLeftAlone() }
+        // A click on the desktop or in another app puts the notch Aris opened away, as leaving an open notch does
+        // (ninth VM run, item 7: it stood open over the desktop for its whole minute, whatever was clicked). The pointer
+        // never came to it, so the notch's own hover never closes it. The three are there the next time it is opened.
+        outsideClick = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in
+            MainActor.assumeIsolated { ArisFirstTries.shared.closeIfLeftAlone() }
+        }
     }
 
     /// One of the three was pressed: it is asked as typed words are.
@@ -100,6 +108,13 @@ final class ArisFirstTries: ObservableObject {
                                            pointerOnNotch: region.contains(NSEvent.mouseLocation)) {
             host.close()
         }
+        // Closed (by this, or by them): the notch is his to open from here on, and its own hover closes it.
+        if host.notchState != .open { stopWatchingClicks() }
+    }
+
+    private func stopWatchingClicks() {
+        if let outsideClick { NSEvent.removeMonitor(outsideClick) }
+        outsideClick = nil
     }
 
     private func after(_ seconds: TimeInterval, _ work: @escaping @MainActor (ArisFirstTries) -> Void) {
@@ -113,6 +128,7 @@ final class ArisFirstTries: ObservableObject {
     private func stopClocks() {
         clocks.forEach { $0.cancel() }
         clocks = []
+        stopWatchingClicks()
     }
 }
 

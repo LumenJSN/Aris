@@ -39,6 +39,9 @@ enum ArisClipboard {
     static let savedItemLimit = 2_000_000
     /// Copies bigger than this aren't kept at all.
     static let itemLimit = 20_000_000
+    /// All unpinned items together hold at most this much in memory: past it the oldest drop off, however few there
+    /// are (200 copies of 20 MB images were 4 GB).
+    static let memoryLimit = 64_000_000
 
     static let stringType = "public.utf8-plain-text"
     static let fileURLType = "public.file-url"
@@ -99,12 +102,14 @@ enum ArisClipboard {
         items.filter(\.pinned) + items.filter { !$0.pinned }.sorted { $0.lastCopied > $1.lastCopied }
     }
 
+    /// At most `limit` unpinned items and `memoryLimit` bytes of them, newest first (the newest one always stays).
     static func trimmed(_ items: [Item]) -> [Item] {
-        var unpinned = 0
+        var unpinned = 0, bytes = 0
         return items.filter { item in
             if item.pinned { return true }
             unpinned += 1
-            return unpinned <= limit
+            bytes += item.size
+            return unpinned <= limit && (unpinned == 1 || bytes <= memoryLimit)
         }
     }
 

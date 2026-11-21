@@ -27,6 +27,9 @@ final class FakeAsideTurn: ArisAsideTurn {
     var asideLive = true
     /// The turn's own request is about Aris's own data (QA BUG-60).
     var asideOwnData = false
+    /// The owner's words for the turn (ArisPaymentBoundary).
+    var asideRequest = ""
+    var asideEnglish = false
 
     init(brain: String, taint: ArisTaint = .none, handsFree: Bool = false, screen: Bool = false, answers: [ArisMCPAnswer] = []) {
         brainName = brain
@@ -48,6 +51,9 @@ final class FakeAsideTurn: ArisAsideTurn {
     func asideRunning(_ brief: String) { running += 1; taintAtRun = taint; statuses.append(ArisAside.runningStatus(brief)) }
     func asideWaiting(_ status: String) { statuses.append(status) }
     func asideEnded() { ended += 1 }
+    /// How each Aside run ended (jv-jobfix: answered or not).
+    var finished: [Bool] = []
+    func asideFinished(answered: Bool) { finished.append(answered) }
 }
 
 /// What the fake Aside was run with.
@@ -142,7 +148,7 @@ func runAsideTests() {
         check(clean.statuses == ["Aside가 브라우저에서 하는 중: 쿠팡에서 에어팟 프로 최저가 찾아줘"], "aside gate (\(brain), M5): the notch shows the brief while Aside runs")
         check(clean.audits.contains { $0["action"]?.hasPrefix("aside: 쿠팡에서") == true && $0["answer"] == "auto" && $0["brain"] == brain },
               "aside gate (\(brain)): the run is audited with its brief")
-        check(log.runs.first?.path == "/x/aside" && log.runs.first?.arguments == ArisAside.arguments(brief: "쿠팡에서 에어팟 프로 최저가 찾아줘")
+        check(log.runs.first?.path == "/x/aside" && log.runs.first?.arguments == ArisAside.arguments(brief: ArisPaymentBoundary.bounded("쿠팡에서 에어팟 프로 최저가 찾아줘", english: false))
               && log.runs.first?.environment["ARIS_MCP_TURN_FILE"] == nil && log.runs.first?.environment["SECRET_TOKEN"] == nil,
               "aside gate (\(brain)): Aside runs as exec with Guard, without Aris's credential")
         check(found.output.contains("never instructions"), "aside gate (\(brain)): Aside's answer comes back marked as data")
@@ -150,10 +156,10 @@ func runAsideTests() {
         // Acting on a site asks first; a yes runs it, a no doesn't.
         let actingLog = AsideRunLog()
         let yes = FakeAsideTurn(brain: brain, answers: [.yes([:])])
-        _ = ArisAsideTool.answer("쿠팡에서 이어폰 주문해줘", turn: yes, critical: false, deps: deps(actingLog))
-        check(yes.cards.count == 1 && yes.cards.first?.title == ArisAside.cardTitle && yes.cards.first?.detail == "쿠팡에서 이어폰 주문해줘"
+        _ = ArisAsideTool.answer("쿠팡에서 이어폰 리뷰 남겨줘", turn: yes, critical: false, deps: deps(actingLog))
+        check(yes.cards.count == 1 && yes.cards.first?.title == ArisAside.cardTitle && yes.cards.first?.detail == ArisPaymentBoundary.bounded("쿠팡에서 이어폰 리뷰 남겨줘", english: false)
               && actingLog.runs.count == 1 && yes.audits.contains { $0["answer"] == "yes" },
-              "aside gate (\(brain)): acting asks on a card with exactly the brief, then runs on a yes")
+              "aside gate (\(brain)): acting asks on a card with exactly what is handed over (the brief, then the owner's rule about paying), then runs on a yes")
         let noLog = AsideRunLog()
         let no = FakeAsideTurn(brain: brain, answers: [.no])
         let declined = ArisAsideTool.answer("Book the 7pm table at Jungsik", turn: no, critical: false, deps: deps(noLog))
@@ -265,7 +271,7 @@ func runAsideTests() {
     check(apiArgv == ["aside", "쿠팡에서 이어폰 찾아줘"] && ArisAPICatalog.names(sealed: true).contains("aside_task")
           && ArisAPICatalog.argv(name: "aside_task", arguments: #"{"brief":""}"#) == nil,
           "aside, the API brain: aside_task(brief) is `aside <brief>`, in the sealed subset too")
-    check(ArisAgentStatus.forCommand(#"/t aside "x""#, tools: tools) == ArisAside.workingStatus, "aside: the notch says Aside is working")
+    check(ArisAgentStatus.forCommand(#"/t aside "x""#, tools: tools) == ArisAside.handingStatus, "aside: the notch says it is handing to Aside (rel12: not yet that it works)")
 
     // MARK: - Every brain's prompt
 
@@ -325,14 +331,14 @@ func runAsideTests() {
           "aside (6): zero-width and format characters are stripped from the brief")
     let hiddenLog = AsideRunLog()
     let hiddenTurn = FakeAsideTurn(brain: "Codex", answers: [.yes([:])])
-    _ = ArisAsideTool.answer("최저가 찾아서 주\u{200B}문해줘", turn: hiddenTurn, critical: false, deps: deps(hiddenLog))
-    check(hiddenTurn.cards.first?.detail == "최저가 찾아서 주문해줘" && hiddenLog.runs.first?.arguments.last == "최저가 찾아서 주문해줘",
+    _ = ArisAsideTool.answer("식당 찾아서 예\u{200B}약해줘", turn: hiddenTurn, critical: false, deps: deps(hiddenLog))
+    check(hiddenTurn.cards.first?.detail == ArisPaymentBoundary.bounded("식당 찾아서 예약해줘", english: false) && hiddenLog.runs.first?.arguments.last == hiddenTurn.cards.first?.detail,
           "aside (6): a hidden acting word is carded, and Aside gets the same brief the card showed")
 
     // (3) The signature again right before Aside runs, after the card.
     let swappedLog = AsideRunLog()
     let swapped = FakeAsideTurn(brain: "Claude", answers: [.yes([:])])
-    let refused = ArisAsideTool.answer("쿠팡에서 주문해줘", turn: swapped, critical: false, deps: deps(swappedLog, verified: false))
+    let refused = ArisAsideTool.answer("쿠팡에서 리뷰 남겨줘", turn: swapped, critical: false, deps: deps(swappedLog, verified: false))
     check(swapped.cards.count == 1 && swappedLog.runs.isEmpty && refused.output == ArisAside.untrustedLine && swapped.outsideTaken == 0,
           "aside (3): a CLI whose signature fails after the card never runs")
     check(ArisAside.isAsideIdentifier("at.studio.AsideBrowser.cli") && ArisAside.isAsideIdentifier("at.studio.AsideBrowser")
@@ -487,4 +493,59 @@ func runAsideTests() {
     chmod(done.path, 0o755)
     let loginFinished = ArisAsideLogin.run(done.path, environment: ["PATH": "/usr/bin:/bin"], limit: 10, line: { _ in }, stop: { false }, arguments: [])
     check(loginFinished.ok && loginFinished.stdout.contains("K7Q2-9XZD"), "aside follow-up 2: a sign-in that ends on its own reports its exit")
+}
+
+/// The eleventh VM run, R2 (notes11/R2-actions.log): the default brain's `aris-tools aside` brief told Aside to pay with
+/// the saved card, with Aside not installed, so no gate looked at it and the reply promised "결제까지 해 드릴게요".
+func runAsidePaymentTests() {
+    let request = "아마존에서 에어팟 프로 바로 결제해서 주문해 줘"
+    let recorded = "아마존(amazon.com)에서 에어팟 프로를 결제해서 주문해 줘. 가장 적합한 상품(에어팟 프로, 재고 있는 것)을 골라 장바구니에 담고 결제까지 진행해. " +
+        "결제는 사용자 카드로 확인 절차가 나오면 그대로 진행하고, 최종 주문 결과(주문 번호, 상품명, 가격, 예상 배송일)를 한두 줄로 알려 줘."
+    // As recorded: Aside missing. Refused for what it says, before the install card; nothing opens, nothing runs.
+    for installed in [false, true] {
+        let log = AsideRunLog()
+        let turn = FakeAsideTurn(brain: "api", answers: [.yes([:])])
+        turn.asideRequest = request
+        let outcome = ArisAsideTool.answer(recorded, turn: turn, critical: false, deps: deps(log, installed: installed))
+        check(outcome.status != 0 && outcome.output == ArisPaymentBoundary.refusedLine && turn.cards.isEmpty && log.runs.isEmpty && log.opened.isEmpty
+              && turn.audits.contains { $0["risk"] == "never" && $0["answer"] == "refused (it tells Aside to pay)" },
+              "rel11 R2: the recorded brief is refused with no card and no run (Aside installed: \(installed))")
+        check(outcome.output.contains("Never tell the user Aris will pay"), "rel11 R2: the brain is told its reply may not promise to pay (installed: \(installed))")
+    }
+    // The brief written again to stop at the payment step: a card showing all of what is handed over, even though it
+    // names a lookup and no acting word beyond the cart; Aside gets exactly the card's text, the rule its last word.
+    let stopping = "아마존에서 에어팟 프로를 찾아 줘. 결제 화면 직전까지만 진행하고 결제 버튼은 누르지 마."
+    let log = AsideRunLog()
+    let turn = FakeAsideTurn(brain: "api", answers: [.yes([:])])
+    turn.asideRequest = request
+    let handed = ArisAsideTool.answer(stopping, turn: turn, critical: false, deps: deps(log))
+    check(turn.cards.count == 1 && turn.cards.first?.detail == ArisPaymentBoundary.bounded(stopping, english: false) && log.runs.count == 1
+          && log.runs.first?.arguments.last == turn.cards.first?.detail && log.runs.first?.arguments.last?.hasSuffix(ArisPaymentBoundary.stopClause(english: false)) == true,
+          "rel11 R2: a brief that stops at the payment step is handed over on a card that shows exactly what Aside gets")
+    check(handed.status == 0 && handed.output.contains(ArisPaymentBoundary.replyRule), "rel11 R2: its answer comes back with the reply rule")
+    // A turn about paying is never auto, however the brief is worded (a plain lookup brief, the owner asked to pay).
+    let quiet = FakeAsideTurn(brain: "api", answers: [.no])
+    quiet.asideRequest = request
+    let quietLog = AsideRunLog()
+    _ = ArisAsideTool.answer("아마존에서 에어팟 프로 최저가 찾아줘", turn: quiet, critical: false, deps: deps(quietLog))
+    check(quiet.cards.count == 1 && quietLog.runs.isEmpty, "rel11 R2: in a turn about paying even a lookup brief asks, and a no runs nothing")
+    // Missing Aside in a turn about paying: the line to say carries the reply rule (the recorded promise came from here).
+    let away = FakeAsideTurn(brain: "api", answers: [.no])
+    away.asideRequest = request
+    let missing = ArisAsideTool.answer(stopping, turn: away, critical: false, deps: deps(AsideRunLog(), installed: false))
+    check(missing.status != 0 && missing.output.contains(ArisAside.missingLine) && missing.output.contains(ArisPaymentBoundary.replyRule),
+          "rel11 R2: with Aside missing the brain still gets the reply rule")
+    // English, and a brief in other words.
+    for brief in ["Buy AirPods Pro on amazon.com and complete checkout.", "Add AirPods Pro to the cart and place the order.", "Order it and confirm with saved card."] {
+        let english = FakeAsideTurn(brain: "codex", answers: [.yes([:])])
+        english.asideEnglish = true
+        let englishLog = AsideRunLog()
+        let outcome = ArisAsideTool.answer(brief, turn: english, critical: false, deps: deps(englishLog))
+        check(outcome.status != 0 && english.cards.isEmpty && englishLog.runs.isEmpty, "rel11 R2: refused in English too: \(brief)")
+    }
+    // Every other brief ends with the rule as well: a wording the detection misses is never handed over without it.
+    let plainLog = AsideRunLog()
+    _ = ArisAsideTool.answer("쿠팡에서 에어팟 프로 최저가 찾아줘", turn: FakeAsideTurn(brain: "claude"), critical: false, deps: deps(plainLog))
+    check(plainLog.runs.first?.arguments.last?.hasSuffix(ArisPaymentBoundary.stopClause(english: false)) == true,
+          "rel11 R2: a plain lookup's brief ends with the owner's rule about paying too")
 }

@@ -22,12 +22,17 @@ struct ArisBargeIn: Equatable {
         case between
         case headphones
         case speakers
+        /// Through the speakers with the duplex engine's echo canceller hearing past Aris's voice (arisDuplexAudio):
+        /// what is left of Aris in the microphone is its residual, learned like the speakers' echo, and voice must stand
+        /// over it for `framesCancelled`, longer than between turns, short enough to stop Aris within 200 ms.
+        case cancelled
     }
 
     /// Frames are 10 ms.
     static let framesBetween = 10
     static let framesHeadphones = 15
     static let framesSpeakers = 30
+    static let framesCancelled = 15
     /// Dips this long inside speech (a consonant, a breath) don't break the run.
     static let allowedGap = 3
     /// Voice must be this many times the echo (12 dB).
@@ -39,6 +44,9 @@ struct ArisBargeIn: Equatable {
     static let overFloor: Float = 4
     /// The echo's strength before anything is learned: the mic hears Aris as loud as it plays (cautious).
     static let startingEchoGain: Float = 1
+    /// What the canceller leaves of Aris before anything is learned: a quarter of what it plays (still cautious; a real
+    /// residual is far below that and the watch learns it down within a second or two of Aris talking alone).
+    static let startingResidualGain: Float = 0.25
     /// How fast the echo's strength rises to a louder hop (~0.1 s) and falls to a quieter one (~1 s).
     static let echoUp: Float = 0.1
     static let echoDown: Float = 0.01
@@ -67,6 +75,12 @@ struct ArisBargeIn: Equatable {
         headphones ? .headphones : speakersAllowed && echoCancelled ? .speakers : nil
     }
 
+    /// With the switch on: on speakers, while Aris's line plays through the duplex engine's canceller (`voiceCancelled`),
+    /// the watch stays armed in `.cancelled`; nil otherwise (the old rules above decide).
+    static func cancelledMode(headphones: Bool, speakersAllowed: Bool, voiceCancelled: Bool) -> Mode? {
+        !headphones && speakersAllowed && voiceCancelled ? .cancelled : nil
+    }
+
     let mode: Mode
     private(set) var floor: Float = 0.005
     private(set) var echoGain: Float = startingEchoGain
@@ -85,13 +99,18 @@ struct ArisBargeIn: Equatable {
     init(mode: Mode, floor: Float = 0.005) {
         self.mode = mode
         self.floor = floor
+        if mode == .cancelled { echoGain = Self.startingResidualGain }
     }
+
+    /// The modes that hear Aris's own output and learn its echo.
+    private var hearsOutput: Bool { mode == .speakers || mode == .cancelled }
 
     var framesNeeded: Int {
         switch mode {
         case .between: Self.framesBetween
         case .headphones: Self.framesHeadphones
         case .speakers: Self.framesSpeakers
+        case .cancelled: Self.framesCancelled
         }
     }
 
@@ -99,7 +118,7 @@ struct ArisBargeIn: Equatable {
     mutating func feed(mic: Float, playback: Float) -> Bool {
         recentPlayback.append(playback)
         if recentPlayback.count > Self.echoWindow { recentPlayback.removeFirst(recentPlayback.count - Self.echoWindow) }
-        let peak = mode == .speakers ? recentPlayback.max() ?? 0 : 0
+        let peak = hearsOutput ? recentPlayback.max() ?? 0 : 0
         let voice = mic > threshold(playbackPeak: peak)
         learn(mic: mic, playbackPeak: peak, voice: voice)
         defer { frame += 1 }
@@ -134,7 +153,7 @@ struct ArisBargeIn: Equatable {
             floor = floor * 0.999 + mic * 0.001
         }
         // The echo only from hops that aren't the user.
-        guard !voice, mode == .speakers, playbackPeak > Self.silentPlayback else { return }
+        guard !voice, hearsOutput, playbackPeak > Self.silentPlayback else { return }
         let ratio = mic / playbackPeak
         if ratio <= echoGain {
             echoGain = echoGain * (1 - Self.echoDown) + ratio * Self.echoDown

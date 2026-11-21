@@ -218,16 +218,17 @@ private func failedJobTests() {
 
 private func jobRoutingTests() {
     typealias R = ArisJobRouting
-    check(R.brain(forDispatched: .claude) == .codex && R.brain(forDispatched: .antigravity) == .codex && R.brain(forDispatched: .codex) == .codex,
-          "team-7: with every brain set up, an untrusted job of a Claude, Gemini or Codex turn asks for Codex, where the agent runs it gated")
-    check(R.brain(forDispatched: .api) == .api, "team-7: an API-brain turn's job stays on the API brain (it is gated itself): no Codex needed")
-    let noCodex = ["codex": false, "claude": true, "api": true, "antigravity": true]
-    check(R.brain(forDispatched: .claude, ready: noCodex) == .api && R.brain(forDispatched: .antigravity, ready: noCodex) == .api,
-          "team-7: without Codex on this Mac, the job asks for the API brain instead of failing on a GPT login line")
+    check(ArisBrain.allCases.allSatisfy { R.brain(forDispatched: $0) == $0 },
+          "jv-polish: with every brain set up, an untrusted job (a screen conversation's) asks for the turn's own brain, run behind its gate")
+    let noClaude = ["claude": false, "codex": true, "api": true]
+    check(R.brain(forDispatched: .claude, ready: noClaude) == .codex, "team-7: a turn brain that isn't set up hands the job to Codex")
+    let noClaudeNoCodex = ["codex": false, "claude": false, "api": true, "antigravity": true]
+    check(R.brain(forDispatched: .claude, ready: noClaudeNoCodex) == .api && R.brain(forDispatched: .antigravity, ready: ["antigravity": false, "codex": false]) == .api,
+          "team-7: without the turn's brain or Codex on this Mac, the job asks for the API brain instead of failing on a GPT login line")
     check(R.brain(forDispatched: .api, ready: ["api": false, "codex": true]) == .codex, "team-7: an API brain that isn't set up falls back to Codex")
-    let neither = ["codex": false, "api": false, "claude": true]
+    let neither = ["codex": false, "api": false, "claude": false]
     check(R.brain(forDispatched: .claude, ready: neither) == .claude,
-          "team-7: with neither gated brain here the job asks for the turn's own brain, so it says what is missing")
+          "team-7: with no brain here the job asks for the turn's own brain, so it says what is missing")
     check(R.isReady(.claude, [:]) && R.isReady(.codex, ["claude": false]) && !R.isReady(.codex, ["codex": false]),
           "team-7: a brain the agent said nothing about counts as set up")
 
@@ -235,12 +236,13 @@ private func jobRoutingTests() {
     let words = "A랑 B 동시에 조사해줘"
     let specs = [ArisJobSpec(title: "a", prompt: "A 조사", assignee: .clone, cwd: nil, appHint: nil), ArisJobSpec(title: "b", prompt: "B 조사", assignee: .clone, cwd: nil, appHint: nil)]
     let clean = ArisHandOutPlan.Turn(words: words, brain: .claude, turnId: "t1")
-    check(ArisHandOutPlan.plan(specs, turn: clean, ready: noCodex).allSatisfy { $0.brain == .api && $0.provenance.untrusted }
-          && ArisHandOutPlan.plan(specs, turn: clean).allSatisfy { $0.brain == .codex && $0.provenance.untrusted },
-          "team-7: parallel helpers ask for a gated brain that is here, still untrusted")
+    let noCodex = ["codex": false, "claude": true, "api": true, "antigravity": true]
+    check(ArisHandOutPlan.plan(specs, turn: clean, ready: noCodex).allSatisfy { $0.brain == .claude && $0.provenance.untrusted }
+          && ArisHandOutPlan.plan(specs, turn: clean, ready: ["claude": false]).allSatisfy { $0.brain == .codex && $0.provenance.untrusted },
+          "team-7: parallel helpers ask for the turn's brain (a gated one only when it isn't here), still untrusted")
     let screen = ArisHandOutPlan.Turn(words: "이거 정리해 놔", brain: .antigravity, turnId: nil, screenConversation: true)
     let unclean = ArisHandOutPlan.plan([], turn: screen, ready: noCodex)
-    check(unclean.count == 1 && unclean[0].brain == .api && unclean[0].provenance.untrusted && unclean[0].cleanContext && unclean[0].provenance.screenConversation,
+    check(unclean.count == 1 && unclean[0].brain == .antigravity && unclean[0].provenance.untrusted && unclean[0].cleanContext && unclean[0].provenance.screenConversation,
           "team-7: a hand-out after a screen turn does too, with every safety mark it had (untrusted, no conversation, the screen claim)")
     let apiTurn = ArisHandOutPlan.Turn(words: "이거 정리해 놔", brain: .api, turnId: nil, outsideConversation: true)
     check(ArisHandOutPlan.plan([], turn: apiTurn).first?.brain == .api, "team-7: an API-brain turn's unclean hand-out runs on the API brain")
@@ -367,12 +369,14 @@ private func windowHiccupTests() {
 
 private func cardsWiringTests() {
     let tasks = cardsSource("Aris/private/Aris/ArisController+Tasks.swift")
-    check(tasks.contains("while ContinuousClock.now < deadline, !Task.isCancelled, cardUp(ask), typedAnswer == nil")
-          && tasks.contains("while answer == nil, ContinuousClock.now < longest, !Task.isCancelled, cardUp(ask)")
-          && tasks.contains("while typedAnswer == nil, ContinuousClock.now < longest, !Task.isCancelled, cardUp(ask)"),
+    // jv-kernel: a stopped wait is the kernel's `.cancelled` outcome now, not a Task.isCancelled poll.
+    check(tasks.contains("while ContinuousClock.now < deadline, cardUp(ask), heard.answer(at: Self.uptime, voiceYes: voiceYes) == nil")
+          && tasks.contains("while answer == nil, ContinuousClock.now < longest, cardUp(ask)")
+          && tasks.contains("while ContinuousClock.now < longest, cardUp(ask) {"),
           "card-1: every wait of a card stops as soon as the card is no longer the one on screen")
-    check(tasks.contains("ArisCardCover.answer(typedAnswer, card: ask.id, shown: session.question?.id)")
-          && tasks.contains("if ArisCardCover.ownsKeys(card: ask.id, shown: session.question?.id) {\n                typedAnswer = nil\n                KeyboardFocus.releaseCard()"),
+    // jv-kernel: the answer is the kernel's outcome for this showing, closed when its waiter leaves.
+    check(tasks.contains("kernel.closeCard(key)")
+          && tasks.contains("if ArisCardCover.ownsKeys(card: ask.id, shown: session.question?.id) {\n                KeyboardFocus.releaseCard()"),
           "card-1: the shared answer slot is read, cleared and its keys let go only by the card on screen")
     check(tasks.contains("guard typed != nil || cardUp(ask) else { return covered() }"),
           "card-1: words heard after the card was covered (the user's new request) are never its answer")
@@ -385,15 +389,15 @@ private func cardsWiringTests() {
 
     let team = cardsSource("Aris/private/Aris/ArisController+Team.swift"), inbox = cardsSource("Aris/private/Aris/ArisController+Inbox.swift")
     let park = cardsSource("Aris/private/Aris/ArisController+CardPark.swift")
-    check(team.contains("await settleCard(ask, title: job.title, job: job.id, handsFree: handsFree)") && inbox.contains("self.settleCard(ask, title: item.title, job: nil, handsFree: false"),
+    check(team.contains("await settleCard(ask, title: job.title, job: job.id, asked: job.created, handsFree: handsFree)") && inbox.contains("self.settleCard(ask, title: item.title, job: nil, asked: nil, handsFree: false"),
           "card-2: a job's and the inbox's question both go through the held-question runner")
     check(!team.contains("ArisAgentClient.confirm(ask.id, allow: allow") && !inbox.contains("ArisAgentClient.confirm(")
           && park.components(separatedBy: "ArisAgentClient.confirm(").count == 2 && park.contains("case .send(let allow): return .answered(await send(allow, for: ask, title: title))"),
           "card-2 / team-1: the only POST /confirm for such a card carries an answer the user gave")
-    check(park.contains("self.askCard(ask, handsFree: handsFree, agentCard: true, quiet: quietNow)") && park.contains("switch ArisParkedAsk.next(wait.end)")
+    check(park.contains("self.askCard(ask, handsFree: handsFree, agentCard: true, quiet: quietNow, job: job == nil ? nil : title)") && park.contains("switch ArisParkedAsk.next(wait.end)")
           && park.contains("desk.park(ArisWaitingCard(id: ask.id, title: title, action: ask.title, job: job, why: why, since: Date()))"),
           "card-1: the card is the agent's (one ledger line), and one that was covered or left unanswered waits in 확인 대기")
-    check(park.contains("await ArisAgentClient.stillWaits(ask.id)") && park.contains("case nil: return .unreachable") && !inbox.contains("ArisAgentClient.isWaiting(")
+    check(park.contains("await ArisAgentClient.stillWaits(ask.id)") && park.contains("case nil:") && park.contains("ArisParkedAsk.unreachableWait(tries: unreachable)") && !inbox.contains("ArisAgentClient.isWaiting(")
           && inbox.contains("case .unreachable:"),
           "card-2: an agent that didn't answer whether it still waits never gets a scheduled question acknowledged away")
     check(cardsSource("Aris/private/Aris/Home/ArisTaskTags.swift").contains("waiting: desk.waiting.cards.map(Self.chip), openWaiting: { aris.openWaitingCard($0) }")
@@ -401,6 +405,6 @@ private func cardsWiringTests() {
           "imp-3: the open notch shows a 확인 대기 chip for each parked question, even with no job running")
     check(cardsSource("Aris/private/Aris/ArisController+Conversation.swift").contains("guard !Task.isCancelled else { return reply }"),
           "card-1: a card of a turn the user replaced never says “답이 없어서…” over his new turn")
-    check(team.contains("ArisJobLedger.note(jobs)") && cardsSource("Aris/private/Aris/ArisController+Teammate.swift").contains("Task { [weak self] in self?.reportLostJobs() }"),
+    check(team.contains("ArisJobLedger.note(jobs)") && cardsSource("Aris/private/Aris/ArisController+Teammate.swift").contains("Task { [weak self] in await self?.reportLostJobs() }"),
           "team-2: the jobs under way are noted as they change, and a launch reports the ones the last run lost")
 }

@@ -64,7 +64,8 @@ enum ArisStopLine {
     }
 
     private static func doneSoFar(_ record: [String], english: Bool) -> String {
-        let named = record.prefix(listed).map { "‘\($0)’" }.joined(separator: ", ")
+        // The record's lines in the UI's language (fifth VM run, D3).
+        let named = record.prefix(listed).map { "‘\(english ? ArisActivityWords.english($0) : $0)’" }.joined(separator: ", ")
         let more = record.count - listed
         if english { return "Done so far: \(named)\(more > 0 ? " and \(more) more" : ""). The rest was stopped." }
         return "여기까지 했어요: \(named)\(more > 0 ? " 외 \(more)건" : ""). 나머지는 멈췄어요."

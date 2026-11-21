@@ -59,10 +59,11 @@ enum ArisEchoGuard {
         playing || (sinceStopped.map { $0 < window } ?? false)
     }
 
-    /// Aris's name anywhere in what it said ("아리스가 할게요", "I'm Aris"), however it is joined to the words around it.
-    static func namesAris(_ text: String) -> Bool {
+    /// The wake name anywhere in what Aris said ("아리스가 할게요", "I'm Aris"), however it is joined to the words around
+    /// it: the name chosen in Settings and its learned spellings (ArisWakeName).
+    static func namesAris(_ text: String, name: ArisWakeName = .current) -> Bool {
         let folded = text.lowercased()
-        return ["아리스", "아리쓰", "aris"].contains { folded.contains($0) }
+        return name.spellings.contains { folded.contains($0) }
     }
 
     /// "아리스" heard over the speakers while Aris's own voice may be in the microphone, when Aris itself just said its

@@ -134,9 +134,11 @@ enum ArisAgentStream {
         } + [["type": "text", "text": prompt]]
     }
 
-    static func userMessage(_ text: String, images: [ArisTurnImage] = []) -> Data {
+    /// `uuid`: the message's own id in the brain's conversation (Claude Code keeps it), which a rewind names.
+    static func userMessage(_ text: String, images: [ArisTurnImage] = [], uuid: String? = nil) -> Data {
         let content: Any = images.isEmpty ? text : self.content(prompt: text, images: images)
-        let message: [String: Any] = ["type": "user", "message": ["role": "user", "content": content]]
+        var message: [String: Any] = ["type": "user", "message": ["role": "user", "content": content]]
+        if let uuid { message["uuid"] = uuid }
         let json = (try? JSONSerialization.data(withJSONObject: message)) ?? Data()
         return json + Data("\n".utf8)
     }

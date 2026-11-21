@@ -100,6 +100,8 @@ enum ArisWakeDoubt {
         case playing = "media-playing"
         /// Whisper didn't hear the name and the words after it weren't a request to Aris (ArisWakeAddressed).
         case notAddressed = "not-addressed"
+        /// The voice was clearly not the owner's (ArisVoiceID, F1).
+        case notOwner = "not-owner-voice"
 
         var path: String { rawValue }
 
@@ -111,6 +113,7 @@ enum ArisWakeDoubt {
             case .music: "wake word: borderline, over music, not 아리스: closed quietly"
             case .playing: "wake word: borderline, this Mac was playing, not 아리스: closed quietly"
             case .notAddressed: "wake word: borderline, not 아리스, and the words weren't for Aris: closed quietly"
+            case .notOwner: "wake word: not the owner's voice: closed quietly"
             }
         }
     }
@@ -121,8 +124,8 @@ enum ArisWakeDoubt {
     /// Japanese or Russian (3,673 of the wake log's 6,988 rejected texts were Latin script, 193 Japanese or Chinese).
     static func checkLanguage(_ languages: [String]) -> String? { languages.first }
 
-    /// The prompt Whisper starts from: the name as that language writes it.
-    static func checkPrompt(language: String?) -> String { language == "ko" ? "아리스" : "Aris" }
+    /// The prompt Whisper starts from: the name as that language writes it (a name chosen in Settings as typed).
+    static func checkPrompt(language: String?) -> String { ArisWakeName.current.prompt(language: language) }
 
     struct CheckedSegment: Equatable {
         let text: String

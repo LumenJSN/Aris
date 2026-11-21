@@ -80,6 +80,13 @@ enum ArisUsageWords {
         ArisUIWords.text("많이 쓴 모델: \(model)", "Most used model: \(model)", english: english)
     }
 
+    /// The models with no known price: counted in the tokens, left out of the dollars.
+    static func unpriced(_ models: [String], english: Bool = ArisUIWords.english) -> String {
+        let names = models.prefix(3).joined(separator: ", ") + (models.count > 3 ? " …" : "")
+        return ArisUIWords.text("가격을 모르는 모델(\(names))은 토큰만 세고 금액에는 넣지 않았어요.",
+                                "No price is known for \(names): its tokens are counted, the cost leaves it out.", english: english)
+    }
+
     static func costNote(english: Bool = ArisUIWords.english) -> String {
         ArisUIWords.text("맥에 남은 기록을 API 가격으로 계산한 값이에요.", "Worked out from the records on this Mac at API prices.", english: english)
     }

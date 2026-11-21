@@ -28,10 +28,10 @@ struct ArisConfirmation: Equatable, Sendable {
     /// The values the user may change before they says yes (ArisCardEdit), chosen by the agent's code for the action's kind,
     /// never by the model; empty for a card that can't be edited.
     let fields: [ArisCardField]
-    /// The yes button's word when it isn't 허용 or 보내기: only one of `allowLabels` (Aside's 설치 and 로그인 cards),
-    /// anything else is dropped (security review L6).
+    /// The yes button's word when it isn't 허용 or 보내기: only one of `allowLabels` (Aside's 설치 and 로그인 cards, a
+    /// replay's 계속 after a step that failed), anything else is dropped (security review L6).
     let allow: String?
-    static let allowLabels: Set<String> = ["설치", "로그인", "Install", "Sign in"]
+    static let allowLabels: Set<String> = ["설치", "로그인", "Install", "Sign in", "계속", "Continue"]
     /// The card asks about a write to the user's memory (`remember`/`forget`), set by the gate from the action itself: such a
     /// turn never auto-learns (QA BUG-6). Never read from the card's title.
     let memoryWrite: Bool
@@ -42,6 +42,12 @@ struct ArisConfirmation: Equatable, Sendable {
     /// The automatic check stopped this action (ArisAutoMode): the card says so and what was about to happen, its
     /// default is 하지 않기, and 그래도 하기 only asks for the action's own confirm card next. Its yes runs nothing.
     var stopped = false
+    /// A `fleet.answer` allow card: the one session's one permission request its yes lets through (set by the agent's
+    /// fleet code from the hook's structured fields, applied by the app at the yes: ArisFleetGrantApply).
+    var fleetGrant: ArisFleetGrant? = nil
+    /// A countdown for an action that is no message (Core 2's "said first, with a moment to stop" for a permanent
+    /// change): the card shows its title and what happens, never 받는 사람 and 메시지. A message's countdown has none.
+    var action = false
 
     init(id: String, title: String, detail: String, countdown: Bool = false, spoken: String? = nil, proposal: Bool = false,
          full: String? = nil, fields: [ArisCardField] = [], allow: String? = nil, memoryWrite: Bool = false, desktop: ArisCardTarget? = nil) {
@@ -140,6 +146,12 @@ struct ArisJobWork: Equatable, Sendable {
     var tools: Int
     var failed: Int
     var acted: Bool
+    /// The agent the job handed its work to (Aside) finished with an answer (true) or came back without one (false);
+    /// nil when it handed nothing out. Its own outcome, read before any of the job's words (ArisJobVerdict).
+    var delegated: Bool? = nil
+    /// The job stopped acting on its own: the owner said no to one of its cards (or none was answered), or a hand-off of
+    /// it didn't go through (twelfth VM run, B3). Such a job is never asked again (ArisJobVerdict.retries).
+    var stopped = false
 }
 
 enum ArisAgentReply: Equatable, Sendable {
@@ -214,6 +226,8 @@ enum ArisAgentReply: Equatable, Sendable {
             if let allow = ask.allow { fields["allow"] = allow }
             if let desktop = ask.desktop { fields["desktop"] = desktop.json }
             if ask.stopped { fields["stopped"] = true }
+            if let grant = ask.fleetGrant { fields["fleetGrant"] = grant.json }
+            if ask.countdown && ask.action { fields["action"] = true }
             object = ["confirm": fields]
         case .file(let path): object = ["file": path]
         case .delta(let text): object = ["delta": text]
@@ -244,7 +258,11 @@ enum ArisAgentReply: Equatable, Sendable {
         case .skill(let title): object = ["skill": title]
         case .helperAnswers: object = ["own": true]
         case .savedSteps: object = ["savedSteps": true]
-        case .work(let work): object = ["work": ["tools": work.tools, "failed": work.failed, "acted": work.acted]]
+        case .work(let work):
+            var counted: [String: Any] = ["tools": work.tools, "failed": work.failed, "acted": work.acted]
+            if let delegated = work.delegated { counted["delegated"] = delegated }
+            if work.stopped { counted["stopped"] = true }
+            object = ["work": counted]
         }
         return ((try? JSONSerialization.data(withJSONObject: object)) ?? Data()) + Data("\n".utf8)
     }
@@ -268,7 +286,8 @@ enum ArisAgentReply: Equatable, Sendable {
         if object["own"] as? Bool == true { return .helperAnswers }
         if object["savedSteps"] as? Bool == true { return .savedSteps }
         if let work = object["work"] as? [String: Any], let tools = work["tools"] as? Int, let failed = work["failed"] as? Int {
-            return .work(ArisJobWork(tools: max(0, tools), failed: max(0, failed), acted: work["acted"] as? Bool == true))
+            return .work(ArisJobWork(tools: max(0, tools), failed: max(0, failed), acted: work["acted"] as? Bool == true,
+                                     delegated: work["delegated"] as? Bool, stopped: work["stopped"] as? Bool == true))
         }
         if object["shownOnly"] as? Bool == true { return .shownOnly }
         if let fields = object["operating"] as? [String: Any], let app = fields["app"] as? String,
@@ -291,6 +310,8 @@ enum ArisAgentReply: Equatable, Sendable {
                                         full: ask["full"] as? String, fields: ArisCardEdit.parse(ask["fields"]),
                                         allow: ask["allow"] as? String, desktop: ArisCardTarget.parse(ask["desktop"]))
             card.stopped = ask["stopped"] as? Bool == true
+            card.fleetGrant = ArisFleetGrant.parse(ask["fleetGrant"])
+            card.action = card.countdown && ask["action"] as? Bool == true
             return .confirm(card)
         }
         return nil
@@ -301,6 +322,35 @@ enum ArisAgentReply: Equatable, Sendable {
 /// (in the user's language), and the same line read back (`named(in:)`, or the failure line's "trouble" field) tells
 /// the app to put a way to Settings › AI 서비스 beside it, instead of a developer's "Couldn't start … (is it installed?)"
 /// (audit f2-no-brain-5).
+/// Where the AI that answers is chosen in Settings, in the words the settings window draws: its page (ArisSettingsPage
+/// .talk's title) and part (ArisSettingsParts' "talk.ai"), with the English the window's catalog gives them. The page
+/// "AI 서비스" these lines named is gone (fifth VM run, D4); the settings tests fail when the window's names and these
+/// differ, so the two can't drift apart again. Here because aris-agent writes these lines too.
+enum ArisSettingsNames {
+    struct Name: Equatable, Sendable {
+        let korean: String
+        let english: String
+        func text(english: Bool) -> String { english ? self.english : korean }
+    }
+
+    static let settings = Name(korean: "설정", english: "Settings")
+    static let talkPage = Name(korean: "Aris와 말하기", english: "Talking to Aris")
+    static let aiPart = Name(korean: "AI · 모델", english: "AI · Model")
+
+    /// "설정 › Aris와 말하기 › AI · 모델", "Settings › Talking to Aris › AI · Model".
+    static func aiPlace(english: Bool) -> String {
+        [settings, talkPage, aiPart].map { $0.text(english: english) }.joined(separator: " › ")
+    }
+
+    static let ablePage = Name(korean: "할 수 있는 일", english: "What Aris can do")
+    static let connectPart = Name(korean: "연결", english: "Connect")
+
+    /// "설정 › 할 수 있는 일 › 연결": where external services (Composio, an MCP server) are added.
+    static func connectPlace(english: Bool) -> String {
+        [settings, ablePage, connectPart].map { $0.text(english: english) }.joined(separator: " › ")
+    }
+}
+
 struct ArisBrainTrouble: Equatable, Sendable {
     enum Missing: String, Sendable, CaseIterable {
         /// The AI's own program (codex, claude, agy) isn't on this Mac.
@@ -325,19 +375,20 @@ struct ArisBrainTrouble: Equatable, Sendable {
     /// One line for the notch: what is missing and where to fix it.
     func line(korean: Bool) -> String {
         let name = brain?.title ?? "AI"
+        let place = ArisSettingsNames.aiPlace(english: !korean)
         switch missing {
         case .program:
-            return korean ? "이 Mac에 \(name)가 설치되어 있지 않아요. 설정 › AI 서비스에서 연결하거나 다른 AI를 골라 주세요."
-                          : "\(name) isn't installed on this Mac. Connect it or pick another AI in Settings › AI services."
+            return korean ? "이 Mac에 \(name)가 설치되어 있지 않아요. \(place)에서 연결하거나 다른 AI를 골라 주세요."
+                          : "\(name) isn't installed on this Mac. Connect it or pick another AI in \(place)."
         case .key:
-            return korean ? "API 브레인에 쓸 키가 없어요. 설정 › AI 서비스에서 API 키를 넣어 주세요."
-                          : "The API brain has no key yet. Add one in Settings › AI services."
+            return korean ? "API 브레인에 쓸 키가 없어요. \(place)에서 API 키를 넣어 주세요."
+                          : "The API brain has no key yet. Add one in \(place)."
         case .setup:
-            return korean ? "API 브레인이 아직 설정되지 않았어요. 설정 › AI 서비스에서 제공자와 모델을 골라 주세요."
-                          : "The API brain isn't set up yet. Pick a provider and a model in Settings › AI services."
+            return korean ? "API 브레인이 아직 설정되지 않았어요. \(place)에서 제공자와 모델을 골라 주세요."
+                          : "The API brain isn't set up yet. Pick a provider and a model in \(place)."
         case .any:
-            return korean ? "지금 쓸 수 있는 AI가 없어요. 설정 › AI 서비스에서 AI를 하나 연결해 주세요."
-                          : "No AI is ready on this Mac. Connect one in Settings › AI services."
+            return korean ? "지금 쓸 수 있는 AI가 없어요. \(place)에서 AI를 하나 연결해 주세요."
+                          : "No AI is ready on this Mac. Connect one in \(place)."
         }
     }
 
@@ -370,7 +421,10 @@ struct ArisBrainTrouble: Equatable, Sendable {
     static func isCannotStart(_ text: String) -> Bool { named(in: text) != nil }
 
     /// The button under it.
-    static func settingsButton(english: Bool) -> String { english ? "Open Settings › AI services" : "설정 › AI 서비스 열기" }
+    static func settingsButton(english: Bool) -> String {
+        let part = ArisSettingsNames.aiPart.text(english: english), settings = ArisSettingsNames.settings.text(english: english)
+        return english ? "Open \(settings) › \(part)" : "\(settings) › \(part) 열기"
+    }
 }
 
 /// When a process started, which with its pid names it for good (a pid alone can be reused). The app sends its own
@@ -469,6 +523,13 @@ enum ArisCardEdit {
         return role != .time || isMoment(value)
     }
 
+    /// Whether a field says its value can't be used: only for a value written that fails (twelfth VM run: a value
+    /// card's empty field showed "이 값으로는 할 수 없어요" before anything was typed). An empty field only keeps the yes
+    /// waiting (allAccepted), with nothing said.
+    static func showsRefusal(_ value: String, role: ArisCardField.Role) -> Bool {
+        !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !accepts(value, role: role)
+    }
+
     static func isMoment(_ value: String) -> Bool {
         guard value.range(of: #"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$"#, options: .regularExpression) != nil else { return false }
         let formatter = DateFormatter()
@@ -478,10 +539,12 @@ enum ArisCardEdit {
         return formatter.date(from: value).map { formatter.string(from: $0) == value } ?? false
     }
 
-    /// The lines of an editable card's details above its fields' own text (why it asks); nil when none.
+    /// The lines of an editable card's details above its fields' own text (why it asks); nil when none. Details that
+    /// don't end with the fields' own text are drawn whole: nothing a card was built with is left undrawn (seventh VM
+    /// run, item 1: a lesson's values card said its text goes on a new line, and the card drew none of it).
     static func note(_ question: ArisConfirmation) -> String? {
         let fields = shown(question.fields, values(question.fields))
-        let rest = question.detail.hasSuffix(fields) ? String(question.detail.dropLast(fields.count)) : ""
+        let rest = question.detail.hasSuffix(fields) ? String(question.detail.dropLast(fields.count)) : question.detail
         let note = rest.trimmingCharacters(in: .whitespacesAndNewlines)
         return note.isEmpty ? nil : note
     }

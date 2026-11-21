@@ -4,9 +4,11 @@
 //
 //  The right ⌥ held alone dictates; let go and the words are typed where the cursor is. Two quick presses lock it
 //  hands-free (let go and keep talking), one more press types it; a third press inside the first half second, or Esc,
-//  throws it away. A press under 200 ms with no second one is an accident and dropped quietly. ⌥ with another key (a
-//  special character, a shortcut) cancels. Pure: the key
-//  tap feeds it events and the time, and delivers `.tick` at `deadline`.
+//  throws it away. A press under 200 ms with no second one is an accident and dropped quietly. Nothing starts until the
+//  key has been held alone past those 200 ms (2026-11-18 audit: ⌥ with another key, typing a symbol, opened the
+//  microphone and the notch before the other key cancelled it): another key before then starts nothing, after then it
+//  cancels. Pure: the key tap feeds it events and the time,
+//  and delivers `.tick` at `deadline`.
 //
 
 import Foundation
@@ -35,6 +37,8 @@ enum ArisDictationKey {
         case start
         /// Hands-free now: letting go keeps listening.
         case lock
+        /// A double tap before anything started: start, hands-free.
+        case startLocked
         case finish, cancel, none
     }
 
@@ -43,6 +47,10 @@ enum ArisDictationKey {
             case idle
             /// Down with another modifier, or already settled: nothing until it's let go.
             case ignoring
+            /// Down alone, not yet past the tap threshold: nothing has started.
+            case pressed(firstDown: ContinuousClock.Instant)
+            /// Let go before the threshold: nothing started; a second press inside the window starts hands-free.
+            case tapped(firstDown: ContinuousClock.Instant)
             case holding(firstDown: ContinuousClock.Instant)
             /// Let go after a short press: a second press may still come.
             case waiting(firstDown: ContinuousClock.Instant, held: Duration)
@@ -59,10 +67,21 @@ enum ArisDictationKey {
             return false
         }
 
-        /// When `.tick` must be delivered (the double-tap window's end), or nil.
+        /// A dictation was started by this press (it is the app's to end).
+        var hasStarted: Bool {
+            switch phase {
+            case .holding, .waiting, .locked: true
+            case .idle, .ignoring, .pressed, .tapped: false
+            }
+        }
+
+        /// When `.tick` must be delivered (the tap threshold, the double-tap window's end), or nil.
         var deadline: ContinuousClock.Instant? {
-            if case .waiting(let firstDown, _) = phase { return firstDown + ArisDictationKey.multiTapWindow }
-            return nil
+            switch phase {
+            case .pressed(let firstDown): firstDown + ArisDictationKey.accidentalTap
+            case .tapped(let firstDown), .waiting(let firstDown, _): firstDown + ArisDictationKey.multiTapWindow
+            default: nil
+            }
         }
 
         /// Forget everything (the app dropped the dictation on its own).
@@ -76,11 +95,46 @@ enum ArisDictationKey {
             switch phase {
             case .idle:
                 guard case .down(let alone) = event else { return .none }
-                phase = alone ? .holding(firstDown: now) : .ignoring
-                return alone ? .start : .none
+                phase = alone ? .pressed(firstDown: now) : .ignoring
+                return .none
             case .ignoring:
                 if event == .up { phase = .idle }
                 return .none
+            case .pressed(let firstDown):
+                switch event {
+                case .tick:
+                    guard now >= firstDown + ArisDictationKey.accidentalTap else { return .none }
+                    phase = .holding(firstDown: firstDown)
+                    return .start
+                case .up:
+                    // Let go before anything started: an accident, unless a second press follows (hands-free).
+                    phase = now - firstDown < ArisDictationKey.accidentalTap ? .tapped(firstDown: firstDown) : .idle
+                    return .none
+                case .otherKey, .escape:
+                    // ⌥ with another key (a symbol, a shortcut): nothing was started, nothing is.
+                    phase = .ignoring
+                    return .none
+                case .down:
+                    return .none
+                }
+            case .tapped(let firstDown):
+                switch event {
+                case .down(let alone):
+                    guard alone, now < firstDown + ArisDictationKey.multiTapWindow else {
+                        phase = alone ? .pressed(firstDown: now) : .ignoring
+                        return .none
+                    }
+                    phase = .locked(firstDown: firstDown)
+                    return .startLocked
+                case .tick:
+                    if now >= firstDown + ArisDictationKey.multiTapWindow { phase = .idle }
+                    return .none
+                case .otherKey, .escape:
+                    phase = .idle
+                    return .none
+                case .up:
+                    return .none
+                }
             case .holding(let firstDown):
                 switch event {
                 case .up:
@@ -235,7 +289,7 @@ struct ArisDictationQueue: Equatable {
     mutating func take(_ action: ArisDictationKey.Action) -> Bool {
         guard waiting else { return false }
         switch action {
-        case .lock: locked = true
+        case .lock, .startLocked: locked = true
         case .finish, .cancel: self = ArisDictationQueue()
         case .start, .none: break
         }
@@ -352,4 +406,25 @@ extension ArisDictationKey {
                 .replacingOccurrences(of: "right ⌥", with: name(english: true))
         }
     }
+}
+
+// MARK: - On or off
+
+/// Settings › 받아쓰기 › 받아쓰기 쓰기: dictation as a whole, on unless it was turned off (for another dictation app).
+/// Off, the key tap hands nothing on (the key and Esc reach the apps as they would without Aris), ⌃⌘V is unregistered,
+/// and the pill is hidden, idle too, so a click where it was does nothing. Talking to Aris is untouched. Pure.
+enum ArisDictationSwitch {
+    static let storeKey = "arisDictationOn"
+
+    /// What a stored value means: on unless it says off.
+    static func isOn(_ value: Any?) -> Bool { (value as? Bool) ?? true }
+
+    static var on: Bool { isOn(UserDefaults.standard.object(forKey: storeKey)) }
+
+    /// Whether the key tap hands an event to ArisDictationKey: never while dictation is off, nor while Settings records
+    /// a new key.
+    static func reacts(on: Bool, paused: Bool) -> Bool { on && !paused }
+
+    /// Whether the pill takes dictation: dictation on, and 받아쓰기 알약 보이기 on.
+    static func pillOn(dictation: Bool, pill: Bool) -> Bool { dictation && pill }
 }

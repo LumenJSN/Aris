@@ -16,7 +16,13 @@ struct ArisComposer: View {
     @ObservedObject private var attachments = ArisAttachments.shared
     /// Re-draws this view when the hidden look changes (ArisDuskLookGate).
     @ObservedObject private var duskLook = ArisDuskLookGate.shared
-    @State private var text = ""
+    /// The typed words live outside the view (ArisComposerDraft): closing the notch tears this view down, and the
+    /// draft stays until it is sent or cleared.
+    @ObservedObject private var draft = ArisComposerDraft.shared
+    private var text: String {
+        get { draft.text }
+        nonmutating set { draft.text = newValue }
+    }
     /// Set only after files are given to Aris (BUG-24a); never on hover.
     @FocusState private var focused: Bool
     /// The lines the text takes, one to three (ArisComposerLines).
@@ -64,13 +70,16 @@ struct ArisComposer: View {
         let radius = dusk ? CGFloat(ArisDuskLook.Field.height) / 2 : ArisGlass.pillRadius
         return ZStack(alignment: .leading) {
                 if text.isEmpty { hint.allowsHitTesting(false) }
-                TextField("", text: $text, axis: .vertical)
+                TextField("", text: $draft.text, axis: .vertical)
                     .lineLimit(1...ArisComposerLines.maxLines)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
                     .foregroundStyle(.white.opacity(0.95))
                     .arisTextBacking(when: !text.isEmpty)
                     .focused($focused)
+                    // The notch doesn't close under typing (ArisNotchDecisions.composerHolds).
+                    .onChange(of: focused) { _, now in draft.focused = now }
+                    .onDisappear { draft.focused = false }
                     .onSubmit(send)
                     .onChange(of: text) { old, new in keepCleared(old: old, new: new) }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in

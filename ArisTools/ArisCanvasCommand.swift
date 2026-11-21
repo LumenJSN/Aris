@@ -57,16 +57,44 @@ func readCanvas() -> Result<[ArisCanvas.Item], CanvasProblem> {
         URLQueryItem(name: "end_date", value: iso.string(from: now.addingTimeInterval(Double(ArisCanvas.daysAhead) * 86_400))),
         URLQueryItem(name: "per_page", value: "100"),
     ]
-    guard let url = components.url else { return .failure(CanvasProblem(message: "bad Canvas address")) }
-    var request = URLRequest(url: url, timeoutInterval: 10)
-    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    var result: (Data?, Int) = (nil, 0)
-    let done = DispatchSemaphore(value: 0)
-    URLSession.shared.dataTask(with: request) { data, response, _ in
-        result = (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
-        done.signal()
-    }.resume()
-    done.wait()
-    guard result.1 == 200, let data = result.0 else { return .failure(CanvasProblem(message: ArisCanvas.problem(status: result.1))) }
-    return .success(ArisCanvas.items(from: data))
+    guard var url = components.url else { return .failure(CanvasProblem(message: "bad Canvas address")) }
+    // Every page of the planner (Link: rel="next", on this host only), each request with its own limit, and the reason
+    // said when no answer came (it used to be dropped: "Canvas didn't answer").
+    var items: [ArisCanvas.Item] = []
+    let deadline = Date().addingTimeInterval(ArisCanvas.allPagesWithin)
+    for _ in 0..<ArisCanvas.maxPages {
+        let page = canvasPage(url, token: token, deadline: deadline)
+        guard page.status == 200, let data = page.data else {
+            let message = page.status == 0 ? ArisCanvas.problem(noAnswer: page.error, host: host) : ArisCanvas.problem(status: page.status)
+            // A later page that fails leaves what was read; the first one is the whole answer.
+            return items.isEmpty ? .failure(CanvasProblem(message: message)) : .success(items)
+        }
+        items += ArisCanvas.items(from: data)
+        guard let next = ArisCanvas.nextPage(link: page.link, host: host), Date() < deadline else { break }
+        url = next
+    }
+    return .success(items)
+}
+
+/// One page: its body, HTTP status (0: no answer), URLSession's error code and `Link` header; tried once more after a
+/// quick failure of the network that may pass (ArisCanvas.retries).
+private func canvasPage(_ url: URL, token: String, deadline: Date) -> (data: Data?, status: Int, error: URLError.Code?, link: String?) {
+    for attempt in 0..<2 {
+        let started = Date()
+        let left = deadline.timeIntervalSince(started)
+        guard left > 1 else { return (nil, 0, .timedOut, nil) }
+        var request = URLRequest(url: url, timeoutInterval: min(ArisCanvas.requestTimeout, left))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        var result: (data: Data?, status: Int, error: URLError.Code?, link: String?) = (nil, 0, nil, nil)
+        let done = DispatchSemaphore(value: 0)
+        ArisNoStore.session.dataTask(with: request) { data, response, error in
+            let http = response as? HTTPURLResponse
+            result = (data, http?.statusCode ?? 0, (error as? URLError)?.code, http?.value(forHTTPHeaderField: "Link"))
+            done.signal()
+        }.resume()
+        done.wait()
+        guard attempt == 0, result.status == 0, ArisCanvas.retries(result.error, elapsed: Date().timeIntervalSince(started)) else { return result }
+        Thread.sleep(forTimeInterval: 1)
+    }
+    return (nil, 0, nil, nil)
 }

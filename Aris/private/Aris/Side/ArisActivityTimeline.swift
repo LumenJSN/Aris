@@ -27,6 +27,10 @@ struct ArisActivityItem: Decodable, Identifiable, Equatable {
     var action: String?
     /// The automatic check let it run (aris-agent's ArisAutoMarks): the row and its receipt carry "확인함".
     var checked: Bool?
+    /// A taught procedure's run it was a step of (Core 2's record): "되돌려" takes the run back as one change.
+    var unit: String?
+    /// Nothing of the user's to take back (an app opened, what is left of a run already undone): "되돌려" walks past it.
+    var passOver: Bool?
 }
 
 /// Which timeline the tab shows: everyone's, by teammate, or one teammate's.

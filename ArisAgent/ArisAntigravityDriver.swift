@@ -5,9 +5,9 @@
 //  Antigravity (Gemini) through `agy --input-format stream-json`: one long-lived
 //  process, one JSON line per question, a "result" event per answer. agy has no
 //  system-prompt flag, so Aris's instructions ride on the first question of each
-//  process. What it may run is set by the allow/deny rules in ~/.gemini/antigravity-cli/settings.json,
-//  which the agent itself checks and writes before the open agy starts (ArisAgyRules); headless agy refuses the rest.
-//  When those rules can't be written (a settings file Aris can't add to, or can't write), the deny rules that stand in
+//  process. What it may run is set by Aris's allow/deny rules, given to the open agy for its session alone
+//  (`--settings`, ArisAgyRules: the user's own agy settings are never changed); headless agy refuses the rest.
+//  When the user's own settings can't be read as settings (so Aris can't add to them), the deny rules that stand in
 //  for a gate may be missing: that agy never starts open. It starts sealed instead (no tools at all, Aris runs what it
 //  asks for through the relay), and opens again once the rules are there (security review L3).
 //  It takes no images (P1.0: image content parts are an error, image fields are ignored), so takesImages stays
@@ -35,11 +35,16 @@ final class ArisAntigravityDriver: ArisBrainDriver {
     /// Made sealed: it stays so whatever the rules say.
     private let sealedFromStart: Bool
 
-    /// Whether agy is installed, and Aris's rules for it made sure of (the tests say; live: ArisAgyRules.ensure).
+    /// Whether agy is installed, and the settings for its session with Aris's rules (the tests say; live:
+    /// ArisAgyRules.session, after what an earlier Aris wrote into the user's own settings is taken out once).
     var isInstalled: () -> Bool = { ArisAntigravityDriver.installed(ArisAntigravityDriver.places) != nil }
     var ensureRules: (_ tools: String) -> ArisAgyRules.Outcome = { tools in
-        ArisAgyRules.ensure(home: FileManager.default.homeDirectoryForCurrentUser.path, tools: tools, folder: (tools as NSString).deletingLastPathComponent + "/aris")
+        let home = FileManager.default.homeDirectoryForCurrentUser.path, folder = (tools as NSString).deletingLastPathComponent + "/aris"
+        ArisAgyRules.restoreOnce(home: home, tools: tools, folder: folder)
+        return ArisAgyRules.session(home: home, tools: tools, folder: folder)
     }
+    /// The open agy's own settings for this start (`--settings`): nil until `prepare` made them.
+    private(set) var sessionSettings: String?
 
     static let places = ["~/.local/bin/agy", "/opt/homebrew/bin/agy", "/usr/local/bin/agy"]
 
@@ -57,23 +62,23 @@ final class ArisAntigravityDriver: ArisBrainDriver {
         return (agy, arguments)
     }
 
-    /// The open agy runs aris-tools only when its global settings allow it: the rules are checked now, and written when
-    /// any is missing (agy installed after Aris, or never started: audit agy-rules-7). The sealed agy brings its own.
-    /// Called before each start, ahead of `launch`: when the rules couldn't be made sure of, this start is the sealed
-    /// agy's (its settings deny every tool for the session, and Aris's relay does what it asks for); nothing is
-    /// written on a Mac without agy. Once the rules are there, the next start is open again.
+    /// The open agy runs aris-tools only with Aris's rules: they are worked out now, from the user's own settings with
+    /// Aris's added, and given to this start alone (agy installed after Aris, or never started: audit agy-rules-7).
+    /// The sealed agy brings its own. Called before each start, ahead of `launch`: when the rules couldn't be worked
+    /// out, this start is the sealed agy's (its settings deny every tool for the session, and Aris's relay does what it
+    /// asks for); nothing is read on a Mac without agy. Once they can be, the next start is open again.
     func prepare() {
         guard !sealedFromStart, tools.hasPrefix("/"), isInstalled() else { return }
         switch ensureRules(tools) {
-        case .ready: open()
-        case .written:
+        case .ready(let settings):
             open()
-            FileHandle.standardError.write(Data("aris-agent: added Aris's rules to Antigravity's settings\n".utf8))
+            sessionSettings = settings
         case .failed(let why):
             // Without Aris's deny rules an open agy has no gate at all (whatever the owner's own rules allow would run).
             sealed = true
+            sessionSettings = nil
             instructions = ArisAgentPrompt.sealedAgy(tools: tools, handsFree: false, task: false)
-            FileHandle.standardError.write(Data("aris-agent: Antigravity's settings weren't changed (\(why)); it starts without tools of its own, and Aris runs what it asks for\n".utf8))
+            FileHandle.standardError.write(Data("aris-agent: Antigravity's settings can't be read as settings (\(why)); it starts without tools of its own, and Aris runs what it asks for\n".utf8))
         }
     }
 
@@ -84,7 +89,7 @@ final class ArisAntigravityDriver: ArisBrainDriver {
 
     var arguments: [String] {
         ["--input-format", "stream-json", "--output-format", "stream-json", "--model", model]
-            + (sealed ? ["--settings", ArisAgyRelay.noToolsSettings, "--sandbox"] : [])
+            + (sealed ? ["--settings", ArisAgyRelay.noToolsSettings, "--sandbox"] : sessionSettings.map { ["--settings", $0] } ?? [])
     }
 
     var isolatedFolder: Bool { sealed }

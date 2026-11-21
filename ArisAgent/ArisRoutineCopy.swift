@@ -177,8 +177,8 @@ enum ArisRoutineCopy {
         var lines = [korean ? "\(label(routine.name, korean: true))을 지울까요?" : "Delete \(label(routine.name, korean: false))?", numbered(routine.steps)]
         if !schedules.isEmpty {
             let list = schedules.joined(separator: ", ")
-            lines += ["", korean ? "이 루틴을 실행하는 예약이 있어요: \(list). 루틴을 지우면 그 예약은 할 일을 찾지 못해요."
-                                 : "A schedule runs this routine: \(list). Once the routine is gone, that schedule finds nothing to do."]
+            lines += ["", korean ? "이 루틴을 실행하는 예약이 있어요: \(list). 루틴을 지우면 그 예약도 함께 지워요."
+                                 : "A schedule runs this routine: \(list). Deleting the routine deletes that schedule too."]
         }
         return ArisRoutineCard(title: korean ? "루틴 지우기" : "Delete routine", detail: lines.joined(separator: "\n"))
     }

@@ -25,6 +25,9 @@ struct ArisGestureShot: Equatable {
     let voicedMsAtCapture: Double
     let capturedAtMs: Double
     let display: UInt32
+    /// What was circled, in global points (top-left origin, as Accessibility gives frames): the look reads the words
+    /// inside it through Accessibility (jv-focus). Nil for a picked window.
+    var region: CGRect? = nil
 }
 
 /// A finished drawing session, parked for the turn that collects it.

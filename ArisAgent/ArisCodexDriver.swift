@@ -48,6 +48,9 @@ final class ArisCodexDriver: ArisBrainDriver {
     /// The turn under way (turn/started), which turn/steer names; and requests whose error is no failure of the turn.
     private var turnId: String?
     private var quietRequests: Set<Int> = []
+    /// A task's added instructions sent with turn/steer, by request id, and those Codex refused (too late for the turn).
+    private var taskSteers: [Int: String] = [:]
+    private var lateSteers: [String] = []
     /// Codex errors that mean "not now" rather than "can't": the request can go to another AI.
     static let unavailableErrors: Set = ["usageLimitExceeded", "rateLimitExceeded", "serverOverloaded"]
     /// The user's own words for the current question (ArisRiskPolicy+Dictation).
@@ -105,6 +108,9 @@ final class ArisCodexDriver: ArisBrainDriver {
     /// user picked it as the engine (ArisComputerEngine); otherwise Codex works apps through `aris-tools desktop`.
     static let computerUse = "unified-computer-use@openai-bundled"
     var computerEngine = ArisComputerEngine.aris
+
+    /// Whether this Codex gets Aris's Notion server: only when that login is there (ArisNotionLink).
+    var notion = true
 
     /// Aris's own Notion login (`codex mcp login aris_notion`), separate from the user's Codex setup.
     static let notionURL = "https://mcp.notion.com/mcp"
@@ -199,7 +205,7 @@ final class ArisCodexDriver: ArisBrainDriver {
             .appendingPathComponent(".codex/config.toml"), encoding: .utf8)) ?? ""
         let quiet = Self.mcpServers(inConfig: config).flatMap { ["-c", "mcp_servers.\($0).enabled=false"] } + Self.pluginSwitches(inConfig: config)
         // Of the ChatGPT apps that ride along with the login (Gmail, Drive, GitHub…) only Gmail and Contacts.
-        let notion = Self.notionSwitches
+        let notion = self.notion ? Self.notionSwitches : []
         // Aside isn't Codex's own tool: it is `aris-tools aside`, behind the one Aside gate every brain shares (ArisAsideTool).
         return (codex, ["app-server"] + Self.quietSwitches + quiet + notion + Self.appSwitches
                 + Self.skillSwitches(Self.installedSkills()) + Self.webSwitches(enabled: webSearch && scopes?.contains(.web) != false))
@@ -209,8 +215,12 @@ final class ArisCodexDriver: ArisBrainDriver {
     var isReady: Bool { threadId != nil }
 
     func opening() -> [Data] {
-        let thread = request("thread/start", ["model": model, "approvalPolicy": "untrusted", "sandbox": "danger-full-access",
-                                              "ephemeral": true, "baseInstructions": instructions])
+        // A job's thread is kept (not ephemeral) so a helper that started again can reopen it (ArisTaskRecovery).
+        let thread = resumeThread.map { resumed in
+            request("thread/resume", ["threadId": resumed, "model": model, "approvalPolicy": "untrusted", "sandbox": "danger-full-access",
+                                      "baseInstructions": instructions])
+        } ?? request("thread/start", ["model": model, "approvalPolicy": "untrusted", "sandbox": "danger-full-access",
+                                      "ephemeral": !keepsThread, "baseInstructions": instructions])
         threadRequest = nextId
         return [request("initialize", ["clientInfo": ["name": "aris", "version": "1"]]),
                 Self.line(["method": "initialized"]), thread]
@@ -232,7 +242,7 @@ final class ArisCodexDriver: ArisBrainDriver {
             return []
         }
         self.tier = tier
-        return [request("turn/start", ["threadId": threadId, "effort": ArisThinking.codexEffort(tier: tier),
+        return [request("turn/start", ["threadId": threadId, "effort": ArisThinking.codexEffort(tier: tier, task: task, choices: ArisModelChoiceBox.shared.current),
                                        "disabledPluginIds": tier == .quick || computerEngine != .codex ? [Self.computerUse] : [String](),
                                        "input": Self.input(prompt: prompt, images: images)])]
     }
@@ -462,9 +472,40 @@ final class ArisCodexDriver: ArisBrainDriver {
         return [Self.answer(waiting.request, allow: false, toolQuestion: waiting.isToolQuestion)] + (steer(note).map { [$0] } ?? [])
     }
 
+    /// A job's thread to reopen at the next start (thread/resume) instead of a new one (ArisTaskRecovery).
+    var resumeThread: String?
+
+    /// A job's thread is kept on disk (not ephemeral) while the job runs, so a helper that started again can reopen it;
+    /// never a conversation's, and never a hands-free job's (`forgetsThread`, set before its process starts).
+    var forgetsThread = false
+    var keepsThread: Bool { task && !forgetsThread }
+
+    /// The open thread, which a job's journal keeps so it can be reopened.
+    var threadHandle: String? { threadId }
+
+    /// The turn under way, stopped (turn/interrupt): the thread stays open for the next question. Nil with no turn.
+    func interruptLines() -> [Data]? {
+        guard let threadId, let turnId else { return nil }
+        let line = request("turn/interrupt", ["threadId": threadId, "turnId": turnId])
+        quietRequests.insert(nextId)
+        return [line]
+    }
+
     /// A note to the turn under way (turn/steer); nil when no turn is open. Its reply, or an error for coming too late,
     /// is nothing to fail the answer over.
-    private func steer(_ note: String) -> Data? {
+    /// A task's added instruction into the turn under way (ArisSteerableDriver), kept until Codex answers it.
+    func steerLines(_ note: String) -> [Data]? {
+        guard let line = steer(note) else { return nil }
+        taskSteers[nextId] = note
+        return [line]
+    }
+
+    func takeLateSteer() -> ArisSteerLate {
+        defer { lateSteers = [] }
+        return lateSteers.isEmpty ? .none : .dropped(lateSteers)
+    }
+
+    func steer(_ note: String) -> Data? {
         guard let threadId, let turnId else { return nil }
         let line = request("turn/steer", ["threadId": threadId, "expectedTurnId": turnId, "input": [["type": "text", "text": note]]])
         quietRequests.insert(nextId)
@@ -856,11 +897,11 @@ final class ArisCodexDriver: ArisBrainDriver {
         if handsFree, judgedRead == nil { risk = ArisHandsFree.risk(risk, of: action, tools: tools) }
         // The user's memories are never read on a hands-free turn, on any brain (minor 2).
         if handsFree, Self.readsMemory(action, tools: tools) { refuse("the user's memories are never read on a hands-free turn") }
-        if declinedThisTurn && (risk == .confirm || risk == .countdown) { refuse("the user already said no to a card this turn; nothing else that asks runs after it") }
+        if declinedThisTurn && (risk == .confirm || risk == .countdown) { refuse("The owner already said no to a card this turn; nothing else that asks runs after it") }
         // The user's changed card already did this (ArisEditableAction): the same action again is never run twice.
-        if !sentForUser.isEmpty, let again = ArisEditableAction.parse(action, tools: tools), sentForUser.contains(again.arguments) { refuse("the user's changed card already did this") }
+        if !sentForUser.isEmpty, let again = ArisEditableAction.parse(action, tools: tools), sentForUser.contains(again.arguments) { refuse("The owner's changed card already did this") }
         if housekeepingOK {
-            if declinedThisTurn { refuse("the user already said no to a card this turn") } else { risk = .auto }
+            if declinedThisTurn { refuse("The owner already said no to a card this turn") } else { risk = .auto }
         }
         // A teammate's job: outside what it may use is refused, never asked (a housekeeping call runs no code).
         if let scopes, !housekeepingOK, !ArisTeammateScope.permits(action, scopes: scopes, tools: tools) { refuse("outside what this teammate's job may use") }
@@ -1147,7 +1188,10 @@ final class ArisCodexDriver: ArisBrainDriver {
 
     private func response(_ id: Int, _ object: [String: Any]) -> [ArisBrainEvent] {
         // A note to the turn (turn/steer) that came too late is nothing to fail the answer over.
-        if quietRequests.remove(id) != nil { return [] }
+        if quietRequests.remove(id) != nil {
+            if let note = taskSteers.removeValue(forKey: id), object["error"] != nil { lateSteers.append(note) }
+            return []
+        }
         if let error = object["error"] as? [String: Any] {
             return [ArisBrainFailure.event(error["message"] as? String ?? "Codex refused the request.", brain: .codex)]
         }

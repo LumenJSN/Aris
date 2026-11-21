@@ -36,6 +36,8 @@ final class ArisWakeDetector: @unchecked Sendable {
     private var configuration: NSObjectProtocol?
 
     private let engine = AVAudioEngine()
+    /// The duplex engine's stream in place of `engine` (arisDuplexAudio, ArisDuplexHold); nil on the old path.
+    private var duplex: ArisDuplexHold?
     /// Who opened the microphone (the wake word, or the name's training) and the kind of device it is on, for the log.
     private var use = ArisMicUse.wake
     private var transport: ArisAudioDevice.Transport?
@@ -65,6 +67,12 @@ final class ArisWakeDetector: @unchecked Sendable {
         // Pinned to one device by its id (ArisMicPlan): never the default input, which a headset connecting later
         // would become; with only a headset's microphone the wake word opens nothing (ArisMicPaused is thrown).
         if case .training = mode { use = .setup } else { use = .wake }
+        // The duplex engine (arisDuplexAudio), when it serves the wake word: its echo-cancelled chunks, no engine of its own.
+        if use == .wake, let hold = ArisDuplexHold.open(sink: { [weak self] samples in self?.queue.sync { self?.take(samples) } },
+                                                        lost: { [weak self] in self?.onInterrupted?() }) {
+            duplex = hold
+            return
+        }
         let pinned = try ArisMicDevices.pin(engine, for: use)
         transport = pinned?.transport
         queue.sync { device = pinned?.id }
@@ -90,6 +98,11 @@ final class ArisWakeDetector: @unchecked Sendable {
     /// On the microphone's queue, after a start still under way there.
     func stop() {
         ArisAudio.microphoneQueue.async { [self] in
+            if let duplex {
+                duplex.close()
+                self.duplex = nil
+                return
+            }
             if let configuration { NotificationCenter.default.removeObserver(configuration) }
             configuration = nil
             engine.inputNode.removeTap(onBus: 0)

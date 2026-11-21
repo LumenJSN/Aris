@@ -113,7 +113,15 @@ final class ArisTeammateDesk {
         }
         // The user's words: the vouching turn's own record; otherwise what the caller says they were (only ever adds a step).
         let words = turns.vouch(turn: object["turn"] as? String, prompt: prompt, cwd: rawCwd, now: Date())
-        let outbound = ArisTeammateGate.outbound(prompt: prompt, request: words ?? (object["request"] as? String).map { String($0.prefix(maxText)) })
+        let said = words ?? (object["request"] as? String).map { String($0.prefix(maxText)) }
+        // A prompt that tells Claude Code to pay is never opened; one about paying goes with the owner's rule as its last
+        // word, on his card (ArisTeammateGate.paymentStep), whatever the brain wrote (ArisPaymentBoundary).
+        if ArisPaymentBoundary.judge(brief: prompt, request: said ?? "", coding: true) == .refused {
+            audit(["answer": "refused (the prompt tells it to pay)", "question": "teammate \(job.uuidString) in \(cwd)", "risk": "never"])
+            return finish(job, ArisClaudeJobWords.paymentRefused)
+        }
+        let outbound = ArisTeammateGate.outbound(prompt: prompt, request: said)
+        let handed = ArisTeammateGate.handed(prompt, outbound: outbound, english: ArisGateWords.isEnglish(said ?? prompt))
         // Vouched only with the checked claude at a tested version (its mention handling is what the gate matches).
         let binary = ArisTeammateGate.claudeBinary(home: home)
         let vouched = ArisTeammateGate.launchVouched(words: words, binary: binary)
@@ -123,13 +131,13 @@ final class ArisTeammateDesk {
                "question": "teammate \(job.uuidString) in \(cwd)",
                "outbound": outbound.joined(separator: ", ")])
         stream(ArisTeammateGate.requesterReply(needsYes: needsYes), on: connection)
-        guard needsYes else { return claimSlot(job, place: place, prompt: prompt, claude: binary?.path) }
+        guard needsYes else { return claimSlot(job, place: place, prompt: handed, claude: binary?.path) }
         let id = ArisTeammateGate.questionPrefix + "\(ArisLaunch.nonce)/\(UUID().uuidString)"
-        let card = ArisTeammateGate.card(id: id, cwd: cwd, prompt: prompt, outbound: outbound,
+        let card = ArisTeammateGate.card(id: id, cwd: cwd, prompt: handed, outbound: outbound,
                                          note: ArisTeammateGate.cardNote(outsideHome: place.outsideHome,
                                                                          version: ArisTeammateGate.versionNote(words: words, binary: binary)))
         questions[id] = Question(job: job, at: Date(), card: card, requesterPort: Self.remotePort(of: connection)) { [weak self] allow in
-            if allow { self?.claimSlot(job, place: place, prompt: prompt, claude: binary?.path) } else { self?.finish(job, "Claude Code를 열지 않았어요.") }
+            if allow { self?.claimSlot(job, place: place, prompt: handed, claude: binary?.path) } else { self?.finish(job, "Claude Code를 열지 않았어요.") }
         }
         ArisInbox.append(ArisInboxEntry(id: UUID(), date: Date(), kind: .confirm, schedule: nil, title: card.title, text: "",
                                         file: nil, confirm: ArisInboxEntry.Question(id: id, title: card.title, detail: card.detail, full: card.full)),

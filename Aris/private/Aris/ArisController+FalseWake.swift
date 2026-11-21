@@ -33,7 +33,7 @@ extension ArisController {
         finishTurn("unheard")
         releaseListener()
         level = 0
-        session = ArisSession()
+        setSession(ArisSession())
         // The conversation this wake opened never had a turn: it closes (the music comes back with it).
         if wakeOpenedConversation, conversation.isOpen { return closeConversation(.falseWake) }
         resumeMusicIfPaused()

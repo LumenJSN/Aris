@@ -26,7 +26,7 @@ func skill(_ args: [String]) {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
     request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-    let configuration = URLSessionConfiguration.ephemeral
+    let configuration = ArisNoStore.configuration()
     configuration.timeoutIntervalForRequest = wait
     configuration.timeoutIntervalForResource = wait
     let done = DispatchSemaphore(value: 0)

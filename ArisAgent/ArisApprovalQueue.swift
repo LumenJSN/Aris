@@ -71,6 +71,10 @@ enum ArisLaunch {
 
     static func taskKey(_ number: Int, brain: String, model: String) -> String { "task\(number)-\(nonce)/\(brain)/\(model)" }
 
+    /// A conversation's warm spare (ArisFastLane): a conversation runner's key once it is swapped in, so its audit
+    /// lines count as the conversation's ("why did you do that": ArisWhyDesk.audited), and its own, never its slot's.
+    static func spareKey(_ number: Int, brain: String, model: String) -> String { "\(nonce)/spare\(number)/\(brain)/\(model)" }
+
     static func proposalId(_ number: Int) -> String { "proposal-\(nonce)/\(number)" }
 
     static func confirmId(_ number: Int) -> String { "c\(number)-\(nonce)" }
@@ -100,8 +104,16 @@ enum ArisTaskEnd {
 }
 
 /// Background tasks by the app's job id, and the jobs cancelled this launch (the last `remembered` of them). A cancel
-/// is never lost: one that comes before its job registers is kept, and that job is refused when it does.
+/// is never lost: one that comes before its job registers is kept, and that job is refused when it does. A view over
+/// the task journals too (ArisTaskJournal): a job whose journal says it was cancelled, in any launch, stays cancelled.
 struct ArisJobBook<Owner: AnyObject> {
+    /// Whether a job's journal says it was cancelled (none: never).
+    let cancelledBefore: (String) -> Bool
+
+    init(cancelledBefore: @escaping (String) -> Bool = { _ in false }) {
+        self.cancelledBefore = cancelledBefore
+    }
+
     /// How many cancelled ids are kept: far more than jobs that could still be on their way.
     static var remembered: Int { 1_000 }
 
@@ -129,7 +141,17 @@ struct ArisJobBook<Owner: AnyObject> {
     }
 
     func isCancelled(_ job: String) -> Bool {
-        cancelled.contains(job)
+        cancelled.contains(job) || cancelledBefore(job)
+    }
+
+    /// A task of this launch runs job `job`.
+    func isRunning(_ job: String) -> Bool {
+        owners[job] != nil
+    }
+
+    /// The task running job `job` (its id in any case), if one of this launch does.
+    func owner(of job: String) -> Owner? {
+        owners[job] ?? owners.first { $0.key.lowercased() == job.lowercased() }?.value
     }
 
     /// A task ended: its job is no longer running (a cancel for it is still recorded).

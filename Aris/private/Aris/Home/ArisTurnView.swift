@@ -113,6 +113,11 @@ struct ArisTurnView: View {
                                        toggle: { dayEnd.toggle() }, push: { dayEnd.push($0) }, show: { aris.dayEndShow(card: $0) })
                             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 }
                     }
+                    if session.phase == .thinking, let note = session.waitingNote {
+                        // Why Aris asks, while macOS's own dialog for it is up (ArisController+PermissionWait).
+                        ArisWidgetLine(text: note)
+                            .transition(.opacity.animation(Self.reveal))
+                    }
                     if showsFooter {
                         footer
                             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }

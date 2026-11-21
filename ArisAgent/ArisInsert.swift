@@ -16,7 +16,8 @@ import AppKit
 import Carbon
 
 enum ArisInsert {
-    static let maxLength = 4_000
+    /// Twenty minutes of dictation (its cap) fits whole; the request body (1 MiB) holds this many three-byte letters.
+    static let maxLength = 100_000
     /// The key that types "v" with ⌘ held on the keyboard layout in use (audit desk-10: by its US place, key 9, the
     /// paste was ⌘K on Dvorak and nothing was typed); the US place when the layout can't be read.
     private static var vKey: CGKeyCode { ArisKeyLayout.current(command: true)["v"] ?? 9 }

@@ -193,7 +193,7 @@ final class ArisAPIStreamTask: NSObject, URLSessionDataDelegate, @unchecked Send
     }
 
     func start() {
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = ArisNoStore.configuration()
         configuration.timeoutIntervalForRequest = idleTimeout
         configuration.timeoutIntervalForResource = totalTimeout + 5
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData

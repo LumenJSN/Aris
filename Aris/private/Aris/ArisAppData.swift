@@ -66,6 +66,22 @@ enum ArisAppData {
             }
         }
 
+        /// Everything else the app keeps in its container, for the uninstall: Application Support's Aris folder (the
+        /// Whisper model, the wake recordings and voice model, the jobs' ledger, the shelf's files), the shelf's list,
+        /// and the app's caches. The ones that exist now.
+        func containerData() -> [URL] {
+            [arisFolder, support.appendingPathComponent("boringNotch", isDirectory: true),
+             caches.appendingPathComponent(bundleId, isDirectory: true)]
+                .filter { FileManager.default.fileExists(atPath: $0.path) }
+        }
+
+        /// Removes them; the ones that couldn't be removed.
+        func removeContainerData() -> [URL] {
+            containerData().filter { url in
+                do { try FileManager.default.removeItem(at: url); return false } catch { return true }
+            }
+        }
+
         /// The app's own container folders, in the sandbox.
         static func current() -> Places? {
             let fm = FileManager.default

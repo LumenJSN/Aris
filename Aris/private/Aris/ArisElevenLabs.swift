@@ -73,7 +73,7 @@ enum ArisElevenLabs {
     static func voiceList(key: String) async -> [Voice]? {
         var request = URLRequest(url: URL(string: "https://api.elevenlabs.io/v1/voices")!, timeoutInterval: timeout)
         request.setValue(key, forHTTPHeaderField: "xi-api-key")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return voices(from: data)
     }
@@ -92,7 +92,7 @@ enum ArisElevenLabs {
         guard let url = URL(string: "https://api.elevenlabs.io/v1/voices/\(voiceID)/settings") else { return nil }
         var request = URLRequest(url: url, timeoutInterval: settingsTimeout)
         request.setValue(key, forHTTPHeaderField: "xi-api-key")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return ArisVoiceSettings.parse(data)
     }
@@ -132,7 +132,7 @@ enum ArisElevenLabs {
                     let saved = await ArisVoiceSettingsCache.shared.settings(for: voiceID, key: key)
                     try Task.checkCancellation()
                     let asked = request(text: text, key: key, voiceID: voiceID, speed: speed, saved: saved, previous: previous)
-                    let (bytes, response) = try await URLSession.shared.bytes(for: asked)
+                    let (bytes, response) = try await ArisNoStore.session.bytes(for: asked)
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                     guard status == 200 else {
                         var body = Data()

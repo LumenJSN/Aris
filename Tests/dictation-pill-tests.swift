@@ -1,5 +1,6 @@
-// Tests for dictation-pill: dictation shows in its own pill at the bottom of the screen being typed on, sized as
-// measured (ArisDictationPillRules), with the measured level bars and ring (ArisDictationPillMotion); the top notch stays
+// Tests for dictation-pill (re-measured from the reference pill, 2026-11-17): dictation shows in its own pill at
+// the bottom of the screen being typed on, sized as measured (ArisDictationPillRules), with the measured level bars and
+// spinner (ArisDictationPillMotion, its own tests in dictation-pill-motion-tests.swift); the top notch stays
 // quiet for a dictation the pill has (ArisNotchSnapshot's dictationQuiet), never for talking to Aris; the pill's panel
 // never takes the keyboard or focus (source checks: it can't compile here without the app's packages); the pill's click
 // start is hands-free; the Settings switch. Called from main.swift; uses its check().
@@ -44,14 +45,14 @@ private func pillPhaseTests() {
     i.handsFree = true
     check(R.phase(i) == .recording(handsFree: true), "pill: hands-free (double tap or a click on the pill) → the hands-free row")
     i.stage = .writing
-    check(R.phase(i) == .transcribing(.charging), "pill: let go, Whisper writing → the ring charging")
+    check(R.phase(i) == .transcribing(.charging), "pill: let go, Whisper writing → the spinner")
     i.stage = .cleaning
-    check(R.phase(i) == .transcribing(.releasing), "pill: the words in hand, going in → the ring sweeping on")
+    check(R.phase(i) == .transcribing(.releasing), "pill: the words in hand, going in → still the spinner")
     i.stage = .typed
     i.typedHold = true
-    check(R.phase(i) == .transcribing(.done), "pill: typed → the ring full for its hold")
+    check(R.phase(i) == .transcribing(.done), "pill: typed with a hold asked (renders only) → the spinner")
     i.typedHold = false
-    check(R.phase(i) == .idle, "pill: after the hold → back to the sliver")
+    check(R.phase(i) == .idle, "pill: typed → straight back to the sliver (the reference has no done state)")
     i.recovered = "복사된 말"
     check(R.phase(i) == .recovered("복사된 말"), "pill: nowhere to type → the copied words")
     i.recovered = nil
@@ -69,21 +70,27 @@ private func pillPhaseTests() {
 private func pillSizeTests() {
     typealias R = ArisDictationPillRules
     let sizes: [(ArisDictationPillPhase, CGSize, String)] = [
-        (.idle, CGSize(width: 36, height: 8), "idle 36 × 8"),
-        (.hidden, CGSize(width: 36, height: 8), "hidden leaves at the sliver's size"),
+        (.idle, CGSize(width: 40, height: 8), "idle 40 × 8"),
+        (.hidden, CGSize(width: 40, height: 8), "hidden leaves at the sliver's size"),
         (.hover, CGSize(width: 50, height: 30), "hover 50 × 30"),
-        (.recording(handsFree: false), CGSize(width: 80, height: 30), "hold recording 80 × 30"),
-        (.recording(handsFree: true), CGSize(width: 102, height: 30), "hands-free / pill-click recording 102 × 30"),
-        (.transcribing(.charging), CGSize(width: 30, height: 30), "transcribing 30 × 30"),
-        (.transcribing(.releasing), CGSize(width: 30, height: 30), "awaiting insertion 30 × 30"),
-        (.transcribing(.done), CGSize(width: 30, height: 30), "typed hold 30 × 30"),
+        (.recording(handsFree: false), CGSize(width: 73, height: 30), "held recording 73 × 30"),
+        (.recording(handsFree: true), CGSize(width: 102.5, height: 30), "hands-free / pill-click recording 102.5 × 30"),
+        (.transcribing(.charging), CGSize(width: 98, height: 30), "writing 98 × 30"),
+        (.transcribing(.releasing), CGSize(width: 98, height: 30), "going in 98 × 30"),
+        (.transcribing(.done), CGSize(width: 98, height: 30), "typed 98 × 30"),
     ]
     for (phase, size, name) in sizes { check(R.size(phase) == size, "pill size: \(name)") }
     recoveredCardTests()
-    check(R.radius == 24 && R.showDuration == 0.15 && R.hiddenScale == 0.8 && R.sizeDuration == 0.15, "pill: radius 24, show/hide 0.15 s from 0.8, sizes 0.15 s")
+    check(R.radius == 22.5 && R.idleRadius == 6 && R.lineWidth == 1 && R.errorLineWidth == 1.5,
+          "pill: radius 22.5 (6 on the sliver), a 1 px line (1.5 with an error)")
+    check(R.cornerRadius(R.idleSize) == 4 && R.cornerRadius(R.hoverSize) == 15 && R.cornerRadius(R.handsFreeSize) == 15,
+          "pill: the sliver's 6 fits its 8 as 4 (CSS shrinks radii that overlap), everything 30 high a capsule")
+    check(abs(R.cornerRadius(CGSize(width: 45, height: 19)) - 9.5) < 1e-9, "pill: half-way up the corners are half-way and clamped to half the height")
     check(R.windowSize == CGSize(width: 540, height: 700) && R.parkAfter == .seconds(12), "pill: window at most 540 × 700, parked after 12 s")
-    check(R.gradientBorder(.idle) && R.gradientBorder(.recording(handsFree: false)) && !R.gradientBorder(.error("x")),
-          "pill: the gradient ring except with an error (solid .18)")
+    check(R.look(.idle) == .sliver && R.look(.hidden) == .sliver && R.look(.hover) == .hovered && R.look(.recording(handsFree: false)) == .solid
+          && R.look(.transcribing(.charging)) == .solid && R.look(.error("x")) == .failed, "pill: the sliver, the hover, solid, and an error's red line")
+    check(R.hintDelay == 0.15 && R.buttonHintDelay == 0.05 && R.hintFade == 0.12 && R.hintGap == 4 && R.buttonHintGap == 10,
+          "pill: tooltips after 150 ms (50 over a button), a 120 ms fade, 4 above the pill, 10 above a button")
 }
 
 // MARK: - The inline error's width
@@ -94,13 +101,13 @@ private func pillErrorWidthTests() {
     check(R.errorTextWidth("a b") == 18.8, "pill error: 4 a space")
     check(R.errorTextWidth("입력") == 28, "pill error: 14 a CJK character")
     check(R.errorTextWidth("\u{2E80}\u{2E7F}") == 14 + 7.4, "pill error: CJK from U+2E80 (U+2E7F is not)")
-    check(R.errorWidth("") == 136, "pill error: never under 136")
-    // 14 Latin (103.6) + 2 spaces (8) + 44 = 155.6 → 156.
-    check(R.errorWidth("Couldn't type it") == 156, "pill error: ceil(clamp(136, textW + 44, 280)): Couldn't type it → 156")
-    // 8 CJK (112) + 1 space (4) + 44 = 160.
-    check(R.errorWidth("입력하지 못했어요") == 160, "pill error: 입력하지 못했어요 → 160")
+    check(R.errorWidth("") == 91, "pill error: never under the reference's 91")
+    // 14 Latin (103.6) + 2 spaces (8) + 24 = 135.6 → 136.
+    check(R.errorWidth("Couldn't type it") == 136, "pill error: ceil(clamp(91, textW + 24, 280)): Couldn't type it → 136")
+    // 8 CJK (112) + 1 space (4) + 24 = 140.
+    check(R.errorWidth("입력하지 못했어요") == 140, "pill error: 입력하지 못했어요 → 140")
     check(R.errorWidth(String(repeating: "가", count: 40)) == 280, "pill error: never over 280")
-    check(R.size(.error("입력하지 못했어요")).height == 38, "pill error: 38 tall")
+    check(R.size(.error("입력하지 못했어요")).height == 30, "pill error: 30 tall")
 }
 
 // MARK: - Where it sits
@@ -117,12 +124,12 @@ private func pillPlacementTests() {
     let side = CGRect(x: 80, y: 0, width: 1432, height: 949)
     check(R.usableBottom(frame: screen, visible: side) == 0, "pill place: a Dock at the side → the screen's bottom")
     let window = R.windowFrame(frame: screen, visible: dockBottom)
-    check(window == CGRect(x: 486, y: 65, width: 540, height: 700), "pill place: the window centred on the visible frame, bottom 5 under the Dock's top")
+    check(window == CGRect(x: 486, y: 65, width: 540, height: 700), "pill place: the window centred on the visible frame, its bottom 5 under the Dock's top")
     check(R.windowFrame(frame: screen, visible: side).midX == side.midX, "pill place: centred on the visible frame (a side Dock moves it)")
     let second = CGRect(x: 1512, y: -200, width: 1920, height: 1080)
     check(R.windowFrame(frame: second, visible: CGRect(x: 1512, y: -200, width: 1920, height: 1055)).minX == 1512 + 690,
           "pill place: on a second screen, its own centre")
-    check(R.pillRect(CGSize(width: 80, height: 30)) == CGRect(x: 230, y: 6, width: 80, height: 30), "pill place: the pill's rect centred 6 up in its window")
+    check(R.pillRect(CGSize(width: 73, height: 30)) == CGRect(x: 233.5, y: 6, width: 73, height: 30), "pill place: the pill's rect centred 6 up in its window")
     check(R.isFullScreen(window: CGRect(x: 0, y: 0, width: 1512, height: 982), screen: screen), "pill: a window covering the screen is full screen")
     check(!R.isFullScreen(window: CGRect(x: 0, y: 0, width: 1512, height: 949), screen: screen), "pill: a zoomed window (menu bar showing) is not")
     check(!R.isFullScreen(window: nil, screen: screen), "pill: no window, not full screen")
@@ -136,43 +143,14 @@ private func pillPlacementTests() {
 // MARK: - The marks
 
 private func pillMotionTests() {
-    typealias Ring = ArisDictationPillRing
-    check(Ring.size == 16 && Ring.stroke == 2.5 && Ring.completeHold == .milliseconds(100), "pill ring: 16 across, stroke 2.5, holds 100 ms")
-    check(Ring.profile(recordingSeconds: 5).target == 1.6 && Ring.profile(recordingSeconds: 45).target == 2.25
-          && abs(Ring.profile(recordingSeconds: 135).target - 3.7) < 1e-9 && Ring.profile(recordingSeconds: 900).target == 12,
-          "pill ring: the charge's length follows the measured anchors (5 s → 1.6, 45 → 2.25, 135 → 3.7, past 600 → 12)")
-    let p = Ring.profile(recordingSeconds: 3)
-    check(abs(Ring.charge(at: Ring.joinSeconds, profile: p) - Ring.joinProgress) < 1e-12, "pill ring: the opening joins at 0.4 s")
-    check(abs(Ring.charge(at: Ring.joinSeconds + Ring.settleSeconds, profile: p) - (Ring.cruiseEnd - p.cruiseVelocity * (p.target - 0.65))) < 1e-6,
-          "pill ring: the settle meets the cruise")
-    check(abs(Ring.charge(at: p.target, profile: p) - Ring.cruiseEnd) < 1e-9, "pill ring: 0.88 at the target time")
-    check(Ring.charge(at: 600, profile: p) < Ring.asymptote && Ring.charge(at: 600, profile: p) > 0.97, "pill ring: never past 0.975 while charging")
-    var last = 0.0, rising = true
-    for step in 0...400 { let v = Ring.charge(at: Double(step) * 0.02, profile: p); if v < last - 1e-12 { rising = false }; last = v }
-    check(rising, "pill ring: the charge only rises")
-    let motion = ArisDictationPillRingMotion(recordingSeconds: 3)
-    var t = 0.0
-    for _ in 0..<60 { motion.step(at: t, stage: .charging); t += 1.0 / 60 }
-    let charged = motion.progress
-    var frames = 0
-    while !motion.swept, frames < 600 { motion.step(at: t, stage: .releasing); t += 1.0 / 60; frames += 1 }
-    check(charged > 0.5 && motion.swept && motion.progress == 1 && frames < 60, "pill ring: the release sweeps to full within a second (\(frames) frames)")
-    let done = ArisDictationPillRingMotion(recordingSeconds: 3)
-    check(done.step(at: 0, stage: .done) == 1, "pill ring: typed → full at once")
-    check(Ring.cappedArc(0.5, circumference: 10, stroke: 2.5) == 0.25 && Ring.cappedArc(1, circumference: 10, stroke: 2.5) == 1,
-          "pill ring: the round caps are taken off the arc, except when full")
-
-    let bars = ArisDictationPillBars()
-    check(ArisDictationPillBars.count == 7 && ArisDictationPillBars.width == 38.5 && ArisDictationPillBars.slotHeight == 18,
-          "pill bars: 7 bars of 2.5 with 1.5 either side (38.5) in an 18 slot")
-    bars.step(at: 1, level: 0, jitter: { 1 })
-    check(bars.heights.allSatisfy { $0 == 2 }, "pill bars: silence → all at 2")
-    for k in 0..<20 { bars.step(at: 1 + Double(k + 1) * 0.06, level: 8, jitter: { 1 }) }
-    check(bars.heights.last == 17 && bars.heights.allSatisfy { $0 <= 17 }, "pill bars: loud → 17 at most, the newest on the right")
-    check(ArisDictationPillBars.grey(2) == 110.0 / 255 && ArisDictationPillBars.grey(17) == 1, "pill bars: grey 110 at rest, white at full")
-    // 80 = 6 + icon 20 + 4.5 + bars 38.5 + 10.5 (the measured hold row adds up to its pill).
-    check(6 + 20 + 4.5 + ArisDictationPillBars.width + 10.5 == ArisDictationPillRules.holdSize.width - 0.5,
-          "pill bars: the hold row's parts fill its 80 (79.5 + the border's half)")
+    typealias W = ArisDictationPillWave
+    // The rows add up to their pills (the reference's flex rows, inside the 1 px line).
+    let handsFree = 18 + 4 + W.width + 4 + 18
+    check(handsFree == 90 && handsFree + 2 * 1 + 2 * 5.25 == ArisDictationPillRules.handsFreeSize.width,
+          "pill rows: ✕ 18 · 4 · bars 46 · 4 · ■ 18 = 90, 5.25 in at each end of 102.5")
+    check(W.width + 2 * 1 <= ArisDictationPillRules.holdSize.width, "pill rows: the 46 bars fit the 73 hold")
+    let writing = W.width + 6 + ArisDictationPillSpinner.size
+    check(writing + 2 * 12 <= ArisDictationPillRules.transcribingSize.width, "pill rows: bars · 6 · spinner inside 12 at each end of 98")
 }
 
 // MARK: - The notch stays quiet
@@ -247,11 +225,11 @@ private func pillWiringTests() {
     let entry = pillSource("Aris/private/App/ArisEntry.swift")
     check(entry.contains("ArisDictationPillCenter.shared.start()"), "pill: started with the app")
     let view = pillSource("Aris/private/Aris/Dictation/ArisDictationPillView.swift")
-    check(view.contains("accessibilityReduceMotion") && view.contains("reduceMotion ? nil : ease") && view.contains("shown || reduceMotion ? 1 : ArisDictationPillRules.hiddenScale"),
-          "pill: Reduce Motion fades only (no scale, sizes at once)")
+    check(view.contains("accessibilityReduceMotion") && view.contains("reduceMotion ? nil : sizeAnimation") && view.contains(".opacity(shown ? 1 : 0)"),
+          "pill: Reduce Motion fades only (sizes at once; show / hide is opacity for everyone)")
 
     let builder = pillSource("Aris/components/Settings/ArisSettingsBuilder.swift")
-    check(builder.contains("id: \"dictation.pill\"") && builder.contains("받아쓰기 알약 보이기") && builder.contains(".toggle(.dictationPill, s.dictationPill)"),
+    check(builder.contains("id: \"dictation.pill\"") && builder.contains("받아쓰기 알약 보이기") && builder.contains(".toggle(.dictationPill, s.dictationPill"),
           "settings: 받아쓰기 › 받아쓰기 알약 보이기 switch")
     check(ArisSettingsSnapshot().dictationPill, "settings: the pill is on by default")
     let strings = pillSource("Aris/components/Settings/Settings.xcstrings")
@@ -259,11 +237,15 @@ private func pillWiringTests() {
     let center = pillSource("Aris/private/Aris/Dictation/ArisDictationPillCenter.swift")
     check(center.contains("Key<Bool>(\"arisDictationPill\", default: true)"), "settings: arisDictationPill defaults on")
 
-    // The measured app's name is never written in the pill's files.
-    let files = ["ArisDictationPillRules", "ArisDictationPillMotion", "ArisDictationPillPanel", "ArisDictationPillCenter", "ArisDictationPillView", "ArisDictationPillParts"]
+    // The reference apps' names are never written in the pill's files ("the reference pill" instead).
+    let files = ["ArisDictationPillRules", "ArisDictationPillMotion", "ArisDictationPillPanel", "ArisDictationPillCenter", "ArisDictationPillView",
+                 "ArisDictationPillParts", "ArisDictationPillRecoveredCard", "ArisDictationPillRecoveredLayout"]
+    let word = try? NSRegularExpression(pattern: "\\b(" + "fl" + "ow|fl" + "ow" + "bar)\\b")
     for file in files {
         let text = pillSource("Aris/private/Aris/Dictation/\(file).swift").lowercased()
-        check(!text.isEmpty && !text.contains("voice" + "os"), "pill: \(file) says 'measured', never the reference app's name")
+        let range = NSRange(text.startIndex..., in: text)
+        check(!text.isEmpty && !text.contains("voice" + "os") && !text.contains("wis" + "pr") && word?.firstMatch(in: text, range: range) == nil,
+              "pill: \(file) says 'the reference pill', never a reference app's name")
     }
 }
 
@@ -284,9 +266,9 @@ private func recoveredCardTests() {
           && C.keyPadding == 4 && C.keyRadius == 5 && C.keyFontSize == 11, "recovered card: 22 ✕, 12 check, 12 / 500 header, ⌘V key ≥ 22 × 18, 0 4, r5, 11 / 600")
     check(C.bodyFontSize == 14 && abs(C.lineHeight - 20.3) < 0.001 && C.maxLines == 4 && C.fadeMax == 16 && C.bodyRadius == 8 && C.bodyOutset == 6,
           "recovered card: words 14 / 500 ×1.45, at most 4 lines (81), 16 fade, hover r8 6 past the words")
-    check(C.growDuration == 0.3 && C.startSize == CGSize(width: 80, height: 30) && C.startRadius == 15 && C.contentFade == 0.16
+    check(C.growDuration == 0.3 && C.startSize == CGSize(width: 98, height: 30) && C.startRadius == 15 && C.contentFade == 0.16
           && C.contentDelay == 0.11 && C.leaveDuration == 0.16 && C.leaveScale == 0.96,
-          "recovered card: grows from 80 × 30 r15 in 300 ms, contents in 160 ms after 110 ms, leaves in 160 ms to .96")
+          "recovered card: grows from the 98 × 30 writing pill r15 in 300 ms, contents in 160 ms after 110 ms, leaves in 160 ms to .96")
 
     // Fitted to the words: no fixed boxes.
     for (name, text) in [("short", short), ("medium", medium), ("long", long), ("very long", veryLong), ("one word", "네"),

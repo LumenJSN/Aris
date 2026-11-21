@@ -75,17 +75,17 @@ private func onboard2PlanTests() {
           "plan: until the helper has answered for every AI, how many are set up is not known (never \"none\")")
     check(Plan.readyCount([.claude: true]) == 1, "plan: one that is named as set up counts at once")
 
-    check(walk(.make(permissionsSettled: false, readyAIs: 0)) == [.permissions, .ask, .brain, .wake, .dictation],
-          "a new Mac with no AI: 권한 → 눌러서 말하기 → AI 고르기 → 아리스라고 부르기 → 받아쓰기")
-    check(walk(.make(permissionsSettled: false, readyAIs: 1)) == [.permissions, .ask, .wake, .dictation],
+    check(walk(.make(permissionsSettled: false, readyAIs: 0)) == [.permissions, .ask, .brain, .wake, .dictation, .done],
+          "a new Mac with no AI: 권한 → 눌러서 말하기 → AI 고르기 → 아리스라고 부르기 → 받아쓰기 → 준비 끝")
+    check(walk(.make(permissionsSettled: false, readyAIs: 1)) == [.permissions, .ask, .wake, .dictation, .done],
           "a new Mac with one AI: the AI page is left out (that AI answers; there is nothing to pick)")
-    check(walk(.make(permissionsSettled: false, readyAIs: 3)) == [.permissions, .ask, .brain, .wake, .dictation],
+    check(walk(.make(permissionsSettled: false, readyAIs: 3)) == [.permissions, .ask, .brain, .wake, .dictation, .done],
           "a new Mac with several AIs: the AI page shows, to pick one")
-    check(walk(.make(permissionsSettled: false, readyAIs: nil)) == [.permissions, .ask, .brain, .wake, .dictation],
+    check(walk(.make(permissionsSettled: false, readyAIs: nil)) == [.permissions, .ask, .brain, .wake, .dictation, .done],
           "the helper has not said which AIs are set up: the AI page shows (and says it could not check)")
-    check(walk(.make(permissionsSettled: true, readyAIs: 1)) == [.ask, .wake, .dictation],
+    check(walk(.make(permissionsSettled: true, readyAIs: 1)) == [.ask, .wake, .dictation, .done],
           "permissions already on, one AI: the setup opens on the try page (nothing on 권한 is left to do)")
-    check(walk(.make(permissionsSettled: true, readyAIs: 0)) == [.ask, .brain, .wake, .dictation], "permissions already on, no AI: the try page, then the key")
+    check(walk(.make(permissionsSettled: true, readyAIs: 0)) == [.ask, .brain, .wake, .dictation, .done], "permissions already on, no AI: the try page, then the key")
 
     // A Mac with no microphone, or the microphone card put off, sees the same pages: the try page takes the request typed.
     for ready in [0, 1, 2] {
@@ -96,9 +96,9 @@ private func onboard2PlanTests() {
     // A replay (Settings › 처음 안내 다시 보기) starts at the intro and then walks the same plan, from what is true now.
     check(ArisOnboarding.launch(seen: true, later: false, replay: true, loginItem: false, lastResume: nil, resumes: 0, quitAt: nil, now: Date()) == .intro
           && !ArisOnboarding.resumes(later: true, replay: true), "a replay starts at the intro, never at a saved page")
-    check(walk(.make(permissionsSettled: true, readyAIs: 2), from: .permissions) == [.ask, .brain, .wake, .dictation],
-          "a replay on a Mac that is set up, several AIs: 눌러서 말하기 → AI 고르기 → 아리스라고 부르기 → 받아쓰기")
-    check(walk(.make(permissionsSettled: true, readyAIs: 1), from: .permissions) == [.ask, .wake, .dictation], "a replay with one AI: three pages")
+    check(walk(.make(permissionsSettled: true, readyAIs: 2), from: .permissions) == [.ask, .brain, .wake, .dictation, .done],
+          "a replay on a Mac that is set up, several AIs: 눌러서 말하기 → AI 고르기 → 아리스라고 부르기 → 받아쓰기 → 준비 끝")
+    check(walk(.make(permissionsSettled: true, readyAIs: 1), from: .permissions) == [.ask, .wake, .dictation, .done], "a replay with one AI: four pages")
 
     // Put off for later, the setup comes back at the page it was on, if that page still shows.
     let plan = Plan.make(permissionsSettled: false, readyAIs: 1)
@@ -106,13 +106,13 @@ private func onboard2PlanTests() {
           "a saved page that is left out now opens at the next one that shows")
     check(Plan.make(permissionsSettled: true, readyAIs: 0).opening(at: .permissions) == .ask, "a saved 권한 with nothing left on it opens at the try page")
     check(Page.resume(saved: 0) == .permissions && Page.resume(saved: 1) == .ask && Page.resume(saved: 2) == .brain && Page.resume(saved: 4) == .wake
-          && Page.resume(saved: 5) == .dictation, "the numbers a setup put off for later saved still mean their pages")
+          && Page.resume(saved: 5) == .dictation && Page.resume(saved: 6) == .done, "the numbers a setup put off for later saved still mean their pages")
     check(Page.resume(saved: 3) == .ask && Page.resume(saved: 9) == .permissions && Page.resume(saved: -1) == .permissions,
           "the old question page resumes at the one page it shares with the shortcut now; anything unknown starts at 권한")
 
     check(Plan.everyPage.pages == Page.allCases && Plan.everyPage.skipped.isEmpty, "every page: the whole list, nothing left out")
     check(plan.skipped == [.brain] && Plan.make(permissionsSettled: true, readyAIs: 1).skipped == [.permissions, .brain], "what a plan leaves out is what the flow steps over")
-    check(plan.step(.permissions) == (1, 4) && plan.step(.ask) == (2, 4) && plan.step(.dictation) == (4, 4) && Plan.everyPage.step(.wake) == (4, 5),
+    check(plan.step(.permissions) == (1, 5) && plan.step(.ask) == (2, 5) && plan.step(.dictation) == (4, 5) && plan.step(.done) == (5, 5) && Plan.everyPage.step(.wake) == (4, 6),
           "VoiceOver's step count is of the pages this person sees")
 }
 
@@ -122,8 +122,8 @@ private func onboard2WalkTests() {
     typealias Plan = ArisSetupPlan
     // The helper answers a moment after the window opened (it was installed seconds ago): the AI page goes while it is ahead.
     let unknown = Plan.make(permissionsSettled: false, readyAIs: nil)
-    check(unknown.learning(readyAIs: 1, at: .permissions).pages == [.permissions, .ask, .wake, .dictation]
-          && unknown.learning(readyAIs: 1, at: .ask).pages == [.permissions, .ask, .wake, .dictation],
+    check(unknown.learning(readyAIs: 1, at: .permissions).pages == [.permissions, .ask, .wake, .dictation, .done]
+          && unknown.learning(readyAIs: 1, at: .ask).pages == [.permissions, .ask, .wake, .dictation, .done],
           "the helper says one AI is set up while the AI page is still ahead: the page is left out")
     check(unknown.learning(readyAIs: 0, at: .ask) == unknown && unknown.learning(readyAIs: nil, at: .ask) == unknown, "nothing new about the AIs: the plan stays")
     // A key saved on the AI page makes one AI ready: the page being looked at never disappears, and going back finds it.
@@ -133,7 +133,7 @@ private func onboard2WalkTests() {
     let single = Plan.make(permissionsSettled: false, readyAIs: 1)
     check(single.learning(readyAIs: 0, at: .ask).pages.contains(.brain), "the one AI went away before the AI page was reached: the page comes back")
     check(single.learning(readyAIs: 0, at: .wake) == single, "after the AI page's place was passed it is not put back behind the user")
-    check(Plan.make(permissionsSettled: true, readyAIs: nil).learning(readyAIs: 1, at: .ask).pages == [.ask, .wake, .dictation],
+    check(Plan.make(permissionsSettled: true, readyAIs: nil).learning(readyAIs: 1, at: .ask).pages == [.ask, .wake, .dictation, .done],
           "the permissions page that was left out stays out while the plan learns")
 
     // Back steps over what is left out, and never past the first page shown.
@@ -146,8 +146,10 @@ private func onboard2WalkTests() {
     let noPerms = Plan.make(permissionsSettled: true, readyAIs: 1)
     settled.back(skipping: noPerms.skipped)
     check(settled.page == .ask, "with 권한 left out, 뒤로 stops at the try page")
-    var last = ArisSetupFlow(page: .dictation)
-    check(!last.next(skipping: single.skipped) && last.finished, "마치기 on the last page finishes")
+    var dictation = ArisSetupFlow(page: .dictation)
+    check(dictation.next(skipping: single.skipped) && dictation.page == .done && !dictation.finished, "받아쓰기's 마치기 goes on to 준비 끝, it doesn't finish")
+    var last = ArisSetupFlow(page: .done)
+    check(!last.next(skipping: single.skipped) && last.finished, "시작하기 on the last page (준비 끝) finishes")
 }
 
 // MARK: - Pick 6: one rail, its steps the pages shown
@@ -172,18 +174,18 @@ private func onboard2RailTests() {
     var jump = ArisSetupFlow(page: .ask)
     let before = jump.progress(granted: [:], shown: single.pages)
     jump.next(skipping: single.skipped)
-    check(near(jump.progress(granted: [:], shown: single.pages) - before, 0.25), "rail: over a page left out it still moves exactly one share")
+    check(near(jump.progress(granted: [:], shown: single.pages) - before, 0.2), "rail: over a page left out it still moves exactly one share")
 
     // Within a page: the permission cards by thirds, the try page's share once its request is done.
     var perms = ArisSetupFlow()
     perms.begin(granted: [:])
     check(near(perms.progress(granted: [:], shown: single.pages), 0), "rail: nothing decided, it is empty")
-    check(near(perms.progress(granted: [.mic: true], shown: single.pages), 0.25 / 3) && near(perms.progress(granted: [.mic: true, .accessibility: true], shown: single.pages), 0.5 / 3),
+    check(near(perms.progress(granted: [.mic: true], shown: single.pages), 0.2 / 3) && near(perms.progress(granted: [.mic: true, .accessibility: true], shown: single.pages), 0.4 / 3),
           "rail: each permission decided moves it a third of the page's share")
     let asking = ArisSetupFlow(page: .ask)
-    check(near(asking.progress(granted: [:], shown: single.pages, tryDone: false), 0.25) && near(asking.progress(granted: [:], shown: single.pages, tryDone: true), 0.5),
+    check(near(asking.progress(granted: [:], shown: single.pages, tryDone: false), 0.2) && near(asking.progress(granted: [:], shown: single.pages, tryDone: true), 0.4),
           "rail: the first request really done fills the try page's share")
-    check(near(ArisSetupFlow(page: .wake).progress(granted: [:], shown: single.pages, tryDone: true), 0.5), "rail: a done try adds nothing on another page")
+    check(near(ArisSetupFlow(page: .wake).progress(granted: [:], shown: single.pages, tryDone: true), 0.4), "rail: a done try adds nothing on another page")
 
     // The rail's look: its size, gradients, shadows, motion and fade.
     check(M.height == 11 && M.inset == 24, "rail: 11 points high, inset 24")
@@ -593,7 +595,7 @@ private func onboard2WordsTests() {
 
 private func onboard2WiringTests() {
     let practice = code("Aris/private/Aris/ArisController+Practice.swift")
-    check(practice.contains("case .timer(let intent): reply = await doOnMac(intent, korean: korean)"), "pick 1-A: the practice turn sets the timer with the code every turn uses")
+    check(practice.contains("case .timer(let intent): reply = await doOnMac(intent, korean: korean, recorded: ArisOnboardingPractice.recordsChanges)"), "pick 1-A: the practice turn sets the timer with the code every turn uses")
     check(practice.contains("ArisOnboardingGuide.shared.tryEnded(ArisSetupTry.outcome(of: question, timerRunning: ArisTimerModel.shared.isRunning))"),
           "pick 1-A: the page hears how the turn ended from the timer as it really is, by voice or typed")
     check(code("Aris/private/Aris/ArisController+Typed.swift").contains("practiceTurn = onboardingTalk == .practice"), "a request typed on the try page is a practice turn too")
@@ -605,7 +607,8 @@ private func onboard2WiringTests() {
           && ended.contains("after(ArisSetupTry.advanceAfter, name: \"try\")") && ended.contains("guide.next()"),
           "pick 4-A: a request really done shows 계속 and moves the page on by itself, only on the try page")
     check(setup.contains("clocks.cancel(name: \"try\")"), "pressing 계속 first leaves no second move waiting")
-    check(setup.contains("plan = ArisSetupPlan.make(permissionsSettled: cardsOn && actions.captureAllowed() && ArisPrerequisites.current().isEmpty")
+    check(setup.contains("plan = ArisSetupPlan.make(permissionsSettled: cardsOn && captureSettled && ArisPrerequisites.current().isEmpty")
+          && setup.contains("let captureSettled = !cards.contains(.screen) || actions.captureAllowed()")
           && setup.contains("let page = plan.opening(at: wanted)") && setup.contains("model.next(skipping: plan.skipped)") && setup.contains("model.back(skipping: plan.skipped)"),
           "the guide walks the plan made as the window opens")
     check(setup.contains("plan.learning(readyAIs: ArisSetupPlan.readyCount(ready), at: page)"), "and lets it learn which AIs are set up")

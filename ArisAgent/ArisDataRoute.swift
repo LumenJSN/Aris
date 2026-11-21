@@ -15,11 +15,12 @@
 //                                                           or card titles: ArisDiagnosticsFilter) and redacted
 //                                                           (ArisRedaction). Never the token, a key, a config file or an image.
 //    {"op": "wipe", "items": ["memory"|"words"|"logs"], "confirm": "지우기"}   -> {"wiped": [...]}
-//                                                           memory.sqlite's rows, memory.md and teammates/*.md;
+//                                                           memory.sqlite's rows, memory.md, teammates/*.md and
+//                                                           shortcuts.json (then the helper's caches are read again);
 //                                                           dictionary.json and vocabulary.txt (dictation's words); agent.log (emptied in place:
 //                                                           launchd holds it open), its copies and turns.jsonl. actions.log
 //                                                           (the audit) stays.
-//    {"op": "dropKeyFile", "name": "elevenlabs-key"|"typesafe-key", "keychain": "saved"|"deleted"}  -> {}: only once the
+//    {"op": "dropKeyFile", "name": "elevenlabs-key"|"typesafe-key"|"soniox-key"|"openai-key", "keychain": "saved"|"deleted"}  -> {}: only once the
 //                                                           app read the key (or its delete tombstone) back from the Keychain
 //    {"op": "uninstall", "confirm": "제거", "keepData"?: bool (true unless exactly false)}
 //                                                        -> {"done": bool, "steps": [{"step", "ok", "note"?}]}: in order,
@@ -27,7 +28,8 @@
 //                                                           Trash (a translocated or untrashable app stops everything
 //                                                           here), Aris's hook entries and Antigravity rules (backups
 //                                                           left), the ~/.config/boring-notch link, the LaunchAgent plist,
-//                                                           the binaries (or all of ~/.config/aris; audit lines after that go
+//                                                           the helpers' caches and old defaults under ~/Library, the
+//                                                           binaries (or all of ~/.config/aris; audit lines after that go
 //                                                           to the reply's "audit" and the unified log); after the reply,
 //                                                           launchctl bootout of this agent.
 //
@@ -48,6 +50,8 @@ enum ArisDataRoute {
         var data: URL { folder.appendingPathComponent("aris", isDirectory: true) }
         var memory: URL { data.appendingPathComponent("memory.md") }
         var teammateNotes: URL { data.appendingPathComponent("teammates", isDirectory: true) }
+        /// Learned shortcuts (ArisShortcutStore): requests Aris does again with no AI, learned from the user's words.
+        var shortcuts: URL { data.appendingPathComponent("shortcuts.json") }
         var agentLog: URL { data.appendingPathComponent("agent.log") }
         var turns: URL { data.appendingPathComponent("turns.jsonl") }
         /// Dictation's learned dictionary (ArisLearnedDictionary) and the user's word list (ArisVocabulary).
@@ -66,7 +70,7 @@ enum ArisDataRoute {
         var reopenLog: () -> Void
         /// Runs once the reply has gone out (the bootout, which ends this process).
         var later: (@escaping () -> Void) -> Void
-        /// The bundle id of the app bundle at a URL.
+        /// The bundle id of the app bundle at a URL, as its Info.plist on disk has it (appBundleIdOnDisk).
         var bundleId: (URL) -> String?
         /// One actions.log line.
         var audit: (String) -> Void
@@ -75,6 +79,21 @@ enum ArisDataRoute {
         var log: (String) -> Void
         /// Stops a skills setup under way and removes the runtime (uninstall, before the folders go).
         var stopSkills: () -> Void = {}
+        /// Deletes the helper's Keychain items under one service, never reading them (uninstall). Records nothing
+        /// unless set: the tests never touch a real keychain.
+        var deleteKeychain: (String) -> Bool = { _ in true }
+        /// After a wipe, with what was wiped: every copy this process keeps in memory is read again from the emptied
+        /// files (the memories and work lessons a turn is given come from caches: ArisMemoryCurator, ArisWorkDesk).
+        var wiped: ([String]) -> Void = { _ in }
+        /// Uninstall, once the app is in the Trash: this helper stops writing where the uninstall removes things
+        /// (ArisUninstallQuiet; `true`: ~/.config/aris goes whole). Records nothing unless set.
+        var quiesce: (_ removingFolder: Bool) -> Void = { _ in }
+        /// `tccutil reset <service> com.lumenjsn.aris`: Aris's own row for one permission goes (uninstall). True when
+        /// tccutil said it did. Never run unless set: the tests never touch this Mac's permissions.
+        var resetPermission: (String) -> Bool = { _ in true }
+        /// After the reply, once this helper has stopped: what the uninstall removed is removed once more by a step
+        /// that outlives it, for anything written in its last moment. Nothing unless set.
+        var sweep: ([URL]) -> Void = { _ in }
 
         static func live(audit: @escaping (String) -> Void) -> Effects {
             Effects(
@@ -88,9 +107,13 @@ enum ArisDataRoute {
                 },
                 reopenLog: { lseek(STDERR_FILENO, 0, SEEK_END) },
                 later: { work in DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1, execute: work) },
-                bundleId: { Bundle(url: $0)?.bundleIdentifier },
+                bundleId: ArisDataRoute.appBundleIdOnDisk,
                 audit: audit,
-                log: { line in Logger(subsystem: "com.lumenjsn.aris.agent", category: "data").notice("\(line, privacy: .public)") })
+                log: { line in Logger(subsystem: "com.lumenjsn.aris.agent", category: "data").notice("\(line, privacy: .public)") },
+                deleteKeychain: ArisUninstallCleanup.deleteKeychainItems(service:),
+                quiesce: { removingFolder in ArisUninstallQuiet.begin(removingFolder: removingFolder) },
+                resetPermission: ArisUninstallCleanup.resetPermission(service:),
+                sweep: ArisUninstallCleanup.sweepAfterExit(_:))
         }
     }
 
@@ -98,7 +121,7 @@ enum ArisDataRoute {
     static let appBundleId = "com.lumenjsn.aris"
     /// In the order the sheet lists them.
     static let wipeItems = ["memory", "words", "logs"]
-    static let keyFiles: Set<String> = ["elevenlabs-key", "typesafe-key"]
+    static let keyFiles: Set<String> = ["elevenlabs-key", "typesafe-key", "soniox-key", "openai-key"]
     /// What the app checked in the Keychain before asking for a key file to go.
     static let keychainChecks: Set<String> = ["saved", "deleted"]
     /// How much of the end of each log goes into a diagnostics file.
@@ -164,6 +187,8 @@ enum ArisDataRoute {
             // And what Aris learned from its own work, in the same file (ArisWorkStore).
             if let store = memoryStore(places) { ArisWorkStore(memory: store).deleteAll() }
             ArisNoFollow.removeFile(places.memory)
+            // And the learned shortcuts, learned from the same words.
+            ArisNoFollow.removeFile(places.shortcuts)
             for name in ArisNoFollow.contents(places.teammateNotes) where name.hasSuffix(".md") {
                 ArisNoFollow.removeFile(places.teammateNotes.appendingPathComponent(name))
             }
@@ -176,6 +201,7 @@ enum ArisDataRoute {
             }
             ArisNoFollow.removeFile(places.turns)
         }
+        effects.wiped(picked)
         effects.audit("data: wipe " + picked.joined(separator: ", "))
         return ok(["wiped": picked])
     }
@@ -229,6 +255,12 @@ enum ArisDataRoute {
             return ok(["done": false, "steps": steps])
         }
 
+        // 1b. From here this helper writes nothing where the uninstall removes things: the aris-tools link is never
+        // put back, and with the records going nothing more is written in ~/.config/aris (VM run 2026-11-19: the
+        // folder's removal failed while actions.log and children.json were still being written, and the link, the
+        // log and the list came back after it).
+        effects.quiesce(!keepData)
+
         // 2. Aris's hook entries and Antigravity rules, each file backed up first.
         let cleanup = ArisUninstallCleanup.run(home: places.home, stamp: stamp())
         // Antigravity's file is the last result.
@@ -236,11 +268,18 @@ enum ArisDataRoute {
         record("hooks", hooks.allSatisfy(\.ok), hooks.map(\.description).joined(separator: "; "))
         record("antigravity", agy?.ok ?? true, agy?.description)
 
+        // 2b. The helper's Keychain items (API keys, MCP secrets), deleted by service, never read.
+        let keptKeychain = ArisUninstallCleanup.removeKeychain(effects.deleteKeychain)
+        record("keychain", keptKeychain.isEmpty, keptKeychain.isEmpty ? nil : "not removed: " + keptKeychain.joined(separator: ", "))
+
         // 3. The old folder name's link (only a link that points at ~/.config/aris).
         record("link", removeOldLink(places))
 
         // 4. The LaunchAgent plist, so it never starts again.
         record("launchAgent", remove(places.plist))
+
+        // 4a. What macOS kept for the helper programs under ~/Library (their caches, HTTP storage, old defaults).
+        record("helperFiles", ArisUninstallCleanup.helperLibraryItems(home: places.home).map(remove).allSatisfy { $0 })
 
         // 4b. Skills: the setup is stopped, the runtime (Python and SkillSpector, read-only once installed) and anything
         // fetched but never added go; the user's skills themselves go only when their records do (keepData false).
@@ -252,24 +291,55 @@ enum ArisDataRoute {
             && (keepData || remove(aris.appendingPathComponent("Skills")))
         record("skills", skillsGone)
 
-        // 5. The binaries, or the whole folder.
+        // 4c. The rest Aris keeps under ~/Library outside its sandbox: Application Support/Aris (the engine's input
+        // ladder and the rest; the user's skills stay with their records), and the caches and HTTP storage the helper and
+        // aris-tools keep under the app's id (VM run 2026-11-19: all of it was left).
+        let appFiles = ArisUninstallCleanup.appLibraryItems(home: places.home, keepSkills: keepData)
+        record("appFiles", appFiles.map(remove).allSatisfy { $0 })
+
+        // 4d. Aris's own rows in Privacy & Security, reset by its bundle id (tccutil), one service at a time.
+        let keptRows = ArisUninstallCleanup.resetPermissions(effects.resetPermission)
+        record("permissions", keptRows.isEmpty, keptRows.isEmpty ? nil : "not reset: " + keptRows.joined(separator: ", "))
+
+        // 4e. The app's sandbox folders: macOS keeps ~/Library/Containers/com.lumenjsn.aris for the app (only Finder,
+        // or a program with Full Disk Access, may remove it, and the app is still open): never tried here, and said
+        // so. Its Application Scripts folder is tried.
+        let scripts = ArisUninstallCleanup.sandboxScripts(home: places.home)
+        let scriptsGone = remove(scripts)
+        record("sandbox", false, "kept by macOS: ~/Library/Containers/com.lumenjsn.aris" + (scriptsGone ? "" : ", ~/Library/Application Scripts/com.lumenjsn.aris"))
+
+        // 5. The binaries, or the whole folder (tried again once what was being written has settled).
+        var swept = appFiles + ArisUninstallCleanup.helperLibraryItems(home: places.home)
         if keepData {
-            record("binaries", places.binaries.map(remove).allSatisfy { $0 })
+            record("binaries", places.binaries.map(removeSettled).allSatisfy { $0 })
+            swept += places.binaries
         } else {
-            let removed = remove(places.folder)
+            let removed = removeSettled(places.folder)
             folderGone = removed
             record("folder", removed)
+            swept.append(places.folder)
         }
 
         // 6. Last, after the reply: this agent stops itself.
         let gone = folderGone
         effects.later {
             if gone { effects.log("data: uninstall bootout") } else { effects.audit("data: uninstall bootout") }
+            // The last remover outlives this helper: anything written in its last moment goes too.
+            effects.sweep(swept)
             effects.bootout()
         }
         var reply: [String: Any] = ["done": steps.allSatisfy { $0["ok"] as? Bool == true }, "steps": steps]
         if !lateAudit.isEmpty { reply["audit"] = lateAudit }
         return ok(reply)
+    }
+
+    /// `remove`, tried again a few times a moment apart: a folder something was still writing into when it went.
+    private static func removeSettled(_ url: URL) -> Bool {
+        for attempt in 0..<4 {
+            if remove(url) { return true }
+            if attempt < 3 { usleep(250_000) }
+        }
+        return false
     }
 
     /// Removes a file, a folder (its contents never followed out) or a link itself; true when it's gone.
@@ -289,6 +359,19 @@ enum ArisDataRoute {
     }
 
     // MARK: - Helpers
+
+    /// The id an app bundle declares in its Info.plist on disk, only for a bundle whose program is Aris's ("Aris"), as
+    /// ArisOrigin reads the bundle; nil for anything else, a link, or a file that can't be read.
+    /// Never `Bundle(url:)`: Foundation hands back the one bundle object it keeps per path, and inside aris-agent the
+    /// app's bundle is the helper's own main bundle, whose id ArisHelperListing changed in memory to
+    /// com.lumenjsn.aris.agent, so every uninstall was refused as "not the Aris app's bundle" (VM run 2026-11-18, D3).
+    static func appBundleIdOnDisk(_ bundle: URL) -> String? {
+        let plist = bundle.appendingPathComponent("Contents/Info.plist")
+        guard let data = ArisNoFollow.read(plist),
+              let info = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
+              info["CFBundleExecutable"] as? String == "Aris" else { return nil }
+        return info["CFBundleIdentifier"] as? String
+    }
 
     /// The bundle of the running app with this pid (the caller, once ArisPeer has checked it).
     static func appBundle(pid raw: Any?) -> URL? {

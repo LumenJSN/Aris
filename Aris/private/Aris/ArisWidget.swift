@@ -225,6 +225,8 @@ struct ArisWeatherCard: Equatable, Sendable, Codable {
     static let columns = 6
 
     static func parse(_ object: [String: Any], english: Bool = ArisUIWords.english, locale: Locale? = nil) -> ArisWeatherCard? {
+        let fahrenheit = object["unit"] as? String == "F"
+        func degrees(_ raw: Any?) -> Int? { Self.degrees(raw, fahrenheit: fahrenheit) }
         guard let place = (object["place"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !place.isEmpty,
               let temp = degrees(object["temp"]), let code = weatherCode(object["code"]) else { return nil }
         let day = object["day"] as? Bool ?? true
@@ -303,8 +305,9 @@ struct ArisWeatherCard: Equatable, Sendable, Codable {
         }
     }
 
-    private static func degrees(_ raw: Any?) -> Int? {
-        guard let value = (raw as? NSNumber)?.doubleValue, value.isFinite, (-90...60).contains(value) else { return nil }
+    /// `fahrenheit`: the card came in °F (its "unit": the Mac's own setting, the same as the sentence's), whose range is wider.
+    private static func degrees(_ raw: Any?, fahrenheit: Bool = false) -> Int? {
+        guard let value = (raw as? NSNumber)?.doubleValue, value.isFinite, (fahrenheit ? -130...140 : -90...60).contains(value) else { return nil }
         return Int(value.rounded())
     }
 

@@ -373,6 +373,20 @@ enum ArisMemoryAnswer {
         }
     }
 
+    /// Said after a new memory when only the user's own words are left past the limit (ArisMemoryStore.pastCapacity):
+    /// nothing he said is dropped for room, so he is asked to tidy up.
+    static func fullLine(korean: Bool) -> String {
+        korean ? "직접 말한 기억이 \(ArisMemoryStore.capacity)개를 넘었어요. 지우지 않고 다 두지만, 설정 › 기억에서 필요 없는 걸 지워 주세요."
+               : "Your own memories are past \(ArisMemoryStore.capacity). I keep them all, but please delete the ones you don't need in Settings › Memory."
+    }
+
+    /// What Aris says back to the user's own 기억해: the outcome, and the full line when a new one left memory past its limit.
+    static func remembered(_ outcome: ArisMemoryStore.Outcome, korean: Bool, pastCapacity: Bool) -> String {
+        let line = remembered(outcome, korean: korean)
+        guard case .added = outcome, pastCapacity else { return line }
+        return line + " " + fullLine(korean: korean)
+    }
+
     static func forgot(_ gone: [ArisMemoryRecord], words: String, korean: Bool) -> String {
         guard !gone.isEmpty else {
             if words.isEmpty { return korean ? "잊을 게 없어요." : "Nothing to forget." }

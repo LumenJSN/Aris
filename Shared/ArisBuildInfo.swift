@@ -33,7 +33,7 @@ enum ArisBuildInfo {
         "\(program) \(commit)"
     }
 
-    /// The build as Settings › 정보 shows it inside "버전 0.1.0 (…)": the bundle's build number, then the commit
+    /// The build as Settings › 정보 shows it inside "버전 1.3.0 (…)": the bundle's build number, then the commit
     /// ("1 · 13758537"; "1 · dev" for a build with no stamp), so a report can say exactly which build it is about.
     static func buildDetail(number: String?, commit: String = commit) -> String {
         "\(number ?? "?") · \(commit)"

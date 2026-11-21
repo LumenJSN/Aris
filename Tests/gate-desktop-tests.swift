@@ -918,25 +918,27 @@ private func gateEnglishAsideTests() {
     let none = { (_: String, _: [String], _: [String: String], _: TimeInterval) in ArisSkillProcessResult(status: 0, stdout: "The cheapest is $12.", stderr: "", timedOut: false) }
     let missing = ArisAsideDeps(locate: { .missing }, run: none, open: { _ in true }, environment: [:], ownData: { _ in false })
     let englishTurn = GateAsideTurn(english: true, answers: [.no]), koreanTurn = GateAsideTurn(english: false, answers: [.no])
-    let englishOut = ArisAsideTool.answer("order earbuds on the shop site", turn: englishTurn, critical: false, deps: missing)
-    let koreanOut = ArisAsideTool.answer("쇼핑몰에서 이어폰 주문해줘", turn: koreanTurn, critical: false, deps: missing)
+    let englishOut = ArisAsideTool.answer("book a table on the restaurant site", turn: englishTurn, critical: false, deps: missing)
+    let koreanOut = ArisAsideTool.answer("식당 사이트에서 자리 예약해줘", turn: koreanTurn, critical: false, deps: missing)
     check(englishTurn.cards.first?.title == "Install Aside" && englishTurn.cards.first?.allow == "Install" && !gateHasKorean(gateWhole(englishTurn.cards[0]) + englishOut.output)
           && koreanTurn.cards.first == ArisAside.missingCard && koreanOut.output == ArisAside.missingOutput(opened: false),
           "desk-11: with Aside missing, an English turn gets the English install card and line, a Korean one its own: \(englishOut.output.prefix(120))")
     let ready = ArisAsideDeps(locate: { .ready("/x/aside") }, run: none, open: { _ in true }, environment: [:], verify: { _ in true }, ownData: { _ in false })
     let orderEnglish = GateAsideTurn(english: true, answers: [.yes([:])]), orderKorean = GateAsideTurn(english: false, answers: [.no])
-    _ = ArisAsideTool.answer("order earbuds on the shop site", turn: orderEnglish, critical: true, deps: ready)
-    _ = ArisAsideTool.answer("쇼핑몰에서 이어폰 주문해줘", turn: orderKorean, critical: true, deps: ready)
-    check(orderEnglish.cards.first?.title == "Hand this to Aside" && orderEnglish.cards.first?.detail == "order earbuds on the shop site"
-          && orderEnglish.statuses == ["Aside is working in the browser: order earbuds on the shop site"] && orderKorean.cards.first?.title == ArisAside.cardTitle,
+    // (rel11: a brief to order is refused before any card: ArisPaymentBoundary. A booking is acting too, and asks.)
+    _ = ArisAsideTool.answer("book a table on the restaurant site", turn: orderEnglish, critical: true, deps: ready)
+    _ = ArisAsideTool.answer("식당 사이트에서 자리 예약해줘", turn: orderKorean, critical: true, deps: ready)
+    check(orderEnglish.cards.first?.title == "Hand this to Aside" && orderEnglish.cards.first?.detail == ArisPaymentBoundary.bounded("book a table on the restaurant site", english: true)
+          && orderEnglish.statuses == ["Aside is working in the browser: book a table on the restaurant site"] && orderKorean.cards.first?.title == ArisAside.cardTitle,
           "desk-11: the Aside task card and its status line follow the request's language: \(orderEnglish.cards.first?.title ?? "") \(orderEnglish.statuses)")
     let signedOut = ArisAsideDeps(locate: { .signedOut("/x/aside") }, run: none, open: { _ in true }, environment: [:], verify: { _ in true }, ownData: { _ in false })
     let signEnglish = GateAsideTurn(english: true, answers: [.no])
+    // (rel11: a brief about orders is a payment hand-off: its line is followed by the rule for the reply, ArisPaymentBoundary.)
     let declined = ArisAsideTool.answer("check my orders on the shop site", turn: signEnglish, critical: false, deps: signedOut)
-    check(signEnglish.cards.first?.title == "Sign in to Aside" && signEnglish.cards.first?.allow == "Sign in" && declined.output == ArisAside.signedOutLine(english: true),
+    check(signEnglish.cards.first?.title == "Sign in to Aside" && signEnglish.cards.first?.allow == "Sign in" && declined.output.hasPrefix(ArisAside.signedOutLine(english: true)),
           "desk-11: the Aside sign-in card and its line are English for an English turn")
     let tool = gateSource("ArisAgent/ArisAsideTool.swift"), routes = gateSource("ArisAgent/ArisAsideRoutes.swift")
-    check(tool.components(separatedBy: "english: turn.asideEnglish").count == 12 && routes.components(separatedBy: "var asideEnglish: Bool").count == 4
+    check(tool.components(separatedBy: "english: turn.asideEnglish").count == 13 && routes.components(separatedBy: "var asideEnglish: Bool").count == 4
           && routes.components(separatedBy: "ArisAside.runningStatus(brief, english: asideEnglish)").count == 3,
           "desk-11: every line the Aside tool says for the user goes through the one switch, on each kind of turn")
 }

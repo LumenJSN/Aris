@@ -139,7 +139,7 @@ struct ArisTodoView: View {
     private func close() { withAnimation(.easeOut(duration: 0.18)) { composing = nil } }
 
     private func openSettings() {
-        ArisSettingsNav.shared.page = .todo
+        ArisSettingsNav.shared.go(anchor: "able.todo")
         ArisStepAside.showSettings()
     }
 

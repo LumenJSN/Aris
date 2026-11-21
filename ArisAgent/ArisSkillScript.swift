@@ -31,7 +31,7 @@ enum ArisSkillScript {
     static let maxOutput = 32 * 1_024
 
     static let screenRefusal = "Refused: a skill's scripts don't run in a conversation that saw the screen. Say so in a few words; a new conversation can."
-    static let declined = "the user said no (or didn't answer), so the script didn't run. Don't try it another way now. A later request in a new turn gets a new card."
+    static let declined = "The owner said no (or didn't answer), so the script didn't run. Don't try it another way now. A later request in a new turn gets a new card."
 
     /// The interpreters by extension. `python` is the skills runtime's own (installed with the setup).
     static func interpreter(for script: String, python: String?, node: String?) -> String? {

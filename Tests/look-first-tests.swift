@@ -280,21 +280,26 @@ private func lookFirstThinkingTests() {
     check(T.model(.claude, tier: .quick) == "sonnet" && T.model(.claude, tier: .work) == "sonnet" && T.model(.claude, tier: .deep) == "opus"
           && T.model(.claude, tier: .critical) == "opus",
           "thinking: Claude is Sonnet for a normal turn (never Haiku), Opus for a look-up or careful one")
-    check(T.claudeEffort(model: "sonnet") == "medium" && T.claudeEffort(model: "opus") == "high" && T.claudeEffort(model: "haiku") == "low",
-          "thinking: Sonnet thinks at medium, Opus at high")
-    check(T.codexEffort(tier: .quick) == "medium" && T.codexEffort(tier: .work) == "medium" && T.codexEffort(tier: .deep) == "high"
+    // jv-fastlane: a quick (spoken or plain chat) turn at low, other work at medium (ArisThinking.efforts).
+    check(T.claudeEffort(model: "sonnet", tier: .quick) == "low" && T.claudeEffort(model: "sonnet", tier: .work) == "medium"
+          && T.claudeEffort(model: "opus") == "high" && T.claudeEffort(model: "haiku") == "low",
+          "thinking: Sonnet thinks at low for a quick turn and medium for work, Opus at high")
+    check(T.codexEffort(tier: .quick) == "low" && T.codexEffort(tier: .work) == "medium" && T.codexEffort(tier: .deep) == "high"
           && T.codexEffort(tier: .critical) == "high",
-          "thinking: Codex at medium normally, high for a look-up or careful turn")
+          "thinking: Codex at low for a quick turn, medium for work, high for a look-up or careful turn")
     check(T.model(.codex, tier: .deep) == ArisBrain.codex.model(tier: .work) && T.model(.antigravity, tier: .quick) == ArisBrain.antigravity.model(tier: .quick),
           "thinking: the other brains keep their models (a deep turn uses the strong one)")
     // The one-shot helpers keep their own low effort and quick model.
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../ArisAgent")
-    let helpers = ["ArisJudge.swift", "ArisDictationRoutes.swift", "ArisSealedOneShot.swift", "ArisReadJudge.swift", "ArisDesktopVision.swift"]
-    let low = helpers.allSatisfy { ((try? String(contentsOf: root.appendingPathComponent($0).standardized, encoding: .utf8)) ?? "").contains("\"--effort\", \"low\"") }
+    // jv-models: dictation's polish and the sealed one-shots take the 작은 도우미 choice, low when it is 자동 (ArisModelChoice).
+    let read = { (name: String) in (try? String(contentsOf: root.appendingPathComponent(name).standardized, encoding: .utf8)) ?? "" }
+    let low = ["ArisJudge.swift", "ArisReadJudge.swift", "ArisDesktopVision.swift"].allSatisfy { read($0).contains("\"--effort\", \"low\"") }
+        && ["ArisDictationRoutes.swift", "ArisSealedOneShot.swift"].allSatisfy { read($0).contains("effort: String = \"low\"") }
     let driver = (try? String(contentsOf: root.appendingPathComponent("ArisBrainDriver.swift").standardized, encoding: .utf8)) ?? ""
     let codex = (try? String(contentsOf: root.appendingPathComponent("ArisCodexDriver.swift").standardized, encoding: .utf8)) ?? ""
-    check(low && driver.contains("\"--effort\", ArisThinking.claudeEffort(model: model)") && !driver.contains("\"--model\", model, \"--effort\", \"low\"")
-          && codex.contains("\"effort\": ArisThinking.codexEffort(tier: tier)"),
+    check(low && driver.contains("\"--effort\", startedEffort()") && driver.contains("ArisThinking.claudeEffort(model: model, tier: .quick, task: task, choices:")
+          && !driver.contains("\"--model\", model, \"--effort\", \"low\"")
+          && codex.contains("\"effort\": ArisThinking.codexEffort(tier: tier, task: task, choices:"),
           "thinking: conversation runners take the policy; judges, dictation routes and one-shots stay on low")
     check(T.saysAtOnce(T.lookingStatus) && !T.saysAtOnce("화면 보는 중") && T.lookingLine(korean: true) == "알아볼게요."
           && ArisUIWords.status(T.lookingStatus, english: true) == "Looking into it",

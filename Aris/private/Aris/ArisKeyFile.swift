@@ -2,7 +2,7 @@
 //  ArisKeyFile.swift
 //  Aris
 //
-//  API keys Aris uses (ElevenLabs, TypeSafe). They live in the macOS Keychain (ArisKeychain, set as `secureStore` at
+//  API keys Aris uses (ElevenLabs, TypeSafe, and the Soniox and OpenAI keys two of the recognisers need). They live in the macOS Keychain (ArisKeychain, set as `secureStore` at
 //  launch); settings › AI 서비스 › API 키 saves them there. A key still in an old hand-placed file in ~/.config/aris/ is
 //  read as a fallback until it is moved (ArisKeychain.migrateFiles). Never in the code. A missing key just turns that
 //  feature off.
@@ -14,7 +14,13 @@ enum ArisKeyFile {
     static let folder = UserHome.path + "/.config/aris/"
 
     /// The keys the settings page manages, by their file (and Keychain account) name.
-    static let names = ["elevenlabs-key", "typesafe-key"]
+    static let names = ["elevenlabs-key", "typesafe-key", "soniox-key", "openai-key"]
+    /// The other decision models' keys (ArisDecisionProviders, each provider's `keyName`): saved where the model is
+    /// picked, kept in the Keychain alone (there never was a file for them).
+    static let decisionNames = ["openai-decisions-key", "openrouter-decisions-key", "cloudflare-ai-key", "perplexity-decider-key", "inception-key",
+                                "upstage-key", "liquid-key", "foundry-decision-key", "custom-decision-key"]
+    /// Every key the app keeps: what diagnostics redact and "delete everything" deletes.
+    static var allNames: [String] { names + decisionNames }
 
     /// The Keychain lookup, set by the app at launch (nil in tests and tools, which read files only).
     nonisolated(unsafe) static var secureStore: ((String) -> String?)?
@@ -90,6 +96,13 @@ enum ArisKeyFile {
         guard !key.contains(where: \.isWhitespace) else { return .failure(.spaces) }
         guard key.count >= minLength else { return .failure(.tooShort) }
         return .success(key)
+    }
+
+    /// A key for the owner's own server (a self-hosted decision model): any length, no blanks.
+    static func checkOwn(_ raw: String) -> Result<String, Problem> {
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return .failure(.empty) }
+        return key.contains(where: \.isWhitespace) ? .failure(.spaces) : .success(key)
     }
 
     /// How a saved key is shown: never the key, only its last four.

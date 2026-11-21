@@ -297,12 +297,12 @@ enum ArisMCPPolicy {
     }
 
     /// Bidi controls (embeddings, overrides, isolates, marks) and characters that show nothing, anywhere in the call.
+    /// An emoji's own joiners and selectors are part of what it shows, and pass (ArisJSTokens.hidesSomething).
     static func hidesCharacters(_ value: Any) -> Bool {
         switch value {
         case let text as String:
-            return text.unicodeScalars.contains { scalar in
-                ArisJSTokens.isHidden(scalar) || (0x202A...0x202E).contains(scalar.value) || (0x2066...0x2069).contains(scalar.value)
-                    || [0x200E, 0x200F, 0x061C].contains(scalar.value)
+            return ArisJSTokens.hidesSomething(text) || text.unicodeScalars.contains { scalar in
+                (0x202A...0x202E).contains(scalar.value) || (0x2066...0x2069).contains(scalar.value) || [0x200E, 0x200F, 0x061C].contains(scalar.value)
             }
         case let list as [Any]: return list.contains(where: hidesCharacters)
         case let object as [String: Any]: return object.contains { hidesCharacters($0.key) || hidesCharacters($0.value) }
@@ -480,9 +480,11 @@ enum ArisMCPPolicy {
 
     /// Text without control characters (newlines and tabs kept when asked) or characters that show nothing, cut.
     static func clean(_ text: String, limit: Int?, keepNewlines: Bool = false) -> String {
-        let scalars = text.unicodeScalars.filter { scalar in
+        // An emoji keeps its own joiners and selectors (ArisJSTokens.shownScalars), so a card shows what is sent.
+        let scalars = text.flatMap(ArisJSTokens.shownScalars).filter { scalar in
             if keepNewlines && (scalar == "\n" || scalar == "\t") { return true }
-            return !CharacterSet.controlCharacters.contains(scalar) && !ArisJSTokens.isHidden(scalar)
+            // (controlCharacters holds the format ones too: an emoji's joiner that shownScalars kept stays.)
+            return !CharacterSet.controlCharacters.contains(scalar) || ArisJSTokens.isHidden(scalar)
         }
         let cleaned = String(String.UnicodeScalarView(scalars))
         guard let limit, cleaned.count > limit else { return cleaned }

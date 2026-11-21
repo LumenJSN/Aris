@@ -42,12 +42,17 @@ struct ClaudeHookEvent {
     let lastMessageEnd: String?
     /// The session's terminal, from the hook's request headers.
     let terminal: TerminalRef?
+    /// The coding agent's own process (the X-Claude-Pid header aris-claude-hook.sh sends): the session is over once
+    /// it is gone (ClaudeSessionSweep). nil from hooks that don't send it.
+    let pid: Int32?
     /// Notification events only: "permission_prompt", "idle_prompt", ...
     let notificationType: String?
     /// Which coding agent sent it: "claude", or "codex" / "gemini" through agent-hook.sh (the X-Agent header).
     let agent: String
     /// SessionStart only: why the session started ("startup", "resume", "clear", "compact").
     let source: String?
+    /// UserPromptSubmit only: what was typed (the fleet keeps its first line as the session's first request).
+    let prompt: String?
 
     /// Gemini CLI's hook names for Claude's (Codex already uses Claude's).
     static let geminiEvents = ["BeforeTool": "PreToolUse", "AfterTool": "PostToolUse", "BeforeAgent": "UserPromptSubmit",
@@ -71,8 +76,17 @@ struct ClaudeHookEvent {
         self.lastMessage = Self.oneLine(json["last_assistant_message"] as? String)
         self.lastMessageEnd = (json["last_assistant_message"] as? String).map { String($0.suffix(2_000)) }
         self.terminal = TerminalRef(headers: headers)
+        self.pid = Self.pid(headers["x-claude-pid"])
         self.notificationType = json["notification_type"] as? String
         self.source = json["source"] as? String
+        self.prompt = (json["prompt"] as? String).map { String($0.prefix(500)) }
+    }
+
+    /// A process id as the hook script sends it: digits only, above launchd's 1; anything else is ignored.
+    static func pid(_ value: String?) -> Int32? {
+        guard let value, value.range(of: "^[0-9]{1,9}$", options: .regularExpression) != nil,
+              let pid = Int32(value), pid > 1 else { return nil }
+        return pid
     }
 
     /// Only "always allow" *rules* are echoed back. Claude also suggests session-wide changes
@@ -185,6 +199,8 @@ struct ClaudeSession: Identifiable, Equatable {
     var edit: ClaudeEdit?
     var lastMessage: String?
     var terminal: TerminalRef?
+    /// The agent's process, when its hooks say (ClaudeHookEvent.pid).
+    var pid: Int32?
     /// Share of the context window in use, from the status line.
     var contextPercent: Double?
     /// "claude", "codex" or "gemini" (ClaudeHookEvent.agent).

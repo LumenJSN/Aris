@@ -44,7 +44,7 @@ private func secFix4OwnToolsTests() {
         if code.range(of: #"executableURL = URL\(fileURLWithPath: (tools|toolsPath|Self\.toolsPath|ArisAgentRunner\.toolsPath|ArisAppBundle\.toldTools)\)"#, options: .regularExpression) != nil { direct.append(file) }
         routed += code.components(separatedBy: "executableURL = URL(fileURLWithPath: ArisAppBundle.executed(tools))").count - 1
     }
-    check(files.count > 200 && direct.isEmpty && routed == 5, "sec4 H1: every place the helper starts aris-tools goes through ArisAppBundle.executed (\(routed) places; by its given name: \(direct))")
+    check(files.count > 200 && direct.isEmpty && routed == 6, "sec4 H1: every place the helper starts aris-tools goes through ArisAppBundle.executed (\(routed) places; by its given name: \(direct))")
     let children = h1Code("ArisAgent/ArisChildren.swift")
     check(children.contains("if let asked = process.executableURL?.path, ArisAppBundle.executed(asked) != asked {\n            process.executableURL = URL(fileURLWithPath: ArisAppBundle.executed(asked))")
             && children.contains("try ArisProgramApproval.check(process.executableURL)\n        lock.lock()"),

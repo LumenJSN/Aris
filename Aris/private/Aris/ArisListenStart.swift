@@ -15,14 +15,19 @@ enum ArisListenStart {
     enum Problem: Equatable {
         /// This Mac has no audio input device at all.
         case noMicrophone
+        /// No input device is found and microphone access was never given (the setup's microphone step was skipped):
+        /// said as both, never as a microphone that is missing alone (eleventh VM run).
+        case microphoneOff
         /// macOS's speech model for the language is still downloading.
         case modelPreparing
     }
 
     /// What stops a start. `usesMicrophone`: this start opens the microphone itself (false when it hears the wake
     /// detector's audio, which already has one). No microphone comes first: without one the model is no use yet.
-    static func problem(usesMicrophone: Bool, hasMicrophone: Bool, modelMissing: Bool) -> Problem? {
-        if usesMicrophone, !hasMicrophone { return .noMicrophone }
+    /// `microphoneAllowed`: macOS's microphone access is given. With a device there, a start goes on without it (macOS
+    /// asks, or the start says so itself).
+    static func problem(usesMicrophone: Bool, hasMicrophone: Bool, modelMissing: Bool, microphoneAllowed: Bool = true) -> Problem? {
+        if usesMicrophone, !hasMicrophone { return microphoneAllowed ? .noMicrophone : .microphoneOff }
         return modelMissing ? .modelPreparing : nil
     }
 
@@ -31,6 +36,9 @@ enum ArisListenStart {
         case .noMicrophone:
             return english ? "I can't find a microphone. Connect one, or pick one in System Settings › Sound › Input, and try again."
                 : "마이크를 찾을 수 없어요. 마이크를 연결하거나 시스템 설정 › 사운드 › 입력에서 고른 뒤 다시 해 주세요."
+        case .microphoneOff:
+            return english ? "Microphone access isn't on for Aris yet, and I can't find a microphone either. Turn it on in System Settings › Privacy & Security › Microphone (and connect a microphone), then try again."
+                : "Aris의 마이크 권한이 아직 꺼져 있고, 연결된 마이크도 찾지 못했어요. 시스템 설정 › 개인정보 보호 및 보안 › 마이크에서 켜고 마이크를 연결한 뒤 다시 해 주세요."
         case .modelPreparing:
             return english ? "The speech recognition model is still getting ready. Please say it again in a moment."
                 : "음성 인식 모델을 준비하는 중이에요. 잠시 뒤에 다시 말해 주세요."
@@ -40,7 +48,7 @@ enum ArisListenStart {
     /// A line that is already a whole sentence of Aris's own about the microphone: shown without "I couldn't start
     /// listening: " in front of it.
     static func standsAlone(_ message: String) -> Bool {
-        message == line(.noMicrophone, english: true) || message == line(.noMicrophone, english: false)
+        [Problem.noMicrophone, .microphoneOff].contains { message == line($0, english: true) || message == line($0, english: false) }
     }
 
     /// The sentence the setup's Dictation page shows under its note: what the notch says when a start failed, while

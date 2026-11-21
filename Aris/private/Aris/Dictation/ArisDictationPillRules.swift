@@ -3,16 +3,17 @@
 //  Aris
 //
 //  The dictation pill's decisions as plain values (ArisDictationPillCenter applies them): what it shows for a dictation
-//  stage (the measured size cascade, first match wins), each state's size, the inline error's width, where its window
-//  sits on a screen (bottom centre, above a Dock that is showing), when a window counts as full screen, and when the top
+//  stage (first match wins), each state's size and look, the inline error's width, where its window sits on a screen
+//  (bottom centre, above a Dock that is showing), what the pointer counts on, how the hover follows it, how long a size
+//  change takes (a reversal mid-way is shortened as CSS does), when a window counts as full screen, and when the top
 //  notch stays quiet because the pill has the dictation. Pure, so it's tested.
 //
-//  Measured: radius 24 in every state; show/hide opacity + scale 0.8 → 1 from the centre,
-//  0.15 s ease; size changes 0.15 s ease; idle 36 × 8, hover 50 × 30, hold recording 80 × 30, pill-click or hands-free
-//  recording 102 × 30, transcribing / awaiting insertion 30 × 30, inline error ceil(clamp(136, textW + 44, 280)) × 38,
-//  window at most 540 × 700, its bottom 5 under the screen's usable bottom and the pill 6 above the window's bottom;
-//  parked after 12 s with nothing to show. The recovered words are a card fitted to them instead (the owner's pick B,
-//  ArisDictationPillRecoveredLayout), radius 18, standing where the pill stands.
+//  Measured from the reference pill (its states sheet, bottom edge): the sliver 40 × 8 round 6 on black .5 inside a
+//  1 px white .5 line; the hover 50 × 30, held 73 × 30, hands-free 102.5 × 30, writing 98 × 30, an error 30 high in a
+//  1.5 px red line; every other state black in a 1 px #30302f line, round 22.5 (a capsule at 30). Every change of size,
+//  colour and line runs 0.1 s on cubic-bezier(0.05, 0.6, 0.4, 0.95); showing and hiding is opacity alone, 0.1 s ease.
+//  The pill stands 1 above the usable bottom (Aris's own place). The recovered words are a card fitted to them instead (the owner's pick B,
+//  ArisDictationPillRecoveredLayout), standing where the pill stands.
 //
 
 import CoreGraphics
@@ -22,14 +23,14 @@ import Foundation
 enum ArisDictationPillPhase: Equatable {
     /// Off, locked, or nothing to show in a full-screen app (or anywhere, with 쉴 때도 보이기 off).
     case hidden
-    /// The 36 × 8 sliver: dictation is ready.
+    /// The 40 × 8 sliver: dictation is ready.
     case idle
     /// The pointer is on the sliver: the mic, and a click starts a dictation.
     case hover
-    /// Listening: held (80 × 30, the app's icon and the level) or hands-free (102 × 30, ✕, the level, the lock / ↑).
+    /// Listening: held (73 × 30, the level) or hands-free (102.5 × 30, ✕, the level, ■).
     case recording(handsFree: Bool)
-    /// The words are being written down and typed: the ring.
-    case transcribing(ArisDictationPillRing.Stage)
+    /// The words are being written down and typed: the still level and the spinner.
+    case transcribing(ArisDictationPillSpinner.Stage)
     /// Nowhere took the words: they are on the clipboard and shown here to copy again.
     case recovered(String)
     /// A line of what went wrong, in place.
@@ -38,22 +39,83 @@ enum ArisDictationPillPhase: Equatable {
     var shown: Bool { self != .hidden }
 }
 
+/// How the pill's body is drawn in a phase.
+enum ArisDictationPillLookKind: Equatable {
+    /// The sliver: black .5 in white .5.
+    case sliver
+    /// Under the pointer: #30302f in #5b5b59.
+    case hovered
+    /// Black in #30302f.
+    case solid
+    /// Black in 1.5 px #ee6a6a.
+    case failed
+}
+
 enum ArisDictationPillRules {
-    // MARK: - Measured tokens
+    // MARK: - Sizes (measured from the reference pill, states.css, bottom edge)
 
-    static let radius: CGFloat = 24
+    /// states.css:636.
+    static let idleSize = CGSize(width: 40, height: 8)
+    /// states.css:645.
+    static let hoverSize = CGSize(width: 50, height: 30)
+    /// states.css:642 (also the first instant, before the microphone is up).
+    static let holdSize = CGSize(width: 73, height: 30)
+    /// states.css:648.
+    static let handsFreeSize = CGSize(width: 102.5, height: 30)
+    /// states.css:651.
+    static let transcribingSize = CGSize(width: 98, height: 30)
+    /// states.css:671: 30 high and at least 91 wide; Aris says its line in it (the reference says it elsewhere), so it
+    /// grows to the line, 12 in at each end, up to Aris's 280.
+    static let errorHeight: CGFloat = 30
+    static let errorMinWidth: CGFloat = 91
+    static let errorMaxWidth: CGFloat = 280
+    static let errorPadding: CGFloat = 24
 
-    /// The radius drawn at `size`: 24, or half the short side when that is less (CSS clamps it so; a 30-tall pill is a
-    /// capsule).
-    static func cornerRadius(_ size: CGSize) -> CGFloat { min(radius, min(size.width, size.height) / 2) }
-    /// Show/hide: opacity and scale from 0.8, from the centre, 0.15 s ease.
-    static let showDuration = 0.15
-    static let hiddenScale: CGFloat = 0.8
-    /// Size, height, background, border and radius: 0.15 s ease (the default phase).
-    static let sizeDuration = 0.15
-    /// CSS `ease`.
-    static let ease = (0.25, 0.1, 0.25, 1.0)
-    /// The window: at most 540 × 700; its bottom 5 under the usable bottom, the pill 6 above the window's bottom.
+    /// The sliver's corners (states.css:117; on its 8 high CSS shrinks them to 4, a capsule) and everyone else's
+    /// (states.css:90, a capsule at 30 high).
+    static let idleRadius: CGFloat = 6
+    static let radius: CGFloat = 22.5
+    /// The line: 1 (states.css:90, 117), an error's 1.5 (states.css:239).
+    static let lineWidth: CGFloat = 1
+    static let errorLineWidth: CGFloat = 1.5
+
+    /// The corners at `size` as drawn: CSS moves the radius 6 → 22.5 with the height 8 → 30 on the same curve, so it
+    /// is the height's share of the way; never more than half the short side (CSS clamps it so).
+    static func cornerRadius(_ size: CGSize) -> CGFloat {
+        let way = min(1, max(0, (size.height - idleSize.height) / (hoverSize.height - idleSize.height)))
+        let r = idleRadius + (radius - idleRadius) * way
+        return min(r, min(size.width, size.height) / 2)
+    }
+
+    static func look(_ phase: ArisDictationPillPhase) -> ArisDictationPillLookKind {
+        switch phase {
+        case .hidden, .idle: .sliver
+        case .hover: .hovered
+        case .error: .failed
+        case .recording, .transcribing, .recovered: .solid
+        }
+    }
+
+    // MARK: - Motion (measured from the reference pill)
+
+    /// Size, colours and line: 0.1 s on cubic-bezier(0.05, 0.6, 0.4, 0.95) (states.css:102).
+    static let sizeDuration = 0.1
+    static let sizeCurve = ArisDictationPillCurve(0.05, 0.6, 0.4, 0.95)
+    /// Showing and hiding: opacity alone, 0.1 s ease (states.css:81).
+    static let showDuration = 0.1
+    static let showCurve = ArisDictationPillCurve.ease
+    /// The hover's tooltip: after 150 ms (status.js:13664), opacity 120 ms ease (states.css:509); a button's after 50 ms
+    /// (status.js:8658).
+    static let hintDelay = 0.15
+    static let buttonHintDelay = 0.05
+    static let hintFade = 0.12
+    /// 4 above the pill, 10 above a button (status.js:10200, 8784).
+    static let hintGap: CGFloat = 4
+    static let buttonHintGap: CGFloat = 10
+    /// Reduce Motion: sizes change at once and the content only fades, in the size's 0.1 s.
+    static var reducedFade: Double { sizeDuration }
+    /// The window: at most 540 × 700 (room for the recovered words' card); its bottom 5 under the usable bottom, the pill
+    /// 6 above the window's bottom: the pill sits 1 above the Dock, where Aris always had it (the user kept Aris's place).
     static let windowSize = CGSize(width: 540, height: 700)
     static let bottomEdgeOffset: CGFloat = 5
     static let bottomPadding: CGFloat = 6
@@ -61,18 +123,98 @@ enum ArisDictationPillRules {
     static let hiddenDockReserve: CGFloat = 4
     /// Nothing to show for this long: the window goes off screen (parked) until there is.
     static let parkAfter: Duration = .seconds(12)
-    /// The inline error's line stays this long (Aris's failure linger).
+    /// The inline error's line stays this long (Aris's failure linger; the reference's red pill stays 500 ms).
     static let errorLinger: Duration = .seconds(4)
 
-    static let idleSize = CGSize(width: 36, height: 8)
-    static let hoverSize = CGSize(width: 50, height: 30)
-    static let holdSize = CGSize(width: 80, height: 30)
-    static let handsFreeSize = CGSize(width: 102, height: 30)
-    static let transcribingSize = CGSize(width: 30, height: 30)
-    static let errorHeight: CGFloat = 38
-    static let errorMinWidth: CGFloat = 136
-    static let errorMaxWidth: CGFloat = 280
-    static let errorPadding: CGFloat = 44
+    /// A size change's length. CSS: a change that turns back to where the running one started takes only as long as
+    /// the share already covered (the reversing shortening factor); any other starts afresh at 0.1 s.
+    struct Reversal: Equatable {
+        /// The running change's start and end, when it began, and its own factor.
+        var from: ArisDictationPillPhase = .hidden
+        var to: ArisDictationPillPhase = .hidden
+        var began: Double = -.infinity
+        var factor: Double = 1
+
+        var duration: Double { sizeDuration * factor }
+
+        /// A change from `to` to `next` at `now`.
+        func changing(to next: ArisDictationPillPhase, at now: Double) -> Reversal {
+            let elapsed = now - began
+            let running = elapsed >= 0 && elapsed < duration
+            guard running, next == from, size(next) != size(to) else {
+                return Reversal(from: to, to: next, began: now, factor: 1)
+            }
+            let share = ArisDictationPillRules.sizeCurve.value(at: elapsed / duration)
+            let shortened = min(1, max(0, share * factor + (1 - factor)))
+            return Reversal(from: to, to: next, began: now, factor: shortened)
+        }
+    }
+
+    // MARK: - The pointer (measured from the reference pill)
+
+    /// What counts as on the pill: the pill and 10 / 6 around it (states.css:631, the hot area's padding); grown into
+    /// the hover, 12 more each way (states.css:76), so a pointer at its edge doesn't flicker it back.
+    static let hotPadding = CGSize(width: 10, height: 6)
+    static let hoverHold: CGFloat = 12
+
+    static func pointerZone(_ phase: ArisDictationPillPhase, size: CGSize) -> CGSize {
+        let extra = phase == .hover ? hoverHold : 0
+        return CGSize(width: size.width + 2 * (hotPadding.width + extra), height: size.height + 2 * (hotPadding.height + extra))
+    }
+
+    /// The zone's rect in the window: around the pill's.
+    static func pointerRect(_ phase: ArisDictationPillPhase, size: CGSize) -> CGRect {
+        let pill = pillRect(size)
+        let zone = pointerZone(phase, size: size)
+        return pill.insetBy(dx: -(zone.width - size.width) / 2, dy: -(zone.height - size.height) / 2)
+    }
+
+    /// The hover follows the pointer at once, then holds 100 ms (status.js:8659, 13103): a change in that time waits
+    /// for 100 ms of quiet and then follows the pointer, so an edge that flickers never jolts the pill.
+    struct HoverLock: Equatable {
+        static let hold = 0.1
+
+        private(set) var shown = false
+        private(set) var pointer = false
+        private(set) var lockedUntil: Double?
+        /// The pointer moved during the hold: the hold restarted, and its end only follows it (no new hold).
+        private var restarted = false
+
+        /// The pointer is on (or off) at `now`; returns when `expire` is due, if it is.
+        mutating func point(_ on: Bool, at now: Double) -> Double? {
+            let moved = on != pointer
+            pointer = on
+            if let until = lockedUntil, now < until {
+                guard moved else { return until }
+                restarted = true
+                lockedUntil = now + Self.hold
+                return lockedUntil
+            }
+            lockedUntil = nil
+            restarted = false
+            guard shown != on else { return nil }
+            shown = on
+            lockedUntil = now + Self.hold
+            return lockedUntil
+        }
+
+        /// The hold's end at `now`: it follows the pointer; a hold of its own holds again after a change.
+        mutating func expire(at now: Double) -> Double? {
+            guard let until = lockedUntil else { return nil }
+            guard now >= until - 1e-9 else { return until }
+            lockedUntil = nil
+            let again = !restarted
+            restarted = false
+            guard shown != pointer else { return nil }
+            shown = pointer
+            guard again else { return nil }
+            lockedUntil = now + Self.hold
+            return lockedUntil
+        }
+
+        /// Nothing to hover (the pill went away).
+        mutating func clear() { self = HoverLock() }
+    }
 
     // MARK: - What it shows
 
@@ -104,7 +246,8 @@ enum ArisDictationPillRules {
         /// The copied words while they show.
         var recovered: String?
         var error: String?
-        /// The ring's last 100 ms at full after the words went in.
+        /// Typed and still to be shown as such (offscreen renders; the reference pill goes straight back to the sliver,
+        /// so the live pill never sets it).
         var typedHold = false
     }
 
@@ -138,7 +281,7 @@ enum ArisDictationPillRules {
         }
     }
 
-    /// The text's width as measured: 4 a space, 14 a CJK character (U+2E80 and up), 7.4 anything else.
+    /// The line's width at 14 semibold: 4 a space, 14 a CJK character (U+2E80 and up), 7.4 anything else.
     static func errorTextWidth(_ text: String) -> CGFloat {
         text.unicodeScalars.reduce(0) { sum, scalar in
             if scalar == " " { return sum + 4 }
@@ -150,14 +293,7 @@ enum ArisDictationPillRules {
         (min(errorMaxWidth, max(errorMinWidth, errorTextWidth(text) + errorPadding))).rounded(.up)
     }
 
-    /// Solid 1 px white .18 with an error; the gradient ring otherwise.
-    static func gradientBorder(_ phase: ArisDictationPillPhase) -> Bool {
-        if case .error = phase { return false }
-        return true
-    }
-
     // MARK: - Where it sits (AppKit coordinates)
-
 
     /// The bottom the pill stands on: the Dock's top when it shows at the bottom (the visible frame's bottom), else the
     /// screen's own bottom (a hidden Dock, a Dock at the side).
@@ -165,7 +301,8 @@ enum ArisDictationPillRules {
         visible.minY - frame.minY > hiddenDockReserve ? visible.minY : frame.minY
     }
 
-    /// The window: centred on the visible frame, its bottom 5 under the usable bottom.
+    /// The window: centred on the visible frame (the reference centres on the work area), its bottom on the usable
+    /// bottom.
     static func windowFrame(frame: CGRect, visible: CGRect) -> CGRect {
         let x = (visible.midX - windowSize.width / 2).rounded()
         let y = (usableBottom(frame: frame, visible: visible) - bottomEdgeOffset).rounded()

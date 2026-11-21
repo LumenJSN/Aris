@@ -30,14 +30,15 @@ extension ArisController {
         cancel()
         // At once, with what the app itself knows; the record's part follows when it has something to add.
         let first = before.stopped(ArisStopLine.line(record: [], cut: cut, english: english))
-        session = first
+        // cancel() ended the turn: this is the stop's own write.
+        setSession(first, from: nil)
         Task { [weak self] in
             try? await Task.sleep(for: Self.recordSettle)
             let record = await ArisAgentClient.activity(today: true).map { ArisStopLine.mine($0, since: since) }
             // Only while the stop line is still what the notch shows: a new turn is never written over.
             guard let self, self.session == first else { return }
             let told = before.stopped(ArisStopLine.line(record: record, cut: cut, english: english))
-            if told != first { self.session = told }
+            if told != first { self.setSession(told) }
         }
     }
 

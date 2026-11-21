@@ -9,7 +9,13 @@
 //  threshold (13.42 for the user's model, between the two) wakes Aris, the text path never does, and Whisper can only
 //  veto (ArisWakeEvidence). Over music the room plays (ArisWakeMusic) the text path doesn't wake either, and a
 //  borderline wake needs the same strong print. Nothing playing: everything as before. A wake that passes is the user's, so
-//  the music is paused only once it is kept (its lap heard), never while its evidence waits. Pure.
+//  the music is paused only once it is kept (its lap heard), never while its evidence waits.
+//  Without a voice print (the name not trained) there is no print to lean on, and the strict rule made Aris deaf
+//  whenever anything played (2026-11-18 audit). Over playback or music an untrained call now wakes Aris only when the
+//  two listeners each heard the name on their own, as a call at the start and in its exact spelling: the recognizer
+//  (not prompted with the name) and Whisper (prompted, so alone it is no evidence there). Lyrics that Whisper turns into
+//  "아리스" are not enough; a song or a video that itself says "아리스" at a phrase's start still could be, and only the
+//  echo checks (Aris's own voice) and the trained print rule out more. Without Whisper on the Mac it still can't wake. Pure.
 //
 
 import Foundation
@@ -29,13 +35,19 @@ enum ArisWakeStrict {
         return score <= line
     }
 
-    /// Whether a candidate may go on to be checked at all: over real playback only a strong print.
+    /// Whether a candidate may go on to be checked at all: over real playback only a strong print, or, untrained, the
+    /// two listeners' check (`textWakes`).
     static func admits(playing: Bool, score: Float?, threshold: Float?) -> Bool {
-        !playing || isStrong(score: score, threshold: threshold)
+        !playing || threshold == nil || isStrong(score: score, threshold: threshold)
     }
 
-    /// Whether Whisper's or the recognizer's text alone (no sure print) may wake Aris.
-    static func textWakes(music: Bool, playing: Bool) -> Bool { !music && !playing }
+    /// Whether the text heard so far (no sure print) wakes Aris: `recognizer` and `whisper` say whether each heard the
+    /// name. In a quiet room either does; over music or playback never with a trained print (only a strong print wakes
+    /// it then), and untrained only both.
+    static func textWakes(trained: Bool, music: Bool, playing: Bool, recognizer: Bool, whisper: Bool) -> Bool {
+        guard music || playing else { return recognizer || whisper }
+        return !trained && recognizer && whisper
+    }
 
     /// The music is paused once the wake is kept: its lap heard (a borderline one's only after its evidence).
     static func pausesMusic(lap: ArisQuietWake.State?) -> Bool { lap == .heard }

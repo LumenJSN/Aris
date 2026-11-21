@@ -25,7 +25,10 @@ struct HookLimits: Equatable {
     /// The longest a card keeps its request open: the time Aris's own cards wait (ArisCardEdit.questionTimeout).
     var card: TimeInterval = 120
     /// aris-tools' `todo` and `event` give up after 20 s; the server answers 504 by then and closes.
-    var slow: TimeInterval = 20
+    var slow: TimeInterval = ArisPermissionWait.plain
+    /// A calendar or to-do request that lets the app ask macOS for Calendars or Reminders: kept open while the person
+    /// answers the dialog, as long as aris-tools waits for it (ArisPermissionWait; VM run 2026-11-19, A2).
+    var asking: TimeInterval = ArisPermissionWait.request
     /// After an answer, what the client still sends is read and dropped for this long before the connection is
     /// closed, so a client that was still sending gets the answer and not a reset.
     var linger: TimeInterval = 1
@@ -36,6 +39,11 @@ struct HookLimits: Equatable {
     var deciding = 64
 
     static let standard = HookLimits()
+
+    /// How long one slow request is kept open: `asking` for one that lets the app ask, `slow` for the rest.
+    func slow(path: String, body: Data) -> TimeInterval {
+        ArisPermissionWait.asks(path: path, body: body) ? max(slow, asking) : slow
+    }
 }
 
 /// What the server counts; each kind also leaves a line in the log when it isn't the ordinary answer.

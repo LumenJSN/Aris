@@ -28,7 +28,9 @@ final class ArisGesturePermissionChip {
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(cursor) }) ?? NSScreen.main else { return }
         show(line, near: cursor, screen: screen.frame) {
             switch line {
-            case .permission: ArisPermissionGuide.shared.show(.screen)
+            // Through the permission center, so the switch is watched while its pane is open and a grant that
+            // needs Aris reopened is offered once (ArisPermissionCenter.openPane).
+            case .permission: ArisPermissionCenter.shared.openPane(.screenRecording)
             case .relaunch: ApplicationRelauncher.restart(at: Bundle.main.bundleURL)
             }
         }

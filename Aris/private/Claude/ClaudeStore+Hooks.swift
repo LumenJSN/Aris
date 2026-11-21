@@ -26,8 +26,8 @@ extension ClaudeStore {
             toolInput: event.toolInput as NSDictionary,
             edit: event.edit
         )
-        let drop: (HookHold.End) -> Void = { [weak self] _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.cancelApproval(approval.id) } }
+        let drop: (HookHold.End) -> Void = { [weak self] why in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.cancelApproval(approval.id, clientGone: why == .clientGone) } }
         }
         guard cardPossible, hold.show(onEnd: drop) else { return hold.answer(nil) }
         requestApproval(approval, resolve: { decision in hold.answer(decision.responseBody(input: event.toolInput)) },

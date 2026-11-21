@@ -4,17 +4,18 @@
 //
 //  What the setup leaves in front when its window closes (VM run 2026-11-11, bug 5: after Finish the user was left
 //  looking at System Settings › Screen Recording, because the setup had sent them there). The app in front afterwards
-//  is the one the user had, or none of Aris's making: a System Settings the setup started itself, and that the user
-//  has not gone back to since, steps out of the way, and the app the user last had comes forward. A System Settings
-//  the user already had open, or went back to by themselves, is theirs and is never touched. Pure, so the tests run it;
-//  the AppKit calls are in ArisOnboardingGuide+Leave.
+//  is the one the user had, or none of Aris's making: a System Settings the setup sent the user to (started by it, or
+//  already running and brought forward to a privacy pane by it: sixth VM run, item 8), and that the user has not gone
+//  back to since, steps out of the way (hidden, never quit), and the app the user last had comes forward. A System
+//  Settings the user went back to by themselves is theirs and is never touched. Pure, so the tests run it; the AppKit
+//  calls are in ArisOnboardingGuide+Leave.
 //
 
 import Foundation
 
 struct ArisSetupLeave: Equatable {
-    /// The System Settings process the setup started (it was not running when a card sent the user there); nil when
-    /// it never did, or the user has used it as their own since.
+    /// The System Settings process the setup sent the user to (started by a card's Allow, or already running and brought
+    /// forward to a privacy pane by it); nil when it never did, or the user has used it as their own since.
     private(set) var startedPid: Int32?
     /// A card's Allow is about to start System Settings: the next time it comes forward, that process is the setup's.
     private(set) var starting = false
@@ -22,6 +23,9 @@ struct ArisSetupLeave: Equatable {
     private(set) var sent = false
     /// The last app the user had in front that is neither Aris nor System Settings (its bundle id).
     private(set) var userApp: String?
+    /// The System Settings the setup started and put away as soon as its permission came on (`putAway`): sending the
+    /// user there again for the next card keeps it the setup's.
+    private(set) var putAwayPid: Int32?
 
     /// `frontApp`: the app in front as the setup opens, when it is another app with a Dock icon.
     init(frontApp: String? = nil) { userApp = frontApp }
@@ -29,15 +33,20 @@ struct ArisSetupLeave: Equatable {
     // MARK: - What happens
 
     /// A card's Allow sends the user to System Settings. `runningPid`: the System Settings running now, if any.
+    ///
+    /// One already running is brought forward and moved to a privacy pane by that Allow: being there is the setup's
+    /// doing as much as with one it starts, so it steps out of the way at the end too (hidden, never quit), unless the
+    /// user goes back to it by themselves (sixth VM run, item 8: macOS had reopened System Settings at login, the setup
+    /// sent the user there, and since the process was not its own it was left in front after Start).
     mutating func sending(runningPid: Int32?) {
         sent = true
-        if runningPid == nil {
+        guard let runningPid else {
             starting = true
-        } else if runningPid != startedPid {
-            // One the user opened: theirs.
-            startedPid = nil
-            starting = false
+            return
         }
+        startedPid = runningPid
+        starting = false
+        if runningPid == putAwayPid { putAwayPid = nil }
     }
 
     /// An app came to the front. `settingsPid`: the System Settings running now; `sinceForward`: seconds since the
@@ -56,6 +65,8 @@ struct ArisSetupLeave: Equatable {
                 // The user went back to it by themselves: from now it is theirs.
                 startedPid = nil
             }
+            // One put away that the user opens again by themselves is theirs.
+            if !sent, settingsPid == putAwayPid, !Self.handedBack(sinceForward) { putAwayPid = nil }
         case .app:
             if let bundleID { userApp = bundleID }
         case .agent:
@@ -83,13 +94,37 @@ struct ArisSetupLeave: Equatable {
     /// same System Settings), when the setup never started System Settings, when it is no longer that process, or
     /// when the user has used it since.
     func plan(runningPid: Int32?, quitting: Bool) -> Plan {
-        guard !quitting, let startedPid, runningPid == startedPid else { return Plan() }
-        return Plan(hidesSettings: true, activates: userApp)
+        guard !quitting, let runningPid else { return Plan() }
+        if runningPid == startedPid { return Plan(hidesSettings: true, activates: userApp) }
+        // The one put away when Accessibility came on, still the setup's: it stays out of the way as the window closes,
+        // and the user's app comes forward. Fourth VM run: left alone at Start, it came back visible and in front when
+        // the setup window closed (macOS hands the screen to the app that was active before Aris, and activating a
+        // hidden app shows it again).
+        if runningPid == putAwayPid { return Plan(hidesSettings: true, activates: userApp) }
+        return Plan()
+    }
+
+    /// Accessibility came on in the System Settings the setup sent the user to, and the setup moves on: that window
+    /// steps out of the way now, while it is still known to be the setup's (third VM run: it stayed open behind Aris
+    /// until the end and after, since by the finish a later activation had made it count as the user's). Nothing when
+    /// the setup didn't start it or the user has used it since. The app to bring forward is the setup's own window.
+    func planOnGranted(runningPid: Int32?) -> Plan {
+        guard let startedPid, runningPid == startedPid else { return Plan() }
+        return Plan(hidesSettings: true, activates: nil)
+    }
+
+    /// After `planOnGranted` was carried out: the process is remembered as the setup's, out of the way.
+    mutating func putAway() {
+        putAwayPid = startedPid
+        startedPid = nil
+        starting = false
+        sent = false
     }
 
     /// After the plan was carried out: nothing of the setup's is left to step back from.
     mutating func done() {
         startedPid = nil
+        putAwayPid = nil
         starting = false
         sent = false
     }

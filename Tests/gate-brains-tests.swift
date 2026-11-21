@@ -755,41 +755,39 @@ private func runAntigravityRulesTests() {
     let step = #"{"event":"step_update","step_update":{"step_type":"tool","state":"ACTIVE","tool_name":"run_command"}}"#
     check(failed.read(step) == [.abort(ArisAntigravityDriver.sealedStop)], "L3: a tool it starts anyway stops the process at once")
     // The settings were put right: the next start is open again.
-    failed.ensureRules = { _ in .ready }
+    failed.ensureRules = { _ in .ready("{}") }
     failed.reset()
     failed.prepare()
     check(!failed.sealed && !failed.arguments.contains("--sandbox") && failed.environment[ArisSealedTools.ungatedKey] == "1" && first(failed).hasPrefix("OPEN INSTRUCTIONS"),
           "L3: once the rules are there, the next start is the open Antigravity again")
-    for outcome in [ArisAgyRules.Outcome.ready, .written] {
-        let (fine, asked) = make(outcome, true)
-        fine.prepare()
-        check(!fine.sealed && asked() == 1 && first(fine).hasPrefix("OPEN INSTRUCTIONS"), "L3: rules that are there (or were just written) start it open")
-    }
+    let (fine, asked0) = make(.ready(#"{"permissions":{}}"#), true)
+    fine.prepare()
+    check(!fine.sealed && asked0() == 1 && first(fine).hasPrefix("OPEN INSTRUCTIONS") && fine.arguments.suffix(2) == ["--settings", #"{"permissions":{}}"#],
+          "L3: rules that could be worked out start it open, with them as its session's own settings")
     let (absent, asked) = make(.failed("x"), false)
     absent.prepare()
     check(!absent.sealed && asked() == 0, "L3: on a Mac without Antigravity nothing is checked or written")
     let sealed = ArisAntigravityDriver(model: "m", instructions: "SEALED", tools: tools, sealed: true)
     sealed.isInstalled = { true }
-    sealed.ensureRules = { _ in .ready }
+    sealed.ensureRules = { _ in .ready("{}") }
     sealed.prepare()
     check(sealed.sealed && sealed.arguments.contains("--sandbox"), "L3: an Antigravity made sealed stays sealed whatever the rules say")
 
-    // The copy of what was there before Aris is as private as the file it copies.
+    // The user's own file, whatever its mode, is only read: nothing is written or copied beside it (helperbugs 18).
     let fm = FileManager.default
-    for (mode, expected) in [(0o600, 0o600), (0o644, 0o644), (nil, 0o600)] as [(Int?, Int)] {
+    for mode in [0o600, 0o644] {
         let home = fm.temporaryDirectory.appendingPathComponent("aris-agy-rules-\(UUID().uuidString.prefix(8))").resolvingSymlinksInPath()
         defer { try? fm.removeItem(at: home) }
         let file = ArisAgyRules.settingsFile(home: home.path)
         try? fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let mode {
-            fm.createFile(atPath: file.path, contents: Data(#"{"theme":"dark","permissions":{"allow":["command(ls)"],"deny":[]}}"#.utf8), attributes: [.posixPermissions: mode])
-        }
-        let outcome = ArisAgyRules.ensure(home: home.path, tools: home.path + "/.config/aris/aris-tools", folder: home.path + "/.config/aris/aris")
-        let backup = file.appendingPathExtension("before-aris")
-        let kept = ((try? fm.attributesOfItem(atPath: backup.path))?[.posixPermissions] as? NSNumber)?.intValue
+        let text = #"{"theme":"dark","permissions":{"allow":["command(ls)"],"deny":[]}}"#
+        fm.createFile(atPath: file.path, contents: Data(text.utf8), attributes: [.posixPermissions: mode])
+        let outcome = ArisAgyRules.session(home: home.path, tools: home.path + "/.config/aris/aris-tools", folder: home.path + "/.config/aris/aris")
         let live = ((try? fm.attributesOfItem(atPath: file.path))?[.posixPermissions] as? NSNumber)?.intValue
-        check(outcome == .written && kept == expected && live == expected,
-              "L3: the before-aris copy keeps the settings file's own mode (\(mode.map { String($0, radix: 8) } ?? "no file: the owner's alone"))")
+        var ready = false
+        if case .ready = outcome { ready = true }
+        check(ready && live == mode && (try? String(contentsOf: file, encoding: .utf8)) == text && !fm.fileExists(atPath: file.path + ".before-aris"),
+              "L3: the user's settings (mode \(String(mode, radix: 8))) are read, never written or copied")
     }
 }
 
@@ -834,8 +832,11 @@ private func runTurnFallbackTests() {
     check(sealedAgy?.brain == .antigravity && sealedAgy?.sealed == true && pick(.claude, outside, all, [.claude], false)?.brain == .codex,
           "fallback: after outside text the gated brains come first, and Antigravity only sealed")
     let look = F.Turn(screenText: true, outside: true)
-    check(pick(.codex, look, [.codex, .claude, .antigravity], [.codex], false) == nil && pick(.codex, look, [.codex, .api], [.codex], false)?.brain == .api
-          && pick(.api, look, [.api, .codex, .claude], [.api], false)?.brain == .codex, "fallback: the screen's own text (\"이거\") goes only to a gated brain")
+    let lookToClaude = pick(.codex, look, [.codex, .claude, .antigravity], [.codex], false)
+    check(lookToClaude?.brain == .claude && lookToClaude?.sealed == true && pick(.codex, look, [.codex, .antigravity], [.codex], false) == nil
+          && pick(.codex, look, [.codex, .api], [.codex], false)?.brain == .api
+          && pick(.api, look, [.api, .codex, .claude], [.api], false)?.brain == .codex,
+          "fallback: the screen's own text (\"이거\") goes only to a gated brain or the sealed Claude, never an open one")
     check(F.status(from: .codex, to: .claude, missing: false) == "GPT (Codex) 한도 → Claude" && F.status(from: .codex, to: .claude, missing: true) == "GPT (Codex) 없음 → Claude",
           "fallback: the notch says why another brain is answering")
     // orphan-turn-11: a turn whose connection is gone isn't started.

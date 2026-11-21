@@ -106,7 +106,7 @@ final class ArisAdDemo {
         }
         guard owner == kind else { return }
         setVoice(false)
-        if aris.session == shown { aris.session = ArisSession() }
+        if aris.session == shown { aris.setSession(ArisSession()) }
         if let stage, aris.dictation == stage { aris.dictation = nil }
         owner = nil
         shown = nil
@@ -142,7 +142,7 @@ final class ArisAdDemo {
             owner = kind
         }
         let session = next(aris.session)
-        aris.session = session
+        aris.setSession(session)
         shown = session
         return true
     }

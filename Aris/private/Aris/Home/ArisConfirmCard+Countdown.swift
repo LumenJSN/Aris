@@ -12,6 +12,14 @@
 
 import SwiftUI
 
+/// Whether the countdown card's "취소" can be heard: with no microphone the same card stays up, its ring still and its
+/// hint asking for a press (ArisController.countdownSend). One card for one action, with or without a microphone.
+final class ArisCountdownMic: ObservableObject, @unchecked Sendable {
+    /// Set on the main actor only (ArisController+Countdown).
+    static let shared = ArisCountdownMic()
+    @Published var listening = true
+}
+
 extension ArisConfirmCard {
     var countdownCard: some View {
         VStack(spacing: 0) {
@@ -28,14 +36,26 @@ extension ArisConfirmCard {
         .cardStill(question.id)
     }
 
-    private var countdownRows: some View {
-        VStack(spacing: 0) {
-            countdownRow(ArisCountdownCopy.to, question.title, font: .system(size: 12.5), opacity: 0.88)
-            Rectangle().fill(.white.opacity(0.05)).frame(height: 1)
-            countdownRow(ArisCountdownCopy.message, question.detail, font: .system(size: 15, weight: .semibold), opacity: 0.95)
+    @ViewBuilder private var countdownRows: some View {
+        if question.action {
+            // An action said first (Core 2): what happens, as the plain card says it, with no 받는 사람 or 메시지.
+            Text(countdownEnglish ? ArisCardEnglish.detail(question.detail, title: question.title) : question.detail)
+                .font(.system(size: 12.5)).lineSpacing(6).foregroundStyle(.white.opacity(0.88))
+                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(EdgeInsets(top: 2, leading: 14, bottom: 12, trailing: 14))
+        } else {
+            VStack(spacing: 0) {
+                countdownRow(ArisCountdownCopy.to, question.title, font: .system(size: 12.5), opacity: 0.88)
+                Rectangle().fill(.white.opacity(0.05)).frame(height: 1)
+                countdownRow(ArisCountdownCopy.message, question.detail, font: .system(size: 15, weight: .semibold), opacity: 0.95)
+            }
+            .padding(EdgeInsets(top: 2, leading: 14, bottom: 6, trailing: 14))
         }
-        .padding(EdgeInsets(top: 2, leading: 14, bottom: 6, trailing: 14))
     }
+
+    /// The card's words are in the app's language (ArisCountdownCopy); an action's title and detail come from the
+    /// helper in Korean and are put into English with them.
+    var countdownEnglish: Bool { !ArisCountdownCopy.korean }
 
     private func countdownRow(_ label: String, _ value: String, font: Font, opacity: Double) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -50,7 +70,15 @@ extension ArisConfirmCard {
     /// The hint, 취소 (esc) and 보내기 (↩) with its ring.
     private var countdownLane: some View {
         HStack(spacing: 8) {
-            Text(ArisCountdownCopy.hint).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(0.38)).lineLimit(1)
+            // Two lines when it needs them: the no-microphone hint was cut ("No microphone: press Send or C…").
+            // A click on yes that came during the hold: its note stands in for the hint while it shows.
+            if notTaken {
+                notTakenNote(english: countdownEnglish)
+            } else {
+                Text(ArisCountdownCopy.hint(listening: mic.listening, action: question.action))
+                    .font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(0.38))
+                    .lineLimit(2).minimumScaleFactor(0.9).fixedSize(horizontal: false, vertical: true)
+            }
             Spacer(minLength: 0)
             Button { ArisController.shared.answerQuestion(false) } label: {
                 laneLabel(Text(ArisCountdownCopy.cancel))
@@ -63,15 +91,16 @@ extension ArisConfirmCard {
             Button { ArisController.shared.answerQuestion(true) } label: {
                 HStack(spacing: 8) {
                     ArisCountdownRing(started: countdownStarted)
-                    laneLabel(Text(ArisCountdownCopy.send))
+                    laneLabel(Text(question.action ? ArisCountdownCopy.go : ArisCountdownCopy.send))
                 }
                 .padding(.horizontal, 18).frame(height: Self.buttonHeight)
-                .background(ArisDarkGlassButton())
+                .background(HeldGlass(held: held))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .opacity(held ? Self.restOpacity : 1)
-            .animation(Self.wakeEase, value: held)
+            .opacity(held ? Self.heldOpacity : 1)
+            .overlay { if held { ArisHoldSweep(duration: holdLeft) } }
+            .animation(Self.holdEase, value: held)
             .help("↩")
         }
         .padding(.horizontal, Self.allowTrailing)
@@ -142,13 +171,14 @@ struct ArisCountdownEndCard: View {
             mark
             // Let go, it is on its way: never "보냈어요" before Messages is known to have sent it (the answer says that).
             Text(end.stopped != nil ? ArisStoppedCopy.skipped(english: end.stoppedEnglish)
+                 : end.action ? (end.sent ? ArisCountdownCopy.doing : ArisCountdownCopy.notDone)
                  : end.sent ? ArisCountdownCopy.sending(to: end.to, message: end.message) : ArisCountdownCopy.notSent)
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.95))
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             if !end.sent {
                 // The stopped card's line names the action that was not done; a stopped message says 취소됨.
-                Text(end.stopped ?? ArisCountdownCopy.cancelled)
+                Text(end.stopped ?? (end.unanswered ? ArisCountdownCopy.noAnswer : ArisCountdownCopy.cancelled))
                     .font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(0.38)).lineLimit(1)
                     .fixedSize(horizontal: end.stopped == nil, vertical: true)
             }

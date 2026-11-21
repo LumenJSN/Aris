@@ -49,12 +49,16 @@ enum ArisFileText {
     static let plainTypes: Set<String> = ["txt", "md", "markdown", "csv", "tsv", "json", "xml", "yaml", "yml", "log", "swift", "py", "js", "ts",
                                           "java", "c", "h", "cpp", "m", "rb", "go", "rs", "sh", "tex", "ini", "toml"]
 
-    enum Kind: Equatable { case pdf, rich, plain }
+    /// Excel, PowerPoint and Hangul (HWPX) documents: zips of XML, read by ArisOfficeText.
+    static let officeTypes: Set<String> = ["xlsx", "pptx", "hwpx"]
+
+    enum Kind: Equatable { case pdf, rich, plain, office }
 
     /// How a file's text is read, by its extension; nil for a kind with no text Aris reads (a picture, a recording).
     static func kind(_ path: String) -> Kind? {
         let type = (path as NSString).pathExtension.lowercased()
         if type == "pdf" { return .pdf }
+        if officeTypes.contains(type) { return .office }
         if richTypes.contains(type) { return .rich }
         return plainTypes.contains(type) || type.isEmpty ? .plain : nil
     }
@@ -73,7 +77,12 @@ enum ArisFileText {
         if ArisFiles.looksSecret(path, isKeynote: isKeynote) {
             return "\(name) looks like a key, token or password file by its name, and Aris never reads those: the user can open it themselves"
         }
-        guard kind(path) != nil else { return "\(name) isn't a kind of file Aris reads text from (PDF, Word, RTF, HTML and plain text are)" }
+        if (path as NSString).pathExtension.lowercased() == "hwp" {
+            return "\(name) is an older binary HWP file, which Aris can't read yet: ask the user to save it as HWPX or PDF in Hangul (파일 › 다른 이름으로 저장)"
+        }
+        guard kind(path) != nil else {
+            return "\(name) isn't a kind of file Aris reads text from (PDF, Word, Excel, PowerPoint, HWPX, RTF, HTML and plain text are)"
+        }
         guard let size, size <= largestFile else { return "\(name) is too big to read (over 30 MB)" }
         return nil
     }

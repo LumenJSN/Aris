@@ -33,7 +33,7 @@ extension ArisController {
         } else {
             said = team.teammates.count >= ArisTeamEditing.maxTeammates ? ArisTeamCopy.madeFull : ArisTeamCopy.madeFailed
         }
-        session = session.answering(said)
+        setSession(session.answering(said))
         stats?.firstSound(at: .now)
         await speak { await self.speaker.speak(said) }
         return said
@@ -54,7 +54,7 @@ extension ArisController {
             team.made = nil
             said = ArisTeamCopy.madeDropped
         }
-        session = session.answering(said)
+        setSession(session.answering(said))
         stats?.firstSound(at: .now)
         await speak { await self.speaker.speak(said) }
         return said
@@ -64,7 +64,9 @@ extension ArisController {
     func editMadeTeammate() {
         guard let id = ArisTeamModel.shared.confirmMade(aris: ArisFace.current) else { return }
         ArisTeamModel.shared.openOn = id
-        ArisSettingsNav.shared.page = .team
+        // 할 수 있는 일 › 팀원, with the team's sheet open on it.
+        ArisSettingsNav.shared.go(anchor: "able.team")
+        ArisSettingsNav.shared.sheetPart = "team"
         ArisSettingsWindow.shared.show()
     }
 
@@ -98,10 +100,9 @@ extension ArisController {
         case .unknown: said = ArisTeamCopy.removeNone
         case .teammate(let mate):
             // Removing a teammate is answered by the card's button or Y, never a spoken yes (as a hands-free card).
-            let yes = await askUser(ArisTeamRemoval.confirmation(for: mate), handsFree: true)
-            // The user started another turn over the card: nothing is removed, shown or said over it (audit card-1).
-            guard !Task.isCancelled else { return ArisTeamCopy.removeKept }
-            session = session.answered()
+            // The user started another turn over the card (nil): nothing is removed, shown or said over it (audit card-1).
+            guard let yes = await askUser(ArisTeamRemoval.confirmation(for: mate), handsFree: true), !Task.isCancelled else { return ArisTeamCopy.removeKept }
+            setSession(session.answered())
             if yes {
                 let team = ArisTeamModel.shared
                 // "뺐어요" only once the agent stored the list; a failed save leaves the teammate and says so.
@@ -113,7 +114,7 @@ extension ArisController {
                     : ArisTeamCopy.removeKept
             }
         }
-        session = session.answering(said)
+        setSession(session.answering(said))
         stats?.firstSound(at: .now)
         await speak { await self.speaker.speak(said) }
         return said
@@ -135,7 +136,8 @@ extension ArisController {
         let template = ArisTeamTemplate.of(kind)
         let question = ArisTeamCopy.suggest(template.label)
         let ask = ArisConfirmation(id: "team-suggest-" + UUID().uuidString, title: ArisTeamCopy.suggestTitle, detail: question)
-        guard let yes = await announce(present: true, { await self.speakUp(ArisTeamCopy.suggestTitle) { await self.askUser(ask) } }) ?? nil else { return }
+        // Nil at any level: not asked (no pause came, a turn was on) or its turn ended before an answer.
+        guard case .some(.some(.some(let yes))) = await announce(present: true, { await self.speakUp(ArisTeamCopy.suggestTitle) { await self.askUser(ask) } }) else { return }
         if yes {
             let request = ArisTeamMaking.Request(role: nil, name: nil, template: template)
             let brain = ArisBrain.named(Defaults[.arisBrain]).rawValue

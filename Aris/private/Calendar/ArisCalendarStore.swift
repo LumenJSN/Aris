@@ -80,6 +80,8 @@ final class ArisCalendarStore: ObservableObject {
         if access == .notDetermined {
             let granted = await source.requestFullAccess(to: .event)
             if granted { grantedByRequest = true }
+            // Every other reader of Calendars access keeps this answer too (ArisEventGrants).
+            ArisEventGrants.shared.note(.events, granted: granted)
             setAccess(granted ? .fullAccess : .denied)
             log.notice("calendar access asked: \(granted, privacy: .public)")
         }
@@ -98,6 +100,7 @@ final class ArisCalendarStore: ObservableObject {
         case .writeOnly:
             let granted = await source.requestFullAccess(to: .event)
             if granted { grantedByRequest = true }
+            ArisEventGrants.shared.note(.events, granted: granted)
             setAccess(granted ? .fullAccess : read(.event))
         default:
             await checkAccess()

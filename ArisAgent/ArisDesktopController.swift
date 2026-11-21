@@ -51,7 +51,8 @@ struct ArisDesktopSession {
         let acting = arguments.first != "see"
         let started = Date()
         let (_, output) = engine.usesNative && engine.native != nil
-            ? engine.native!.run(arguments, context: ArisNativeContext(job: turn.isTask))
+            ? engine.native!.run(arguments, context: ArisNativeContext(job: turn.isTask, owner: turn.desktopOwner, began: started, sending: target.sending,
+                                                                      timeout: ArisDesktopEngine.runTimeout))
             : engine.runner.run(binary, arguments, stateFolder: engine.installer.stateFolder, timeout: ArisDesktopEngine.runTimeout)
         if acting { ArisOwnInput.shared.note(from: started, to: Date(), owner: turn.desktopOwner) }
         return ArisDesktopEnvelope.parse(output)
@@ -93,6 +94,11 @@ struct ArisDesktopSession {
     func look(_ window: ArisDesktopWindow, path: String? = nil, annotate: Bool = false, record: Bool = true) -> Result<(ArisDesktopObservation, ArisDesktopEnvelope), ArisDesktopUsage> {
         if path != nil, engine.apps.secureInput { return .failure(ArisDesktopUsage(text: ArisDesktopGate.secureRefusal)) }
         let envelope = run(ArisPeekabooCommands.see(window: window.id, path: path, annotate: annotate))
+        // A picture that couldn't be taken: Screen Recording is asked of macOS again (a grant kept from earlier may be
+        // gone), and when it is off now the brain is told that, not a bare capture failure.
+        if path != nil, envelope?.code == ArisNativeShot.failedCode, !engine.access.captureFailed() {
+            return .failure(ArisDesktopUsage(text: ArisDesktopEngine.screenLine(english: english)))
+        }
         guard let envelope, var observation = ArisDesktopObservation.make(envelope, target: target, window: window.id, identity: engine.identity) else {
             return .failure(ArisDesktopUsage(text: why(envelope)))
         }
@@ -259,6 +265,21 @@ extension ArisDesktopEngine {
         return replacing && turn.ledger.selectedAll(in: window) ? ArisDesktopBatch.appendLine : nil
     }
 
+    /// The engine's own refusal of this call that comes before any card, read before the call reaches it: Core 2's trust
+    /// gate asks this first, so it never puts up a card for a step that would then be refused anyway (VM run 2, D4: a
+    /// "지우기" card for a set-value after a select-all, whose yes was met by "selecting everything … would replace the
+    /// whole document"). The replace guard alone (`replaceRefusal`, and a batch's select-all-then-type), on the same
+    /// facts the engine reads then: the turn's words, its ledger, the call's window. A call whose window can't be told
+    /// for sure (no ref, no window id, and the app has several) is left to the engine. Nil: no such refusal.
+    func refusesBeforeCard(_ words: [String], text: String?, turn: ArisDesktopTurn) -> String? {
+        guard let request = ArisDesktopEffect.request(words, text: text), request.verb.kind == .action,
+              !ArisDesktopBatch.asksToReplace(turn.request) else { return nil }
+        if request.verb == .batch { return ArisDesktopBatch.replacesAll(request.steps) ? ArisDesktopBatch.appendLine : nil }
+        guard case .success(let target) = resolve(request, turn: turn) else { return nil }
+        if request.ref == nil, request.window == nil, windows.windows(of: target.pid).count > 1 { return nil }
+        return replaceRefusal(request, target: target, turn: turn)
+    }
+
     /// What the call left selected in its window, kept for the turn's later calls: a select-all whose keys went out
     /// counts even when the window couldn't show it (a lone cmd+a read back as nothing, then a type, replaced the
     /// document); typing over it, deleting it or moving the caret ends it, so "press cmd+down, then type" adds again.
@@ -401,7 +422,8 @@ extension ArisDesktopSession {
                 let title = ArisDesktopPrivacy.redact(window["window_title"] as? String ?? "", identity)
                 let bounds = window["bounds"] as? [String: Any] ?? [:]
                 let size = ["width", "height"].map { (bounds[$0] as? NSNumber)?.intValue ?? 0 }
-                return "window \(id) “\(title)” \(size[0])×\(size[1])" + (window["is_frontmost"] as? Bool == true ? " (front)" : "")
+                let away = window["minimized"] as? Bool == true ? " (minimized)" : window["on_screen"] as? Bool == false ? " (not on screen: another Space or hidden)" : ""
+                return "window \(id) “\(title)” \(size[0])×\(size[1])" + (window["is_frontmost"] as? Bool == true ? " (front)" : "") + away
             }
             return ArisDesktopResult(ok: true, text: lines.isEmpty ? "\(target.name) has no windows." : lines.joined(separator: "\n"))
         default:

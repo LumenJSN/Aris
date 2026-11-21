@@ -405,7 +405,7 @@ private func runMCPStdioTests() {
     // A write asks; a no never runs it.
     let refuser = FakeMCPTurn(answers: [.no])
     let refused = waitCall(hub, "fake", "send_message", .json(#"{"to":"kim","text":"hi"}"#), refuser)
-    check(refused.status == 1 && refused.output.contains("the user said no") && refuser.cards.count == 1, "mcp stdio: a write waits for the user; a no doesn't run it")
+    check(refused.status == 1 && refused.output.contains("The owner said no") && refuser.cards.count == 1, "mcp stdio: a write waits for the user; a no doesn't run it")
     check(refuser.cards.first?.title == "fake · send_message" && refuser.cards.first?.detail == "text: hi\nto: kim"
           && refuser.cards.first?.fields.map(\.key) == ["text", "to"], "mcp stdio: the card shows exactly the call, its text fields editable")
     check(refuser.taintAtCards == [.outsideText], "mcp stdio: the turn is outside text before the card even shows")
@@ -414,13 +414,13 @@ private func runMCPStdioTests() {
     check(sent.status == 0 && sent.output.contains("sent to kim: hi"), "mcp stdio: a yes runs it")
     let edited = FakeMCPTurn(answers: [.yes(["text": "내일 봐요"])])
     let changed = waitCall(hub, "fake", "send_message", .json(#"{"to":"kim","text":"hi"}"#), edited)
-    check(changed.output.contains("sent to kim: 내일 봐요") && changed.output.contains("the user changed text"), "mcp stdio: the user's change on the card is what runs")
+    check(changed.output.contains("sent to kim: 내일 봐요") && changed.output.contains("The owner changed text"), "mcp stdio: the user's change on the card is what runs")
     let readdressed = FakeMCPTurn(answers: [.yes(["to": "lee"]), .no])
     let again = waitCall(hub, "fake", "send_message", .json(#"{"to":"kim","text":"hi"}"#), readdressed)
     check(readdressed.cards.count == 2 && readdressed.cards[1].detail.hasPrefix("받는 곳이 바뀌어서") && again.status == 1,
           "mcp stdio: a changed recipient gets a fresh card, and its no stops it")
-    check(waitCall(hub, "fake", "delete_item", .json(#"{"id":3}"#), FakeMCPTurn()).output.contains("the user said no")
-          && waitCall(hub, "fake", "mystery", .json("{}"), FakeMCPTurn()).output.contains("the user said no"), "mcp stdio: destructive and unknown tools ask")
+    check(waitCall(hub, "fake", "delete_item", .json(#"{"id":3}"#), FakeMCPTurn()).output.contains("The owner said no")
+          && waitCall(hub, "fake", "mystery", .json("{}"), FakeMCPTurn()).output.contains("The owner said no"), "mcp stdio: destructive and unknown tools ask")
     // Checked before anything is sent.
     let wrongTurn = FakeMCPTurn(answers: [.yes([:])])
     let wrong = waitCall(hub, "fake", "send_message", .json(#"{"to":"kim","text":"hi","bcc":"x"}"#), wrongTurn)
@@ -477,7 +477,7 @@ private func runMCPStdioTests() {
     }
     for careful in carefulTurns([.allow(note: "x")]) {
         let outcome = waitCall(hub, "fake", "send_message", .json(#"{"to":"kim","text":"\#(long)"}"#), careful)
-        check(outcome.output.contains("the user said no") && careful.cards.count == 1 && careful.cards.first?.detail.contains(long) == true && careful.judged.isEmpty,
+        check(outcome.output.contains("The owner said no") && careful.cards.count == 1 && careful.cards.first?.detail.contains(long) == true && careful.judged.isEmpty,
               "mcp stdio: a careful turn's write still asks the user, the whole argument on the card (no judge stands in)")
     }
     let clean = FakeMCPTurn(verdicts: [.blocked(.other)])

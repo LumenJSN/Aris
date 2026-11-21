@@ -595,7 +595,7 @@ private func oneRowPaneNameTests() {
             && on(26) { ArisLocalStore.screenLine(.noPermission, korean: true) }.contains("› 화면 및 시스템 오디오 녹음에서"),
           "pane names: a screen read that needs the permission sends the user to the list by the name it has")
     // Wiring: the places that are not pure take the name from the same function.
-    let live = oneRowCode("Aris/components/Settings/ArisLiveSettings.swift"), catalog = oneRowCode("Aris/components/Settings/ArisSettingsCatalog.swift")
+    let live = oneRowCode("Aris/components/Settings/ArisLiveSettingsReading.swift"), catalog = oneRowCode("Aris/components/Settings/ArisSettingsCatalog.swift")
     check(live.contains(".init(id: \"ax\", title: ArisFix.Pane.accessibility.title(english: false)") && live.contains(".init(id: \"screen\", title: ArisFix.Pane.screen.title(english: false)")
             && catalog.contains("e(\"control.ax\", .control, ArisFix.Pane.accessibility.title(english: false)"),
           "pane names: Settings › Computer control's rows and the search take the lists' names from the lookup")

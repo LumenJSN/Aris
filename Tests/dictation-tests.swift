@@ -63,9 +63,15 @@ private func dictationPressTests() {
 private func dictationKeyTests() {
     let t0 = ContinuousClock.now
     let at = { (offset: Int) in t0 + ms(offset) }
+    // jv-wake: nothing starts until the key has been held alone past 200 ms (the tick at that moment starts it).
+    func held(_ state: inout ArisDictationKey.State) {
+        _ = state.handle(.down(alone: true), at: at(0))
+        _ = state.handle(.tick, at: at(200))
+    }
 
     var hold = ArisDictationKey.State()
-    check(hold.handle(.down(alone: true), at: at(0)) == .start, "key: right ⌥ alone starts at once")
+    check(hold.handle(.down(alone: true), at: at(0)) == .none && hold.deadline == at(200), "key: right ⌥ alone waits out the 200 ms tap threshold")
+    check(hold.handle(.tick, at: at(200)) == .start, "key: held alone past it, dictation starts")
     check(hold.handle(.up, at: at(900)) == .finish && hold.isIdle, "key: let go after holding -> type it, at once")
 
     var accidental = ArisDictationKey.State()
@@ -73,22 +79,26 @@ private func dictationKeyTests() {
     check(accidental.handle(.up, at: at(120)) == .none, "key: a quick tap waits for a second one")
     check(accidental.deadline == at(500), "key: the double-tap window is 500 ms from the first press")
     check(accidental.handle(.tick, at: at(300)) == .none, "key: a tick before the window ends does nothing")
-    check(accidental.handle(.tick, at: at(500)) == .cancel && accidental.isIdle, "key: a tap under 200 ms, alone -> dropped quietly")
+    check(accidental.handle(.tick, at: at(500)) == .none && accidental.isIdle, "key: a tap under 200 ms, alone -> nothing ever started")
 
     var short = ArisDictationKey.State()
-    _ = short.handle(.down(alone: true), at: at(0))
+    held(&short)
     _ = short.handle(.up, at: at(300))
     check(short.handle(.tick, at: at(500)) == .finish, "key: a 300 ms press with no second tap -> typed after the window")
 
     var double = ArisDictationKey.State()
     _ = double.handle(.down(alone: true), at: at(0))
     _ = double.handle(.up, at: at(100))
-    check(double.handle(.down(alone: true), at: at(300)) == .lock, "key: a second press inside 500 ms locks hands-free")
+    check(double.handle(.down(alone: true), at: at(300)) == .startLocked, "key: a second press inside 500 ms starts hands-free")
     check(double.handle(.up, at: at(360)) == .none && double.deadline == nil, "key: letting go while locked keeps listening")
     check(double.handle(.otherKey, at: at(1_000)) == .none, "key: other keys while locked don't stop it")
     check(double.handle(.tick, at: at(5_000)) == .none, "key: a stray tick while locked does nothing")
     check(double.handle(.down(alone: true), at: at(9_000)) == .finish, "key: one more tap ends hands-free and types it")
     check(double.handle(.up, at: at(9_080)) == .none && double.isIdle, "key: that tap's release does nothing")
+    var doubleHeld = ArisDictationKey.State()
+    held(&doubleHeld)
+    _ = doubleHeld.handle(.up, at: at(250))
+    check(doubleHeld.handle(.down(alone: true), at: at(400)) == .lock, "key: a held first press and a second inside 500 ms locks hands-free")
 
     var triple = ArisDictationKey.State()
     _ = triple.handle(.down(alone: true), at: at(0))
@@ -99,7 +109,7 @@ private func dictationKeyTests() {
     check(triple.handle(.up, at: at(470)) == .none && triple.isIdle, "key: after the triple tap, idle")
 
     var escHeld = ArisDictationKey.State()
-    _ = escHeld.handle(.down(alone: true), at: at(0))
+    held(&escHeld)
     check(escHeld.handle(.escape, at: at(700)) == .cancel && escHeld.handle(.up, at: at(900)) == .none, "key: Esc while holding cancels")
     var escLocked = ArisDictationKey.State()
     _ = escLocked.handle(.down(alone: true), at: at(0))
@@ -107,7 +117,7 @@ private func dictationKeyTests() {
     _ = escLocked.handle(.down(alone: true), at: at(250))
     check(escLocked.handle(.escape, at: at(4_000)) == .cancel && escLocked.isIdle, "key: Esc while hands-free cancels")
     var escWaiting = ArisDictationKey.State()
-    _ = escWaiting.handle(.down(alone: true), at: at(0))
+    held(&escWaiting)
     _ = escWaiting.handle(.up, at: at(300))
     check(escWaiting.handle(.escape, at: at(350)) == .cancel, "key: Esc inside the double-tap window cancels")
     var idle = ArisDictationKey.State()
@@ -116,14 +126,17 @@ private func dictationKeyTests() {
 
     var spoiled = ArisDictationKey.State()
     _ = spoiled.handle(.down(alone: true), at: at(0))
-    check(spoiled.handle(.otherKey, at: at(150)) == .cancel, "key: ⌥ + another key (a special character) cancels")
-    check(spoiled.handle(.up, at: at(800)) == .none && spoiled.isIdle, "key: ... and its release does nothing")
+    check(spoiled.handle(.otherKey, at: at(150)) == .none && !spoiled.hasStarted, "key: ⌥ + another key (a special character) starts nothing at all")
+    check(spoiled.handle(.tick, at: at(200)) == .none && spoiled.handle(.up, at: at(800)) == .none && spoiled.isIdle, "key: ... not even once the threshold passes")
+    var spoiledLate = ArisDictationKey.State()
+    held(&spoiledLate)
+    check(spoiledLate.handle(.otherKey, at: at(400)) == .cancel, "key: another key after it started cancels it")
     var chord = ArisDictationKey.State()
     check(chord.handle(.down(alone: false), at: at(0)) == .none && chord.handle(.up, at: at(900)) == .none && chord.isIdle,
           "key: with ⌘ or ⇧ already down, never starts")
 
     var late = ArisDictationKey.State()
-    _ = late.handle(.down(alone: true), at: at(0))
+    held(&late)
     _ = late.handle(.up, at: at(250))
     check(late.handle(.down(alone: true), at: at(650)) == .finish, "key: a press after the window (tick missed) settles the first one")
     check(late.handle(.up, at: at(700)) == .none && late.isIdle, "key: ... and that press starts nothing")
@@ -131,12 +144,13 @@ private func dictationKeyTests() {
     var typedAfter = ArisDictationKey.State()
     _ = typedAfter.handle(.down(alone: true), at: at(0))
     _ = typedAfter.handle(.up, at: at(100))
-    check(typedAfter.handle(.otherKey, at: at(200)) == .cancel, "key: typing right after a quick tap settles it (dropped)")
+    check(typedAfter.handle(.otherKey, at: at(200)) == .none && typedAfter.isIdle, "key: typing right after a quick tap: nothing was started")
 
     var reset = ArisDictationKey.State()
-    _ = reset.handle(.down(alone: true), at: at(0))
+    held(&reset)
     reset.reset()
-    check(reset.isIdle && reset.handle(.down(alone: true), at: at(10)) == .start, "key: reset forgets a press the app dropped")
+    check(reset.isIdle && reset.handle(.down(alone: true), at: at(10)) == .none && reset.handle(.tick, at: at(210)) == .start,
+          "key: reset forgets a press the app dropped")
 }
 
 private func dictationLimitTests() {
@@ -357,9 +371,9 @@ private func cleanerStopTests() {
 
 private func dictationSettingsTests() {
     var s = ArisSettingsSnapshot()
-    let rows = { (s: ArisSettingsSnapshot) in ArisSettingsBuilder.sections(.dictation, s).flatMap(\.rows) }
+    let rows = { (s: ArisSettingsSnapshot) in (ArisSettingsBuilder.sections(part: "able.dictation", s) + ArisSettingsBuilder.sections(part: "app.keys", s)).flatMap(\.rows) }
     let row = { (s: ArisSettingsSnapshot, id: String) in rows(s).first { $0.id == id } }
-    check(row(s, "dictation.pasteLast")?.control == .shortcut(name: "pasteLastDictation", caps: ["⌃", "⌘", "V"]),
+    check(row(s, "keys.pasteLast")?.control == .shortcut(name: "pasteLastDictation", caps: ["⌃", "⌘", "V"]),
           "settings: ⌃⌘V pastes the last dictation, and can be changed")
     check(row(s, "dictation.brainPolish")?.control == .toggle(.dictationBrainPolish, false), "settings: the brain fallback is off at first")
     let chat = row(s, "dictation.style.chat")?.control

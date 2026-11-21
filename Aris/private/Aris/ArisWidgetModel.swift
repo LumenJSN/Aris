@@ -171,7 +171,7 @@ final class ArisWidgetModel: ObservableObject {
         case .weather:
             return await ArisAgentClient.weather(place: request.place).flatMap { ArisWeatherCard.parse($0) }.map(Content.weather)
         case .calendar:
-            guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return nil }
+            guard ArisEventGrants.shared.allowed(.events) else { return nil }
             // The day the answer is about, its calendar events only: never a due or ticked to-do as an "All day" row.
             let start = request.day.flatMap { ArisCalendarCardDay.date($0) } ?? Calendar.current.startOfDay(for: .now)
             guard let end = Calendar.current.date(byAdding: .day, value: 1, to: start) else { return nil }
@@ -304,7 +304,7 @@ extension ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(body))
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }

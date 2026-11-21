@@ -30,24 +30,20 @@ final class ArisDataModel: ObservableObject {
         var diagnostics: @MainActor () async -> String?
         /// The toast to show.
         var wipe: @MainActor (_ items: [Item], _ typed: String) async -> String
-        /// What the agent did, step by step; nil when it couldn't be reached (then nothing was removed).
-        var uninstall: @MainActor (_ keepData: Bool, _ typed: String) async -> [UninstallStep]?
+        /// What the agent did, step by step; or that it refused or couldn't be reached (then nothing was removed).
+        var uninstall: @MainActor (_ keepData: Bool, _ typed: String) async -> ArisUninstallReply
         var quit: @MainActor () -> Void
         var appPath: String
     }
 
     /// One step the agent reported (ArisDataRoute's uninstall).
-    struct UninstallStep: Equatable {
-        let step: String
-        let ok: Bool
-        var note: String?
-    }
+    typealias UninstallStep = ArisUninstallStep
 
     /// The list row each agent step belongs to.
     static func row(of step: String) -> String {
         switch step {
         case "hooks", "antigravity": "hooks"
-        case "launchAgent": "agent"
+        case "launchAgent", "helperFiles", "appFiles": "agent"
         case "binaries": "tools"
         case "folder", "link": "data"
         default: step
@@ -61,7 +57,10 @@ final class ArisDataModel: ObservableObject {
          ("agent", "백그라운드 에이전트", "~/Library/LaunchAgents/com.lumenjsn.aris.agent.plist"),
          ("tools", "에이전트 프로그램", "~/.config/aris/aris-tools"),
          ("data", "설정과 기록", "~/.config/aris"),
-         ("container", "앱 데이터와 API 키", "대화 · 클립보드 기록, 키체인의 키, 로그인 시 실행")]
+         ("container", "앱 데이터와 API 키", "대화 · 클립보드 기록, 키체인의 키, 로그인 시 실행"),
+         ("permissions", "권한 기록", "개인정보 보호 및 보안의 Aris 줄"),
+         // Aris can't remove it: its line says so from the start, with what to do (third VM run, D6).
+         ("sandbox", "샌드박스 폴더", ArisUninstallReply.sandboxBefore)]
     }
 
     static let shared = ArisDataModel(actions: .live)
@@ -81,6 +80,12 @@ final class ArisDataModel: ObservableObject {
     @Published var uninstallTyped = ""
     /// Nil before it starts; then how many rows are done.
     @Published private(set) var uninstallDone: Int?
+    /// The seconds left before the uninstall really starts: until then 취소 stops it and nothing is touched.
+    @Published private(set) var uninstallCountdown: Int?
+    /// The helper is working through the list (the app goes to the Trash first: from here it can't be stopped).
+    @Published private(set) var uninstallRunning = false
+    /// How long the uninstall waits after 제거 is pressed, for a change of mind.
+    static let uninstallGrace = 5
     @Published private(set) var uninstallError: String?
     /// Rows whose step the agent reported as failed.
     @Published private(set) var failedRows: Set<String> = []
@@ -94,6 +99,7 @@ final class ArisDataModel: ObservableObject {
     func reload() async { counts = await actions.counts() }
 
     func resetSheet() {
+        cancelUninstall()
         wipeTyped = ""
         uninstallTyped = ""
         uninstallError = nil
@@ -101,7 +107,16 @@ final class ArisDataModel: ObservableObject {
     }
 
     var canWipe: Bool { !wipeSelection.isEmpty && ArisTypedConfirm.matches(wipeTyped, ArisTypedConfirm.wipeWord) && !busy }
-    var canUninstall: Bool { ArisTypedConfirm.matches(uninstallTyped, ArisTypedConfirm.uninstallWord) && !busy && uninstallDone == nil }
+    var canUninstall: Bool {
+        ArisTypedConfirm.matches(uninstallTyped, ArisTypedConfirm.uninstallWord) && !busy && uninstallDone == nil && uninstallCountdown == nil
+    }
+
+    /// 취소 during the countdown: nothing was touched.
+    func cancelUninstall() {
+        guard uninstallCountdown != nil else { return }
+        uninstallCountdown = nil
+        busy = false
+    }
     var canExport: Bool { (exportHistory || exportMemory || exportTeammates) && !busy }
 
     func export() async {
@@ -138,18 +153,22 @@ final class ArisDataModel: ObservableObject {
         guard canUninstall else { return }
         busy = true
         uninstallError = nil
-        guard let steps = await actions.uninstall(!removeRecords, uninstallTyped) else {
-            busy = false
-            uninstallError = "백그라운드 에이전트에 연결하지 못해서 아무것도 지우지 않았어요. Aris를 다시 시작한 뒤 해 주세요."
-            return
+        // A few seconds to change one's mind before anything irreversible: the countdown shows, 취소 stops it.
+        for left in stride(from: Self.uninstallGrace, to: 0, by: -1) {
+            uninstallCountdown = left
+            try? await Task.sleep(for: .seconds(1))
+            guard uninstallCountdown != nil else { return }
         }
-        guard steps.first(where: { $0.step == "app" })?.ok == true else {
+        uninstallCountdown = nil
+        uninstallRunning = true
+        defer { uninstallRunning = false }
+        // Read before anything is removed: whether this Mac ever had the old helper, whose rows Aris can't take out.
+        let oldHelper = ArisUninstallReply.hadOldHelper(UserDefaults.standard)
+        let reply = await actions.uninstall(!removeRecords, uninstallTyped)
+        // Unreachable, refused, or the app couldn't go to the Trash: nothing was removed, and the line says which.
+        guard let steps = reply.steps, reply.stoppedLine == nil else {
             busy = false
-            let translocated = steps.first?.note?.contains("translocated") == true
-            // Each line is whole, so the settings window finds its English (ArisSettingsCopy).
-            uninstallError = translocated
-                ? "Aris 앱을 휴지통으로 옮기지 못해서 멈췄어요. 아무것도 지우지 않았어요. Aris를 응용 프로그램 폴더로 옮겨서 연 뒤 다시 해 주세요."
-                : "Aris 앱을 휴지통으로 옮기지 못해서 멈췄어요. 아무것도 지우지 않았어요."
+            uninstallError = reply.stoppedLine
             return
         }
         failedRows = Set(steps.filter { !$0.ok }.map { Self.row(of: $0.step) })
@@ -159,10 +178,9 @@ final class ArisDataModel: ObservableObject {
             try? await Task.sleep(for: .milliseconds(380))
             uninstallDone = done
         }
-        if !failedRows.isEmpty {
-            let names = Self.uninstallRows(appPath: "").filter { failedRows.contains($0.id) }.map(\.title)
-            uninstallError = "이건 지우지 못했어요: \(names.joined(separator: ", ")). Finder에서 직접 지워 주세요."
-        }
+        // What wasn't removed, each with what to do about it (ArisUninstallReply.leftLines).
+        let names = Self.uninstallRows(appPath: "").filter { failedRows.contains($0.id) && !ArisUninstallReply.ownLines.contains($0.id) }.map(\.title)
+        uninstallError = ArisUninstallReply.leftLines(failedRows: failedRows, titles: names, oldHelper: oldHelper).joined(separator: "\n")
         busy = false
     }
 

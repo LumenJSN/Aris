@@ -49,25 +49,25 @@ private func aiStoreTests() {
     let old: [String: Any] = ["arisBrain": "claude", "arisCloudListening": true, "arisSpeechModel": "small", "arisVoiceID": "voice123", "arisVoiceName": "Rachel",
                               "arisVoiceSpeed": 1.15, "arisLanguages": ["ko", "en", "ja"]]
     let withKey = ArisAIStore.read(prefs(old), facts: .init(hasElevenKey: true))
-    check(withKey.think == "claude" && withKey.hear == "scribe" && withKey.whisperModel == "small" && withKey.speak == "eleven"
+    check(withKey.think == "claude" && withKey.hear == "auto" && withKey.whisperModel == "small" && withKey.speak == "eleven"
           && withKey.elevenVoiceID == "voice123" && withKey.elevenVoiceName == "Rachel" && withKey.speed == 1.15 && withKey.languages == ["ko", "en", "ja"]
           && withKey.elevenModel == "eleven_v4_turbo" && withKey.systemVoice.isEmpty,
-          "ai store: an existing user's brain, voice, speed, languages and listening read exactly as the earlier build used them (ElevenLabs key)")
+          "ai store: an existing user's brain, voice, speed and languages read exactly as the earlier build used them; listening never chosen reads as 자동, which is Scribe first with its key, as before")
     let noKey = ArisAIStore.read(prefs(old), facts: .init())
-    check(noKey.hear == "whisper" && noKey.speak == "macos" && noKey.elevenVoiceID == "voice123" && noKey.speed == 1.15,
-          "ai store: without an ElevenLabs key the same preferences read as what really listened and spoke (Whisper, the Mac's voice)")
+    check(noKey.hear == "auto" && noKey.speak == "macos" && noKey.elevenVoiceID == "voice123" && noKey.speed == 1.15,
+          "ai store: without an ElevenLabs key the same preferences read as 자동 (which then hears on this Mac) and the Mac's voice")
     check(ArisAIStore.read(prefs(["arisCloudListening": false]), facts: .init(hasElevenKey: true)).hear == "apple"
           && ArisAIStore.read(prefs(["arisCloudListening": false]), facts: .init(hasElevenKey: true, whisperLargeInstalled: true)).hear == "whisper"
           && ArisAIStore.read(prefs(["arisSpeechModel": "later"]), facts: .init(whisperLargeInstalled: true)).whisperModel == "large"
           && ArisAIStore.read(prefs(["arisSpeechModel": "later"]), facts: .init()).whisperModel == nil,
           "ai store: Scribe switched off reads as Whisper once a model is on this Mac (the large one a Mac already has counts), else Apple's recognition")
     let fresh = ArisAIStore.read(prefs([:]), facts: .init())
-    check(fresh.think == "codex" && fresh.hear == "apple" && fresh.speak == "macos" && fresh.elevenVoiceID == ArisElevenLabs.voiceID && fresh.elevenVoiceName == "Geaun"
+    check(fresh.think == "claude" && fresh.hear == "auto" && fresh.speak == "macos" && fresh.elevenVoiceID == ArisElevenLabs.voiceID && fresh.elevenVoiceName == "Geaun"
           && fresh.speed == 1 && fresh.languages == ["ko", "en"], "ai store: nothing stored reads as the preferences' own defaults")
     check(ArisAIStore.read(prefs(["arisBrain": "api"]), facts: .init(apiActive: "groq")).think == "api:groq"
           && ArisAIStore.read(prefs(["arisBrain": "api"]), facts: .init()).think == "api:"
           && ArisAIStore.read(prefs(["arisBrain": "antigravity"]), facts: .init()).think == "antigravity"
-          && ArisAIStore.read(prefs(["arisBrain": "nonsense"]), facts: .init()).think == "codex",
+          && ArisAIStore.read(prefs(["arisBrain": "nonsense"]), facts: .init()).think == "claude",
           "ai store: the API brain reads as aris-agent's active provider; Antigravity stays Antigravity; a name that is no brain is the default")
     let explicit = ArisAIStore.read(prefs(old.merging(["arisHearEngine": "apple", "arisCloudListening": false, "arisSpeakEngine": "macos", "arisVoiceModel": "eleven_flash_v2_5",
                                                        "arisSystemVoice": "com.apple.voice.premium.ko-KR.Yuna"]) { $1 }), facts: .init(hasElevenKey: true))
@@ -137,7 +137,7 @@ private func aiStatusTests() {
           && lack(.hear, "whisper", aiState { $0.whisperInstalled = ["small"]; $0.choices.whisperModel = "large" }) == .model
           && lack(.hear, "apple") == nil && lack(.speak, "macos") == nil,
           "ai status: Whisper needs its picked model on this Mac; Apple's recognition and the Mac's voices need nothing")
-    check([("openai-stt", ArisAIJob.hear), ("groq-stt", .hear), ("deepgram", .hear), ("fish-stt", .hear), ("kokoro", .speak), ("fish-tts", .speak), ("openai-tts", .speak)]
+    check([("groq-stt", ArisAIJob.hear), ("deepgram", .hear), ("fish-stt", .hear), ("kokoro", .speak), ("fish-tts", .speak), ("openai-tts", .speak)]
             .allSatisfy { lack($0.1, $0.0) == .soon },
           "ai status: a service Aris has no engine for is listed as 준비 중, never as working")
     check(ArisAILack.key.word == "키 필요" && ArisAILack.install.word == "설치 필요" && ArisAILack.model.word == "모델 받기 필요" && ArisAILack.notRunning.word == "실행 중이 아니에요",
@@ -188,8 +188,8 @@ private func aiAgentAnswerTests() {
 private func aiPageTests() {
     // Nothing set up: no AI, no key, no model.
     let empty = ArisAIServicesBuilder.page(aiState { $0.brainReady = ["claude": false, "codex": false, "antigravity": false] })
-    check(empty.think.rows.count == 2 && empty.think.rows[0].title == "생각" && empty.think.rows[0].desc == "ChatGPT" && empty.think.rows[0].warn == "설치 필요"
-          && empty.think.need == .button(message: ArisSettingsBuilder.brainHow(.codex), title: "다시 확인", .recheckBrains) && empty.thinkLine == nil && empty.login == nil,
+    check(empty.think.rows.count == 1 && empty.think.rows[0].title == "답하는 AI" && empty.think.rows[0].desc == "Claude" && empty.think.rows[0].warn == "설치 필요"
+          && empty.think.need == .button(message: ArisSettingsBuilder.brainHow(.claude), title: "다시 확인", .recheckBrains) && empty.thinkLine == nil && empty.login == nil,
           "ai page: a brain whose tool isn't installed says 설치 필요, how to get it, and 다시 확인; no sign-in or fallback is offered for what isn't there")
     check(empty.hear.rows.map(\.title) == ["듣기"] && empty.hear.rows[0].desc == "Apple 받아쓰기 · 이 Mac에 머물러요" && empty.hear.need == nil
           && empty.speak.rows.map(\.title) == ["말하기", "목소리"] && empty.speak.rows[0].desc == "macOS 목소리 · 이 Mac에 머물러요"
@@ -206,11 +206,13 @@ private func aiPageTests() {
         $0.voices["eleven"] = .loaded([ArisAIVoice(id: "v1", name: "Geaun", desc: "female · korean", own: true)])
     })
     check(claude.think.rows[0].desc == "Claude · 대화가 Mac 밖으로 나가요" && claude.think.rows[0].warn == nil
-          && claude.think.rows[1] == ArisAIRow(title: "모델", desc: "빠른 답은 Haiku, 큰 일은 Sonnet이 해요", control: .fixed("Sonnet")) && claude.think.need == nil
-          && claude.thinkLine == "안 되면 ChatGPT로 생각해요"
+          && claude.think.rows.count == 1 && claude.think.need == nil
+          && claude.thinkLine == nil
           && claude.login == ArisAILoginLine(brain: "claude", title: "Claude 로그인", desc: "로그인이 풀렸을 때 눌러요. 터미널에서 claude 명령을 열어 줘요."),
-          "ai page: Claude answers with the models Aris picks itself (shown, not a dropdown), ChatGPT is named as the one that takes over, and Claude's own sign-in is one press away")
-    check(claude.hear.rows[0].desc == "ElevenLabs Scribe · 음성이 Mac 밖으로 나가요" && claude.hear.rows[1].control == .fixed("Scribe v2 Realtime") && claude.hear.need == nil
+          "ai page: Claude's card names no model of its own (모델 고르기 under it does), no other AI takes over while 다른 AI로 넘기기 is off, and Claude's own sign-in is one press away")
+    let claudeFallback = ArisAIServicesBuilder.page(aiState { $0.choices.think = "claude"; $0.fallbackOn = true })
+    check(claudeFallback.thinkLine == "안 되면 ChatGPT로 생각해요", "ai page: with 다른 AI로 넘기기 on, ChatGPT is named as the one that takes over")
+    check(claude.hear.rows[0].desc == "ElevenLabs Scribe · 음성이 Mac 밖으로 나가요" && claude.hear.rows[1].control == .fixed("Scribe v3 Live") && claude.hear.need == nil
           && claude.speak.rows.map(\.title) == ["말하기", "모델", "목소리"] && claude.speak.rows[1].control == .select(.model(.speak), ArisAISelectFace(label: "v4 Turbo"))
           && claude.speak.rows[2].desc == "female · korean" && claude.speak.rows[2].control == .select(.voice, ArisAISelectFace(label: "Geaun"))
           && claude.voiceLine == "안 되면 이 Mac의 Whisper로 듣고 macOS 목소리로 말해요" && claude.jev == .on(masked: "••••••••77aa")
@@ -218,7 +220,8 @@ private func aiPageTests() {
           "ai page: Scribe and the ElevenLabs voice with their key; the line under them names what this Mac falls back to")
     check(ArisAIServicesBuilder.page(aiState { $0.choices.hear = "scribe"; $0.elevenKey = "x" }).voiceLine == "안 되면 이 Mac의 Apple 받아쓰기로 들어요"
           && ArisAIServicesBuilder.page(aiState { $0.choices.speak = "eleven"; $0.elevenKey = "x" }).voiceLine == "안 되면 이 Mac의 macOS 목소리로 말해요"
-          && ArisAIServicesBuilder.page(aiState { $0.choices.think = "codex"; $0.brainReady["antigravity"] = true }).thinkLine == "안 되면 Gemini로 생각해요",
+          && ArisAIServicesBuilder.page(aiState { $0.choices.think = "codex"; $0.brainReady["antigravity"] = true; $0.fallbackOn = true }).thinkLine == "안 되면 Gemini로 생각해요"
+          && ArisAIServicesBuilder.page(aiState { $0.choices.think = "codex"; $0.brainReady["antigravity"] = true }).thinkLine == nil,
           "ai page: the fallback lines name only what would really take over")
 
     var pending = aiState { $0.choices.think = "api:groq"; $0.thinkStored = "claude" }
@@ -331,14 +334,14 @@ private func aiMenuTests() {
           && think.items.allSatisfy { !$0.disabled },
           "ai menu: each service carries what it is missing as small text; a connection has its 더 보기; every 생각 service can be picked")
     let hear = ArisAIServicesBuilder.menu(.provider(.hear), state)
-    check(hear.items.map(\.id) == ["apple", "whisper", "scribe", "openai-stt", "groq-stt", "deepgram", "fish-stt"] && item(hear, "whisper")?.checked == true
-          && item(hear, "deepgram")?.disabled == true && item(hear, "deepgram")?.tail == "준비 중" && item(hear, "scribe")?.disabled == false && hear.foot.isEmpty,
-          "ai menu: 듣기 lists this Mac's engines then the cloud's; the ones Aris has no engine for are greyed 준비 중")
+    check(hear.items.map(\.id) == ["auto", "apple", "whisper", "scribe", "soniox", "openai-stt"] && item(hear, "whisper")?.checked == true
+          && hear.items.allSatisfy { !$0.disabled && $0.tail != "준비 중" } && item(hear, "scribe")?.disabled == false && hear.foot.isEmpty,
+          "ai menu: 듣기 lists 자동, this Mac's engines, then the cloud's; an engine Aris has not built (Groq, Deepgram, Fish Audio) is not listed (rel11 10c)")
     let speak = ArisAIServicesBuilder.menu(.provider(.speak), state)
-    check(speak.items.map(\.id) == ["macos", "kokoro", "eleven", "fish-tts", "openai-tts"] && speak.items.filter(\.disabled).map(\.id) == ["kokoro", "fish-tts", "openai-tts"],
-          "ai menu: 말하기 offers the Mac's voices and ElevenLabs; Kokoro, Fish Audio and OpenAI are listed as 준비 중")
+    check(speak.items.map(\.id) == ["macos", "eleven"] && speak.items.allSatisfy { !$0.disabled },
+          "ai menu: 말하기 offers the Mac's voices and ElevenLabs; Kokoro, Fish Audio and OpenAI are not listed until Aris has their engine (rel11 10c)")
     let both = ArisAIServicesBuilder.menu(.both, state)
-    check(both.items.map(\.title) == ["ElevenLabs", "OpenAI", "Fish Audio"] && both.items.map(\.disabled) == [false, true, true],
+    check(both.items.map(\.title) == ["ElevenLabs"] && both.items.map(\.disabled) == [false],
           "ai menu: 같은 회사로 맞추기 can set both to ElevenLabs today")
 
     var onAPI = state
@@ -644,7 +647,7 @@ private func aiEnglishTests() {
                                            ArisAISystemVoice(identifier: "en.enhanced", name: "Samantha", language: "en-US", quality: 2, gender: 0)], languages: ["ko", "en"], english: true)
     var states: [ArisAIServicesState] = []
     for think in ["claude", "codex", "antigravity", "api:openai", "api:groq", "api:ollama", "api:lmstudio", "api:conn-0a1b2c3d", "api:", "api:gone"] {
-        for hear in ["apple", "whisper", "scribe"] {
+        for hear in ["auto", "apple", "whisper", "scribe", "soniox", "openai-stt"] {
             for (speak, key) in [("macos", false), ("eleven", false), ("eleven", true), ("macos", true)] {
                 states.append(aiState {
                     $0.presets.append(connection)
@@ -725,10 +728,11 @@ private func aiEnglishTests() {
     let serviceRows = rows.first { $0.id == "ai.services" }?.rows ?? []
     let none = ArisAIServicesBuilder.serviceRows(serviceRows, read: .answered).map(english.row).first { $0.id == "ai.service.none" }
     let unread = ArisAIServicesBuilder.serviceRows(serviceRows, read: .unanswered).map(english.row).first { $0.id == "ai.service.unread" }
-    check(rows.map(\.heading) == ["Thinking", "Voice", "Connected services", nil] && none?.title == "No AI is connected" && none?.desc?.hasPrefix("Install Claude Code, Codex or Antigravity") == true
+    check(ArisSettingsParts.all.filter { $0.page == .talk }.map { english($0.title) } == ["AI · Model", "Calling Aris", "Listening", "Voice", "Conversation", "Quiet · Alerts"]
+          && rows.first { $0.id == "ai.services" }?.fold?.title == english("연결된 서비스") && none?.title == "No AI is connected" && none?.desc?.hasPrefix("Install Claude Code, Codex or Antigravity") == true
           && unread?.title == "Couldn't check the connected AIs" && unread?.desc == "Aris's helper didn't answer. Open this page again in a moment."
-          && english.of(.ai, ArisSettingsPage.ai.subtitle) == "Choose what thinks, listens and speaks",
-          "ai in English: the page's headings, its line beside the title and 연결된 서비스's own lines are English")
+          && english.of(.ai, ArisSettingsPage.ai.subtitle) == "Who answers, how Aris hears and speaks, and when it stays quiet.",
+          "ai in English: the parts' titles, the page's line and 연결된 서비스's own lines are English")
 }
 
 /// The lines the views and the live page hold themselves that take a value (each literal is checked by the file scan in
@@ -742,9 +746,12 @@ private enum ArisAISettledLines {
 #if !AI_QUICK
 /// The page in the settings window: its rows in the search, and the three names in the notch preview.
 private func aiSettingsWindowTests() {
-    let rows = ArisSettingsBuilder.sections(.ai, ArisSettingsSnapshot())
-    check(rows.map(\.id) == ["ai.think", "ai.voice", "ai.services", "ai.more"] && rows[0].rows.map(\.id) == ["ai.brain", "ai.jev"] && rows[1].rows.map(\.id) == ["ai.hear", "ai.speak"],
-          "ai settings: the page's sections are 생각, 음성, 연결된 서비스 and the two rows it had")
+    let rows = ArisSettingsBuilder.sections(part: "talk.ai", ArisSettingsSnapshot())
+    check(rows.map(\.id) == ["ai.think", ArisSettingsViewSlots.fallback, "ai.services"] && rows[0].rows.map(\.id) == ["ai.brain", "ai.jev", "ai.models"]
+          && rows[1].rows.map(\.id) == ["ai.fallback"]
+          && ArisSettingsBuilder.sections(part: "talk.hear", ArisSettingsSnapshot()).first?.rows.first?.id == "ai.hear"
+          && ArisSettingsBuilder.sections(part: "talk.speak", ArisSettingsSnapshot()).first?.rows.first?.id == "ai.speak",
+          "ai settings: AI · 모델 is who answers and 연결된 서비스; 듣기 and 목소리 are parts of their own (option A)")
     let shown = ArisSettingsBuilder.searchable(ArisSettingsSnapshot())
     func first(_ query: String) -> String? { ArisSettingsIndex.search(query, among: shown).first?.id }
     check(first("듣기") == "ai.hear" && first("위스퍼") == "ai.hear" && first("Apple 받아쓰기") == "ai.hear" && first("짧은 명령") == "ai.jev" && first("TypeSafe") == "ai.jev"
@@ -856,3 +863,47 @@ private func aiConnectionTests() {
     check(route(["op": "nonsense"]).status.hasPrefix("400") && send(["op": "nonsense"]).status.hasPrefix("400"), "ai connections: an unknown op is refused")
 }
 #endif
+
+/// The eleventh VM run, E2 (cap11/STai-reconnect*, STai-ds*): with a refused key the "Add the API key ›" chip opened
+/// AI · Model, which has no field for a saved key, and the Connect sheet said "The saved API key is used as it is".
+func runRel11KeyTests() {
+    let state = aiState { $0.profiles = [ArisAIProfile(id: "groq", quick: "a", strong: "b", hasKey: true)]; $0.choices.think = "api:groq" }
+    // The chip's sheet: the provider that thinks, its key field shown although a key is saved.
+    let draft = ArisAIConnect.replacingKey(think: state.choices.think, in: state)
+    check(draft?.shipped == "groq" && draft?.replacing == true, "rel11 E2: the chip's sheet is the thinking provider's, replacing its key")
+    if let draft, case .shipped(_, let key, let saved) = ArisAIConnect.view(draft, in: state).body {
+        check(key == .init(id: "key", label: "API 키", placeholder: "Groq API 키", secure: true) && !saved,
+              "rel11 E2: the sheet opens on a key field, not on “저장된 API 키를 그대로 써요”")
+    } else { check(false, "rel11 E2: the sheet opens on a key field") }
+    // Picked by hand it still says the saved key is used, now with 키 바꾸기 beside it.
+    if case .shipped(_, let key, let saved) = ArisAIConnect.view(ArisAIConnectDraft(shipped: "groq"), in: state).body {
+        check(key == nil && saved, "rel11 E2: without replacing, the saved key is used as it is")
+    } else { check(false, "rel11 E2: without replacing, the saved key is used as it is") }
+    check(ArisAIConnect.replacingKey(think: "claude", in: state) == nil && ArisAIConnect.replacingKey(think: "api:", in: state) == nil
+          && ArisAIConnect.replacingKey(think: "api:ollama", in: state) == nil, "rel11 E2: no sheet for an AI with no key of its own")
+    let sheets = appbugsSource("Aris/components/Settings/ArisAIServicesSheets.swift"), live = appbugsSource("Aris/components/Settings/ArisAIServicesLive.swift")
+    check(sheets.contains(#"ArisAIQuickChip(title: w("키 바꾸기"), picked: false) { model.performSheet(.replaceKey) }"#)
+          && live.contains("model.state.profile(id)?.hasKey != true || draft.replacing")
+          && appbugsSource("Aris/private/Aris/ArisFixModel.swift").contains("if row == .key { ArisAIServicesLive.shared.replaceThinkingKey() }"),
+          "rel11 E2 wiring: 키 바꾸기 in the sheet, the typed key replaces the saved one, the chip opens the sheet")
+    check(appbugsSource("Aris/components/Settings/Settings.xcstrings").contains("\"키 바꾸기\"") , "rel11 E2: 키 바꾸기 has its English")
+    // The line names the place as the window names it, in both languages; no page that is gone.
+    for english in [false, true] {
+        for kind in ArisAPIFailureWords.Kind.allCases {
+            let line = ArisAPIFailureWords.line(kind, title: "DeepSeek", english: english)
+            check(!line.contains("AI 서비스") && !line.contains("AI services") && !line.contains("두뇌") && !line.contains("Thinking"), "rel11 E2: no gone page in “\(line)”")
+        }
+        check(ArisAPIFailureWords.line(.key, title: "DeepSeek", english: english).contains(ArisSettingsNames.aiPlace(english: english)),
+              "rel11 E2: the refused-key line names \(ArisSettingsNames.aiPlace(english: english))")
+        check(ArisBrainFailure.friendly("invalid api key", brain: .api, korean: !english).contains(ArisSettingsNames.aiPlace(english: english)),
+              "rel11 E2: the brain's own key line names it too (english: \(english))")
+    }
+    // A check that failed is a red toast; nothing a provider said is logged as it came.
+    check(live.contains(#"fail("\(ArisAICatalogue.keyName(id, in: model.state)): \(w(result.message))")"#), "rel11 E2: a key that didn't answer is said on the red toast")
+    let controller = appbugsSource("Aris/private/Aris/ArisController.swift")
+    check(controller.contains("router skipped: \\(ArisProviderWords.loggable(String(describing: error)), privacy: .public)")
+          && controller.contains("failed: \\(ArisProviderWords.loggable(message), privacy: .public)")
+          && appbugsSource("ArisAgent/ArisAPIRouterCall.swift").contains("ArisProviderWords.loggable(ArisAPISecrets.redacted(")
+          && appbugsSource("Aris/private/Aris/ArisDecider.swift").contains("ArisProviderWords.loggable(ArisDecisionProviders.redacted("),
+          "rel11 E2: a provider's words go to the log only through ArisProviderWords.loggable")
+}

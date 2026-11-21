@@ -43,6 +43,11 @@ enum ArisSkillArchive {
 
     /// The DEFLATE stream inside a gzip file, inflated up to `limit` bytes.
     static func gunzip(_ data: Data, limit: Int = maxInflated) -> Result<Data, ArisArchiveProblem> {
+        deflated(data).flatMap { inflate($0, limit: limit) }
+    }
+
+    /// The raw DEFLATE bytes of a gzip file (its header and trailer taken off).
+    static func deflated(_ data: Data) -> Result<[UInt8], ArisArchiveProblem> {
         let bytes = [UInt8](data)
         guard bytes.count > 18, bytes[0] == 0x1f, bytes[1] == 0x8b, bytes[2] == 8 else { return .failure(.notGzip) }
         let flags = bytes[3]
@@ -57,20 +62,28 @@ enum ArisSkillArchive {
         }
         if flags & 0x02 != 0 { at += 2 }
         guard at < bytes.count - 8 else { return .failure(.corrupt) }
-        return inflate(Array(bytes[at..<(bytes.count - 8)]), limit: limit)
+        return .success(Array(bytes[at..<(bytes.count - 8)]))
     }
 
     /// Raw DEFLATE, streamed, stopping as soon as the output passes `limit`.
     static func inflate(_ input: [UInt8], limit: Int) -> Result<Data, ArisArchiveProblem> {
+        var output = Data()
+        if let problem = inflate(input, limit: limit, into: { output.append($0); return nil }) { return .failure(problem) }
+        return .success(output)
+    }
+
+    /// Raw DEFLATE, streamed piece by piece into `sink` (which may stop it with a problem), stopping as soon as the
+    /// output passes `limit`. Nil when it all came through.
+    static func inflate(_ input: [UInt8], limit: Int, into sink: (UnsafeBufferPointer<UInt8>) -> ArisArchiveProblem?) -> ArisArchiveProblem? {
         let destinationSize = 64 * 1_024
         let destination = UnsafeMutablePointer<UInt8>.allocate(capacity: destinationSize)
         defer { destination.deallocate() }
         var stream = compression_stream(dst_ptr: destination, dst_size: destinationSize, src_ptr: destination, src_size: 0, state: nil)
-        guard compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK else { return .failure(.corrupt) }
+        guard compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK else { return .corrupt }
         defer { compression_stream_destroy(&stream) }
-        var output = Data()
-        return input.withUnsafeBufferPointer { source -> Result<Data, ArisArchiveProblem> in
-            guard let base = source.baseAddress else { return .failure(.corrupt) }
+        var total = 0
+        return input.withUnsafeBufferPointer { source -> ArisArchiveProblem? in
+            guard let base = source.baseAddress else { return .corrupt }
             stream.src_ptr = base
             stream.src_size = source.count
             while true {
@@ -79,15 +92,140 @@ enum ArisSkillArchive {
                 let status = compression_stream_process(&stream, Int32(COMPRESSION_STREAM_FINALIZE.rawValue))
                 let produced = destinationSize - stream.dst_size
                 if produced > 0 {
-                    output.append(destination, count: produced)
-                    if output.count > limit { return .failure(.tooBig) }
+                    total += produced
+                    if total > limit { return .tooBig }
+                    if let problem = sink(UnsafeBufferPointer(start: destination, count: produced)) { return problem }
                 }
                 switch status {
-                case COMPRESSION_STATUS_END: return .success(output)
-                case COMPRESSION_STATUS_OK: if produced == 0 && stream.src_size == 0 { return .failure(.corrupt) }
-                default: return .failure(.corrupt)
+                case COMPRESSION_STATUS_END: return nil
+                case COMPRESSION_STATUS_OK: if produced == 0 && stream.src_size == 0 { return .corrupt }
+                default: return .corrupt
                 }
             }
+        }
+    }
+
+    // MARK: - A repository's tarball, read for one folder
+
+    /// A repository's tarball may inflate to this much and hold this many entries while it is read for one skill
+    /// folder: only that folder's files count toward maxInflated and maxEntries and are checked for links and odd paths
+    /// (nothing else is ever written).
+    static let maxStream = 1_024 * 1_048_576
+    static let maxListed = 200_000
+
+    /// One entry of a tar as the scan sees it: its name as written (the top folder still on), its type and size.
+    struct Listed: Equatable {
+        let name: String
+        let type: UInt8
+        let size: Int
+    }
+
+    /// Reads a gzip'd tar entry by entry without holding it whole: `visit` sees each entry (after its pax or GNU long
+    /// name) and says whether its body is wanted; a wanted body then reaches `body`. Bodies not wanted are skipped as
+    /// they stream. Nil when the whole archive was read.
+    static func scan(_ gzip: Data, limit: Int = maxStream, visit: @escaping (Listed) -> Bool,
+                     body: @escaping (Listed, Data) -> ArisArchiveProblem?) -> ArisArchiveProblem? {
+        let input: [UInt8]
+        switch deflated(gzip) {
+        case .failure(let problem): return problem
+        case .success(let bytes): input = bytes
+        }
+        var reader = TarReader(visit: visit, body: body)
+        let problem = inflate(input, limit: limit) { reader.feed($0) }
+        return problem ?? reader.problem ?? (reader.ended ? nil : reader.leftover)
+    }
+
+    /// The tar state machine behind `scan`: a header, then its body kept, read as a name, or skipped.
+    private struct TarReader {
+        let visit: (Listed) -> Bool
+        let body: (Listed, Data) -> ArisArchiveProblem?
+        var pending = [UInt8]()
+        var start = 0
+        var current: (entry: Listed, keep: Bool, meta: UInt8?)?
+        var remaining = 0
+        var padding = 0
+        var collected = Data()
+        var longName: String?
+        var count = 0
+        var ended = false
+        var problem: ArisArchiveProblem?
+
+        /// Bytes left over that aren't a whole archive: a tar that stops mid-entry.
+        var leftover: ArisArchiveProblem? { current != nil || pending.count - start > 0 && pending[start...].contains(where: { $0 != 0 }) ? .corrupt : nil }
+
+        init(visit: @escaping (Listed) -> Bool, body: @escaping (Listed, Data) -> ArisArchiveProblem?) {
+            self.visit = visit
+            self.body = body
+        }
+
+        mutating func feed(_ chunk: UnsafeBufferPointer<UInt8>) -> ArisArchiveProblem? {
+            guard !ended else { return nil }
+            pending.append(contentsOf: chunk)
+            while problem == nil, !ended {
+                if current != nil {
+                    guard step() else { break }
+                } else {
+                    guard pending.count - start >= 512 else { break }
+                    header(Array(pending[start..<(start + 512)]))
+                    start += 512
+                }
+            }
+            if start > 1_048_576 || start == pending.count {
+                pending.removeFirst(start)
+                start = 0
+            }
+            return problem
+        }
+
+        /// One header: the entry it starts (or the end of the archive).
+        mutating func header(_ header: [UInt8]) {
+            if header.allSatisfy({ $0 == 0 }) { ended = true; return }
+            count += 1
+            guard count <= ArisSkillArchive.maxListed else { problem = .tooMany; return }
+            guard let size = ArisSkillArchive.octal(header[124..<136]), size >= 0 else { problem = .corrupt; return }
+            let type = header[156]
+            let name = longName ?? ArisSkillArchive.fullName(header)
+            let entry = Listed(name: name, type: type, size: size)
+            remaining = size
+            padding = (size + 511) / 512 * 512 - size
+            collected = Data()
+            switch type {
+            case UInt8(ascii: "x"), UInt8(ascii: "L"):
+                // A long name for the next entry: kept, at most a megabyte.
+                guard size <= 1_048_576 else { problem = .corrupt; return }
+                current = (entry, true, type)
+            case UInt8(ascii: "g"):
+                longName = nil
+                current = (entry, false, nil)
+            default:
+                longName = nil
+                current = (entry, visit(entry), nil)
+            }
+        }
+
+        /// The body under way: consumed as far as the bytes go; true when it is done (the next header can be read).
+        mutating func step() -> Bool {
+            guard let (entry, keep, meta) = current else { return true }
+            let available = pending.count - start
+            if remaining > 0 {
+                let take = min(remaining, available)
+                if keep { collected.append(contentsOf: pending[start..<(start + take)]) }
+                start += take
+                remaining -= take
+                if remaining > 0 { return false }
+            }
+            let skip = min(padding, pending.count - start)
+            start += skip
+            padding -= skip
+            if padding > 0 { return false }
+            current = nil
+            switch meta {
+            case UInt8(ascii: "x"): longName = ArisSkillArchive.paxPath(collected)
+            case UInt8(ascii: "L"): longName = String(decoding: collected.prefix { $0 != 0 }, as: UTF8.self)
+            default: if keep, let problem = body(entry, collected) { self.problem = problem }
+            }
+            collected = Data()
+            return true
         }
     }
 

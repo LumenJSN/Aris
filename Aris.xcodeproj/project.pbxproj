@@ -25,6 +25,7 @@
 		4715EA528000D26D83AEB2D6 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AD2BEC461848B35F8D01C59F /* InfoPlist.xcstrings */; };
 		505079CB4BECE872ABE55087 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 10A4470DB3875302CB45FF56 /* KeyboardShortcuts */; };
 		AD46D1456EBB10D70300A32B /* Defaults in Frameworks */ = {isa = PBXBuildFile; productRef = 88C68BC3C6E997F0B447262C /* Defaults */; };
+		DEC7E7D958FF13087F67B2C1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6AC7A84D43F1EF581744809B /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -118,6 +119,7 @@
 				AFFB9F5BBE20FF9E3B9C306C /* BotAvatarsKit in Frameworks */,
 				1AC2CC9899918C6457B7E85F /* WhisperKit in Frameworks */,
 				AD46D1456EBB10D70300A32B /* Defaults in Frameworks */,
+				DEC7E7D958FF13087F67B2C1 /* Sparkle in Frameworks */,
 				994134675F15CF70C8AED352 /* AsyncXPCConnection in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -295,6 +297,7 @@
 				06735419EB0C505A144F53EE /* MacroVisionKit */,
 				F9A10C373A281F58219596EF /* MacroVisionKit */,
 				749142169D8EF79569A70E13 /* MacroVisionKit */,
+				6AC7A84D43F1EF581744809B /* Sparkle */,
 			);
 			productName = Aris;
 			productReference = EF4C8FDCD8A18157457ACA24 /* Aris.app */;
@@ -336,6 +339,7 @@
 				C621348E7DA2DC6182ECAF36 /* XCRemoteSwiftPackageReference "AsyncXPCConnection" */,
 				7D66E656D9364CF08812CBBC /* XCRemoteSwiftPackageReference "MacroVisionKit" */,
 				30593FF575368479D5259228 /* XCLocalSwiftPackageReference "Packages/BotAvatarsKit" */,
+				C37DF11217D4390785BDABCA /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			productRefGroup = 01ADC3944AD64955E68FE72A /* Products */;
 			projectDirPath = "";
@@ -404,7 +408,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 1.3.0;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -412,7 +416,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = ArisXPCHelper;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Lumen. Licensed under the Apache License, Version 2.0.";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.lumenjsn.aris.XPCHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -430,7 +434,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 1.3.0;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -438,7 +442,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = ArisXPCHelper;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Lumen. Licensed under the Apache License, Version 2.0.";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.lumenjsn.aris.XPCHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -588,7 +592,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 1.3.0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Aris/Preview Content\"";
 				DEVELOPMENT_TEAM = "";
@@ -623,7 +627,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.lumenjsn.aris;
 				PRODUCT_MODULE_NAME = Aris;
 				PRODUCT_NAME = Aris;
@@ -658,7 +662,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 1.3.0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Aris/Preview Content\"";
 				DEVELOPMENT_TEAM = "";
@@ -692,7 +696,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.lumenjsn.aris;
 				PRODUCT_MODULE_NAME = Aris;
 				PRODUCT_NAME = Aris;
@@ -801,6 +805,14 @@
 				version = 9.0.9;
 			};
 		};
+		C37DF11217D4390785BDABCA /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.10.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -846,6 +858,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 697F3B288A87AD90423D11FF /* XCRemoteSwiftPackageReference "Defaults" */;
 			productName = Defaults;
+		};
+		6AC7A84D43F1EF581744809B /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C37DF11217D4390785BDABCA /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

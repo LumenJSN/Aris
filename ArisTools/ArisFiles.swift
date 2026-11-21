@@ -59,7 +59,10 @@ enum ArisFiles {
                                         "mp3", "wav", "aiff", "ppt", "pptx", "epub"]
     private static let secretWords: Set = ["token", "tokens", "secret", "secrets", "password", "passwords", "passwd", "passphrase", "passcode", "passcodes",
                                            "credential", "credentials", "apikey", "apikeys", "privatekey", "암호"]
-    private static let secretParts = ["비밀번호", "패스워드", "비번"]
+    private static let secretParts = ["비밀번호", "패스워드"]
+    /// The short word for a password: only where a word of the name starts or ends with it ("비번 모음", "와이파이비번"),
+    /// never inside another word ("준비번호", "예비번호" are numbers, not passwords: audit 10).
+    private static let shortSecretParts = ["비번"]
     /// The words that make a "key" a credential ("api key", "ssh keys"); "answer key" and "key findings" aren't.
     private static let keyQualifiers: Set = ["api", "private", "secret", "ssh", "access", "auth", "signing", "encryption", "pgp", "gpg", "rsa", "account",
                                              "license", "licence", "recovery", "master", "deploy", "aws", "root", "wallet", "seed"]
@@ -104,6 +107,7 @@ enum ArisFiles {
         if rendered.contains(kind) { return false }
         let base = kind.isEmpty ? (path as NSString).lastPathComponent : ((path as NSString).lastPathComponent as NSString).deletingPathExtension
         if secretParts.contains(where: base.contains) { return true }
+        if Self.words(base).contains(where: { word in shortSecretParts.contains { word.hasPrefix($0) || word.hasSuffix($0) } }) { return true }
         let words = words(base)
         if words.contains(where: secretWords.contains) { return true }
         // Glued forms (security review L1): "mypasswords", "wifipassword", "authtoken", "passwordlist"; and "…key(s)" glued

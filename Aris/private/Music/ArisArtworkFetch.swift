@@ -20,7 +20,9 @@ final class ArisArtworkFetch: Sendable {
             URLCache.shared.removeAllCachedResponses()
             Defaults[.didClearLegacyURLCacheV1] = true
         }
-        let configuration = URLSessionConfiguration.default
+        // Public artwork only: the one session with a cache on disk (its own folder), still with no cookies or credentials.
+        let configuration = ArisNoStore.configuration()
+        configuration.requestCachePolicy = .useProtocolCachePolicy
         configuration.urlCache = URLCache(memoryCapacity: 50 * 1024 * 1024, diskCapacity: 100 * 1024 * 1024,
                                           directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
                                               .appendingPathComponent("artwork_cache", isDirectory: true))

@@ -21,8 +21,8 @@ struct ArisWhyRule: Equatable {
 enum ArisWhyRules {
     /// How the gates' reasons begin when a refusal only follows the user's own answer (ArisRefusalWords.afterUsersNo and
     /// .afterChangedCard are these same words).
-    static let afterUsersNo = "the user already said no"
-    static let afterChangedCard = "the user's changed card"
+    static let afterUsersNo = "The owner already said no"
+    static let afterChangedCard = "The owner's changed card"
 
     private struct Known {
         /// Any of these in the gate's reason (lower case) names the rule.
@@ -53,10 +53,10 @@ enum ArisWhyRules {
         Known(marks: ["calendar or reminders driven by keys"],
               korean: ArisWhyRule(why: "캘린더와 미리 알림은 화면을 눌러서가 아니라 Aris의 일정 도구로만 바꾸게 돼 있어요", instead: "일정이나 미리 알림을 말로 다시 부탁해 주세요."),
               english: ArisWhyRule(why: "Calendar and Reminders are changed only with Aris's own event tool", instead: "Ask again for the event or reminder in words.")),
-        Known(marks: [afterUsersNo],
+        Known(marks: [afterUsersNo, "user already said no"],
               korean: ArisWhyRule(why: "그 요청에서 이미 ‘아니요’ 하신 카드가 있어서, 그 뒤로 여쭤봐야 하는 일은 더 하지 않았어요", instead: "다시 말씀해 주시면 새로 여쭤볼게요."),
               english: ArisWhyRule(why: "you had already said no to a card in that request, so nothing more was asked", instead: "Ask again and it asks afresh.")),
-        Known(marks: [afterChangedCard],
+        Known(marks: [afterChangedCard, "user's changed card"],
               korean: ArisWhyRule(why: "카드에서 고쳐 주신 대로 이미 한 일이라 한 번 더 하지 않았어요", instead: nil),
               english: ArisWhyRule(why: "it was already done the way you changed it on the card, so it wasn't run twice", instead: nil)),
         Known(marks: ["hands-free"],
@@ -81,8 +81,9 @@ enum ArisWhyRules {
     /// against (should that line change, the Korean line is quoted instead of an English that may no longer be true).
     private static func hardLine(_ reason: String, korean: Bool) -> ArisWhyRule? {
         if reason == ArisEscalation.moneyReason {
-            return korean ? ArisWhyRule(why: reason, instead: "그 부분은 직접 해 주세요.")
-                : ArisWhyRule(why: "Aris never pays, orders, subscribes or moves money", instead: "That part is yours to do.")
+            return korean ? ArisWhyRule(why: reason, instead: "다시 말씀하시고, 카드가 뜨면 직접 확인해 주세요.")
+                : ArisWhyRule(why: "Aris pays only on your own yes on its card, each time",
+                              instead: "Ask again and answer the card yourself.")
         }
         guard reason == ArisEscalation.mailReason else { return nil }
         if korean { return ArisWhyRule(why: reason, instead: nil) }

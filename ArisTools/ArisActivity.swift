@@ -25,6 +25,9 @@ struct ArisActivityEntry: Codable, Identifiable, Equatable {
     /// The teammate whose job it was (its id, from ARIS_TEAMMATE): its face is found by this even after a rename. Nil
     /// for Aris's own work and for entries from before it was kept.
     var teammate: String?
+    /// The Core 2 call that wrote it (ARIS_CALL_MARK, a mark the helper gives each aris-tools run of a capability call):
+    /// the record's line for that call and this one are one action (ArisRecord.activityRows). Nil otherwise.
+    var call: String? = nil
 }
 
 enum ArisUndo: Codable, Equatable {
@@ -49,6 +52,9 @@ enum ArisUndo: Codable, Equatable {
     /// A to-do put off until tomorrow from the day-end list (ArisDayEndPush) gets the date it had back: `due` in
     /// seconds since 1970, `timed` when that date had a time of day.
     case restoreTodoDue(id: String, due: Double, timed: Bool)
+    /// A window `window left|right|full|center` moved: the app's window that is at `from` now goes back to `to`, the
+    /// exact frame recorded before the move (x, y, width, height; twelfth VM run: the undo guessed "center").
+    case restoreWindow(app: String, from: [Double], to: [Double])
 
     /// What the entry did, in the user's words for picking one to undo ("방금 만든 거", "지운 거"): made, removed, moved, done,
     /// changed (QA BUG-42 retest: "만든 거 되돌려" undid a removal, so the schedule came back).
@@ -56,7 +62,7 @@ enum ArisUndo: Codable, Equatable {
         switch self {
         case .deleteEvent, .removeSchedule, .trashMade, .removeTodo: "made"
         case .restoreSchedule, .restoreFromTrash: "removed"
-        case .moveBack: "moved"
+        case .moveBack, .restoreWindow: "moved"
         case .reopenTodo: "done"
         case .setVolume, .stopTimer, .restoreTodoDue: "changed"
         }
@@ -68,7 +74,7 @@ enum ArisUndo: Codable, Equatable {
         switch self {
         case .moveBack, .restoreFromTrash, .trashMade: .files
         case .deleteEvent, .removeSchedule, .restoreSchedule, .removeTodo, .reopenTodo, .restoreTodoDue: .calendar
-        case .setVolume, .stopTimer: .apps
+        case .setVolume, .stopTimer, .restoreWindow: .apps
         }
     }
 }
@@ -188,11 +194,19 @@ enum ArisActivity {
         id.range(of: #"^[a-z0-9][a-z0-9-]{0,31}$"#, options: .regularExpression) != nil ? id : nil
     }
 
+    /// The environment variable a Core 2 call's aris-tools run carries its mark in (ArisMindExecutor).
+    static let callMarkKey = "ARIS_CALL_MARK"
+
+    /// A call's mark as the log keeps it: a lowercased UUID, nothing else.
+    static func callMark(_ raw: String) -> String? {
+        UUID(uuidString: raw).map { $0.uuidString.lowercased() }
+    }
+
     /// Adds an entry. Best effort: a log that can't be written never stops the action it records.
     static func append(_ entry: ArisActivityEntry, file: URL) {
         let clean = ArisActivityEntry(id: entry.id, date: entry.date, job: oneLine(entry.job, limit: 80), worker: oneLine(entry.worker, limit: 80),
                                       summary: oneLine(entry.summary), undo: entry.undo, undone: entry.undone,
-                                      teammate: entry.teammate.flatMap(teammateId))
+                                      teammate: entry.teammate.flatMap(teammateId), call: entry.call.flatMap(callMark))
         guard var line = try? encoder.encode(clean) else { return }
         line.append(0x0A)
         withLock(file) {
@@ -239,7 +253,7 @@ enum ArisActivity {
             rewrite(all.map { entry in
                 guard entry.id == id else { return entry }
                 return ArisActivityEntry(id: entry.id, date: entry.date, job: entry.job, worker: entry.worker, summary: oneLine(summary),
-                                         undo: undo, undone: entry.undone, teammate: entry.teammate)
+                                         undo: undo, undone: entry.undone, teammate: entry.teammate, call: entry.call)
             }, file: file)
             return true
         }
@@ -284,7 +298,7 @@ enum ArisActivity {
         rewrite(readAll(file).map { entry in
             guard entry.id == id else { return entry }
             return ArisActivityEntry(id: entry.id, date: entry.date, job: entry.job, worker: entry.worker, summary: entry.summary,
-                                     undo: nil, undone: entry.undone, teammate: entry.teammate)
+                                     undo: nil, undone: entry.undone, teammate: entry.teammate, call: entry.call)
         }, file: file)
     }
 
@@ -306,7 +320,7 @@ enum ArisActivity {
     static func needsYes(_ undo: ArisUndo) -> Bool {
         switch undo {
         case .deleteEvent, .restoreSchedule: return true
-        case .moveBack, .restoreFromTrash, .removeSchedule, .trashMade, .removeTodo, .reopenTodo, .setVolume, .stopTimer, .restoreTodoDue: return false
+        case .moveBack, .restoreFromTrash, .removeSchedule, .trashMade, .removeTodo, .reopenTodo, .setVolume, .stopTimer, .restoreTodoDue, .restoreWindow: return false
         }
     }
 
@@ -421,8 +435,9 @@ enum ArisActivity {
     /// Moves without ever replacing what is at `to` (one atomic step, so nothing can appear there in between). To
     /// another disk a move is a copy (moveAcrossDisks).
     static func moveWithoutOverwriting(from: String, to: String) throws {
-        guard renamex_np(from, to, UInt32(RENAME_EXCL)) == 0 else {
-            let failure = errno
+        // On a disk that can't rename exclusively (exFAT, FAT) still never over anything (ArisExclusiveRename).
+        let failure = ArisExclusiveRename.rename(from, to)
+        guard failure == 0 else {
             if failure == EXDEV { return try moveAcrossDisks(from: from, to: to) }
             let name = ((failure == ENOENT ? from : to) as NSString).lastPathComponent
             switch failure {
@@ -444,8 +459,9 @@ enum ArisActivity {
             try? FileManager.default.removeItem(atPath: waiting)
             throw UndoError(message: "couldn't copy it to the other disk: \(error.localizedDescription)")
         }
-        guard renamex_np(waiting, to, UInt32(RENAME_EXCL)) == 0 else {
-            let failure = errno
+        let placed = ArisExclusiveRename.rename(waiting, to)
+        guard placed == 0 else {
+            let failure = placed
             try? FileManager.default.removeItem(atPath: waiting)
             throw UndoError(message: failure == EEXIST ? "\(name) already exists there, so nothing was overwritten" : "couldn't put it in place: \(String(cString: strerror(failure)))")
         }
@@ -467,8 +483,10 @@ enum ArisActivity {
         case .restoreFromTrash(let trash, let original):
             try restore(trash: trash, to: original, home: home, disks: disks, user: user)
         case .deleteEvent(let id):
-            guard let script = ArisActions.deleteEventScript(uid: id) else { throw UndoError(message: "that event's id isn't one Calendar gives") }
-            try runAppleScript(script)
+            // Only a plain id Calendar gives; the app's EventKit removes it (aris-tools' undoLocal, jv-prompts), and
+            // Calendar's own scripting only when Aris may already control Calendar.
+            guard ArisActions.deleteEventScript(uid: id) != nil else { throw UndoError(message: "that event's id isn't one Calendar gives") }
+            try local(undo)
         case .removeSchedule(let id):
             guard let uuid = UUID(uuidString: id) else { throw UndoError(message: "that schedule's id isn't one Aris gives") }
             do { try ArisScheduleStore.remove(id: uuid, file: ArisScheduleStore.file(home: home)) } catch {
@@ -480,7 +498,7 @@ enum ArisActivity {
             }
         case .trashMade(let paths):
             try trashMade(paths, home: home)
-        case .removeTodo, .reopenTodo, .setVolume, .stopTimer, .restoreTodoDue:
+        case .removeTodo, .reopenTodo, .setVolume, .stopTimer, .restoreTodoDue, .restoreWindow:
             try local(undo)
         }
     }
@@ -515,7 +533,8 @@ enum ArisActivity {
         try moveWithoutOverwriting(from: source, to: destination)
     }
 
-    private static func runAppleScript(_ script: String) throws {
+    /// Calendar's own scripting, bounded (the undo's fallback when the app couldn't remove the event).
+    static func runCalendarScript(_ script: String) throws {
         try runBounded("/usr/bin/osascript", ["-e", script], limit: appleScriptLimit, app: "Calendar")
     }
 }

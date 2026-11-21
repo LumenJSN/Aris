@@ -24,8 +24,7 @@ struct ArisDesktopLiveApps: ArisDesktopApps {
     func secondsSinceKeyDown() -> Double { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown) }
 
     /// The input that tells the owner is at the Mac: keys, clicks, scrolls, the pointer moving (mouse or trackpad).
-    static let ownerEvents: [CGEventType] = [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel,
-                                             .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+    static let ownerEvents = ArisNativeOwnerClock.ownerEvents
 
     func secondsSinceOwnerInput(owner: String) -> Double {
         let last = Self.ownerEvents.map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }
@@ -58,6 +57,7 @@ struct ArisDesktopLiveApps: ArisDesktopApps {
 
     func clipboardChanges() -> Int? { NSPasteboard.general.changeCount }
     func clipboardText() -> String? { NSPasteboard.general.string(forType: .string) }
+    func pageAddress(_ target: ArisDesktopTarget) -> String? { ArisBrowserLive.address(of: target.bundle ?? target.name) }
 
     /// The window at `frame`, asked for its AXModified (a document window's unsaved-changes mark).
     func documentEdited(pid: Int32, frame: CGRect) -> Bool? {
@@ -216,29 +216,16 @@ struct ArisDesktopLiveApps: ArisDesktopApps {
 }
 
 struct ArisDesktopLiveWindows: ArisDesktopWindows {
+    /// On screen first (front to back), then the app's minimized, hidden and other-Space windows (ArisDesktopWindowMerge),
+    /// so the engine reads and works those in the background too.
     func windows(of pid: Int32) -> [ArisDesktopWindow] {
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let list = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let ax = ArisDesktopWindowMerge.accessibilityWindows(pid: pid, list: list)
+        let merged = ArisDesktopWindowMerge.merge(list: list, pid: pid, ax: ax)
         // The window server gives titles only with Screen Recording; Accessibility (which the engine has) gives them
         // too, so a window named by its title is found either way (QA BUG-47's follow-up).
-        return ArisWindowTitles.titled(Self.windows(in: list, pid: pid), accessibility: Self.accessibilityTitles(of: pid))
-    }
-
-    /// The app's windows as Accessibility has them: each one's frame (top-left, as the window server's) and title.
-    static func accessibilityTitles(of pid: Int32) -> [(frame: CGRect, title: String)] {
-        guard AXIsProcessTrusted() else { return [] }
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXWindowsAttribute as CFString, &value) == .success,
-              let windows = value as? [AXUIElement] else { return [] }
-        return windows.compactMap { window in
-            var title: CFTypeRef?, position: CFTypeRef?, size: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title) == .success, let text = title as? String,
-                  AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position) == .success,
-                  AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &size) == .success,
-                  let position, let size, CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
-            var origin = CGPoint.zero, dimensions = CGSize.zero
-            guard AXValueGetValue(position as! AXValue, .cgPoint, &origin), AXValueGetValue(size as! AXValue, .cgSize, &dimensions) else { return nil }
-            return (CGRect(origin: origin, size: dimensions), text)
-        }
+        let shown = ArisWindowTitles.titled(merged.filter(\.onScreen), accessibility: ax.compactMap { window in window.title.map { (window.frame, $0) } })
+        return shown + merged.filter { !$0.onScreen }
     }
 
     /// Every on-screen window at any level, front to back.
@@ -293,17 +280,6 @@ struct ArisDesktopLiveWindows: ArisDesktopWindows {
             return ArisRiskPolicy.isAuthPrompt(owner) || bundle.map(ArisRiskPolicy.isAuthPrompt) == true ? owner : nil
         }.first
     }
-
-    /// The list is front to back: this process's normal, visible, real-sized windows in that order.
-    static func windows(in list: [[String: Any]], pid: Int32) -> [ArisDesktopWindow] {
-        list.compactMap { info -> ArisDesktopWindow? in
-            guard info[kCGWindowOwnerPID as String] as? Int32 == pid, info[kCGWindowLayer as String] as? Int == 0,
-                  let number = info[kCGWindowNumber as String] as? Int, (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
-                  let bounds = info[kCGWindowBounds as String] as? [String: Any], let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
-                  frame.width >= 60, frame.height >= 40 else { return nil }
-            return ArisDesktopWindow(id: number, frame: frame, title: info[kCGWindowName as String] as? String)
-        }
-    }
 }
 
 final class ArisDesktopLiveAccess: ArisDesktopAccess {
@@ -314,6 +290,7 @@ final class ArisDesktopLiveAccess: ArisDesktopAccess {
     /// As macOS has it now, not as it was when the agent started (the stale answer of VM bug 1 would keep --ocr and
     /// click-at refused after the user switched aris-agent on, until the agent restarted).
     var screenRecording: Bool { ArisScreenAccess.now }
+    func captureFailed() -> Bool { ArisScreenAccess.afterFailure(tools: ArisAgentRunner.toolsPath, environment: ArisAgentRunner.environment()) == true }
 
     func guide() { open("Privacy_Accessibility") }
     func guideScreen() { open("Privacy_ScreenCapture") }

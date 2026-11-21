@@ -3,20 +3,126 @@
 //  aris-agent
 //
 //  Uninstall's tidy-up outside ~/.config/aris: only what Aris's installers added, matched by what marks it as Aris's.
-//  ~/.claude/settings.json: hooks posting to the notch (http://127.0.0.1:23350/hook) and the status line script in
-//  Aris's folder (install-claude-hooks.py). ~/.codex/hooks.json and ~/.gemini/settings.json: hooks running Aris's
+//  ~/.claude/settings.json: hooks posting to the notch (http://127.0.0.1:23350/hook, install-claude-hooks.py), the
+//  command hooks running aris-claude-hook.sh inside Aris.app (Settings › Claude Code 연결, ClaudeHookSettings), and the
+//  status line script in Aris's folder or inside Aris.app. ~/.codex/hooks.json and ~/.gemini/settings.json: hooks running Aris's
 //  agent-hook.sh (install-agent-hooks.py). ~/.gemini/antigravity-cli/settings.json: the rules install-aris-agent.sh
 //  added (any naming Aris's folder, and its generic ones unless they were already there before Aris; deny rules that
 //  were there before Aris come back). ~/.codex/config.toml: codex_hooks = true goes back to how it was, only when the
 //  installer's oldest backup (config.toml.bak-<time>) shows it wasn't on. Everything else in those files stays. Each
 //  changed file is copied to <name>.aris-uninstall-<stamp> (0600 from the start) first; a file that is a link is left
-//  alone.
+//  alone. The helper's own Keychain items (the API brains' keys and their list's signing key, the MCP servers'
+//  secrets) are deleted by service, never read.
 //
 
 import Foundation
+import Security
 
 enum ArisUninstallCleanup {
     static let hookURL = "http://127.0.0.1:23350/hook"
+    /// The script the app's command hooks run, and its status line script (ClaudeHookSettings.hookScript, statusScript).
+    static let hookScript = "aris-claude-hook.sh"
+    static let statusScript = "aris-claude-statusline.sh"
+    /// Aris's Keychain services: the helper's (ArisAPISecrets.service, .signingService; ArisMCPSecrets.service) and the
+    /// app's (ArisKeychain.service: the ElevenLabs and TypeSafe keys; ArisVoiceIDStore.service: the owner's voice).
+    /// The app deletes its own keys by name as well; by service here nothing of Aris's is left when it can't.
+    static let keychainServices = ["com.lumenjsn.aris.brains", "com.lumenjsn.aris.brains.signing", "com.lumenjsn.aris.mcp",
+                                   "com.lumenjsn.aris.keys", "com.lumenjsn.aris.voiceid"]
+
+    /// What macOS kept for the helper programs under ~/Library (VM run 2026-11-18, D3: left after an uninstall): the
+    /// old loose helper's defaults, and the caches and HTTP storage of aris-agent and aris-tools, under their program
+    /// names and under the ids ArisHelperListing gives them. Never the app's own (com.lumenjsn.aris).
+    static func helperLibraryItems(home: URL) -> [URL] {
+        let library = home.appendingPathComponent("Library", isDirectory: true)
+        let names = ["aris-agent", "aris-tools", "com.lumenjsn.aris.agent", "com.lumenjsn.aris.tools"]
+        return [library.appendingPathComponent("Preferences/aris-agent.plist"), library.appendingPathComponent("Preferences/aris-tools.plist")]
+            + names.map { library.appendingPathComponent("Caches/\($0)") }
+            + names.flatMap { [library.appendingPathComponent("HTTPStorages/\($0)"), library.appendingPathComponent("HTTPStorages/\($0).binarycookies")] }
+    }
+
+    /// What else Aris keeps under ~/Library outside its sandbox (VM run 2026-11-19: left after an uninstall):
+    /// Application Support/Aris (the engine's input ladder, runtimes; its Skills folder stays when `keepSkills`, the
+    /// records being kept), and the caches and HTTP storage of the helper and aris-tools under the app's own id (both
+    /// run from inside the app, so macOS files them under com.lumenjsn.aris). Never the sandbox container.
+    static func appLibraryItems(home: URL, keepSkills: Bool) -> [URL] {
+        let library = home.appendingPathComponent("Library", isDirectory: true)
+        let support = library.appendingPathComponent("Application Support/Aris", isDirectory: true)
+        let inSupport: [URL] = keepSkills
+            ? ArisNoFollow.contents(support).filter { $0 != "Skills" }.sorted().map { support.appendingPathComponent($0) }
+            : [support]
+        return inSupport + [library.appendingPathComponent("Caches/\(appId)"), library.appendingPathComponent("HTTPStorages/\(appId)"),
+                            library.appendingPathComponent("HTTPStorages/\(appId).binarycookies")]
+    }
+
+    /// The app's id: its rows in Privacy & Security and its folders under ~/Library carry it.
+    static let appId = "com.lumenjsn.aris"
+
+    /// The sandbox's scripts folder macOS makes for the app (its container itself is never touched here).
+    static func sandboxScripts(home: URL) -> URL {
+        home.appendingPathComponent("Library/Application Scripts/\(appId)", isDirectory: true)
+    }
+
+    /// Every Privacy & Security service Aris asks for, by tccutil's names.
+    static let permissionServices = ["Microphone", "SpeechRecognition", "Calendar", "Reminders", "AddressBook", "AppleEvents", "Accessibility",
+                                     "ScreenCapture", "ListenEvent", "SystemPolicyAllFiles", "SystemPolicyDesktopFolder",
+                                     "SystemPolicyDocumentsFolder", "SystemPolicyDownloadsFolder"]
+
+    /// Aris's own rows reset service by service (`reset` is tccutil for com.lumenjsn.aris, a recorder in the tests);
+    /// the services whose reset failed.
+    static func resetPermissions(_ reset: (String) -> Bool) -> [String] {
+        permissionServices.filter { !reset($0) }
+    }
+
+    /// `tccutil reset <service> com.lumenjsn.aris`: the product's own uninstall, acting on its own bundle id at the
+    /// user's request. True when tccutil exited 0.
+    static func resetPermission(service: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", service, appId]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        guard (try? ArisChildren.run(process)) != nil else { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }
+
+    /// The last remover: a shell started in a session of its own, so it outlives this helper's bootout. It waits for
+    /// this helper to be gone (at most `waitLimit`), then removes `paths` (each one, never following a link: rm -rf
+    /// takes a link itself). What the uninstall already removed is not there any more; this is only for what was
+    /// written in the helper's last moment.
+    static func sweepAfterExit(_ paths: [URL]) {
+        guard !paths.isEmpty else { return }
+        let script = "a=$1; shift; n=0; while kill -0 \"$a\" 2>/dev/null && [ $n -lt \(Int(waitLimit * 10)) ]; do sleep 0.1; n=$((n+1)); done; " +
+            "sleep 0.5; for f in \"$@\"; do /bin/rm -rf -- \"$f\"; done"
+        var actions: posix_spawn_file_actions_t?
+        posix_spawn_file_actions_init(&actions)
+        defer { posix_spawn_file_actions_destroy(&actions) }
+        for fd: Int32 in 0...2 { posix_spawn_file_actions_addopen(&actions, fd, "/dev/null", fd == 0 ? O_RDONLY : O_WRONLY, 0) }
+        var attributes: posix_spawnattr_t?
+        posix_spawnattr_init(&attributes)
+        defer { posix_spawnattr_destroy(&attributes) }
+        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSID))
+        let words: [String] = ["/bin/sh", "-c", script, "aris-uninstall-sweep", String(getpid())] + paths.map(\.path)
+        let environment: [String] = ["PATH=/usr/bin:/bin"]
+        let argv: [UnsafeMutablePointer<CChar>?] = words.map { strdup($0) } + [nil]
+        let envp: [UnsafeMutablePointer<CChar>?] = environment.map { strdup($0) } + [nil]
+        defer { (argv + envp).forEach { free($0) } }
+        var pid: pid_t = 0
+        _ = ArisChildren.spawn(&pid, "/bin/sh", &actions, &attributes, argv, envp)
+    }
+
+    /// How long the last remover waits for the helper to be gone before it removes anyway.
+    static let waitLimit: TimeInterval = 30
+
+    /// One of Aris's Claude Code hooks: the script's http hook, or the app's command hook.
+    static func isClaudeHook(_ hook: [String: Any]) -> Bool {
+        hook["url"] as? String == hookURL || (hook["command"] as? String)?.contains(hookScript) == true
+    }
+
+    /// Aris's status line: the installer's copy in Aris's folder, or the script inside Aris.app.
+    static func isClaudeStatusLine(_ command: String, arisFolders: [String]) -> Bool {
+        command.contains(statusScript) || (mentions(command, arisFolders) && command.hasSuffix("statusline.sh"))
+    }
 
     struct Result: Equatable, CustomStringConvertible {
         let file: String
@@ -60,12 +166,12 @@ enum ArisUninstallCleanup {
         var out = settings
         var changed = false
         if let hooks = settings["hooks"] as? [String: Any] {
-            let result = pruned(hooks) { ($0["url"] as? String) == hookURL }
+            let result = pruned(hooks, isOurs: isClaudeHook)
             out["hooks"] = result.hooks
             changed = result.changed
         }
         if let line = settings["statusLine"] as? [String: Any], let command = line["command"] as? String,
-           mentions(command, arisFolders), command.hasSuffix("statusline.sh") {
+           isClaudeStatusLine(command, arisFolders: arisFolders) {
             out["statusLine"] = nil
             changed = true
         }
@@ -126,6 +232,29 @@ enum ArisUninstallCleanup {
             out = out.replacingOccurrences(of: #"\n*\[features\]\s*$"#, with: "\n", options: .regularExpression)
         }
         return out == current ? nil : out
+    }
+
+    // MARK: - Keychain
+
+    /// Deletes every generic password under `service`, by service alone: nothing is read (no data, no attributes are
+    /// asked for). True when none is left.
+    static func deleteKeychainItems(service: String) -> Bool {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
+        // One call deletes every match; a few more in case the keychain deletes one at a time.
+        for _ in 0..<64 {
+            switch SecItemDelete(query as CFDictionary) {
+            case errSecSuccess: continue
+            case errSecItemNotFound: return true
+            default: return false
+            }
+        }
+        return false
+    }
+
+    /// The helper's Keychain items, by service (`delete` is the live deletion, a recorder in the tests). One line per
+    /// service that could not be emptied; empty when all went.
+    static func removeKeychain(_ delete: (String) -> Bool) -> [String] {
+        keychainServices.filter { !delete($0) }
     }
 
     // MARK: - On disk

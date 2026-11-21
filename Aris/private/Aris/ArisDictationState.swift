@@ -13,6 +13,8 @@ import Defaults
 import KeyboardShortcuts
 
 extension Defaults.Keys {
+    /// Settings › 받아쓰기 › 받아쓰기 쓰기: dictation as a whole (ArisDictationSwitch). On by default.
+    static let arisDictationOn = Key<Bool>(ArisDictationSwitch.storeKey, default: true)
     /// Polish falls back to a brain (no tools) when Apple's on-device model can't: off unless the user turns it on.
     static let arisDictationBrainPolish = Key<Bool>("arisDictationBrainPolish", default: false)
     /// The user's writing style per app kind (ArisAppKind raw value → ArisWritingStyle raw value); missing: the default.
@@ -45,9 +47,9 @@ final class ArisDictationState: ObservableObject {
     private var context: (before: String, after: String)?
     private var contextRead: Task<Void, Never>?
     /// Its words are being written down and typed: the key and the cap can't end it again. Published for the pill
-    /// (its ring starts here).
+    /// (its spinner starts here).
     @Published var finishing = false
-    /// Started with a click on the dictation pill: its row has ✕ and ↑ (ArisDictationPillCenter).
+    /// Started with a click on the dictation pill: hands-free from the start (ArisDictationPillCenter).
     @Published var fromPill = false
     /// What went wrong, for a moment in the pill (the notch stays quiet for dictation while the pill is on).
     @Published private(set) var pillError: String?

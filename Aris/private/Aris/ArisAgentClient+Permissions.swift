@@ -127,7 +127,7 @@ extension ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(body))
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return data
     }

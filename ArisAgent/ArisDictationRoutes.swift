@@ -53,8 +53,8 @@ enum ArisDictationRoutes {
         }
     }
 
-    static func arguments(model: String, instruction: String) -> [String] {
-        ["-p", "--model", model, "--effort", "low", "--tools", "", "--permission-mode", "dontAsk",
+    static func arguments(model: String, instruction: String, effort: String = "low") -> [String] {
+        ["-p", "--model", model, "--effort", effort, "--tools", "", "--permission-mode", "dontAsk",
          "--setting-sources", "", "--settings", #"{"disableAllHooks":true}"#,
          "--strict-mcp-config", "--mcp-config", #"{"mcpServers":{}}"#,
          "--no-session-persistence", "--output-format", "text", "--system-prompt", instruction]
@@ -68,7 +68,10 @@ enum ArisDictationRoutes {
         DispatchQueue.global(qos: .userInitiated).async {
             let process = ArisExactProcess()
             process.executableURL = claude
-            process.arguments = arguments(model: ArisBrain.claude.model(tier: .quick), instruction: instruction)
+            // The 작은 도우미 choice (ArisModelChoice), else the quick model at low as before.
+            let choices = ArisModelChoiceBox.shared.current
+            process.arguments = arguments(model: ArisThinking.helperModel(.claude, auto: ArisBrain.claude.model(tier: .quick), choices: choices),
+                                          instruction: instruction, effort: ArisThinking.helperEffort(.claude, choices: choices))
             process.environment = ArisAgentRunner.environment()
             let stdin = Pipe(), stdout = Pipe()
             process.standardInput = stdin

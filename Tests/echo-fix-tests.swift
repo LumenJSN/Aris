@@ -193,6 +193,7 @@ private func echoWiringTests() {
     check(team.contains("handedOff = true"), "wiring: a job dispatched in a turn marks the turn as handed off")
     check(behaviour.contains("ArisNotch.endWait(handedOff:") && behaviour.contains("ArisNotch.waitsForHover(handedOff:") && behaviour.contains("handedOff: handedOff)"),
           "wiring: the notch closes once the hand-off line ends")
-    check(controller.contains("ArisNotch.linger(handedOff: handedOff)"), "wiring: the turn ends as the hand-off line ends")
-    check(!settings.contains("\"aris.bargeIn\""), "wiring: the speakers' barge-in switch is gone while there is no echo canceller")
+    check(echoSource("Aris/private/Aris/Routing/ArisController+Funnel.swift").contains("ArisNotch.linger(handedOff: handedOff)"), "wiring: the turn ends as the hand-off line ends")
+    // Option A brought it back only under the echo-cancelled engine's switch (off by default).
+    check(settings.contains("if s.duplexAudio {") && settings.contains("\"aris.bargeIn\""), "wiring: the speakers' barge-in switch shows only with the echo canceller on")
 }

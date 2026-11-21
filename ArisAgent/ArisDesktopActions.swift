@@ -313,7 +313,46 @@ extension ArisDesktopSession {
         if request.verb == .setValue, case .done = check, let envelope, !envelope.success {
             return report(check, envelope: envelope, after: after, how: "the field reads it back, though Peekaboo wasn't sure")
         }
-        return readBack(check, envelope: envelope, after: after, before: before)
+        let result = readBack(check, envelope: envelope, after: after, before: before)
+        // The control's own press changed nothing (no window opened either): once more, the next way (a click posted to
+        // the app), and read back.
+        if request.verb == .click, !result.ok, case .notSeen = check,
+           let recovered = recoverClick(element, envelope: envelope, in: after, before: before, plain: !request.double && !request.right) {
+            return recovered
+        }
+        return result
+    }
+
+    /// A click whose Accessibility press (or row select) went through but changed nothing the window shows (a SwiftUI
+    /// row, a custom control that takes only mouse events: bench bugs 1 and 4): once more as a click posted to the app at
+    /// the control's centre (no pointer moves), then read back again. Only on Aris's own engine, never in a mail, chat or
+    /// call app, never on a control that deletes, sends, pays or quits (a second press there could do it twice). Nil
+    /// when it doesn't apply (the first result stands).
+    func recoverClick(_ element: ArisDesktopElement, envelope: ArisDesktopEnvelope?, in look: ArisDesktopObservation, before: Set<Int>, plain: Bool) -> ArisDesktopResult? {
+        guard plain, engine.usesNative, !target.sending, !element.isSecure, let envelope, envelope.dispatched,
+              let delivery = envelope.data["delivery"] as? String, Self.recoverable(delivery: delivery, label: element.label),
+              let current = ArisDesktopVerify.find(element, in: look) else { return nil }
+        let posted = { run(ArisPeekabooCommands.postedClick(current.id, snapshot: look.peekaboo)) }
+        let second: ArisDesktopEnvelope?
+        if basis.perApp {
+            guard case .success(let sent) = wholeMac(posted) else { return nil }
+            second = sent
+        } else {
+            second = posted()
+        }
+        guard second?.dispatched == true else { return nil }
+        turn.audit(["answer": "the control's own press changed nothing: clicked again with a posted click", "action": "desktop click · \(target.name)", "brain": turn.brainName])
+        guard let after = lookAfter(look.window) else { return readBack(.notSeen("the window is gone"), envelope: second, after: nil, before: before) }
+        return readBack(ArisDesktopVerify.clicked(element, before: look, after: after), envelope: second, after: after, before: before,
+                        how: "its own press changed nothing, so it was clicked again with a click posted to the app")
+    }
+
+    /// The first click was the control's own Accessibility press (or a row's select) and its name isn't a step that
+    /// must never happen twice. Pure.
+    static func recoverable(delivery: String, label: String) -> Bool {
+        // A control with no name could be anything (a bin icon): never pressed twice.
+        guard ["ax-press", "ax-select", "ax-press-parent"].contains(delivery), !label.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        return !ArisRiskPolicy.mentionsRiskyStep(label) && !ArisDesktopGate.mentionsQuit(label)
     }
 
     /// press: keys (several in one step) to the pinned window, against a fresh look of it.

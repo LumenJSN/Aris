@@ -16,6 +16,8 @@ enum ArisNoticeRoute {
     static let helperKey = "helper"
     /// How long a timer's card may wait to be shown: as long as its line could (ArisTimerNews, ten minutes).
     static let timerShowsWithin = TimeInterval(ArisTimerNews.showsWithin.components.seconds)
+    /// Once seen, a finished timer's card goes by itself after a minute (twelfth VM run: it stayed up over nine minutes).
+    static let timerShowsFor: TimeInterval = 60
 
     /// The deadline alert's key: one at a time, as ArisTodoModel keeps one alert at a time.
     static let deadlineKey = "deadline"
@@ -56,10 +58,13 @@ enum ArisNoticeRoute {
     }
 
     /// A job whose answer isn't a job done (it did nothing, only planned, or a step failed: ArisJobVerdict): a problem's
-    /// card, never the green tick, with why and 다시 시도.
-    static func jobNotDone(title: String, shown: String, job: UUID, english: Bool) -> ArisNotice {
-        ArisNotice(kind: .problem, title: ArisJobVerdict.notDoneTitle(title, english: english), body: plain(shown),
-                   actions: [ArisNoticeAction(title: ArisJobVerdict.retryTitle(english: english), primary: true, role: .retryJob(job))])
+    /// card, never the green tick, with why and 다시 시도; `answered`: it said something, which 보기 opens whole (a real
+    /// failure's answer stays readable, never only the failure line).
+    static func jobNotDone(title: String, shown: String, job: UUID, english: Bool, answered: Bool = false) -> ArisNotice {
+        let retry = ArisNoticeAction(title: ArisJobVerdict.retryTitle(english: english), primary: true, role: .retryJob(job))
+        let view = ArisNoticeAction(title: ArisNoticeWords.view(english: english), primary: false, role: .openJob(job))
+        return ArisNotice(kind: .problem, title: ArisJobVerdict.notDoneTitle(title, english: english), body: plain(shown),
+                          actions: answered ? [retry, view] : [retry])
     }
 
     /// A job that didn't finish, with why.
@@ -93,7 +98,7 @@ enum ArisNoticeRoute {
 
     /// A timer, a focus round or a break ran out.
     static func timer(title: String, text: String, at date: Date = Date()) -> ArisNotice {
-        ArisNotice(kind: .reminder, title: title, body: text, posted: date, showsWithin: timerShowsWithin)
+        ArisNotice(kind: .reminder, title: title, body: text, posted: date, showsWithin: timerShowsWithin, showsFor: timerShowsFor)
     }
 
     /// Something else Aris tells unasked (a teammate that couldn't be made).
@@ -151,4 +156,29 @@ enum ArisNoticeRoute {
         let joined = lines.filter { !$0.isEmpty }.joined(separator: " ")
         return joined.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "").replacingOccurrences(of: "`", with: "")
     }
+
+    // MARK: - What it asks the interruption policy
+
+    /// The notice as the interruption policy sees it (ArisInterruption): its kind, how urgent, whether it waits on an
+    /// answer, and whether it has a line to say (`spoken`). A timer and a deadline three hours off are urgent; Aris's
+    /// own word about itself and an update can wait.
+    static func want(_ notice: ArisNotice, spoken: Bool) -> ArisInterruption.Want {
+        switch notice.source {
+        case .claude:
+            return .init(kind: notice.kind == .problem ? .problem : .jobDone, spoken: spoken)
+        case .deadline(let alert):
+            return .init(kind: .deadline, urgency: alert == .hoursBefore ? .high : .normal, spoken: spoken)
+        case .aris:
+            switch notice.kind {
+            case .reminder: return .init(kind: .timer, urgency: .high, spoken: spoken)
+            case .incoming: return .init(kind: .teammateAsks, needsAnswer: true, spoken: spoken)
+            case .done: return .init(kind: .jobDone, spoken: spoken)
+            case .problem: return .init(kind: .problem, spoken: spoken)
+            case .system: return .init(kind: notice.key == updateKey ? .update : .news, urgency: .low, spoken: spoken)
+            }
+        }
+    }
+
+    /// The update's notice key (ArisUpdateWords.key).
+    static let updateKey = "update"
 }

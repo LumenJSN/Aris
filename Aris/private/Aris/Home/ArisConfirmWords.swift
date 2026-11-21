@@ -13,6 +13,11 @@ import Foundation
 
 enum ArisConfirmWords {
     static func cancel(english: Bool = ArisUIWords.english) -> String { ArisUIWords.text("취소", "Cancel", english: english) }
+    /// The no button beside the yes button's special word: 멈추기 beside 계속 (a replay's card after a step that failed:
+    /// fifth VM run, D7), else 취소.
+    static func cancel(_ allow: String?, english: Bool = ArisUIWords.english) -> String {
+        allow == "계속" || allow == "Continue" ? ArisUIWords.text("멈추기", "Stop", english: english) : cancel(english: english)
+    }
     static func noHelp(english: Bool = ArisUIWords.english) -> String { ArisUIWords.text("아니 (N)", "No (N)", english: english) }
     static func yesHelp(english: Bool = ArisUIWords.english) -> String { ArisUIWords.text("응 (Y)", "Yes (Y)", english: english) }
 
@@ -21,8 +26,14 @@ enum ArisConfirmWords {
         switch label {
         case "설치", "Install": return ArisUIWords.text("설치", "Install", english: english)
         case "로그인", "Sign in": return ArisUIWords.text("로그인", "Sign in", english: english)
+        case "계속", "Continue": return ArisUIWords.text("계속", "Continue", english: english)
         default: return sends ? ArisUIWords.text("보내기", "Send", english: english) : ArisUIWords.text("허용", "Allow", english: english)
         }
+    }
+
+    /// Beside the buttons after a click on yes that came during the card's short hold (ArisCardHold): it wasn't taken.
+    static func notYet(english: Bool = ArisUIWords.english) -> String {
+        ArisUIWords.text("아직 안 눌렸어요. 잠시 뒤 다시 눌러 주세요.", "Not taken yet. Press again in a moment.", english: english)
     }
 
     /// Under a long card: the whole text, or the short one again.

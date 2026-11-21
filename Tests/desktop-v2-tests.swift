@@ -985,7 +985,8 @@ private func runDesktopV2SourceTests() {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
     func source(_ path: String) -> String { (try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)) ?? "" }
     let live = source("ArisAgent/ArisDesktopLive.swift")
-    check(live.contains(".leftMouseDown") && live.contains(".scrollWheel") && live.contains(".mouseMoved")
+    let gap = source("ArisAgent/ArisNativeFocusGap.swift")
+    check(gap.contains(".leftMouseDown") && gap.contains(".scrollWheel") && gap.contains(".mouseMoved") && live.contains("static let ownerEvents = ArisNativeOwnerClock.ownerEvents")
           && live.contains("ArisOwnerActivity.secondsSinceOwner(lastEvents: last, ownSpans: ArisOwnInput.shared.recent(for: owner))")
           && live.contains("lock: .shared, pausePolicy: .live"),
           "owner at the Mac (live): clicks, scrolls and the pointer count, Aris's own spans left out; the agent's engine has the lock and the pause")
@@ -998,8 +999,8 @@ private func runDesktopV2SourceTests() {
     check(runner.contains("ArisDesktopLock.shared.release(ArisDesktopRoutes.owner(credential: ended))")
           && runner.contains("ArisSavedSteps.turnRecipe(key: isTask ? nil : learnKey, request: request, notes: savedSteps.all, notDone: actions.notDone,"),
           "desktop lock: a turn's hold ends with the turn; saved steps only from a conversation turn of desktop actions all done")
-    check(main.contains("let owner = ArisDesktopLock.oneOff(\"arrange\")") && main.contains("ArisDesktopLock.shared.holding(owner)") && main.contains("ArisDesktopLock.shared.take(pasteOwner)")
-          && main.contains("ArisDesktopLock.shared.take(insertOwner)") && main.contains("ArisDesktopLock.oneOff(\"shortcut\")")
+    check(main.contains("let owner = ArisDesktopLock.oneOff(\"arrange\")") && main.contains("ArisDesktopLock.shared.holding(owner)") && main.contains("ArisDesktopLock.shared.takeUrgent(pasteOwner)")
+          && main.contains("ArisDesktopLock.shared.takeUrgent(insertOwner)") && main.contains("ArisDesktopLock.oneOff(\"shortcut\")")
           && main.contains("case \"/desktop-hold\":"),
           "desktop lock (outside the engine): window arrangement, the clipboard paste, dictated typing and learned shortcuts take the lock")
     let tools = source("ArisTools/main.swift"), hold = source("ArisTools/ArisDesktopHold.swift"), routes = source("ArisAgent/ArisDesktopRoutes.swift")

@@ -60,8 +60,21 @@ extension ArisAgentClient {
         return ((object["servers"] as? [[String: Any]] ?? []).compactMap(ArisMCPServiceRow.init), object["problem"] as? String)
     }
 
+    /// What the router may send somewhere other than the browser agent (ArisServiceReach): the services that are on
+    /// and Aris's own tools that are set up (`ownTools`, e.g. canvas). Nil when the agent didn't answer within `timeout`.
+    static func reachableServices(timeout: TimeInterval) async -> ArisServiceReach? {
+        guard case .success(let object) = await sendMCP(["op": "list"], timeout: timeout) else { return nil }
+        let rows = (object["servers"] as? [[String: Any]] ?? []).compactMap(ArisMCPServiceRow.init).map {
+            ArisServiceReach.ConnectedRow(name: $0.name, enabled: $0.enabled, composio: $0.composio, tools: $0.tools?.map(\.name))
+        }
+        let own = object["ownTools"] as? [String] ?? []
+        return ArisServiceReach.make(canvasSetUp: own.contains("canvas"), connected: rows)
+    }
+
     /// Nil when saved, else what to tell the user.
     static func saveMCPService(id: String?, name: String, target: String, secretName: String?, secret: String?) async -> String? {
+        // The router's list of reachable services is asked again at the next turn (a service saved seconds before it counts).
+        defer { ArisReachableServices.shared.forget() }
         var body: [String: Any] = ["op": "save", "name": name, "target": target]
         if let id { body["id"] = id }
         if let secretName, !secretName.isEmpty { body["secretName"] = secretName }
@@ -71,15 +84,24 @@ extension ArisAgentClient {
 
     /// The Composio key (nil removes Composio). Nil when done, else what to tell the user.
     static func setComposioKey(_ key: String?) async -> String? {
-        await sendMCP(key.map { ["op": "composio", "key": $0] } ?? ["op": "composio"]).problem
+        defer { ArisReachableServices.shared.forget() }
+        return await sendMCP(key.map { ["op": "composio", "key": $0] } ?? ["op": "composio"]).problem
     }
 
-    static func removeMCPService(_ id: String) async -> String? { await sendMCP(["op": "remove", "id": id]).problem }
+    static func removeMCPService(_ id: String) async -> String? {
+        defer { ArisReachableServices.shared.forget() }
+        return await sendMCP(["op": "remove", "id": id]).problem
+    }
 
-    static func enableMCPService(_ id: String, _ on: Bool) async -> String? { await sendMCP(["op": "enable", "id": id, "on": on]).problem }
+    static func enableMCPService(_ id: String, _ on: Bool) async -> String? {
+        defer { ArisReachableServices.shared.forget() }
+        return await sendMCP(["op": "enable", "id": id, "on": on]).problem
+    }
 
     /// 연결 테스트: (worked, the line to show).
     static func testMCPService(_ id: String) async -> (ok: Bool, message: String) {
+        // A test lists the service's tools afresh: the router's names for it may change.
+        defer { ArisReachableServices.shared.forget() }
         switch await sendMCP(["op": "test", "id": id], timeout: 45) {
         case .success(let object): return (object["ok"] as? Bool ?? false, object["message"] as? String ?? "")
         case .failure(let problem): return (false, problem.text)
@@ -95,8 +117,8 @@ extension ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(body))
-        // URLSession.shared: its sockets live in this process, which is what ArisPeer's socket check reads.
-        guard let (data, response) = try? await URLSession.shared.data(for: request), let status = (response as? HTTPURLResponse)?.statusCode else {
+        // ArisNoStore.session: its sockets live in this process, which is what ArisPeer's socket check reads.
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request), let status = (response as? HTTPURLResponse)?.statusCode else {
             return .failure(MCPProblem(text: "Aris 에이전트가 답하지 않아요."))
         }
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]

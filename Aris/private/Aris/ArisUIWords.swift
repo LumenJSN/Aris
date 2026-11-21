@@ -28,7 +28,14 @@ enum ArisUIWords {
 
     /// An agent status ("날씨 보는 중") in the UI's language; an unknown one as it came.
     static func status(_ korean: String, english: Bool = ArisUIWords.english) -> String {
-        guard english else { return korean }
+        // Computer use's line about the app it is in can come in English ("Looking at TextEdit…"): in the Korean UI
+        // it is said in Korean like the steps beside it (VM run 2026-11-18: "Typing" beside "TextEdit 보는 중…").
+        guard english else {
+            // A counted step keeps its count; an English line the agent wrote (a taught procedure run from English
+            // words: "Doing “메모 쓰기”") is said in Korean like the steps beside it (VM run 2026-11-19).
+            if let step = ArisRoutineProgress.parse(korean) { return ArisRoutineProgress.line(step: step.step, total: step.total, text: status(step.text, english: false)) }
+            return koreanAppLine(korean) ?? koreanStatuses[korean] ?? korean
+        }
         // A counted step ("메일 보는 중 · 2/3", a routine's): the count stays, the words are said in English like any status.
         if let step = ArisRoutineProgress.parse(korean) { return ArisRoutineProgress.line(step: step.step, total: step.total, text: status(step.text, english: true)) }
         if let known = statuses[korean] { return known }
@@ -65,7 +72,26 @@ enum ArisUIWords {
     /// A status with a name in it (%@): the app computer use works in.
     private static let appPatterns: [(String, String)] = [
         ("^(.+)에서 입력 중…$", "Typing in %@…"), ("^(.+)에서 누르는 중…$", "Working in %@…"), ("^(.+) 보는 중…$", "Looking at %@…"),
+        // A taught procedure's run (ArisTeachCopy.running), whichever language its words were in.
+        ("^‘(.+)’ 하는 중$", "Doing “%@”"),
     ]
+
+    /// The English statuses back to Korean, for a line the agent wrote in English.
+    private static let koreanStatuses: [String: String] = statuses.reduce(into: [:]) { back, pair in
+        if back[pair.value] == nil { back[pair.value] = pair.key }
+    }
+
+    /// An English app line (ArisDesktopCopy.working) in Korean; nil for anything else.
+    private static func koreanAppLine(_ line: String) -> String? {
+        for (korean, english) in appPatterns {
+            let pattern = "^" + NSRegularExpression.escapedPattern(for: english).replacingOccurrences(of: "%@", with: "(.+)") + "$"
+            guard let match = try? NSRegularExpression(pattern: pattern).firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+                  let name = Range(match.range(at: 1), in: line) else { continue }
+            let template = korean.dropFirst().dropLast().replacingOccurrences(of: "(.+)", with: "%@")
+            return template.replacingOccurrences(of: "%@", with: String(line[name]))
+        }
+        return nil
+    }
 
     private static let statuses: [String: String] = [
         "생각 중": "Thinking", "시킨 일이 맞는지 확인 중": "Checking it's what you asked", "날씨 보는 중": "Checking the weather", "기억하는 중": "Remembering", "잊는 중": "Forgetting",
@@ -90,6 +116,7 @@ enum ArisUIWords {
         "Notion 보는 중": "Looking at Notion", "화면 다루는 중": "Working on the screen", "도구 쓰는 중": "Using a tool",
         "할 일 추가 중": "Adding a to-do", "할 일 끝내는 중": "Ticking off a to-do", "할 일 지우는 중": "Removing a to-do",
         "예약 만드는 중": "Scheduling", "예약 취소하는 중": "Cancelling a schedule", "예약 보는 중": "Looking at schedules",
+        "저장된 단계대로 하는 중": "Doing the saved steps",
         // Aside, computer use, a teammate's launch, the relay and the judge (aris-agent's other status lines).
         "Aside가 브라우저에서 하는 중": "Aside is working in the browser", "Aside 로그인 코드를 받는 중": "Getting the Aside sign-in code",
         "컴퓨터 사용 도구 설치 중…": "Installing the computer-use tool…",

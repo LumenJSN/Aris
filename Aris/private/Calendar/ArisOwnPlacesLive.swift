@@ -40,7 +40,7 @@ enum ArisOwnPlacesLive {
     /// The body's `ownPlaces`, read off the main thread.
     static func current() async -> [String: Any] {
         let events = await Task.detached(priority: .userInitiated) { () -> (Bool, [String]) in
-            guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return (false, []) }
+            guard ArisEventGrants.shared.allowed(.events) else { return (false, []) }
             let store = store()
             let own = store.calendars(for: .event).filter(ArisOwnPlace.isOwn).map(\.title)
             return (store.defaultCalendarForNewEvents.map(ArisOwnPlace.isOwn) ?? false, own)

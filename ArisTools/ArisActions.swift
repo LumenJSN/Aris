@@ -192,11 +192,40 @@ enum ArisActions {
         """
     }
 
+    /// Reminders' bundle id: its own scripting is `remind`'s fallback only, used when Aris may already control it.
+    static let remindersBundle = "com.apple.reminders"
+
+    /// Whether the app's to-do answer says only that Reminders isn't allowed (ArisTodoRouteHandler's line).
+    static func isRemindersNoAccess(_ message: String?) -> Bool {
+        message?.hasPrefix("Reminders access hasn't been allowed for Aris") == true
+    }
+
+    /// `remind`'s request to the app (POST /aris/todos): the same body ArisActionGrant.remindBody makes of its words,
+    /// so the agent's grant for the command is the one the app's route takes.
+    static func remindRequest(text: String, at: String?) -> [String: Any] {
+        var body: [String: Any] = ["op": "add", "text": text]
+        if let at { body["due"] = at }
+        return body
+    }
+
     static func reminderScript(text: String, due: DateComponents?) -> String {
         guard let due else {
             return "tell application \"Reminders\" to make new reminder with properties {name:\(quoted(text))}"
         }
         return dateLines(due) + "\ntell application \"Reminders\" to make new reminder with properties {name:\(quoted(text)), remind me date:d}"
+    }
+
+    /// Whether Calendar may add events to the calendar named: "true" or "false" (a subscribed or shared read-only
+    /// calendar, birthdays and holidays are not writable).
+    static func calendarWritableScript(_ name: String) -> String {
+        "tell application \"Calendar\" to get writable of calendar \(quoted(name))"
+    }
+
+    /// `use-calendar`'s refusal of a calendar no event can be added to; nil when it may be used.
+    static func readOnlyCalendarRefusal(_ name: String, writable: String) -> String? {
+        writable.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "false"
+            ? "\(name) is read-only (a subscribed, shared or holiday calendar), so new events can't go there; nothing was changed. Ask for another calendar."
+            : nil
     }
 
     static func eventScript(title: String, start: DateComponents, minutes: Int, calendar: String?) -> String {

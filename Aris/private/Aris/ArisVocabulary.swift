@@ -3,8 +3,10 @@
 //  Aris
 //
 //  The user's own words (people, courses, apps, names) in ~/.config/aris/aris/vocabulary.txt, one a
-//  line, # for comments. Apple's recognizer is told to expect them, so "노션" isn't heard as "노선".
-//  (Whisper takes a prompt only with its language fixed in advance, which would lose Korean and English mixed.)
+//  line, # for comments. The recognizers are told to expect them, so "노션" isn't heard as "노선". A line with an
+//  arrow is a heard → meant pair ("로션 -> 노션", ArisHeardPairs): its written form is a word too, and the pair is put
+//  right in what was heard. (Whisper takes a prompt only with its language fixed in advance, which would lose Korean
+//  and English mixed.)
 //
 
 import Foundation
@@ -16,13 +18,17 @@ enum ArisVocabulary {
     static let wordLimit = 40
 
     /// The words in the file: trimmed, no comments or blanks, each once, too-long lines skipped.
-    static func words(from text: String?) -> [String] {
-        var seen = Set<String>()
-        let words = (text ?? "").split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && !$0.hasPrefix("#") && $0.count <= wordLimit }
-            .filter { seen.insert($0.lowercased()).inserted }
-        return Array(words.prefix(limit))
+    static func words(from text: String?) -> [String] { ArisHeardPairs.entries(from: text).words }
+
+    /// The owner's heard → meant pairs in the file.
+    static func loadPairs() -> [ArisHeardPair] {
+        ArisHeardPairs.entries(from: try? String(contentsOfFile: path, encoding: .utf8)).pairs
+    }
+
+    /// What a new word list starts with: how to write it, as comments.
+    static func fileStart(english: Bool) -> String {
+        english ? "# One entry per line. Example: Notion\n# For something Aris keeps mishearing: lotion -> Notion\n"
+                : "# 한 줄에 하나씩 적어요. 예: Notion\n# 자꾸 잘못 들리는 말은 이렇게 적어요: 로션 -> 노션\n"
     }
 
     /// Names everyone says to an assistant, expected even when the file leaves them out.

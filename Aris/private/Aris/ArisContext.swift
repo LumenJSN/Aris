@@ -33,6 +33,13 @@ enum ArisContext {
         let reply: String
     }
 
+    /// How the user asked this turn, first in its context: the brain's spoken style holds for a turn heard by voice
+    /// (ArisAgentPrompt.spokenRule); a typed one is read on screen. Nil for a job's context (no turn of his).
+    enum Asked: Equatable {
+        case byVoice, typed
+        var line: String { self == .byVoice ? "asked: by voice" : "asked: typed" }
+    }
+
     /// Turns kept for follow-up questions.
     static let recentTurns = 3
 
@@ -45,8 +52,10 @@ enum ArisContext {
     /// the agent's cut of a long context keeps them.
     static func make(now: Date, timeZone: TimeZone, frontApp: String?, music: Music?,
                      events: [Event], recent: [Turn], tasks: [String] = [], shelfFiles: Int = 0, userName: String? = nil,
-                     programs: String? = nil, claudeSessions: [String] = []) -> String {
-        var lines = ["now: \(format(now, "EEEE, yyyy-MM-dd HH:mm", timeZone)) (\(timeZone.identifier))"]
+                     programs: String? = nil, claudeSessions: [String] = [], asked: Asked? = nil, home: String? = nil) -> String {
+        var lines = asked.map { [$0.line] } ?? []
+        lines.append("now: \(format(now, "EEEE, yyyy-MM-dd HH:mm", timeZone)) (\(timeZone.identifier))")
+        if let home, let line = homeLine(home) { lines.append(line) }
         if let name = ArisUserName.contextLine(userName) { lines.append(name) }
         if let frontApp { lines.append("front app: \(frontApp)") }
         if let programs { lines.append(programs) }
@@ -63,9 +72,27 @@ enum ArisContext {
         if !tasks.isEmpty {
             lines.append("background tasks:")
             lines += tasks.map { "- " + plain($0) }
+            lines.append(taskStatesRule)
         }
         return lines.joined(separator: "\n")
     }
+
+    /// This Mac's home folder, so a model never makes one up (twelfth VM run, D1: `trash /Users/aris/Documents` on a Mac
+    /// whose home is /Users/admin). Nil for anything that isn't an absolute path.
+    static func homeLine(_ home: String) -> String? {
+        guard home.hasPrefix("/"), !home.contains("\n") else { return nil }
+        return "home folder: \(home) (~ is this; every path of the user's is under it, never another /Users/<name>)"
+    }
+
+    /// The real home folder of the user running Aris (not the app's sandbox container).
+    static var realHome: String {
+        getpwuid(getuid()).flatMap { String(validatingCString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
+    }
+
+    /// Under the tasks: their states are Aris's own record (twelfth VM run, A4: "쿠팡 생수: 이미 결제 직전에서 멈춰 있어요" for
+    /// a job that never ran).
+    static let taskStatesRule = "(these states are Aris's own record of each task: when you speak of one, say only the state written here, "
+        + "never one it doesn't show, such as a cart filled or a payment step reached; a done task's words are its own report)"
 
     /// The history with `turn` added, keeping only the last few.
     static func remembering(_ turn: Turn, after history: [Turn]) -> [Turn] {

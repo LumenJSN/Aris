@@ -4,7 +4,8 @@
 //
 //  The day-end summary (ArisDayEnd) in the notch, the way the morning brief shows (ArisController+Brief): on "오늘
 //  정리해 줘" its one sentence is the turn's answer, with the folded 목록 row under it, and when the user asked by voice the
-//  sentence is said (through the same voice path as every answer); typed, or opened from the evening chip, nothing is
+//  sentence is said (through the same voice path as every answer); with the day in review on, four or five sentences
+//  take its place (ArisDayEndRecap), and "뭐 남았어" gets what is left; typed, or opened from the evening chip, nothing is
 //  said and it holds for a few seconds. The history keeps one fixed line, never the titles on the list. 보기 on a
 //  waiting row brings that 확인 대기 card back.
 //
@@ -23,18 +24,21 @@ extension ArisController {
         ArisDayEndModel.shared.watch()
     }
 
-    /// Asked for in a turn: the sentence and its list, in the language of the request. Returns what the history
-    /// keeps; nil when the turn was stopped meanwhile.
-    func showDayEnd(heard: String, korean: Bool) async -> String? {
+    /// Asked for in a turn: the sentence and its list, in the UI's language whatever the request's was (third VM run:
+    /// an English Mac asked in Korean showed 목록 / 할 일 / 내일로 넘기기 beside English chips, and a Korean Mac asked in
+    /// English showed "List"). The user's own titles stay as they wrote them. Returns what the history keeps; nil when the turn
+    /// was stopped meanwhile.
+    func showDayEnd(heard: String) async -> String? {
         let model = ArisDayEndModel.shared
-        let made = await model.compose(english: !korean)
+        let english = ArisUIWords.english
+        let made = await model.compose(english: english)
         guard !Task.isCancelled else { return nil }
-        model.show(made)
-        let sentence = made.summary.sentence
+        let sentence = Self.dayEndLine(made, heard: heard)
+        model.show(made, line: sentence)
         stats?.firstSound(at: .now)
-        session = session.answering(sentence)
+        setSession(session.answering(sentence))
         // Remembered before the voice starts, so 닫기 or a row's button mid-sentence loses nothing.
-        let remembered = ArisDayEndCopy.remembered(english: !korean)
+        let remembered = ArisDayEndCopy.remembered(english: english)
         recordTurn(heard: heard, reply: remembered)
         if turnTyped {
             try? await Task.sleep(for: Self.dayEndHold)
@@ -49,7 +53,7 @@ extension ArisController {
         let model = ArisDayEndModel.shared
         guard session.phase == .idle, training == nil, !model.opening else { return }
         model.opening = true
-        turn = Task {
+        startTurn(.dayEnd) {
             let english = ArisUILanguage.english
             let made = await model.compose(english: english)
             // A turn of the user's began while the facts were read: the chip stays for later.
@@ -57,13 +61,25 @@ extension ArisController {
                 model.opening = false
                 return
             }
-            model.show(made)
+            let line = Self.dayEndLine(made, heard: "")
+            model.show(made, line: line)
             remember(ArisHistoryEntry(date: Date(), heard: ArisDayEndCopy.title(english: english), reply: ArisDayEndCopy.remembered(english: english)))
-            session = ArisSession.announcing(ArisDayEndCopy.title(english: english), made.summary.sentence)
+            setSession(ArisSession.announcing(ArisDayEndCopy.title(english: english), line))
             try? await Task.sleep(for: Self.dayEndHold)
             guard !Task.isCancelled, model.shown(for: session) != nil else { return }
-            session = session.done()
+            setSession(session.done())
         }
+    }
+
+    /// What stands above the list and is said: with the day in review on (ArisRecapSwitch) its four or five sentences,
+    /// about the whole day or, for "뭐 남았어", what is left (ArisDayEndRecap); else the card's one sentence.
+    static func dayEndLine(_ made: ArisDayEndModel.Made, heard: String) -> String {
+        guard ArisRecapSwitch.isOn() else {
+            let card = made.summary
+            return ArisDayEndCopy.answer(card.counts, unread: card.activityUnread, english: card.english, phrase: ArisIntent.phrase(of: heard))
+        }
+        let focus = ArisRecapAsk.focus(ArisIntent.phrase(of: heard))
+        return ArisDayEndRecap.spoken(made.summary, made.facts, focus: focus, now: made.at)
     }
 
     /// 보기 on a waiting row. The summary's own hold (or its voice) ends first, so the question can come up at once;

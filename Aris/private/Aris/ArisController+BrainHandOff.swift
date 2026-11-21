@@ -76,7 +76,7 @@ extension ArisController {
         let who: String? = fellBack.isEmpty ? name : nil
         let reply = ([ArisHandoffLine.line([who], korean: korean)] + notes).joined(separator: " ")
         stats?.firstSound(at: .now)
-        session = session.answering(reply)
+        setSession(session.answering(reply))
         recordTurn(heard: words, reply: reply, job: created.first)
         await speak { await self.speaker.speak(reply) }
         return reply

@@ -116,7 +116,8 @@ enum ArisAutoHandOff {
             let input = ArisAutoCheck.input(ownerTurns: owner, action: subject, code: ArisAutoCheck.code())
             let run = ArisAutoAsk.wait(checker, input: input, showTag: { auto.showChecking() })
             // The words that will run are the ones checked (this function's own `words`): the ticket binds them anyway.
-            let settled = ArisAutoMode.after(run, ticket: ticket, argvNow: words, book: auto.book)
+            let settled = ArisAutoMode.after(run, ticket: ticket, argvNow: words, book: auto.book,
+                                             plainlyAsked: ArisPlainAsk.addsPointedItems(request: owner.last ?? "", tool: subject.tool, verb: subject.verb))
             note(settled.ledger, Date().timeIntervalSince(began))
             switch settled.outcome {
             case .run: return .run(Date())

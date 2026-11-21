@@ -10,11 +10,14 @@
 //  housing, ArisNotchHeaderLayout). "닫기" puts the answer away and closes the notch.
 //
 
+import Defaults
 import SwiftUI
 
 struct ArisNotchHeader: View {
     @EnvironmentObject private var vm: ArisNotchModel
     @ObservedObject private var coordinator = ArisNotchNavigation.shared
+    /// Settings › 노치 › 노치에 설정 아이콘.
+    @Default(.settingsIconInNotch) private var settingsIcon
     @ObservedObject private var aris = ArisController.shared
     @ObservedObject private var claude = ClaudeStore.shared
     /// Re-draws this view when the hidden look changes (ArisDuskLookGate).
@@ -22,6 +25,8 @@ struct ArisNotchHeader: View {
 
     /// The voice switch drawn as if the pointer were on the mark (the off-screen render only).
     var previewSwitch = false
+    /// The pointer is on the </> (its tip says who needs the user and why).
+    @State private var claudeHovered = false
 
     static let height: CGFloat = 37
 
@@ -117,7 +122,7 @@ struct ArisNotchHeader: View {
     /// Shelf, Claude and settings in the room right of the camera housing, on the band's grid: the last slot ends
     /// where Stop does, 14 points from the body's edge (a 23-point slot's 11-point glyph is 6 further in).
     private var placeMetrics: ArisNotchHeaderLayout.Places {
-        ArisNotchHeaderLayout.places(count: ArisNotchHeaderLayout.placeCount, headerWidth: width + 2 * ArisGlass.inset, housing: vm.closedNotchSize.width + 8,
+        ArisNotchHeaderLayout.places(count: ArisNotchHeaderLayout.placeCount(settingsIcon: settingsIcon), headerWidth: width + 2 * ArisGlass.inset, housing: vm.closedNotchSize.width + 8,
                                      textInset: ArisVNotch.slotTrailing + (ArisNotchHeaderLayout.slot - ArisNotchHeaderLayout.glyph) / 2)
     }
 
@@ -125,17 +130,37 @@ struct ArisNotchHeader: View {
         HStack(spacing: metrics.spacing) {
             // The slots end `metrics.trailing` from the body's edge; the band's face adds its own 14.
             place(.shelf, symbol: "tray.full", help: ArisShelfWords.name(), size: metrics.slot)
-            place(.claude, symbol: "chevron.left.forwardslash.chevron.right", help: ArisUIWords.text("코딩 세션", "Coding sessions"), size: metrics.slot,
-                  badge: !claude.approvals.isEmpty)
-            Button { ArisStepAside.showSettings() } label: {
-                Image(systemName: "gearshape").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.4))
-                    .frame(width: metrics.slot, height: metrics.slot).contentShape(Circle())
+            // The dot is a card waiting in the notch; hovering says whose and why (ClaudeAttention), in the notch's own tip.
+            place(.claude, symbol: "chevron.left.forwardslash.chevron.right", help: ClaudeAttention.help(claude.attention, english: ArisUIWords.english),
+                  size: metrics.slot, badge: !claude.approvals.isEmpty)
+                .onHover { claudeHovered = $0 }
+                .overlay(alignment: .bottomTrailing) { attentionTip }
+            if settingsIcon {
+                Button { ArisStepAside.showSettings() } label: {
+                    Image(systemName: "gearshape").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.4))
+                        .frame(width: metrics.slot, height: metrics.slot).contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(ArisUIWords.text("설정", "Settings"))
             }
-            .buttonStyle(.plain)
-            .help(ArisUIWords.text("설정", "Settings"))
         }
         .fixedSize()
         .padding(.trailing, metrics.trailing - ArisVNotch.slotTrailing)
+    }
+
+    /// One line per session that needs the user, under the </> while the pointer is on it.
+    private var attentionTip: some View {
+        let lines = claude.attention.map { ClaudeAttention.line($0, english: ArisUIWords.english) }
+        let shown = claudeHovered && !lines.isEmpty
+        return ArisHoverTip(text: lines.joined(separator: "\n"))
+            .scaleEffect(shown ? 1 : 0.98, anchor: .topTrailing)
+            .opacity(shown ? 1 : 0)
+            .animation(ArisHoverTip.motion, value: shown)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            // Its top edge 6 under the icon: a frame of no height on the icon's bottom edge.
+            .frame(height: 0, alignment: .top)
+            .offset(y: 6)
     }
 
     private func place(_ view: NotchViews, symbol: String, help: String, size: CGFloat, badge: Bool = false) -> some View {

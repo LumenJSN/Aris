@@ -27,7 +27,7 @@ enum ArisRouter {
     /// Where Aris looks for apps to open.
     static let appFolders = ["/Applications", "/Applications/Utilities", "/System/Applications",
                              "/System/Applications/Utilities", UserHome.path + "/Applications"]
-    private static let endpoint = URL(string: "https://api.typesafe.ai/v1/systemone")!
+    static let endpoint = URL(string: "https://api.typesafe.ai/v1/systemone")!
 
     enum Action: String, CaseIterable {
         case playMusic = "play_music", pauseMusic = "pause_music", nextTrack = "next_track", previousTrack = "previous_track"
@@ -207,7 +207,7 @@ enum ArisRouter {
     // MARK: - Network
 
     static func ask(_ text: String, apps: [String], key: String) async throws -> Answers {
-        let (data, response) = try await URLSession.shared.data(for: request(text: text, apps: apps, key: key))
+        let (data, response) = try await ArisNoStore.session.data(for: request(text: text, apps: apps, key: key))
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         // What the answer says about the key, for the settings' status line (ArisRouterKeyHealth).
         ArisRouterKeyHealth.note(status: status == 0 ? nil : status)

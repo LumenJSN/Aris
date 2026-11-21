@@ -246,11 +246,12 @@ struct ArisBrainPage: View {
     private func check(pressed: Bool = false) async {
         checking = true
         let before = setup.ready, started = ContinuousClock.now
+        if pressed { await guide.retryBrainKey() }
         let answered = await setup.refresh()
         if pressed {
             let left = Rows.checkingShown - (ContinuousClock.now - started)
             if left > .zero { try? await Task.sleep(for: left) }
-            guide.brainChecked = Rows.checked(answered: answered, before: before, after: setup.ready)
+            guide.brainChecked = Rows.checked(answered: answered, before: before, after: setup.ready).withKeyTrouble(guide.brainKeyTrouble != nil)
         }
         checking = false
     }

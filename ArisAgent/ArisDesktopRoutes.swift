@@ -102,6 +102,15 @@ enum ArisDesktopRoutes {
                 return refuse("not from the brain's own process")
             }
             let turn = ArisRunnerMCPTurn(runner: runner, handsFree: now.handsFree, screen: now.screen, credential: credential)
+            // The owner's yes on the gate's card (a stand-in for this call's first card), or the gate's own decision that
+            // this call runs without one (the app's yes for this call: ArisMindPasses.Kind.judgedRun).
+            let pass = ArisMindPasses.desktop(object, turn: credential, key: ArisMindPassKey.desktopKey(words: words, text: text))
+            turn.standIn = pass.standIn
+            // A judgedRun pass of this conversation is checked live by the desktop gate each time it would use it: no
+            // content came in since its decision, and no other call that can bring some is under way (judgedRunFresh).
+            if let judged = pass.judged, let session = judged.session, session == ArisMindRoute.session(runner), let call = judged.call, let seen = judged.seen {
+                turn.judgedCheck = { ArisMindJudge.shared.judgedRunFresh(session: session, call: call, seen: seen) }
+            }
             let send = { (outcome: ArisMCPOutcome) in reply("200 OK", ArisMCPRoutes.json(["status": Int(outcome.status), "output": outcome.output])) }
             // `desktop wait <id>`: a call that outlasted one shell command (ArisSlowCalls).
             if words.first == "wait" {
@@ -138,7 +147,11 @@ extension ArisDesktopRoutes {
         // The agent's own one-off work (a learned shortcut's replay, a window arrangement) that holds the whole Mac now.
         if let held = object["held"] as? String {
             guard held.count <= 80, lock.holdsForOwnWork(held) else { return refuse("not the agent's own held work") }
-            return reply("200 OK", ArisMCPRoutes.json(["status": 0, "output": "held"]))
+            guard object["gap"] as? Bool == true else { return reply("200 OK", ArisMCPRoutes.json(["status": 0, "output": "held"])) }
+            return DispatchQueue.global(qos: .userInitiated).async {
+                let why = gapRefusal(owner: held, job: false)
+                reply("200 OK", ArisMCPRoutes.json(["status": why == nil ? 0 : 1, "output": why ?? "held"]))
+            }
         }
         guard let credential = object["turn"] as? String, let runner = ArisAgentRunner.runner(forMCPTurn: credential) else { return refuse("no turn credential") }
         let remotePort = ArisTeammateDesk.remotePort(of: connection)
@@ -155,8 +168,10 @@ extension ArisDesktopRoutes {
             let started = Date()
             switch lock.acquire(ArisDesktopLock.Owner(id: turn.desktopOwner, live: { turn.live }), waiting: { turn.quiet(ArisDesktopLockWords.waitingLine(english: english)) }) {
             case .acquired:
+                // `gap`: the command raises or opens windows: only in a moment with no input from the user (ArisNativeFocusGap).
+                let why = object["gap"] as? Bool == true ? gapRefusal(owner: turn.desktopOwner, job: turn.isTask) : nil
                 lock.done(turn.desktopOwner)
-                reply("200 OK", ArisMCPRoutes.json(["status": 0, "output": "held"]))
+                reply("200 OK", ArisMCPRoutes.json(["status": why == nil ? 0 : 1, "output": why ?? "held"]))
             case .refused(let why):
                 reply("200 OK", ArisMCPRoutes.json(["status": 1, "output": ArisDesktopLockWords.refusal(why, waited: Date().timeIntervalSince(started))]))
             }

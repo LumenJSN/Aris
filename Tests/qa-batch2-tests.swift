@@ -157,17 +157,19 @@ private func qaTodoCountTests() {
 // MARK: - BUG-9: settings words and Aris's own version
 
 private func qaSettingsWordsTests() {
-    let rows = ArisSettingsBuilder.sections(.ai, ArisSettingsSnapshot()).flatMap(\.rows)
-    let teamBrain = rows.first { $0.id == "ai.teamBrain" }?.desc ?? ""
-    check(!teamBrain.isEmpty && !teamBrain.contains("Codex만"), "BUG-9a: a teammate may use any brain: \(teamBrain)")
+    // Option A: no 팀원의 두뇌 link row; the brain is one of the team's own fields, named on its row.
+    let rows = ArisSettingsBuilder.sections(.team, ArisSettingsSnapshot()).flatMap(\.rows)
+    let teamBrain = rows.first { $0.id == "team.detail" }?.desc ?? ""
+    check(teamBrain.contains("두뇌") && !teamBrain.contains("Codex만"), "BUG-9a: a teammate may use any brain: \(teamBrain)")
     let project = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Aris.xcodeproj/project.pbxproj")
     let text = (try? String(contentsOf: project, encoding: .utf8)) ?? ""
     let marketing = text.components(separatedBy: "\n").filter { $0.contains("MARKETING_VERSION") }
     let build = text.components(separatedBy: "\n").filter { $0.contains("CURRENT_PROJECT_VERSION") }
-    check(!marketing.isEmpty && marketing.allSatisfy { $0.contains("MARKETING_VERSION = 0.1.0;") }
-          && !build.isEmpty && build.allSatisfy { $0.contains("CURRENT_PROJECT_VERSION = 1;") } && !text.contains("2.8-beta"),
-          "BUG-9b: every target is Aris 0.1.0 (1), never Boring Notch's 2.8-beta.0 (272)")
+    // (rel12 item 8: the public 1.3 release; make-release.sh stamps CFBundleVersion with the version too.)
+    check(!marketing.isEmpty && marketing.allSatisfy { $0.contains("MARKETING_VERSION = 1.3.0;") }
+          && !build.isEmpty && build.allSatisfy { $0.contains("CURRENT_PROJECT_VERSION = 1.3.0;") } && !text.contains("2.8-beta"),
+          "BUG-9b: every target is Aris 1.3.0 (1.3.0), never Boring Notch's 2.8-beta.0 (272) or 0.1.0")
 }
 
 // MARK: - BUG-32: a 17:00 deadline reads 17:00, never 05:00

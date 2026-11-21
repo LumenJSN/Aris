@@ -35,10 +35,13 @@ enum ArisTodoRouteHandler {
                 draft.hasTime = ArisTodoModel.hasTime(parsed)
             }
             if let name = request.list, !name.isEmpty {
-                guard let list = reminders.lists.first(where: { $0.name.lowercased() == name.lowercased() }) else {
-                    return ArisTodoRoute.response(ok: false, message: "no Reminders list named \"\(name)\"")
+                // Access that was only just given has a new store: its lists are read before the name is looked up.
+                if reminders.lists.isEmpty { await reminders.reload() }
+                switch ArisTodoListName.match(name, lists: reminders.lists.map { ($0.id, $0.name) }) {
+                case .list(let id): draft.listID = id
+                case .defaultList: break
+                case .none(let message): return ArisTodoRoute.response(ok: false, message: message)
                 }
-                draft.listID = list.id
             }
             if let note = request.note { draft.notes = note }
             guard let item = await reminders.add(draft) else { return ArisTodoRoute.response(ok: false, message: "couldn't save it") }

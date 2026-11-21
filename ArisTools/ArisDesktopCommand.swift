@@ -36,6 +36,7 @@ func desktopCall(_ args: [String], text: String?) {
     }
     var body: [String: Any] = ["turn": turn, "words": args]
     if let text { body["text"] = text }
+    body = mindPassed(body, environment: ProcessInfo.processInfo.environment)
     guard let token = ClaudeHookToken.load(), let url = URL(string: "http://127.0.0.1:23351/desktop-tool") else { fail("Aris's agent isn't set up (no token)") }
     // A card waits up to ten minutes for a background job, a minute in a conversation; an install downloads first.
     let wait: TimeInterval = 780
@@ -44,7 +45,7 @@ func desktopCall(_ args: [String], text: String?) {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
     request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-    let configuration = URLSessionConfiguration.ephemeral
+    let configuration = ArisNoStore.configuration()
     configuration.timeoutIntervalForRequest = wait
     configuration.timeoutIntervalForResource = wait
     let done = DispatchSemaphore(value: 0)

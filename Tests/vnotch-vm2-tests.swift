@@ -198,7 +198,7 @@ private func vm2ReturnTests() {
           "vm2 B12: the new turn has the edited words as its request from its first frame, so the card shows them at once")
     check(E.draft(nil, typed: "") == nil, "vm2 B12: and the editor, closed by Return, is not reopened empty over it")
     let typed = vm2Source("Aris/private/Aris/ArisController+Typed.swift"), view = vm2Source("Aris/private/Aris/Home/ArisTurnView.swift")
-    check(typed.contains("session = ArisSession().listening().hearing(text).thinking()")
+    check(typed.contains("setSession(ArisSession().listening().hearing(text).thinking(), from: opened)")
           && view.contains("if !session.heard.isEmpty { return (ArisPendingFiles.shown(session.heard), false) }")
           && view.contains("endEdit()\n        guard case .send(let words, let stopsFirst) = sent else { return }"),
           "vm2 B12: wiring: the typed path sets the request in one step, the card reads it from the turn, and the editor closes before the words are sent")

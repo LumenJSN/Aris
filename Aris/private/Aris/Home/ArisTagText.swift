@@ -70,6 +70,24 @@ enum ArisTagProgress {
         return (words, ArisTagCount(step: step, of: total))
     }
 
+    /// A settled tag's words: a taught procedure's running line ("Doing “메모 쓰기”", "‘메모 쓰기’ 하는 중":
+    /// ArisTeachCopy.running, ArisUIWords.status) says it is finished or didn't finish, never "Doing … ✓" or
+    /// "Doing … !" (eighth VM run, item 6). Any other status stays as it is.
+    static func settled(_ words: String, failed: Bool) -> String {
+        // The wait for macOS's own permission dialog (ArisPermissionNotice.waitingStep) is over once it is settled: it
+        // says that it was asked, never "Waiting for Reminders access ✓" (ninth VM run, item 6). What he answered there
+        // is not this tag's to say: the answer under it does.
+        for (pattern, done, missed) in [(#"^Doing “(.+)”$"#, "Finished “%@”", "“%@” didn't finish"), (#"^‘(.+)’ 하는 중$"#, "‘%@’ 했어요", "‘%@’ 못 끝냈어요"),
+                                        (#"^Waiting for (.+) access$"#, "Asked for %@ access", "Didn't get %@ access"),
+                                        (#"^(.+) 허용 기다리는 중$"#, "%@ 허용 물어봤어요", "%@ 허용을 못 받았어요")] {
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: words, range: NSRange(words.startIndex..., in: words)),
+                  let name = Range(match.range(at: 1), in: words) else { continue }
+            return (failed ? missed : done).replacingOccurrences(of: "%@", with: String(words[name]))
+        }
+        return words
+    }
+
     /// A long conversion's own note of its minutes ("… (3분째)", "… (3 min)") is dropped where the tag shows its clock.
     static func withoutMinutes(_ words: String) -> String {
         guard let note = words.range(of: #"\s*\(\d+(분째| min)\)$"#, options: .regularExpression) else { return words }

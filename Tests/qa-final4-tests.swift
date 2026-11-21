@@ -173,8 +173,8 @@ private func qaFinal4HandOutTests() {
     check(!ArisHandoff.isHandoff("큐에이 예약 테스트 예약 지워 놔") && ArisHandoff.isHandoff("논문 세 편 비교해서 정리해 놔") && ArisHandoff.isHandoff("서버 메모리 누수 조사해 놔")
           && ArisHandoff.isHandoff("VS Code 설정 파일 정리해 놔"),
           "BUG-60: “…해 놔” never hands Aris's own data out, and still hands other work out")
-    let controller = final4Source("Aris/private/Aris/ArisController.swift")
-    check(controller.contains("browserWork = routed.browserWork && brain != .antigravity && !ArisOwnData.mentions(unmarked)"),
+    let controller = final4Source("Aris/private/Aris/Routing/ArisTurnRequest.swift")
+    check(controller.contains("browserWork = routed.browserWork && heard.brain != .antigravity && !ArisOwnData.mentions(heard.unmarked)"),
           "BUG-60: the router's “website work” never takes Aris's own data to Aside (the path the live bug took)")
     let team = final4Source("Aris/private/Aris/ArisController+Team.swift")
     check(team.contains("if ArisHandOutPlan.keepsInTurn(specs, turn: turn)") && !team.contains("unverifiedClaim"),
@@ -216,7 +216,7 @@ private func qaFinal4CardLedgerTests() {
           "BUG-60: the app tells the ledger only about a card it handles itself, never one the agent made")
     // Both are asked by the held-question runner now (audit card-1, card-2: ArisController+CardPark).
     let park = final4Source("Aris/private/Aris/ArisController+CardPark.swift")
-    check(park.contains("self.askCard(ask, handsFree: handsFree, agentCard: true, quiet: quietNow)"),
+    check(park.contains("self.askCard(ask, handsFree: handsFree, agentCard: true, quiet: quietNow, job: job == nil ? nil : title)"),
           "BUG-60: a job's parked card and an inbox card are the agent's: one line, where the agent takes the answer")
     let now = Date(timeIntervalSince1970: 1_800_000_000)
     var ledger = ArisCardLedger()

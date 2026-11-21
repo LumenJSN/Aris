@@ -183,7 +183,7 @@ private func fix6FrontWiringTests() {
     check(app.contains("ArisAgentClient.look(front: ArisUserApp.pick(front: NSWorkspace.shared.frontmostApplication?.processIdentifier")
           && app.contains("previous: ArisPanelKeys.focus.previous") && client.contains("identified(front.map { [\"front\": Int($0)] } ?? [:])"),
           "vm2 1: wiring: the app tells the helper which app he was in")
-    check(fix6Code("ArisTools/ArisScreen.swift").contains("ArisScreenTarget.window(requested:") && fix6Code("ArisTools/ArisWindows.swift").contains("guard ArisFrontNow.keysGo(focused: ArisFrontLive.focusedPid(), target: target.processIdentifier) else {"),
+    check(fix6Code("ArisTools/ArisScreen.swift").contains("ArisScreenTarget.window(requested:") && fix6Code("ArisTools/ArisWindows.swift").contains("let sent = engineKeys([written], times: times, bundle: bundle)"),
           "vm2 1: wiring: the tool reads only the window named, and each key checks the app in front at that moment")
     let build = (try? String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("build-agent.sh"), encoding: .utf8)) ?? ""
     check(build.contains("\"$SRC/ArisAgent/ArisFrontNow.swift\" \"$SRC/ArisAgent/ArisFrontLive.swift\""), "vm2 1: aris-tools is built with the same source of the app in front")
@@ -202,14 +202,14 @@ private func fix6KeyChoiceTests() {
 
     typealias W = ArisAPIFailureWords
     let korean = W.line(.key, title: "Groq", english: false)
-    check(korean == "Groq API 키가 맞지 않아요. 설정 › AI 서비스 › 두뇌에서 키를 다시 넣어 주세요." && W.english(korean) == W.line(.key, title: "Groq", english: true),
+    check(korean == "Groq API 키가 맞지 않아요. 설정 › Aris와 말하기 › AI · 모델에서 키를 다시 넣어 주세요." && W.english(korean) == W.line(.key, title: "Groq", english: true),
           "vm2 2: the refused-key line has its English, the service named as it was")
     check(W.Kind.allCases.allSatisfy { kind in
         let english = W.english(W.line(kind, title: "My server (LAN)", english: false)) ?? ""
         return english == W.line(kind, title: "My server (LAN)", english: true) && !english.unicodeScalars.contains { (0xAC00...0xD7A3).contains($0.value) }
     } && W.english("Groq: rate limit") == nil,
           "vm2 2: every API failure line reads back in English with no Hangul left; any other line is not taken for one")
-    check(ArisBrainFailure.english(korean, brain: .api) == "Groq didn't accept its API key. Enter the key again in Settings › AI services › Thinking.",
+    check(ArisBrainFailure.english(korean, brain: .api) == "Groq didn't accept its API key. Enter the key again in Settings › Talking to Aris › AI · Model.",
           "vm2 2: an English request's failure line is English (it was “Groq API 키가 맞지 않아요…” on an English Mac)")
     let driver = fix6Code("ArisAgent/ArisAPIDriver.swift")
     check(driver.contains("return .failure(ArisAPIFailureWords.line(.key, title: title, english: false))")

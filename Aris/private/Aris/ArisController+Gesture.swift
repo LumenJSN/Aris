@@ -312,7 +312,7 @@ extension ArisController {
 
     /// The shots go with this turn's ask (replacing the screenshot); their thumbnails show as the prompt's chips.
     func attachGesture(_ gesture: ArisGestureTurn) {
-        ArisTurnCapture.shared.attachGesture(gesture.images)
+        ArisTurnCapture.shared.attachGesture(gesture.images, regions: gesture.regions)
         shotThumbs = gesture.thumbs.compactMapValues { NSImage(data: $0) }
         let hooks = ArisGestureHooks.shared
         hooks.thumbsExpiry?.cancel()

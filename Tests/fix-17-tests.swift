@@ -90,8 +90,8 @@ private func fix17SidebarWatchTests() {
           "fix-17 fade: on macOS 14 the list's laid-out frame does, from its first layout on")
     // With the list's real height the rule fades at the top of a long list and not at its end (fix-16's rule).
     typealias M = ArisSidebarMetrics
-    let list = M.pagesHeight(), box = 480.0
-    check(M.fades(listHeight: list, boxHeight: box, listTop: 0, chosen: M.rowSpan(.aris)) && !M.fades(listHeight: 0, boxHeight: box, listTop: 0, chosen: nil),
+    let list = M.pagesHeight(open: .able), box = 300.0
+    check(M.fades(listHeight: list, boxHeight: box, listTop: 0, chosen: M.rowSpan(.aris, open: .able)) && !M.fades(listHeight: 0, boxHeight: box, listTop: 0, chosen: nil),
           "fix-17 fade: measured, a long list fades at the top; unmeasured (height 0, the thirteenth pass) it never did")
 }
 

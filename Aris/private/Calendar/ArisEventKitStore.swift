@@ -13,7 +13,9 @@ import Foundation
 final class ArisLiveEventStore: ArisEventStore, @unchecked Sendable {
     private let store = EKEventStore()
 
-    static var granted: Bool { EKEventStore.authorizationStatus(for: .event) == .fullAccess }
+    /// Read with this run's yes kept (ArisEventGrants): right after the first "Allow Full Access" the class status can
+    /// still say "not asked yet" (VM run 2026-11-19, A2).
+    static var granted: Bool { ArisEventGrants.shared.allowed(.events) }
 
     private func record(_ event: EKEvent) -> ArisEventRecord {
         ArisEventRecord(id: event.eventIdentifier ?? "", title: event.title ?? "", start: event.startDate, end: event.endDate,
@@ -72,6 +74,20 @@ final class ArisLiveEventStore: ArisEventStore, @unchecked Sendable {
         try store.save(event, span: .thisEvent, commit: true)
     }
 
+    /// Every event calendar's name and whether events can be added to it, in Calendar's order (`aris-tools calendars`
+    /// and `use-calendar`, which asked Calendar by Apple Events before: jv-prompts).
+    func calendarNames() -> [ArisEventRoute.CalendarName] {
+        store.calendars(for: .event).map { ArisEventRoute.CalendarName(title: $0.title, writable: $0.allowsContentModifications) }
+    }
+
+    /// Deletes the event Calendar knows by `uid` (its external id, what an add gives back for the undo), from whichever
+    /// calendar holds it: the undo of `aris-tools event`'s add.
+    func removeByUID(_ uid: String) throws {
+        store.refreshSourcesIfNecessary()
+        guard let item = store.calendarItems(withExternalIdentifier: uid).compactMap({ $0 as? EKEvent }).first else { throw ArisEventKitError.gone }
+        try store.remove(item, span: .thisEvent, commit: true)
+    }
+
     /// A new event in the named calendar (or macOS's default for new events); throws only when it isn't saved.
     func add(title: String, start: Date, end: Date, calendar: String?) throws -> ArisEventRecord {
         let event = EKEvent(eventStore: store)
@@ -110,10 +126,42 @@ enum ArisEventKitError: LocalizedError {
 /// POST /aris/events {op: find|delete|change|add|list, title, start, id?, to?, rename?, minutes?, calendar?, from?}: run in the app.
 enum ArisEventRoute {
     /// The app may use the calendars; nothing is ever asked here (a permission belongs in onboarding or Settings).
+    /// One calendar as `calendars` lists it.
+    struct CalendarName: Equatable {
+        let title: String
+        let writable: Bool
+    }
+
     static func handle(_ object: [String: Any], store: @autoclosure () -> ArisEventStore = ArisLiveEventStore(),
-                       granted: Bool = ArisLiveEventStore.granted, add: ((String, Date, Date, String?) throws -> ArisEventRecord)? = nil) -> Data {
+                       granted: Bool = ArisLiveEventStore.granted, add: ((String, Date, Date, String?) throws -> ArisEventRecord)? = nil,
+                       calendars: (() -> [CalendarName])? = nil, removeByUID: ((String) throws -> Void)? = nil) -> Data {
         guard granted else { return reply(ok: false, line: noAccessLine, noAccess: true) }
         let store = store()
+        let live = store as? ArisLiveEventStore
+        switch object["op"] as? String {
+        case "calendars":
+            // A read: every calendar's name, and which can take new events.
+            let listed = calendars?() ?? live?.calendarNames() ?? []
+            return calendarsReply(listed)
+        case "remove-uid":
+            // The undo of an add: only a plain id Calendar gives (ArisActions.isEventID's shape).
+            guard let uid = object["uid"] as? String, uid.range(of: #"^[A-Za-z0-9._:@\-]{1,200}$"#, options: .regularExpression) != nil else {
+                return reply(ok: false, line: "that event's id isn't one Calendar gives")
+            }
+            do {
+                if let removeByUID {
+                    try removeByUID(uid)
+                } else {
+                    guard let live else { throw ArisEventKitError.gone }
+                    try live.removeByUID(uid)
+                }
+                return reply(ok: true, line: "deleted")
+            } catch {
+                return reply(ok: false, line: error.localizedDescription)
+            }
+        default:
+            break
+        }
         // Never cut: a title or rename longer than the card can honestly show is refused, not shortened.
         let title = object["title"] as? String ?? ""
         guard title.count <= 200, (object["rename"] as? String).map({ $0.count <= 200 }) ?? true else {
@@ -168,6 +216,13 @@ enum ArisEventRoute {
     static let noAccessLine = "The Aris app has no full access to Calendars, so nothing was found or changed. Tell the user exactly this: Aris (the app) " +
         "needs Calendars turned on in System Settings → Privacy & Security → Calendars. " +
         "Never mention aris-tools or any other program."
+
+    /// `calendars`' answer: the names in order, and the ones events can be added to.
+    static func calendarsReply(_ listed: [CalendarName]) -> Data {
+        let body: [String: Any] = ["ok": true, "line": listed.map(\.title).joined(separator: ", "), "names": listed.map(\.title),
+                                   "writable": listed.filter(\.writable).map(\.title)]
+        return (try? JSONSerialization.data(withJSONObject: body)) ?? Data("{}".utf8)
+    }
 
     static func reply(ok: Bool, line: String, noAccess: Bool = false) -> Data {
         (try? JSONSerialization.data(withJSONObject: ["ok": ok, "line": line, "noAccess": noAccess])) ?? Data("{}".utf8)

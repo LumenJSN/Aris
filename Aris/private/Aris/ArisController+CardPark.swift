@@ -28,12 +28,14 @@ enum ArisCardSettled: Equatable {
 
 extension ArisController {
     /// Shows the card for `ask` until it is settled. `title`: the job's or the schedule's name. `streamEnded`: the job's
-    /// stream is over (its question can't be answered any more).
-    func settleCard(_ ask: ArisConfirmation, title: String, job: UUID?, handsFree: Bool, streamEnded: @escaping @MainActor () -> Bool) async -> ArisCardSettled {
+    /// stream is over (its question can't be answered any more). `asked`: when the user asked for the job it belongs to;
+    /// nil when nobody asked (a schedule's): a card for what he asked a short while ago is a reply to them (ArisCardOwner).
+    func settleCard(_ ask: ArisConfirmation, title: String, job: UUID?, asked: Date?, handsFree: Bool, streamEnded: @escaping @MainActor () -> Bool) async -> ArisCardSettled {
         let desk = ArisCardDesk.shared
         defer { desk.remove(ask.id) }
         var shows = 0
         var quiet = false
+        var unreachable = 0
         while true {
             guard !Task.isCancelled else { return .cancelled }
             // Expired, answered, or from an earlier run of the agent: the card never shows.
@@ -42,14 +44,28 @@ extension ArisController {
             case false?:
                 log.notice("a parked question is gone")
                 return .gone
-            case nil: return .unreachable
-            case true?: break
+            case nil:
+                // The agent couldn't be asked: the card waits in 확인 대기 and the agent is asked again, a little later
+                // each time. It was dropped after one failed check.
+                unreachable += 1
+                log.notice("a parked question: the agent didn't answer (\(unreachable, privacy: .public)); asked again later")
+                if !desk.waiting.cards.contains(where: { $0.id == ask.id }) {
+                    desk.park(ArisWaitingCard(id: ask.id, title: title, action: ask.title, job: job, why: .unanswered, since: Date()))
+                }
+                try? await Task.sleep(for: ArisParkedAsk.unreachableWait(tries: unreachable))
+                continue
+            case true?: unreachable = 0
             }
             // Asked at a pause, in its turn among Aris's other news, with the user at the Mac.
             let quietNow = quiet
             let shown: CardWait?? = await announce(present: true) {
                 desk.remove(ask.id)
-                return await self.speakUp(title) { await self.askCard(ask, handsFree: handsFree, agentCard: true, quiet: quietNow) }
+                // Decided as it comes up: a reply to what the user asked a short while ago is read aloud and listens, also at
+                // night; anything else is Aris's own (quiet time keeps it to text). One he opened himself is never read.
+                let reply = !quietNow && ArisCardOwner.isReply(askedAgo: asked.map { Date().timeIntervalSince($0) },
+                                                               conversationOpenFor: self.conversation.isOpen ? Self.uptime - self.conversation.openedAt : nil,
+                                                               screenAway: self.screenAway)
+                return await self.speakUp(title, reply: reply) { await self.askCard(ask, handsFree: handsFree, agentCard: true, quiet: quietNow, job: job == nil ? nil : title) }
             }
             // The job was cancelled while the user was asked: its answer goes nowhere.
             guard let shown, !Task.isCancelled else { return .cancelled }

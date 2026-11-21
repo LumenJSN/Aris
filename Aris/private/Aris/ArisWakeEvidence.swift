@@ -109,10 +109,15 @@ struct ArisWakeEvidence: Equatable {
         return ArisWakeWord.verified(text, nearAllowed: nearAllowed) ? .keep : .close(strictEnd)
     }
 
-    /// Whisper's text names Aris anywhere ("그래서 아리스가…"), not only as a call at its start.
+    /// Whisper's text names Aris anywhere ("그래서 아리스가…"), not only as a call at its start: any spelling of the wake
+    /// name (ArisWakeName), a Latin one as a whole word.
     var whisperNamesAris: Bool {
         guard case .heard(let text) = whisper else { return false }
-        return text.range(of: #"(?i)아리스|아리쓰|\baris\b"#, options: .regularExpression) != nil
+        let alternatives = ArisWakeName.current.spellings.map { spelling in
+            let escaped = NSRegularExpression.escapedPattern(for: spelling)
+            return spelling.unicodeScalars.allSatisfy(\.isASCII) ? #"\b"# + escaped + #"\b"# : escaped
+        }
+        return text.range(of: "(?i)" + alternatives.joined(separator: "|"), options: .regularExpression) != nil
     }
 
     /// What Whisper wrote of the candidate, for the wake log (nil: it didn't come back or couldn't run).

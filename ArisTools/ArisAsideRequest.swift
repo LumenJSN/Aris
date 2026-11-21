@@ -17,5 +17,5 @@ func asideRequest(_ args: [String], environment: [String: String]) -> Result<[St
     guard !brief.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, brief.utf8.count <= 16_384 else {
         return .failure(ArisMCPUsage(text: "usage: aris-tools aside \"<what Aside should do on the websites, and what to report>\""))
     }
-    return .success(["turn": turn, "brief": brief])
+    return .success(mindPassed(["turn": turn, "brief": brief], environment: environment))
 }

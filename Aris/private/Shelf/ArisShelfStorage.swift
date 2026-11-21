@@ -115,9 +115,14 @@ struct ArisShelfArchive {
     }
 }
 
-/// Aris's own files for things dropped without one: one uuid folder each under the temporary directory.
+/// Aris's own files for things dropped without one: one uuid folder each under Application Support's
+/// Aris/Shelf/Files (they were in the temporary directory, and a reboot lost the shelf's pictures).
 struct ArisShelfTempFiles {
-    var root = FileManager.default.temporaryDirectory
+    var root = ArisShelfTempFiles.standardRoot
+
+    static var standardRoot: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Aris/Shelf/Files", isDirectory: true)
+    }
 
     private static let scratchLock = NSLock()
     nonisolated(unsafe) private static var scratch: Set<URL> = []

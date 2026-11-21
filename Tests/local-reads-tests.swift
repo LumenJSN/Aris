@@ -286,12 +286,12 @@ private func localStoreErrorTests(_ root: String) {
     chmod(locked, 0)
     do { _ = try ArisLocalDatabase(path: locked); check(false, "store: an unreadable database throws") }
     catch { check(error as? ArisLocalStoreError == .noDiskAccess, "store: a refused open reads as no Full Disk Access") }
-    let refusedProbe = ArisLocalReadPolicy.hasDiskAccess(probe: locked)
+    let refusedProbe = ArisLocalReadPolicy.hasDiskAccess(probe: locked, filesProtected: true)
     chmod(locked, 0o600)
     let line = ArisLocalStore.line(ArisLocalStoreError.noDiskAccess, app: "메시지")
     check(line.contains("전체 디스크 접근") && line.contains("Aris를 켜거나") && !line.contains("aris-agent") && !line.contains("~/.config") && line.unicodeScalars.contains { (0xAC00...0xD7A3).contains($0.value) },
           "store: missing Full Disk Access is one Korean line saying how to grant it to Aris (one row)")
-    check(!refusedProbe && ArisLocalReadPolicy.hasDiskAccess(probe: root + "/chat.db"),
+    check(!refusedProbe && ArisLocalReadPolicy.hasDiskAccess(probe: root + "/chat.db", filesProtected: true),
           "store: the agent's probe only opens a file (refused → no access)")
 }
 

@@ -106,10 +106,18 @@ enum ArisSealedTools {
         }
     }
 
-    /// `session list` or `session send <session> <text…>`, within the limits (the agent reads them again: ArisSessionCall).
+    /// `session list`, `session send <session> <text…>` and the fleet's verbs (status, interrupt, answer, start, stop:
+    /// ArisFleetCalls), within the limits (the agent reads them again: ArisSessionCall). Each one's own card and checks are
+    /// the agent's.
     static func sessionForm(_ rest: [String]) -> Bool {
-        guard rest.count <= 400, rest.joined(separator: " ").count <= 4_096 else { return false }
-        return rest == ["list"] || (rest.first == "send" && rest.count >= 3)
+        guard rest.count <= 400, rest.joined(separator: " ").count <= 4_096, let verb = rest.first else { return false }
+        switch verb {
+        case "list": return rest.count == 1
+        case "send", "start": return rest.count >= 3
+        case "status", "interrupt", "stop": return rest.count >= 2
+        case "answer": return rest.count >= 3 && ["allow", "deny"].contains(rest.last!)
+        default: return false
+        }
     }
 
     /// `skill list`, `skill read <name> [file]` or `skill run <name> scripts/<file> [arguments…]`: the agent reads only

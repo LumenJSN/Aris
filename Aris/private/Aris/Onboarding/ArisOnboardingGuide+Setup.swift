@@ -18,15 +18,20 @@ import SwiftUI
 extension ArisOnboardingGuide {
     func openSetup(page wanted: ArisSetupPage, handingOff: Bool) {
         let actions = ArisOnboardingSystem.live
-        makePlan(actions)
+        let cards = ArisSetupCards.live()
+        makePlan(actions, cards: cards)
         let page = plan.opening(at: wanted)
         watchBrains()
-        let model = ArisOnboardingModel(actions: actions, page: page)
+        let model = ArisOnboardingModel(actions: actions, page: page, cards: cards)
         model.onGranted = { [weak self] card in
             // The check grows from +50 ms; its sound on contact.
             self?.audio?.cue(.check, at: Self.now() + 0.05, align: .hit)
             // Back in front: at once after macOS's own prompt, once the drag panel has shown its check after System Settings.
-            self?.after(card.way == .settings ? 1.2 : 0) { $0.comeForward(after: .granted) }
+            self?.after(card.way == .settings ? 1.2 : 0) { guide in
+                guide.comeForward(after: .granted)
+                // The window the setup opened for Accessibility goes as the setup moves on (third VM run: it stayed).
+                if card.steps.contains(.accessibility), !card.steps.contains(.screen) { guide.putAwaySettings() }
+            }
             // Screen Recording just turned on: macOS's second question comes now, once the setup is in front again.
             self?.takeFirstCaptureSoon(after: card.way == .settings ? 1.6 : 0.4)
         }
@@ -71,9 +76,11 @@ extension ArisOnboardingGuide {
     private func save(_ page: ArisSetupPage) { UserDefaults.standard.set(page.rawValue, forKey: ArisOnboarding.pageKey) }
 
     /// The pages this person will see, decided as the window opens: the rail's steps are these (ArisSetupPlan).
-    private func makePlan(_ actions: ArisOnboardingModel.Actions) {
-        let cardsOn = ArisPermissionCard.allCases.allSatisfy { card in card.steps.allSatisfy { actions.grant($0) == .granted } }
-        plan = ArisSetupPlan.make(permissionsSettled: cardsOn && actions.captureAllowed() && ArisPrerequisites.current().isEmpty,
+    private func makePlan(_ actions: ArisOnboardingModel.Actions, cards: [ArisPermissionCard]) {
+        let cardsOn = cards.allSatisfy { card in card.steps.allSatisfy { actions.grant($0) == .granted } }
+        // macOS's yes for the direct capture matters only when the screen card is shown.
+        let captureSettled = !cards.contains(.screen) || actions.captureAllowed()
+        plan = ArisSetupPlan.make(permissionsSettled: cardsOn && captureSettled && ArisPrerequisites.current().isEmpty,
                                   readyAIs: ArisSetupPlan.readyCount(ArisBrainSetup.shared.ready))
     }
 
@@ -164,6 +171,7 @@ extension ArisOnboardingGuide {
         case .brain: return ArisOnboardingCopy.brainNarration
         case .wake: return ArisOnboardingCopy.wakeNarration
         case .dictation: return ArisOnboardingCopy.dictateNarration
+        case .done: return ArisOnboardingCopy.doneTitle
         }
     }
 
@@ -222,7 +230,7 @@ extension ArisOnboardingGuide {
         openSetup(page: page, handingOff: false)
     }
 
-    /// 마치기: the window leaves quickly (ArisOnboardingStage.windowOut) and the guide lets go of the notch; then the
+    /// 시작하기 on the last page (준비 끝): the window leaves quickly (ArisOnboardingStage.windowOut) and the guide lets go of the notch; then the
     /// real notch opens with three things to try and the left side notch shows itself once (the owner's pick 5-A,
     /// ArisFirstTries), on the resolve's sound; the bed fades under it and the guide is over.
     func finish() {

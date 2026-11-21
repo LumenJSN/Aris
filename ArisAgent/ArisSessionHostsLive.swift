@@ -24,6 +24,8 @@ final class ArisSessionReach {
     var look: () -> ArisSessionStop? = { .screenNotIdle }
     var type: (String) -> ArisSessionStop? = { _ in .typingFailed }
     var submit: () -> ArisSessionStop? = { .typingFailed }
+    /// Escape, as the key itself (Claude Code stops what it is doing): `fleet.interrupt`.
+    var escape: () -> ArisSessionStop? = { .typingFailed }
     var finish: () -> Void = {}
 
     init(host: ArisSessionHost, tty: String, pid: Int32) {
@@ -116,6 +118,7 @@ enum ArisSessionHostsLive {
             return nil
         }
         reach.submit = { proven() && run(["send-keys", "-t", pane, "Enter"]) != nil ? nil : .focusMoved }
+        reach.escape = { proven() && run(["send-keys", "-t", pane, "Escape"]) != nil ? nil : .focusMoved }
         return .success(reach)
     }
 
@@ -141,6 +144,7 @@ enum ArisSessionHostsLive {
         reach.type = { text in run(["-X", "stuff", text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "^", with: "\\^")]) != nil ? nil : .typingFailed }
         // The carriage return itself (screen took "^M" in an argument as those two characters: VM, 2026-11-16).
         reach.submit = { run(["-X", "stuff", "\r"]) != nil ? nil : .typingFailed }
+        reach.escape = { run(["-X", "stuff", "\u{1B}"]) != nil ? nil : .typingFailed }
         return .success(reach)
     }
 
@@ -179,6 +183,7 @@ enum ArisSessionHostsLive {
         reach.look = { proven() ? lookAt(run(["get-text", "--pane-id", pane])) : .focusMoved }
         reach.type = { text in proven() && run(["send-text", "--pane-id", pane, "--", text]) != nil ? nil : .typingFailed }
         reach.submit = { run(["send-text", "--pane-id", pane, "--no-paste", "\r"]) != nil ? nil : .typingFailed }
+        reach.escape = { run(["send-text", "--pane-id", pane, "--no-paste", "\u{1B}"]) != nil ? nil : .typingFailed }
         return .success(reach)
     }
 
@@ -209,6 +214,7 @@ enum ArisSessionHostsLive {
         reach.look = { proven() ? lookAt(run(["get-text", "--match", match])) : .focusMoved }
         reach.type = { text in proven() && run(["send-text", "--match", match, "--bracketed-paste=auto", "--", text]) != nil ? nil : .typingFailed }
         reach.submit = { run(["send-key", "--match", match, "enter"]) != nil ? nil : .typingFailed }
+        reach.escape = { run(["send-key", "--match", match, "escape"]) != nil ? nil : .typingFailed }
         return .success(reach)
     }
 
@@ -255,6 +261,10 @@ enum ArisSessionHostsLive {
         // Return as the key itself (a carriage return), into the same session.
         reach.submit = {
             guard proven(), let script = itermScript(id, "write text (ASCII character 13) newline no\nreturn \"ok\"") else { return .focusMoved }
+            return osascript(script) == "ok" ? nil : .typingFailed
+        }
+        reach.escape = {
+            guard proven(), let script = itermScript(id, "write text (ASCII character 27) newline no\nreturn \"ok\"") else { return .focusMoved }
             return osascript(script) == "ok" ? nil : .typingFailed
         }
         return .success(reach)

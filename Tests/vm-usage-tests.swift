@@ -245,16 +245,20 @@ private func unpickedBrainTests() {
     settings.brain = "codex"; check(settings.brainTitle == "Codex", "brain: a chosen brain reads by its name")
 
     // What a failed turn says.
-    check(C.failureLine(codexGone, stored: nil, ready: none) == noAI.line(korean: false),
+    check(C.failureLine(codexGone, stored: nil, ready: none, english: true) == noAI.line(korean: false),
           "brain: an AI the user never picked is not named as missing: the line says no AI is ready (VM bug 7)")
-    check(C.failureLine(codexGoneKorean, stored: nil, ready: none) == noAI.line(korean: true), "brain: in Korean when the line was Korean")
-    check(ArisBrainTrouble.isCannotStart(C.failureLine(codexGone, stored: nil, ready: none)), "brain: the new line still gets the button to Settings › AI 서비스")
-    check(C.failureLine(codexGone, stored: "codex", ready: none) == codexGone, "brain: a brain the user stored is named when it can't start")
-    check(C.failureLine(codexGone, stored: nil, ready: claudeOnly) == codexGone && C.failureLine(codexGone, stored: nil, ready: nil) == codexGone,
+    // Aris's own line, in the UI's language whatever the agent's was (fourth VM run: the request's language before).
+    check(C.failureLine(codexGoneKorean, stored: nil, ready: none, english: false) == noAI.line(korean: true)
+            && C.failureLine(codexGoneKorean, stored: nil, ready: none, english: true) == noAI.line(korean: false),
+          "brain: the no-AI line is in the UI's language, not the request's")
+    check(ArisBrainTrouble.isCannotStart(C.failureLine(codexGone, stored: nil, ready: none, english: true)), "brain: the new line still gets the button to Settings › AI 서비스")
+    check(C.failureLine(codexGone, stored: "codex", ready: none, english: true) == codexGone, "brain: a brain the user stored is named when it can't start")
+    check(C.failureLine(codexGone, stored: nil, ready: claudeOnly, english: true) == codexGone && C.failureLine(codexGone, stored: nil, ready: nil, english: true) == codexGone,
           "brain: with another AI set up, or nothing known yet, the line stays as the agent wrote it")
     let noKey = ArisBrainTrouble(brain: .api, missing: .key).line(korean: false)
-    check(C.failureLine(noKey, stored: nil, ready: none) == noAI.line(korean: false), "brain: an API brain nobody picked, with no key, reads the same way")
-    check(C.failureLine("The network is down.", stored: nil, ready: none) == "The network is down." && C.failureLine(noAI.line(korean: true), stored: nil, ready: none) == noAI.line(korean: true),
+    check(C.failureLine(noKey, stored: nil, ready: none, english: true) == noAI.line(korean: false), "brain: an API brain nobody picked, with no key, reads the same way")
+    check(C.failureLine("The network is down.", stored: nil, ready: none, english: false) == "The network is down."
+            && C.failureLine(noAI.line(korean: true), stored: nil, ready: none, english: false) == noAI.line(korean: true),
           "brain: any other failure is passed on untouched")
 
     // The ruling stands: nothing here stores or replaces a brain.

@@ -230,8 +230,11 @@ private func askClaudeTaintTests() {
     check(main.contains("ArisImageRouting.carriesJobResults(context) || ArisImageRouting.carriesSessionText(context)"),
           "taint: the agent flags the turn (untrusted, outside text: the sawOutside path) like a job's result")
     let app = askSource("Aris/private/Aris/ArisController.swift")
-    check(app.contains("ClaudeSessionsContext.carriesText(lines)") && app.contains("outsideConversation = true"),
-          "taint: the app marks the conversation outside text too, so later outbound steps still ask")
+    // jv-fleet: the turn's context carries no session's words at all now (the fleet block); they come only through
+    // `session status`, which marks the turn outside text in the agent (takeOutsideText), and the app hears of it.
+    check(app.contains("private func contextClaudeSessions() -> [String] { contextFleet() }")
+          && askSource("ArisAgent/Fleet/ArisFleetCalls.swift").contains("turn.takeOutsideText()"),
+          "taint: a session's words reach a turn only through fleet status, which marks it outside text")
 }
 
 private func askClaudePromptTests() {
@@ -250,7 +253,8 @@ private func askClaudePromptTests() {
 
 private func askClaudeWiringTests() {
     let app = askSource("Aris/private/Aris/ArisController.swift")
-    check(app.contains("ClaudeSessionsContext.asks(unmarked)") && app.contains("!turnAsksSessions, ArisDeixis.refersToScreen"),
+    let request = askSource("Aris/private/Aris/Routing/ArisTurnRequest.swift"), funnel = askSource("Aris/private/Aris/Routing/ArisTurnFunnel.swift")
+    check(request.contains("ClaudeSessionsContext.asks(unmarked)") && funnel.contains("!heard.shots, !heard.asksSessions else { return nil }\n        return ArisDeixis.refersToScreen"),
           "wiring: a question about the sessions isn't sent down the screen path")
     check(app.contains("currentContext(sessions: true)"), "wiring: the main turn's context carries the sessions")
 }

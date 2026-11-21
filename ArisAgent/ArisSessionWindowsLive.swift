@@ -71,11 +71,14 @@ enum ArisSessionWindowsLive {
             if ArisSessionScreen.takesNextKey(texts(window, roles: [kAXTextAreaRole as String, kAXStaticTextRole as String, kAXButtonRole as String])) { return .terminalNotice }
             return ArisSessionHostsLive.lookAt(String(text.suffix(20_000)))
         }
-        guard CGPreflightScreenCaptureAccess() else { return .noScreenRecording }
+        // As macOS has it now (this process's own preflight answer is kept from when it started: stale after a grant).
+        guard ArisScreenAccess.nowAsAgent() else { return .noScreenRecording }
         guard let id = ArisAX.windowId(window), let frame = ArisAX.frame(window) else { return .screenNotIdle }
         let file = NSTemporaryDirectory() + "aris-session-look-\(UUID().uuidString.prefix(8)).png"
         defer { try? FileManager.default.removeItem(atPath: file) }
         guard ArisNativeShot.capture(window: id, to: file), var image = NSImage(contentsOfFile: file)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            // The capture failed: asked again (a grant taken back since is noticed now).
+            if ArisScreenAccess.afterFailureAsAgent() == false { return .noScreenRecording }
             return .screenNotIdle
         }
         if let crop, frame.width > 0 {
@@ -119,7 +122,8 @@ enum ArisSessionWindowsLive {
         let background = ArisNativeInput.takesBackgroundKeys(bundle: bundle, bundleURL: running?.bundleURL)
         var front: ArisNativeForeground?
         if !background {
-            guard let borrowed = ArisNativeForeground.borrow(pid: pid, window: window) else { return .failure(.notInFront) }
+            // Only in a gap in the user's typing and clicking (ArisNativeFocusGap), as every engine step.
+            guard case .success(let borrowed) = ArisNativeForeground.take(pid: pid, window: window, clock: ArisNativeOwnerClock(), job: false) else { return .failure(.notInFront) }
             front = borrowed
         }
         guard focusedShows(pid, mark: mark) else {
@@ -139,6 +143,11 @@ enum ArisSessionWindowsLive {
         reach.submit = {
             guard focusedShows(pid, mark: mark), background || ArisFrontLive.frontPid() == pid else { return .focusMoved }
             ArisNativeInput.press(36, route: route)
+            return nil
+        }
+        reach.escape = {
+            guard focusedShows(pid, mark: mark), background || ArisFrontLive.frontPid() == pid else { return .focusMoved }
+            ArisNativeInput.press(53, route: route)
             return nil
         }
         reach.finish = {
@@ -183,6 +192,11 @@ enum ArisSessionWindowsLive {
         reach.submit = {
             guard focusedShows(pid, mark: mark) else { return .focusMoved }
             ArisNativeInput.press(36, route: .process(pid))
+            return nil
+        }
+        reach.escape = {
+            guard focusedShows(pid, mark: mark) else { return .focusMoved }
+            ArisNativeInput.press(53, route: .process(pid))
             return nil
         }
         reach.finish = {
@@ -258,6 +272,11 @@ enum ArisSessionWindowsLive {
             ArisNativeInput.press(36, route: .front)
             return nil
         }
+        reach.escape = {
+            guard ready() else { return .focusMoved }
+            ArisNativeInput.press(53, route: .front)
+            return nil
+        }
         reach.finish = {
             undo()
             putBack()
@@ -315,7 +334,7 @@ enum ArisSessionWindowsLive {
         // that tab is pressed first (pressed in the background, an editor raised its window: VM, 2026-11-16).
         let holders = windows(pid).filter { markedElement($0, mark: mark) != nil }
         guard holders.count == 1, let window = holders.first else { return .failure(.hostNotProven(name)) }
-        guard let turn = ArisNativeForeground.borrow(pid: pid, window: window) else { return .failure(.notInFront) }
+        guard case .success(let turn) = ArisNativeForeground.take(pid: pid, window: window, clock: ArisNativeOwnerClock(), job: false) else { return .failure(.notInFront) }
         var found = markedInput(window, mark: mark)
         if found == nil, let row = element(in: window, descriptionContaining: mark) {
             _ = ArisNativeInput.axPress(row)
@@ -361,6 +380,11 @@ enum ArisSessionWindowsLive {
         reach.submit = {
             guard terminalFocused() else { return .focusMoved }
             ArisNativeInput.press(36, route: .front)
+            return nil
+        }
+        reach.escape = {
+            guard terminalFocused() else { return .focusMoved }
+            ArisNativeInput.press(53, route: .front)
             return nil
         }
         reach.finish = {

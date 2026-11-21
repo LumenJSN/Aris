@@ -57,11 +57,13 @@ enum ArisSettingsCaption {
     /// checks it again (never "all is well", never "none set up").
     /// `quickKey`: the quick commands' key (TypeSafe) as its last answers said (ArisRouterKeyHealth): one TypeSafe
     /// refused, or one that hasn't answered yet, is said after the AI, never "all is well" (second upgrade run, bug 2).
-    static func greeting(agentDown: Bool, missingPermissions: Int, noAI: Bool = false, aiUnchecked: Bool = false,
+    /// `missingNames`: the missing permissions' names as their rows have them; the line names the first, so it says which
+    /// one is needed ("1 more permission needed" gave no hint: VM run 2026-11-18).
+    static func greeting(agentDown: Bool, missingPermissions: Int, missingNames: [String] = [], noAI: Bool = false, aiUnchecked: Bool = false,
                          quickKey: QuickKey = .fine, missing: [ArisPrerequisites.Missing] = [], english: Bool = ArisUIWords.english) -> String {
         if missing.contains(.helper) { return ArisPrerequisites.line(.helper, english: english) }
         if agentDown { return Self.agentDown }
-        if missingPermissions > 0 { return "권한 \(missingPermissions)개가 더 필요해요" }
+        if missingPermissions > 0 { return permissionsLine(count: missingPermissions, names: missingNames) }
         if aiUnchecked { return Self.aiUnchecked }
         if noAI { return Self.noAI }
         if quickKey == .refused { return Self.quickKeyRefused }
@@ -89,9 +91,20 @@ enum ArisSettingsCaption {
     /// 시작”). It used to do nothing when pressed.
     static func asksForHelper(_ greeting: String) -> Bool { greeting == agentDown }
 
+    /// "입력 모니터링 권한이 더 필요해요", "마이크 외 권한 하나가 더 필요해요", "마이크 외 권한 2개가 더 필요해요"; the count
+    /// alone when no name is known.
+    static func permissionsLine(count: Int, names: [String]) -> String {
+        guard let first = names.first, names.count == count else { return "권한 \(count)개가 더 필요해요" }
+        if count == 1 { return "\(first) 권한이 더 필요해요" }
+        return count == 2 ? "\(first) 외 권한 하나가 더 필요해요" : "\(first) 외 권한 \(count - 1)개가 더 필요해요"
+    }
+
     /// The greeting is about missing permissions: it opens their rows.
-    static func asksForPermissions(_ greeting: String) -> Bool { greeting.hasPrefix("권한 ") && greeting.hasSuffix("더 필요해요") }
+    static func asksForPermissions(_ greeting: String) -> Bool { greeting.contains("권한") && greeting.hasSuffix("더 필요해요") }
     static let permissionsAnchor = "control.permissions"
+    /// The page that section is on, read from a permission's own row (the section's id is no row of any part, so a
+    /// press on the line looked it up, found no page and did nothing unless that page was already open: tenth VM run).
+    static var permissionsPage: ArisSettingsPage? { ArisSettingsParts.holding("control.screen")?.page }
 
     /// Where the talk key is changed: the guide's "No, I'll change the key" opens settings on this row.
     static let talkKey = (page: ArisSettingsPage.keys, anchor: "keys.talk")

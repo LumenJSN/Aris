@@ -32,6 +32,13 @@ enum ArisPeekabooCommands {
             + (foreground ? ["--foreground"] : []) + (actionOnly ? ["--input-strategy", "actionOnly"] : []) + ["--json"]
     }
 
+    /// Aris's own engine only: a click posted to the app's process at the control's centre, no Accessibility press first
+    /// (the next way when its own press changed nothing: ArisDesktopSession.recoverClick). The pointer doesn't move.
+    static func postedClick(_ element: String, snapshot: String) -> [String] {
+        ["click", "--on", element, "--snapshot", snapshot, "--input-strategy", postedStrategy, "--json"]
+    }
+    static let postedStrategy = "posted"
+
     /// A point click, window-relative: in the background against the snapshot's window, or (the user consented) a real
     /// pointer click in the pinned window.
     static func clickAt(_ point: CGPoint, snapshot: String, window: Int, foreground: Bool) -> [String] {

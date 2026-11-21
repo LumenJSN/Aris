@@ -81,7 +81,10 @@ struct ArisActivityTag: View {
     private var status: (words: String, count: ArisTagCount?) { ArisTagProgress.split(label) }
     /// Past ten seconds, whether the tag was on screen as they passed or came into view later.
     private var showsClock: Bool { !settled && (clocked || ArisTagProgress.clock(since: since, now: Date()) != nil) }
-    private var words: String { showsClock ? ArisTagProgress.withoutMinutes(status.words) : status.words }
+    private var words: String {
+        if settled { return ArisTagProgress.settled(status.words, failed: failed) }
+        return showsClock ? ArisTagProgress.withoutMinutes(status.words) : status.words
+    }
 
     var body: some View {
         HStack(spacing: Self.gap) {

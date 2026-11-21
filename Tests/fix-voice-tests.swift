@@ -241,8 +241,6 @@ private func longTurnTests() {
           "voice-imp-3: each further window gives Whisper two seconds more")
     check(ArisLongTurn.whisperTimeout(samples: Int(rate * 300), sampleRate: rate, first: first) == ArisLongTurn.longestTimeout,
           "voice-imp-3: however long the turn, Aris never waits more than twelve seconds for Whisper")
-    check(ArisLongTurn.readsDuringGrace(seconds: 29) && !ArisLongTurn.readsDuringGrace(seconds: 31),
-          "voice-imp-3: Whisper reads ahead during the grace moment only while the turn fits one window")
 }
 
 // MARK: - voice-6: which language Apple's recogniser listens in
@@ -478,9 +476,11 @@ private func voiceWiringTests() {
     let turnAt = interrupted.range(of: "self.stopListening()")?.lowerBound
     check(dictationAt != nil && turnAt != nil && dictationAt! < turnAt!,
           "voice-1: the microphone-changed handler asks about dictation before it ends the turn with the words")
-    let handsFree = part(controller, from: "func listenHandsFree()", to: "func stopListening()")
-    let capAt = handsFree.range(of: "ArisTalkKey.mustEnd(")?.lowerBound, graceAt = handsFree.range(of: "heldUpByGrace(")?.lowerBound
-    check(capAt != nil && graceAt != nil && capAt! < graceAt!, "voice-4: the cap and give-up are checked before the grace moment")
+    // jv-hearing: the grace moment is now the speculation window of the endpoint policy, which checks the caps first.
+    let policy = (try? String(contentsOf: folder.appendingPathComponent("../../../Shared/Core/Hearing/ArisEndpointPolicy.swift").standardized, encoding: .utf8)) ?? ""
+    let decide = part(policy, from: "static func decide(", to: "static func mustEnd(")
+    let capAt = decide.range(of: "if mustEnd(input) { return (.firmEnd, endCase) }")?.lowerBound, windowAt = decide.range(of: "reached(row.firm)")?.lowerBound
+    check(capAt != nil && windowAt != nil && capAt! < windowAt!, "voice-4: the cap and give-up are checked before the speculation window")
     let stop = part(controller, from: "func stopListening()", to: "func secondListen(")
     check(stop.contains("listener.secondListenSamples") && !stop.contains("listener.recordedSamples"),
           "voice-5: a turn's second listen takes the recording only when it holds the whole turn")
@@ -529,7 +529,7 @@ private func voiceWiringTests() {
           "voice-8: a sentence ElevenLabs gives up on is handed, with the rest, to the system voice")
     check(speaker.contains("isCurrent: { mine == self.generation && !Task.isCancelled }"),
           "voice-3: the system voice reads on only while its speak() is the current one")
-    check(speaker.contains("ArisCloudHealth.voice.mayTry(at: .now)") && source("ArisController+Scribe.swift").contains("ArisCloudHealth.listening.mayTry(at: .now)"),
+    check(speaker.contains("ArisCloudHealth.voice.mayTry(at: .now)") && source("Hearing/ArisHearSetup.swift").contains("ArisCloudHealth.listening.mayTry(at: .now)") && source("ArisController+Scribe.swift").contains("let plan = ArisHearSetup.plan()"),
           "voice-imp-4: the voice and the listening both ask whether ElevenLabs may be tried now")
     check(source("ArisWhisper.swift").contains("ArisLongTurn.windows(of: samples, sampleRate: Self.sampleRate)"),
           "voice-imp-3: Whisper reads a long turn window by window")

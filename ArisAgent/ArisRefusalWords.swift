@@ -26,8 +26,8 @@ enum ArisRefusalWords {
     }
 
     /// How the gates' own reasons begin when a refusal only follows the user's answer.
-    static let afterUsersNo = "the user already said no"
-    static let afterChangedCard = "the user's changed card"
+    static let afterUsersNo = "The owner already said no"
+    static let afterChangedCard = "The owner's changed card"
 
     /// The reason without anything the brain chose (an app's or a tool's name).
     private static func reason(_ action: ArisAction, why: String) -> String {
@@ -76,7 +76,7 @@ enum ArisRefusalWords {
                 + "`mail reply <#number> --text '<the reply>'` for a mail in Apple Mail (its card shows every address, and it opens as a draft). "
                 + "If you can't, leave it as a draft and say so."
         }
-        let what = line == .money ? "Aris never pays, orders, subscribes or moves money" : "it is one of the things Aris never does on its own"
+        let what = line == .money ? "Aris moves money only on the user's own yes on its card, and this one was not approved" : "it is one of the things Aris never does on its own"
         return lead + what + ". Don't try another way. Tell the user plainly that this part is theirs to do, and carry on with anything else the request needs."
     }
 

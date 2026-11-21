@@ -35,9 +35,14 @@ enum ArisAgentClient {
     }
 
     /// Dictated words typed where the cursor is, by aris-agent. Nil when they were, else why not.
-    static func insert(_ text: String) async -> String? {
-        await post(insertURL, ["text": text], timeout: insertTimeout)
+    /// `target`: the look's field (Look.target): the text goes into that element, never where the keyboard is now
+    /// (typing the request into the notch makes that Aris itself). It may wait for a gap in his input: a longer wait.
+    static func insert(_ text: String, target: String? = nil) async -> String? {
+        guard let target, !target.isEmpty else { return await post(insertURL, ["text": text], timeout: insertTimeout) }
+        return await post(insertURL, ["text": text, "target": target], timeout: fieldWriteTimeout)
     }
+    /// A brief turn in front waits for a gap in his input for up to eight seconds (ArisNativeFocusGap.limit).
+    static let fieldWriteTimeout: TimeInterval = 15
 
     private static let todosURL = URL(string: "http://127.0.0.1:23351/todos")!
 
@@ -59,7 +64,7 @@ enum ArisAgentClient {
         if let text { body["text"] = text }
         if let id { body["id"] = id }
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(body))
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         struct Reply: Decodable { let todos: [ArisTodo]; let due: [ArisDue]; let finished: String? }
         let decoder = JSONDecoder()
@@ -78,7 +83,7 @@ enum ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified([:]))
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
@@ -94,7 +99,7 @@ enum ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = Data("{}".utf8)
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return ArisUsageReport.decode(data)
     }
@@ -109,6 +114,12 @@ enum ArisAgentClient {
         var unselected: String? = nil
         /// Which of its own permissions aris-agent did without: "accessibility", "screen".
         var needs: [String] = []
+        /// What the words point at, as the helper resolved it (jv-focus: ArisFocus.Kind), and whether the answer is text
+        /// to type where the keyboard already is ("답장 써 줘" with the message field focused).
+        var focusKind: String? = nil
+        var writesHere = false
+        /// The field the selection (or the caret) is in, as aris-agent keeps it: a rewrite or a draft goes there.
+        var target: String? = nil
     }
     private static let lookURL = URL(string: "http://127.0.0.1:23351/look")!
     /// Reading a window's text (Vision) takes a second or two.
@@ -116,7 +127,8 @@ enum ArisAgentClient {
 
     /// What "이거" points at, read by aris-agent; nil when it couldn't look. `front`: the app he was in when he asked
     /// (ArisUserApp; nil: the helper goes by the window order).
-    static func look(front: Int32? = nil) async -> Look? {
+    /// `words`: the turn's words (what "이거", "여기", "이 사람" aim at); `regions`: what was circled in it (global points).
+    static func look(front: Int32? = nil, words: String? = nil, regions: [CGRect] = []) async -> Look? {
         guard let token = ClaudeHookToken.load() else { return nil }
         // The app captures before the helper does, so macOS's question about the screen names Aris.
         await ArisAppCaptureFirst.ensure()
@@ -124,14 +136,19 @@ enum ArisAgentClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
-        request.httpBody = try? JSONSerialization.data(withJSONObject: identified(front.map { ["front": Int($0)] } ?? [:]))
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        var focus: [String: Any] = [:]
+        if let words { focus["words"] = String(words.prefix(4_000)) }
+        if !regions.isEmpty { focus["regions"] = regions.prefix(8).map { [$0.minX, $0.minY, $0.width, $0.height].map(Double.init) } }
+        let payload = identified(front.map { ["front": Int($0)] } ?? [:]).merging(focus) { own, _ in own }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let context = body["context"] as? String else { return nil }
         let line = { (key: String) in (body[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         return Look(context: context, selected: body["selected"] as? Bool ?? false, editable: body["editable"] as? Bool ?? false,
-                    unread: line("unread"), unselected: line("unselected"), needs: body["needs"] as? [String] ?? [])
+                    unread: line("unread"), unselected: line("unselected"), needs: body["needs"] as? [String] ?? [],
+                    focusKind: line("focusKind"), writesHere: body["writesHere"] as? Bool ?? false, target: line("target"))
     }
 
     /// A request to aris-agent that answers {} or {"error": "..."}: nil when it worked, else what went wrong.
@@ -143,7 +160,7 @@ enum ArisAgentClient {
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(body))
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await ArisNoStore.session.data(for: request)
             if (response as? HTTPURLResponse)?.statusCode == 200 { return nil }
             let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             return body?["error"] as? String ?? Self.refused
@@ -154,7 +171,7 @@ enum ArisAgentClient {
 
     // MARK: - What the user reads when the agent can't be reached (never a script name)
 
-    static let notSetUp = ArisAgentCopy.notSetUp
+    static var notSetUp: String { ArisAgentCopy.notSetUp }
     static let notRunning = ArisAgentCopy.notRunning
     static let notAnswering = ArisAgentCopy.notAnswering
     static let refused = ArisAgentCopy.refused
@@ -179,9 +196,9 @@ enum ArisAgentClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
-        request.httpBody = Data("{}".utf8)
+        request.httpBody = healthBody
         do {
-            _ = try await URLSession.shared.data(for: request)
+            _ = try await ArisNoStore.session.data(for: request)
             return true
         } catch let error as URLError {
             return !Self.refusedCodes.contains(error.code)
@@ -190,6 +207,16 @@ enum ArisAgentClient {
         }
     }
 
+    /// /health's body: who asks (the helper takes the switches from the app itself only) and the app's experimental
+    /// switches, so a helper that started again has them back within one probe (ArisSwitchSet; the helper has no
+    /// other way to learn them: its defaults are not the sandboxed app's).
+    static var healthBody: Data {
+        (try? JSONSerialization.data(withJSONObject: identified([ArisSwitchSet.field: switches]))) ?? Data("{}".utf8)
+    }
+
+    /// The app's experimental switches as its Settings stored them.
+    static var switches: [String: Bool] { ArisSwitchSet.stored(in: .standard).json }
+
     /// Who answers on the helper's port now: nothing, or a process (which one, when its /health says so).
     static func helperSeen(timeout: TimeInterval = 1.5) async -> ArisHelperSeen {
         guard let token = ClaudeHookToken.load() else { return .refused }
@@ -197,9 +224,11 @@ enum ArisAgentClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
-        request.httpBody = Data("{}".utf8)
+        request.httpBody = healthBody
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await ArisNoStore.session.data(for: request)
+            // Whether the helper runs Core 2: a turn then takes the World along (ArisWorldOutbox).
+            ArisWorldOutbox.noteHealth(data)
             return .answered(ArisHelperIdentity(json: data))
         } catch let error as URLError {
             return Self.refusedCodes.contains(error.code) ? .refused : .answered(nil)
@@ -226,7 +255,7 @@ enum ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["turn": turn])
-        URLSession.shared.dataTask(with: request).resume()
+        ArisNoStore.session.dataTask(with: request).resume()
     }
 
     /// Opens a saved task result again (the agent opens only files in its result folders).
@@ -237,7 +266,7 @@ enum ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["path": path])
-        let response = try? await URLSession.shared.data(for: request).1
+        let response = try? await ArisNoStore.session.data(for: request).1
         return (response as? HTTPURLResponse)?.statusCode == 200
     }
 
@@ -248,15 +277,19 @@ enum ArisAgentClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["brain": brain.rawValue])
-        URLSession.shared.dataTask(with: request).resume()
+        // Who asks (pid, start time): the helper takes the models of the app itself only.
+        request.httpBody = try? JSONSerialization.data(withJSONObject: identified(["brain": brain.rawValue,
+                                                                                  ArisBrainFallbackSetting.field: ArisBrainFallbackSetting.isOn(),
+                                                                                  ArisSwitchSet.field: switches,
+                                                                                  "models": ArisModelChoiceStore.shared.payload(fresh: false, conversationTurn: false)]))
+        ArisNoStore.session.dataTask(with: request).resume()
     }
     /// A little longer than the agent's own limits, so its error message arrives first.
     private static let timeout: TimeInterval = 130
     /// A background job's stream: it may go quiet for a day while a question is parked (the agent sends a blank
     /// line every few minutes), so it may be quiet 26 h and last 48 h (a day parked plus the work around it).
     static let taskSession: URLSession = {
-        let configuration = URLSessionConfiguration.default
+        let configuration = ArisNoStore.configuration()
         configuration.timeoutIntervalForRequest = ArisParkedCard.streamTimeout
         configuration.timeoutIntervalForResource = ArisParkedCard.streamLifetime
         return URLSession(configuration: configuration)
@@ -313,7 +346,7 @@ enum ArisAgentClient {
     private static func plain(_ reply: ArisAgentReply) async -> ArisAgentReply {
         guard case .failure(let line) = reply else { return reply }
         let (stored, ready) = await MainActor.run { (ArisBrainSetup.stored, ArisBrainSetup.shared.ready) }
-        return .failure(ArisBrainChoice.failureLine(line, stored: stored, ready: ready))
+        return .failure(ArisBrainChoice.failureLine(line, stored: stored, ready: ready, english: ArisUIWords.english))
     }
 
     /// The user's yes or no to a `.confirm`: delivered, refused (403), or gone (nobody waits for it any more).
@@ -340,7 +373,7 @@ enum ArisAgentClient {
             body["shown"] = edited.shown
         }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        let response = try? await URLSession.shared.data(for: request).1
+        let response = try? await ArisNoStore.session.data(for: request).1
         return ArisConfirmResult.from(status: (response as? HTTPURLResponse)?.statusCode)
     }
 
@@ -362,6 +395,15 @@ enum ArisAgentClient {
                                    "task": task != nil, "title": task ?? "", "browser": browser, "fresh": fresh]
         if let screen { body["screen"] = screen }
         body["computerEngine"] = ArisComputerEngine.named(UserDefaults.standard.string(forKey: ArisComputerEngine.preferenceKey)).rawValue
+        // 다른 AI로 넘기기: without it the chosen brain answers, or says why it can't (ArisBrainFallback in the agent).
+        body[ArisBrainFallbackSetting.field] = ArisBrainFallbackSetting.isOn()
+        // The experimental switches (Core 2, show it once): the helper takes them from here, never from its defaults.
+        body[ArisSwitchSet.field] = switches
+        // The UI's language: what aris-agent says and shows itself (a lesson's card, a run's account) follows it, never
+        // the language of the request (third VM run, D4).
+        body["lang"] = ArisSkillWords.language(english: ArisUIWords.english)
+        // The model and effort chosen for each role (ArisModelChoice), with this conversation's own word over them.
+        body["models"] = ArisModelChoiceStore.shared.payload(fresh: fresh, conversationTurn: task == nil)
         // A teammate's task: the activity log names it (ARIS_TEAMMATE), so its rows show its face.
         if let teammate { body["teammate"] = teammate }
         // A helper's job: the log names it as the user sees it ("도우미 2"), not by its brain (N14).
@@ -374,6 +416,9 @@ enum ArisAgentClient {
         // user's own words), a conversation that saw the screen or took in outside text, a turn heard hands-free.
         for (key, value) in provenance.fields { body[key] = value }
         if let userRequest { body["request"] = userRequest }
+        // Who spoke the turn (F1, ArisTurnSpeaker), when its voice was checked: Core 2's trust gate reads it
+        // (ArisTrustGate.ownerTurn's speaker). Absent: nothing checked, the owner, as before.
+        if task == nil, let speaker = ArisVoiceID.shared.speaker(for: ArisTurnScope.current) { body["voice"] = speaker.rawValue }
         if let sending = images?.take(), !sending.isEmpty {
             body["images"] = sending.map(\.json)
             if let focus { body["focus"] = focus.rawValue }
@@ -388,12 +433,14 @@ enum ArisAgentClient {
         if task == nil { body["localSteps"] = true }
         // A conversation's turn: whether the list and calendar unnamed to-dos and events go into are his own (review 9, L2).
         if task == nil { body["ownPlaces"] = await ArisOwnPlacesLive.current() }
+        // A conversation's turn, with Core 2 on: the World the helper's trust gate grounds their words in (ArisWorldWire).
+        if task == nil, let world = await ArisWorldOutbox.field() { body["world"] = world }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         body = [:] // the base64 copies go; only the request's own body remains while it's sent
         // Whether the stream delivered anything before failing: a drop mid-way means the job ran and is gone.
         var started = false
         do {
-            let (bytes, response) = try await (task == nil ? URLSession.shared : taskSession).bytes(for: request)
+            let (bytes, response) = try await (task == nil ? ArisNoStore.session : taskSession).bytes(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode
             guard status == 200 else { return .failure(status == 413 ? ArisAgentCopy.tooLong() : refused) }
             for try await line in bytes.lines {

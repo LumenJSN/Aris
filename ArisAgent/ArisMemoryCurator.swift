@@ -134,6 +134,17 @@ final class ArisMemoryCurator: @unchecked Sendable {
     /// Reads the store into the cache (aris-tools may have written it); on the memory queue.
     func refresh() { queue.async { [self] in refreshNow() } }
 
+    /// After a data wipe: no memory is given to a turn from now on (the caches are emptied at once, and a "잊어" that
+    /// waited for a yes is dropped), then the caches are read again from the emptied file.
+    func wiped() {
+        cacheLock.withLock {
+            cache = []
+            entityCache = []
+            pendingForget = nil
+        }
+        refresh()
+    }
+
     private func refreshNow() {
         // An import's journal keeps its 30 days whether or not another import comes (review 8, LOW).
         store.pruneImportJournal()
@@ -293,7 +304,8 @@ final class ArisMemoryCurator: @unchecked Sendable {
         case .remember(let fact):
             let candidate = ArisMemoryCandidate(kind: ArisMemoryKind.guess(fact), subject: ArisMemoryLearning.subject(of: fact), text: fact,
                                                 confidence: ArisMemoryStore.saidConfidence)
-            return ArisMemoryAnswer.remembered(store.remember(candidate, source: .said, turnAt: now, now: now), korean: korean)
+            let outcome = store.remember(candidate, source: .said, turnAt: now, now: now)
+            return ArisMemoryAnswer.remembered(outcome, korean: korean, pastCapacity: store.pastCapacity)
         case .forget(let words):
             let plan = forgetPlan(words)
             guard plan.asks else {
@@ -350,8 +362,10 @@ final class ArisMemoryCurator: @unchecked Sendable {
 enum ArisMemoryRoute {
     static let clearWord = "모두"
 
-    /// `savedSteps`: the agent's saved desktop steps (ArisSavedStepsRoute), nil where there are none.
-    static func handle(_ object: [String: Any], store: ArisMemoryStore, savedSteps: ArisSavedStepsStore? = nil) -> (status: Int, body: Data, audit: String?) {
+    /// `savedSteps`: the agent's saved desktop steps (ArisSavedStepsRoute), nil where there are none. `shortcuts`: the
+    /// learned shortcuts, listed and deleted among them (ArisShortcutsRoute; `tools`: the aris-tools path their commands name).
+    static func handle(_ object: [String: Any], store: ArisMemoryStore, savedSteps: ArisSavedStepsStore? = nil,
+                       shortcuts: ArisShortcutsAccess? = nil, tools: String = "", taught: ArisTaughtAccess? = nil) -> (status: Int, body: Data, audit: String?) {
         switch object["op"] as? String {
         case "list":
             // Where an imported memory came from, and whether it is an instruction (ArisMemoryImportStore).
@@ -390,9 +404,13 @@ enum ArisMemoryRoute {
             // What waits for the user, people and projects, the weekly tidy-up: ArisMemoryReviewRoute.
             // The work memory's part of the page (일하면서 배운 것): ArisWorkRoute.
             // And the import from another AI (다른 AI에서 가져오기): ArisImportRoute.
-            // And the saved desktop steps (저장된 단계): ArisSavedStepsRoute.
+            // And the saved desktop steps (저장된 단계): ArisSavedStepsRoute, with the learned shortcuts and the taught
+            // procedures among them (ArisTaughtRoute).
             return ArisMemoryReviewRoute.handle(object, store: store) ?? ArisWorkRoute.handle(object, store: ArisWorkStore(memory: store))
-                ?? ArisImportRoute.handle(object, store: store) ?? ArisSavedStepsRoute.handle(object, store: savedSteps) ?? bad()
+                ?? ArisImportRoute.handle(object, store: store)
+                ?? ArisTaughtRoute.handle(object, access: taught) {
+                    ArisShortcutsRoute.handle(object, access: shortcuts, tools: tools, savedSteps: { ArisSavedStepsRoute.handle(object, store: savedSteps) }) ?? bad()
+                }
         }
     }
 

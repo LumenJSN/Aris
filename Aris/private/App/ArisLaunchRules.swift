@@ -23,8 +23,9 @@ enum ArisLaunchRules {
         return (old == .allDisplays) != (new == .allDisplays)
     }
 
-    /// How long the toggle shortcut's notch stays open on its own.
-    static let toggleAutoClose: Duration = .seconds(3)
+    /// The toggle shortcut's notch has no timer: it stays open until closed, and a click in another app closes it
+    /// while it is still open.
+    static func toggleClosesOnClickElsewhere(open: Bool) -> Bool { open }
     /// How long the standard music peek shows from its shortcut.
     static let peekShortcutDuration: TimeInterval = 3
 }

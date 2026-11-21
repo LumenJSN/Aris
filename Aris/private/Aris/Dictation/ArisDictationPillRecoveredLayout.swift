@@ -7,7 +7,7 @@
 //  far right) over the words (14 / 500, ×1.45, word-wrapped: Hangul breaks at spaces). The content is as wide as its
 //  longest line between 220 and 340, plus 16 / 10 padding; as tall as header + 6 + words (at most 4 lines, then it
 //  scrolls with a 16 bottom fade while there is more), plus 11 / 13. The words are the copy target: a click copies them
-//  again and the label says "다시 복사했어요" for 1.2 s. It grows out of the pill (80 × 30, r15) to its size in 300 ms
+//  again and the label says "다시 복사했어요" for 1.2 s. It grows out of the writing pill (98 × 30, r15) to its size in 300 ms
 //  (0.2, 0.8, 0.2, 1), its contents fading in 160 ms after 110 ms; it leaves in 160 ms (opacity, scale .96).
 //  Sizes are measured with the text system here, so the window's pointer area and the drawn card agree. Pure.
 //
@@ -51,7 +51,7 @@ enum ArisDictationPillRecoveredLayout {
 
     static let growDuration = 0.3
     static let growCurve = (0.2, 0.8, 0.2, 1.0)
-    static let startSize = CGSize(width: 80, height: 30)
+    static let startSize = ArisDictationPillRules.transcribingSize
     static let startRadius: CGFloat = 15
     static let contentFade = 0.16
     static let contentDelay = 0.11

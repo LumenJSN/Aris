@@ -38,8 +38,10 @@ private func tidyNoNotchPreviewTests() {
 
     let shell = tidySource(settings + "ArisSettingsShell.swift")
     check(!shell.isEmpty && !shell.contains("plan") && !shell.contains("replay"), "settings tidy: the shell takes no preview plan and no replay")
-    check(shell.contains("if nav.page == .team { ArisFaceStageView()") && shell.components(separatedBy: "ArisFaceStageView(").count == 2,
-          "settings tidy: the only stage left is 팀원's face, drawn on that page alone; every other page starts at its title")
+    // Option A: 팀원 is a sheet, and its face is drawn there (ArisLiveSettings' team sheet); every page starts at its title.
+    let liveSheet = tidySource(settings + "ArisLiveSettings.swift")
+    check(!shell.contains("ArisFaceStageView(") && liveSheet.components(separatedBy: "ArisFaceStageView()").count == 2,
+          "settings tidy: the only stage left is 팀원's face, drawn in the team's sheet alone; every page starts at its title")
     check(shell.contains(".padding(.top, ArisSettingsMetrics.columnTop)"), "settings tidy: the column starts at its measured top (40 inside the card) on every page")
 
     let live = tidySource(settings + "ArisLiveSettings.swift")
@@ -104,7 +106,7 @@ private func tidyShelfOnHomeTests() {
     check(model.contains("m.shelfOnHome = Defaults[.shelfOnHome]") && model.contains("case .shelfOnHome: Defaults[.shelfOnHome] = on ?? true")
           && model.contains(".shelfOnHome,"), "shelf on home: the settings window reads it, writes it and hears it change")
     let others = tidyAllSources().filter { $0.text.contains("shelfOnHome") }.map { ($0.path as NSString).lastPathComponent }.sorted()
-    check(others == ["ArisHomeView.swift", "ArisMoreSettings.swift", "ArisMoreSettingsModel.swift", "ArisPreferences.swift", "ArisSettingsCatalog.swift"],
+    check(others == ["ArisHomeView.swift", "ArisMoreSettings.swift", "ArisMoreSettingsModel.swift", "ArisPreferences.swift", "ArisSettingsCatalog.swift", "ArisSettingsParts.swift"],
           "shelf on home: only the home reads it: the Shelf tab and what Aris is told of the shelf (--shelf) don't" + " (\(others))")
     check(tidySource("Aris/private/Aris/ArisAgentClient.swift").contains("body[\"shelf\"] = await MainActor.run { ShelfStateViewModel.shared.items.compactMap { $0.fileURL?.path } }"),
           "shelf on home: Aris still knows the shelf's files")

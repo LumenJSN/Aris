@@ -54,7 +54,7 @@ extension ArisAgentPrompt {
             "`\(tools) shortcut \"Name\"`, `\(tools) trash <path>`, `\(tools) move <path> <folder>`, `\(tools) rename <path> <new name>`, " +
             "`\(tools) folder new <path>`, `\(tools) convert|merge|split|compress <file>… [--to <format>]`, `\(tools) keys cmd+t --app Safari`, " +
             "`\(tools) schedule add --title \"<a few words>\" --prompt \"<their request for that time>\" " +
-            "--at \"YYYY-MM-DD HH:mm\"` (or `--daily 08:00`, `--weekly fri 18:00`, `--every 30m`), `\(tools) schedule remove <id>`, `\(tools) undo`. " +
+            "--at \"YYYY-MM-DD HH:mm\"` (or \(ArisScheduleArguments.promptFlags)), `\(tools) schedule remove <id>`, `\(tools) undo`. " +
             ArisAgentPrompt.rememberRule + " A no on the card is the user's own choice: say \"알겠어요, 안 할게요.\" or \"OK, I won't.\" and don't try another way."
     }
 
@@ -87,7 +87,7 @@ extension ArisAgentPrompt {
         - Scheduled work, when Aris itself should say or do something later or on a repeat ("2분 뒤에 '…'라고 알려 줘", \
         "매일 아침 8시에 날씨 알려 줘", "금요일 6시마다 한 주 정리해 줘"): `\(tools) schedule add --title "<a few words>" \
         --prompt "<the user's own request for that time, in their words, e.g. 오늘 날씨 알려 줘>" --at "YYYY-MM-DD HH:mm"` (or \
-        `--daily 08:00`, `--weekly fri 18:00`, `--every 30m`): the prompt is what they asked for, with no commands, paths or \\n \
+        \(ArisScheduleArguments.promptFlags)): the prompt is what they asked for, with no commands, paths or \\n \
         (that run does it with its own tools); the user is asked first, and what that run answers is said to them. \
         `\(tools) schedule list` lists schedules, `\(tools) schedule remove <id>` removes one. A countdown with no \
         message is still `timer`.

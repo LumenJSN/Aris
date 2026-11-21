@@ -107,7 +107,7 @@ struct ArisEditableRows: View {
                 } else {
                     shown(field, value: value, marked: marked)
                 }
-                if !field.fixed, !ArisCardEdit.accepts(value, role: field.role) {
+                if !field.fixed, ArisCardEdit.showsRefusal(value, role: field.role) {
                     Text(ArisConfirmWords.refused(time: field.role == .time, english: english))
                         .font(.system(size: 11)).foregroundStyle(Color(red: 240 / 255, green: 185 / 255, blue: 90 / 255).opacity(0.95))
                         .padding(.horizontal, 3)

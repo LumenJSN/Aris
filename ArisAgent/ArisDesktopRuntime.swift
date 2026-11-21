@@ -204,7 +204,7 @@ final class ArisDesktopInstaller {
 struct ArisDesktopLiveDownload: ArisDesktopDownloading {
     func fetch(_ url: URL, to file: URL) -> String? {
         guard url.scheme == "https" else { return "not https" }
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = ArisNoStore.configuration()
         configuration.timeoutIntervalForResource = 240
         let session = URLSession(configuration: configuration)
         let done = DispatchSemaphore(value: 0)

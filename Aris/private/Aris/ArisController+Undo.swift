@@ -24,30 +24,51 @@ extension ArisController {
         // Stopped while the list was read: no card, nothing said (audit turn-2).
         guard !Task.isCancelled else { return "" }
         guard let items = read else { return await undoSay(ArisLocalReply.undoUnknown(korean: korean)) }
-        // By words alone only this conversation's changes or the last minutes' are reached (ArisUndoWords.reach).
-        let undoable = items.filter { $0.undoable && !$0.undone }
-        let reach = ArisUndoWords.reach(now: Date(), conversationBegan: conversationBeganAt)
-        let candidates = undoable.filter { $0.date >= reach }.sorted { $0.date > $1.date }
-            .map { ArisUndoWords.Candidate(id: $0.id, summary: $0.summary, action: $0.action, asks: $0.asks) }
-        guard !candidates.isEmpty || undoable.isEmpty else { return await undoSay(ArisUndoWords.nothingRecent(korean: korean)) }
-        let kind = ArisUndoWords.kind(in: heard)
-        let (picked, doubt) = ArisUndoWords.pick(candidates, kind: kind)
-        guard let entry = picked else {
-            return await undoSay(kind == nil ? (korean ? "되돌릴 일이 없어요." : "There's nothing to undo.") : ArisUndoWords.noneOfKindLine(candidates, korean: korean))
+        // By words alone only this conversation's changes or the last minutes' are reached (ArisUndoWords.reach). Both
+        // stores' changes, by time; a bare "되돌려" takes the newest, and says so when that one can't be undone, never
+        // reaching past it (third VM run, D3); a taught procedure's run is one change.
+        let changes = items.filter { !$0.undone }.map {
+            ArisUndoWords.Change(id: $0.id, date: $0.date, summary: $0.summary, action: $0.action, asks: $0.asks, undoable: $0.undoable, unit: $0.unit,
+                                 passOver: $0.passOver == true)
         }
+        let reach = ArisUndoWords.reach(now: Date(), conversationBegan: conversationBeganAt)
+        let kind = ArisUndoWords.kind(in: heard)
+        // The text the quick path typed at a caret, when it is the newest change (ArisTypeHere; twelfth VM run, S3u).
+        if kind == nil, let typed = ArisTypedHereLog.shared.latest(newerThan: changes.map(\.date).max(), since: reach) {
+            ArisTypedHereLog.shared.clear()
+            let problem = await ArisAgentClient.undoTyped(typed)
+            return await undoSay(problem == nil ? (korean ? "방금 써 넣은 글을 지웠어요." : "Took out the text I just typed.")
+                                                : ArisUndoWords.failure(problem ?? "", korean: korean))
+        }
+        let entry: ArisUndoWords.Candidate, candidates: [ArisUndoWords.Candidate], doubt: Bool
+        switch ArisUndoWords.reach(changes, since: reach, kind: kind) {
+        case .undo(let picked, let newest, let unsure):
+            entry = picked
+            candidates = newest.map { [$0] } ?? []
+            doubt = unsure
+        case .cannot(let summary):
+            return await undoSay(ArisUndoWords.cannotLine(summary, korean: korean))
+        case .noneOfKind(let others):
+            return await undoSay(ArisUndoWords.noneOfKindLine(others, korean: korean))
+        case .nothing:
+            let older = changes.contains { $0.undoable }
+            return await undoSay(older ? ArisUndoWords.nothingRecent(korean: korean) : (korean ? "되돌릴 일이 없어요." : "There's nothing to undo."))
+        }
+        // A card has the UI's own buttons, so its words are the UI's; what is said follows the request (`korean`).
+        let cardKorean = !ArisUIWords.english
         let leftAsItIs = { await self.undoSay(self.cardUnanswered ? ArisCardWait.unansweredLine(korean: korean) : korean ? "그대로 둘게요." : "I'll leave it as it is.") }
         // An ordinary change: Aris's own card names it, and its yes sends the plain request, as the 한 일 tab's and the
         // receipt's Undo do. One the helper asks about itself goes to the helper first (ArisUndoSteps; third VM run,
         // bug B: the yes used to go with `confirmed`, which aris-agent takes only for a card of its own, so every
         // typed undo was refused).
         if ArisUndoSteps.start(asks: entry.asks) == .ownCard {
-            let card = ArisUndoWords.card(for: entry, newest: candidates.first, doubt: doubt, korean: korean)
-            guard await askUser(ArisConfirmation(id: "undo-" + entry.id, title: card.title, detail: card.detail), handsFree: turnHandsFree) else {
-                return await leftAsItIs()
-            }
+            let card = ArisUndoWords.card(for: entry, newest: candidates.first, doubt: doubt, korean: cardKorean)
+            // Nil: the turn ended over the card, which is no "no": nothing is undone, shown or said.
+            guard let yes = await askUser(ArisConfirmation(id: "undo-" + entry.id, title: card.title, detail: card.detail), handsFree: turnHandsFree) else { return "" }
+            guard yes else { return await leftAsItIs() }
         }
-        var outcome = await undoWaiting(id: entry.id, korean: korean)
-        switch ArisUndoSteps.next(after: outcome, entry: entry, newest: candidates.first, doubt: doubt, korean: korean) {
+        var outcome = await undoWaiting(id: entry.id, unit: entry.unit != nil, korean: korean)
+        switch ArisUndoSteps.next(after: outcome, entry: entry, newest: candidates.first, doubt: doubt, korean: cardKorean) {
         case .say:
             break
         case .otherEntry:
@@ -56,14 +77,17 @@ extension ArisController {
         case .card(let ask, let echo):
             // The helper's own question (an event Aris made would be deleted, a removed schedule would run again):
             // its card, and only its yes goes back with `confirmed` and the summary the helper gave.
-            guard await askUser(ask, handsFree: turnHandsFree) else { return await leftAsItIs() }
-            outcome = await undoWaiting(id: entry.id, confirmed: true, shown: ask, echo: echo, korean: korean)
+            guard let yes = await askUser(ask, handsFree: turnHandsFree) else { return "" }
+            guard yes else { return await leftAsItIs() }
+            outcome = await undoWaiting(id: entry.id, confirmed: true, shown: ask, echo: echo, unit: entry.unit != nil, korean: korean)
         }
         let reply: String
         switch outcome {
-        case .done:
+        case .done(let note):
             log.notice("undone")
-            reply = ArisUndoWords.doneLine(entry.summary, korean: korean)
+            // A taught run whose new document (or another step) no undo takes back: what was undone and what stays.
+            // What was undone named as what it was ("Removed the text I typed in TextEdit"), and the lesson of a replay.
+            reply = ArisUndoWords.doneReply(note, summary: entry.summary, korean: korean)
         case .needsConfirm:
             log.error("undo: asked again after a yes")
             reply = ArisUndoWords.failure("", korean: korean)
@@ -82,14 +106,15 @@ extension ArisController {
 
     private func undoSay(_ reply: String) async -> String {
         stats?.firstSound(at: .now)
-        session = session.answering(reply)
+        setSession(session.answering(reply))
         await speak { await self.speaker.speak(reply) }
         return reply
     }
 
     /// The undo, and after a few seconds without an answer the notch says why it waits: macOS is likely asking
     /// aris-agent for a folder (QA BUG-17), named when the log says which.
-    private func undoWaiting(id: String?, confirmed: Bool = false, shown: ArisConfirmation? = nil, echo: String? = nil, korean: Bool) async -> ArisUndoOutcome {
+    private func undoWaiting(id: String?, confirmed: Bool = false, shown: ArisConfirmation? = nil, echo: String? = nil, unit: Bool = false,
+                             korean: Bool) async -> ArisUndoOutcome {
         let hint = Task { @MainActor [weak self] in
             // The folder is looked up only once the undo has really waited (ArisUndoSteps.asksFolder): asked at the
             // start, the look-up was dropped the moment a quick undo came back, and aris-agent logged a refusal for a
@@ -100,14 +125,14 @@ extension ArisController {
             guard !Task.isCancelled, let self else { return }
             let line = ArisUndoWords.waitingLine(folder: folder, korean: korean)
             log.notice("undo: still waiting (folder prompt?)")
-            if self.session.phase == .thinking { self.session = self.session.working(line) }
+            if self.session.phase == .thinking { self.setSession(self.session.working(line)) }
             ArisActivityModel.shared.waitingNotice = line
         }
         defer {
             hint.cancel()
             ArisActivityModel.shared.waitingNotice = nil
         }
-        return await ArisAgentClient.undo(id: id, confirmed: confirmed, shown: shown, echo: echo)
+        return await ArisAgentClient.undo(id: id, confirmed: confirmed, shown: shown, echo: echo, unit: unit)
     }
 
     /// The 한 일 tab's 되돌리기 on entry `id`: the same /undo as "방금 거 취소해". One that deletes an event Aris made or
@@ -124,10 +149,11 @@ extension ArisController {
         }
         let ask = ArisActivityTab.confirmation(id: id, summary: summary, revivesSchedule: revives)
         // A turn of the user's has the notch: nothing is asked or undone; they can tap again once it's over.
-        guard let allow = await speakUp(ask.title, { await self.askUser(ask) }) else {
+        guard let answered = await speakUp(ask.title, { await self.askUser(ask) }) else {
             return .failed(ArisUIWords.text("지금은 대화 중이에요. 끝나고 다시 눌러 주세요.", "A conversation is going on. Press again once it's over."))
         }
-        guard allow else { return nil }
+        // No, or the card's turn ended before an answer: nothing is undone.
+        guard answered == true else { return nil }
         let confirmed = await undoWaiting(id: id, confirmed: true, shown: ask, korean: korean)
         if case .needsConfirm = confirmed { log.error("undo: asked again after a yes") }
         return await sayIfRefused(confirmed)

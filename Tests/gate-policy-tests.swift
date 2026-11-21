@@ -178,8 +178,8 @@ private func gateRefusalNoteTests() {
     let next = gateCommand(said, 2, "mv ~/c.txt ~/d.txt")
     check(first.card != nil && no?.decisions == ["decline"] && no?.notes.isEmpty == true && next.decisions == ["decline"] && next.notes.isEmpty && next.card == nil,
           "gate-5: the user's own no stays a plain decline, and what it closes for the turn is declined without a note")
-    check(ArisRefusalWords.neverNote(.shell("x"), why: "the user already said no to a card this turn", tools: t) == nil
-          && ArisRefusalWords.neverNote(.shell("x"), why: "the user's changed card already did this", tools: t) == nil,
+    check(ArisRefusalWords.neverNote(.shell("x"), why: "The owner already said no to a card this turn", tools: t) == nil
+          && ArisRefusalWords.neverNote(.shell("x"), why: "The owner's changed card already did this", tools: t) == nil,
           "gate-5: a refusal that only follows the user's answer is never worded as Aris's rule")
     // Hands-free: the ask-again line.
     let hands = gateCodex()
@@ -323,8 +323,8 @@ private func gateMailTests() {
     // A mail the card can show whole: the user's card, whatever grant or judgement there is. One it can't: still refused.
     check(decide(.mailSend, true, [scope], .proceed) == .askUser("a mail send") && decide(.mailSend, true, [], nil) == .askUser("a mail send"),
           "gate-9: sending mail asks the user on a card (it was refused), and no standing permission or judgement ever sends it for him")
-    check(decide(.mailSend, false, [scope], .proceed) == .refuse(ArisEscalation.mailReason) && decide(.money, true, [scope], .proceed) == .refuse(ArisEscalation.moneyReason),
-          "gate-9 (hostile): a mail whose text the card can't show is still refused, and money is still refused")
+    check(decide(.mailSend, false, [scope], .proceed) == .refuse(ArisEscalation.mailReason) && decide(.money, true, [scope], .proceed) == .askUser("a payment"),
+          "gate-9 (hostile): a mail whose text the card can't show is still refused, and money is the user's own card (decision 1)")
     check(ArisEscalation.learnable(scope, approvable: true, hardLine: .mailSend, tainted: false) == nil,
           "gate-9: a yes to a mail is never learned, so \"앞으로 이건 그냥 할까?\" never comes up for one")
     // The card: every recipient, the subject and the whole text, nothing cut.
@@ -887,7 +887,7 @@ private func gateEnglishTests() {
           && ArisGateWords.detail("Mom hi\n" + ArisEscalation.taintedReason) == "Mom hi\n" + ArisEscalation.taintedReason
           && ArisGateWords.detail("캘린더 일정이 지워져요: 회의") == "A calendar event will be removed: 회의",
           "gate-24 (hostile): only the fixed lines a card opens with are changed: the same words further down are someone's text and stay")
-    check(ArisGateWords.line(ArisEscalation.moneyReason) == "I can't do anything that costs money" && ArisGateWords.line(ArisReadGate.status(.undecided)) == "Read blocked · couldn't decide in time"
+    check(ArisGateWords.line(ArisEscalation.moneyReason) == "A payment needs your own yes on its card, each time" && ArisGateWords.line(ArisReadGate.status(.undecided)) == "Read blocked · couldn't decide in time"
           && ArisGateWords.line(ArisReadGate.status(.tooMany)) == ArisReadGate.status(.tooMany, english: true) && ArisGateWords.line("파일 변환하는 중") == "파일 변환하는 중"
           && ArisReadWhy.allCases.allSatisfy { !$0.englishNotch.isEmpty && ArisReadGate.status($0) == "읽기 막음 · " + $0.notch },
           "gate-24: a refusal's reason and the read-block line in English; the Korean lines and any other status are untouched")

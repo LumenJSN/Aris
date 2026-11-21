@@ -75,7 +75,8 @@ enum ArisReadJudge {
     }
 
     /// The judge's command line on each brain: no tools, no MCP, no web, no hooks or user settings, nothing kept.
-    static func arguments(brain: ArisBrain, model: String) -> [String] {
+    /// `effort`: always low for the judge itself; a sealed one-shot passes its own (ArisSealedOneShot).
+    static func arguments(brain: ArisBrain, model: String, effort: String = "low") -> [String] {
         switch brain {
         case .claude:
             return ["-p", "--model", model, "--effort", "low", "--tools", "", "--permission-mode", "dontAsk",
@@ -87,7 +88,7 @@ enum ArisReadJudge {
             // never asking, read-only; the prompt comes on stdin ("-") and the last message is printed.
             return ["exec", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules", "--sandbox", "read-only",
                     "--color", "never", "--model", model, "-c", #"approval_policy="never""#, "-c", #"web_search="disabled""#,
-                    "-c", #"model_reasoning_effort="low""#, "-c", "notify=[]"]
+                    "-c", "model_reasoning_effort=\"\(effort)\"", "-c", "notify=[]"]
                 + codexDisabled.flatMap { ["--disable", $0] }
                 + ["-"]
         case .antigravity:

@@ -19,7 +19,7 @@ extension ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(["op": "read", "path": path]))
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let text = body["text"] as? String else { return nil }
@@ -36,7 +36,7 @@ extension ArisAgentClient {
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(["op": "note", "path": path]))
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await ArisNoStore.session.data(for: request)
             if (response as? HTTPURLResponse)?.statusCode == 200 { return nil }
             let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             return body?["error"] as? String ?? refused

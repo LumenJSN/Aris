@@ -9,7 +9,8 @@
 //  runs, and comes back as it was. A deadline's alert (ArisTodoModel) and a Claude Code session's notice (ClaudeStore)
 //  come here as notices too, through ArisController.notify like Aris's own news, so all of them wait their turn and
 //  only one pill shows at a time. Nothing here decides when a waiting notice may come up: ArisController.notify waits
-//  for the moment (its turn among Aris's news, a pause) and asks `mayShow` for the rest.
+//  for the moment (its turn among Aris's news, a pause) and asks `mayShow` for the rest. The pointer's intent is waited
+//  out here (ArisNoticeHoverIntent): `hovered`, the card, follows 100 ms after it rests and 150 ms after it leaves.
 //
 
 import AppKit
@@ -24,13 +25,18 @@ final class ArisNoticeCenter: ObservableObject {
     static let shared = ArisNoticeCenter()
 
     @Published private(set) var queue = ArisNoticeQueue()
+    /// The notice drawn as the card (the pointer rested on it; ArisNoticeHoverIntent).
     @Published private(set) var hovered: UUID?
+    /// Where the pointer is and what the card shows, and the wait between the two.
+    private var intent = ArisNoticeHoverIntent()
+    private var intentWait: Task<Void, Never>?
     /// The pill steps aside (faded out, still up) while the notch is open, the setup shows, a turn or a dictation runs.
     @Published private(set) var aside = false
     /// The display the pill shows on (its notch draws it).
     @Published private(set) var screenID: String?
 
     private var watches: Set<AnyCancellable> = []
+    private var displayWatch: ArisWorldSubscription?
     /// How many fixes of a problem notice were pressed (a line with several lists opens them one after another).
     private var fixPresses: [UUID: Int] = [:]
     /// The front notice's own clock (its showsFor), while it runs.
@@ -50,12 +56,16 @@ final class ArisNoticeCenter: ObservableObject {
         self.notchOpen = notchOpen
         notchScreen = screen
         watches.removeAll()
+        displayWatch?.cancel()
+        // The displays, as ArisWorld hears them (one observer for every feature).
+        let displays = PassthroughSubject<Void, Never>()
+        displayWatch = ArisWorld.shared.subscribe([.displays]) { _, _ in displays.send() }
         let moved: [AnyPublisher<Void, Never>] = [
             changes,
             ArisOnboardingGuide.shared.$phase.map { _ in () }.eraseToAnyPublisher(),
             ArisNotchState.shared.$current.map { _ in () }.eraseToAnyPublisher(),
             ArisDictationPillCenter.shared.$display.map { _ in () }.eraseToAnyPublisher(),
-            NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification).map { _ in () }.eraseToAnyPublisher(),
+            displays.eraseToAnyPublisher(),
         ]
         // After the didSet (the publishers emit on willSet): the values read are the stored ones.
         Publishers.MergeMany(moved).receive(on: DispatchQueue.main)
@@ -80,7 +90,7 @@ final class ArisNoticeCenter: ObservableObject {
     private func notchMoved() {
         let stepAside = ArisNoticeGate.stepsAside(moment)
         if stepAside != aside { aside = stepAside }
-        if stepAside, hovered != nil { hovered = nil }
+        if stepAside { dropHover() }
         let screen = (notchScreen() ?? NSScreen.main)?.displayUUID
         if screen != screenID { screenID = screen }
         runClock()
@@ -135,16 +145,40 @@ final class ArisNoticeCenter: ObservableObject {
         let notice = queue.shown.first { $0.id == id } ?? queue.pending.first { $0.id == id }
         queue = queue.closing(id)
         fixPresses[id] = nil
-        if hovered == id { hovered = nil }
+        if hovered == id || intent.pointer == id { dropHover() }
         // A deadline's alert is over once its notice goes (ArisTodoModel keeps one at a time).
         if case .deadline = notice?.source { ArisTodoModel.shared.dismissAlert() }
+        // An update's ✕ is 나중에 while it is offered; a download goes on, out of sight.
+        if notice?.key == ArisUpdateWords.key { ArisUpdater.shared.noticeClosed() }
         settle()
     }
 
+    /// The pointer came onto the pill or left it: the card follows once the intent's wait runs out (a wait already
+    /// running is cancelled: brushed past, or back within the grace).
     private func hover(_ id: UUID?) {
-        guard !aside || id == nil, hovered != id else { return }
-        hovered = id
-        runClock()
+        guard !aside || id == nil, id != intent.pointer else { return }
+        let (next, wait) = intent.pointing(at: id)
+        intent = next
+        intentWait?.cancel()
+        intentWait = nil
+        guard let wait else { return }
+        intentWait = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled, let self else { return }
+            self.intent = self.intent.settled()
+            self.intentWait = nil
+            guard self.hovered != self.intent.expanded else { return }
+            self.hovered = self.intent.expanded
+            self.runClock()
+        }
+    }
+
+    /// No pointer, no card, no wait (it stepped aside, closed, or nothing is up).
+    private func dropHover() {
+        intentWait?.cancel()
+        intentWait = nil
+        intent = intent.cleared()
+        if hovered != nil { hovered = nil }
     }
 
     /// A click on the body: what the notice names for it (a deadline opens, Claude Code's terminal comes forward).
@@ -169,6 +203,10 @@ final class ArisNoticeCenter: ObservableObject {
             }
         case .restartHelper:
             ArisAgentMonitor.shared.restart()
+        case .permissionPane(let permission):
+            ArisPermissionCenter.shared.openPane(permission)
+        case .relaunchApp:
+            ArisPermissionCenter.shared.relaunch()
         case .openJob(let job):
             ArisController.shared.openDone(id: job)
         case .openFile(let file):
@@ -183,6 +221,11 @@ final class ArisNoticeCenter: ObservableObject {
             let store = ClaudeStore.shared
             if let session = store.sessions[sessionId] { TerminalFocus.focus(session, cwd: session.cwd) }
             store.dismissPeek()
+        case .installUpdate:
+            // The updater puts its next notice (the download) in this one's place.
+            return ArisUpdater.shared.installNow()
+        case .laterUpdate:
+            return ArisUpdater.shared.later()
         }
         close(id)
     }
@@ -201,7 +244,7 @@ final class ArisNoticeCenter: ObservableObject {
 
     /// Nothing is up any more: no clock, nothing hovered.
     private func settle() {
-        if queue.shown.isEmpty { hovered = nil }
+        if queue.shown.isEmpty { dropHover() }
         runClock()
     }
 

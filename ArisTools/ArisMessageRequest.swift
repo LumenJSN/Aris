@@ -61,3 +61,12 @@ func handOffRouting(_ args: [String], environment: [String: String]) -> ArisHand
     }
     return .agent(words: args, turn: turn)
 }
+
+/// The trust gate's yes for exactly this call (ARIS_MIND_PASS: set by Core 2 for one aris-tools run, only when the owner
+/// said yes on the gate's card), handed on with the call to the agent's route, which takes it in place of its own card
+/// only when it is the pass minted for this very call and turn (ArisMindPasses). Anything else is left out.
+func mindPassed(_ body: [String: Any], environment: [String: String]) -> [String: Any] {
+    guard let pass = environment["ARIS_MIND_PASS"], pass.count == 64,
+          pass.unicodeScalars.allSatisfy({ ("0"..."9").contains($0) || ("a"..."f").contains($0) }) else { return body }
+    return body.merging(["pass": pass]) { $1 }
+}

@@ -50,7 +50,7 @@ enum ArisUsageFetch {
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         let done = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var result: (Int, Data?, TimeInterval?)?
-        URLSession.shared.dataTask(with: request) { data, response, _ in
+        ArisNoStore.session.dataTask(with: request) { data, response, _ in
             if let http = response as? HTTPURLResponse {
                 result = (http.statusCode, data, (http.value(forHTTPHeaderField: "Retry-After")).flatMap(TimeInterval.init))
             }
@@ -189,7 +189,7 @@ extension ArisUsageFetch {
         request.setValue("codex_cli_rs", forHTTPHeaderField: "User-Agent")
         let done = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var body: Data?
-        URLSession.shared.dataTask(with: request) { data, response, _ in
+        ArisNoStore.session.dataTask(with: request) { data, response, _ in
             if (response as? HTTPURLResponse)?.statusCode == 200 { body = data }
             done.signal()
         }.resume()

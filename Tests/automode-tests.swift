@@ -541,17 +541,18 @@ private func autoHandOffTests() {
     check(done.outcome == .failed(ArisActionGate.declined) && notes.declined && notes.showed && auto.passedCalls.isEmpty,
           "auto hand-off: 하지 않기 is his no: the brain is told only the usual decline line, and nothing is marked")
     check(!done.outcome.output.contains("mismatch") && !done.outcome.output.contains("check"), "auto hand-off: the brain is never told why")
+    // (rel11: with these words, “그거 할 일에 추가해 줘”, an unsure is today's card at once; the stopped card is the checker's own no.)
     // 그래도 하기: today's card next, and only a yes there runs it.
-    (claude, auto, checker) = turn(amAnswer(#"{"verdict":"unsure"}"#), answers: [.yes([:]), .yes([:])])
+    (claude, auto, checker) = turn(amAnswer(#"{"verdict":"mismatch","kind":"different_task"}"#), answers: [.yes([:]), .yes([:])])
     done = answer(turn: claude)
     check(claude.cards.count == 2 && claude.cards[0].stopped && !claude.cards[1].stopped && claude.cards[1].title == "할 일에 넣기" && done.ran == [todo],
           "auto hand-off: 그래도 하기 brings up today's confirm card, and a yes there runs it")
     check(auto.passedCalls.isEmpty, "auto hand-off: what the user let run himself gets no 확인함 mark")
-    (claude, auto, checker) = turn(amAnswer(#"{"verdict":"unsure"}"#), answers: [.yes([:]), .no])
+    (claude, auto, checker) = turn(amAnswer(#"{"verdict":"mismatch","kind":"different_task"}"#), answers: [.yes([:]), .no])
     notes = ArisHandOffNotes()
     done = answer(turn: claude, notes: notes)
     check(done.ran.isEmpty && claude.cards.count == 2 && notes.declined, "auto hand-off: a no on that second card runs nothing")
-    (claude, auto, checker) = turn(amAnswer(#"{"verdict":"unsure"}"#), answers: [])
+    (claude, auto, checker) = turn(amAnswer(#"{"verdict":"mismatch","kind":"different_task"}"#), answers: [])
     done = answer(turn: claude)
     check(done.ran.isEmpty && done.outcome == .failed(ArisActionGate.unanswered), "auto hand-off: a stopped card nobody answers runs nothing")
     // A checker that fails, is late or answers oddly: nothing runs, and today's card comes up at once with the line why (review 9, L1).

@@ -15,6 +15,9 @@ THIRD_PARTY_LICENSES. In particular:
 - Bot Avatars, Copyright (c) 2026 Jakub Antalik (MIT), ported to Swift in Packages/BotAvatarsKit.
 - mediaremote-adapter, Copyright (c) 2025, Jonas van den Berg and contributors (BSD-3-Clause).
 - Smart Turn v3, Copyright (c) 2024-2025, Daily (BSD-2-Clause), bundled as a Core ML model.
+- A speaker embedding model by pyannote (CNRS) and WeSpeaker, converted to Core ML by Fluid Inference
+  (FluidInference/speaker-diarization-coreml), licensed under CC BY 4.0, bundled as modified Core ML conversions
+  (Aris/private/Aris/Hearing/VoiceIDModel).
 - AsyncXPCConnection, Copyright (c) 2023, Chime (BSD-3-Clause).
 - Defaults and KeyboardShortcuts, Copyright (c) Sindre Sorhus (MIT); SkyLightWindow, Copyright (c) 2025 Lakr Aream
   (MIT); MacroVisionKit, Copyright (c) 2024 github.com/theboringhumane (MIT).
@@ -23,5 +26,8 @@ THIRD_PARTY_LICENSES. In particular:
   two word lists, converted to Swift, in ArisAgent/ArisSavedStepsWords.swift. Its NOTICE: "OpenMausBot was relicensed
   from the MIT License to the Apache License, Version 2.0, with the consent of all contributors whose copyright was
   incorporated before the transition."
+- Sparkle 2.10.1, Copyright (c) 2006-2013 Andy Matuschak and the other Sparkle authors (MIT), with bsdiff
+  (Colin Percival, BSD-2-Clause), sais-lite (Yuta Mori, MIT), ed25519 (Orson Peters, zlib) and SUSignatureVerifier
+  (Mark Hamlin, BSD-2-Clause): the updater inside the app (Sparkle.framework).
 - Lucide, Copyright (c) 2026 Lucide Icons and Contributors (ISC; some icons derived from Feather, Copyright (c)
   2013-present Cole Bemis, MIT): the Settings window's line icons (Aris/components/Settings/ArisLineIconData.swift).

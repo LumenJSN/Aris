@@ -29,6 +29,9 @@ final class ArisAPIHelper: @unchecked Sendable {
     typealias Run = (_ tools: String, _ argv: [String], _ done: @escaping (Int32, String) -> Void) -> Void
     /// Runs aris-tools with text on its stdin (a desktop type or set-value: the text is in no argv).
     typealias RunInput = (_ tools: String, _ argv: [String], _ stdin: String, _ done: @escaping (Int32, String) -> Void) -> Void
+    /// Runs a call in this process when the registry says it can (ArisCapabilityLocal): what an aris-tools child would
+    /// have printed and its status; nil for a call a child runs.
+    typealias Local = (_ argv: [String]) -> ArisCapabilityLocal.Output?
 
     struct Config {
         var dialect = ArisAPIDialect.openAIChat
@@ -83,7 +86,8 @@ final class ArisAPIHelper: @unchecked Sendable {
     }
 
     static let maxResult = 6_000
-    static let defaultRounds = 8
+    /// The most rounds a turn may have (the driver's budget for a background job; a conversation asks for fewer).
+    static let defaultRounds = ArisAPIDriver.taskRoundBudget
     /// The most calls one round may make.
     static let maxCallsPerRound = 8
 
@@ -91,6 +95,7 @@ final class ArisAPIHelper: @unchecked Sendable {
     private let key: (String) -> String?
     private let run: Run
     private let runInput: RunInput
+    private let local: Local?
     let queue: DispatchQueue
     private var config: Config
     /// The key as last read, only to dot it out of what this says (never sent anywhere but its provider).
@@ -117,7 +122,7 @@ final class ArisAPIHelper: @unchecked Sendable {
     init(profile: ArisAPIProfile, tools: String = ArisAPIHelper.toolsPath, strictOrigin: Bool = true, testServer: String? = nil,
          queue: DispatchQueue = DispatchQueue(label: "com.lumenjsn.aris.api-helper"), send: @escaping Send,
          key: @escaping (String) -> String?, run: @escaping Run = ArisAPIHelper.runTools,
-         runInput: @escaping RunInput = ArisAPIHelper.runToolsWithInput) {
+         runInput: @escaping RunInput = ArisAPIHelper.runToolsWithInput, local: Local? = nil) {
         config = Config(profile: profile, tools: tools, strictOrigin: strictOrigin)
         if let testServer { config.base = testServer }
         self.queue = queue
@@ -125,6 +130,7 @@ final class ArisAPIHelper: @unchecked Sendable {
         self.key = key
         self.run = run
         self.runInput = runInput
+        self.local = local
     }
 
     /// aris-tools where the agent installs it.
@@ -382,6 +388,14 @@ final class ArisAPIHelper: @unchecked Sendable {
                 self.resolve(id, text: Self.toolText(command: shown, status: status, output: ArisActionGate.reported(argv, status: status, output: capped).output))
             }
         }
+        // A read of Aris's own stores runs here with aris-tools' own code (no process started: jv-hands); the rest in a child.
+        if stdin == nil, let local {
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let output = local(argv) else { return self.run(tools, argv, finished) }
+                finished(output.status, output.text(cap: Self.maxResult))
+            }
+            return
+        }
         if let stdin { runInput(tools, argv, stdin, finished) } else { run(tools, argv, finished) }
     }
 
@@ -519,12 +533,15 @@ final class ArisAPIHelper: @unchecked Sendable {
         DispatchQueue.global(qos: .userInitiated).async {
             // A video or sound conversion its full time (aris-tools stops it first, leaving nothing behind).
             // An Aside task: its card (a job's waits ten minutes), then Aside's own fifteen.
-            let limit: TimeInterval = argv.first == "aside" ? asideWait : argv.first == "mcp" || argv.first == "desktop" ? 130 : argv.first == "skill" ? 130 + ArisSkillScript.timeout + 10 : argv.first == "note" ? 40
+            let limit: TimeInterval = argv.first == "aside" ? asideWait : argv.first == "mcp" || argv.first == "desktop" ? 130 : argv.first == "skill" ? 130 + ArisSkillScript.timeout + 10
                 // A message: the send, then Messages' history watched for it, and one more try as a text (ArisMessageGate.sendLimit).
                 : argv.first == "message" ? ArisMessageGate.sendLimit
                 // A prompt into a Claude Code session: the user's card, then the checks and the typing (ArisSessionSend).
                 : argv.first == "session" ? ArisSessionSend.cardWait + 60
-                : ArisConvertWords.isLong(argv) ? ArisConvertWords.mediaLimit + 15 : 30
+                : ArisConvertWords.isLong(argv) ? ArisConvertWords.mediaLimit + 15
+                // A calendar or to-do request may wait on macOS's own permission dialog (ArisPermissionWait).
+                // So may a note, the music or a restart, on its Automation dialog (tenth VM run, item 6).
+                : ArisPermissionWait.scriptRunLimit(argv: argv) ?? ArisPermissionWait.runLimit(argv: argv) ?? 30
             // A conversion ends before this wait does (its own deadline, or this one less a margin).
             var environment = scrubbed(ProcessInfo.processInfo.environment)
             environment[ArisConvertWords.deadlineKey] = String(Date().timeIntervalSince1970 + limit - 5)
@@ -645,7 +662,7 @@ final class ArisAPIHelper: @unchecked Sendable {
         let out = FileHandle.standardOutput
         let lock = NSLock()
         let helper = ArisAPIHelper(profile: profile, send: { data in lock.withLock { try? out.write(contentsOf: data) } },
-                                   key: { ArisAPISecrets.live.secret(for: $0) })
+                                   key: { ArisAPISecrets.live.secret(for: $0) }, local: ArisCapabilityLocal.live)
         // Ended by the runner: its aris-tools children end too.
         signal(SIGTERM, SIG_IGN)
         let terminate = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())

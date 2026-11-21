@@ -27,8 +27,6 @@ enum ArisDictationStage: Equatable {
 extension ArisController {
     /// How long "넣었어요" stays before the notch closes.
     static let dictationLinger: Duration = .milliseconds(1200)
-    /// Whisper reads the first 30 s only: past this, the recognizer's whole text is used instead.
-    static let dictationWhisperLimit: Duration = .seconds(28)
 
     func dictationKey(_ action: ArisDictationKey.Action) {
         // A press waiting for the last words takes the key's actions until they're in (or it's let go).
@@ -43,6 +41,10 @@ extension ArisController {
         switch action {
         case .start: startDictation()
         case .lock: lockDictation()
+        case .startLocked:
+            // A double tap: hands-free from the start (or, queued behind the last words, once they're in).
+            startDictation()
+            if dictationQueue.waiting { _ = dictationQueue.take(.lock) } else { lockDictation() }
         case .finish: finishDictation()
         // An accidental tap, a triple tap or Esc: dropped quietly.
         case .cancel: if dictation == .listening { cancel() }
@@ -79,8 +81,8 @@ extension ArisController {
             dictationQueue.press()
             return
         case .replaceTyped:
-            turn?.cancel()
-            session = session.done()
+            endTurn(.dismissed)
+            setSession(session.done(), from: nil)
         case .interrupt:
             log.notice("dictation: Aris stops for it")
             // An answer already delivered stays in the history and its turn logs "ok", as 닫기 keeps it.
@@ -96,8 +98,11 @@ extension ArisController {
         ArisDictationState.shared.begin(front: NSWorkspace.shared.frontmostApplication)
         dictation = .listening
         log.notice("dictating")
-        openMicrophone()
-        watchDictationLimit()
+        // A dictation is a turn of its own: the microphone and every task it starts work for it.
+        ArisTurnScope.within(openTurn(.dictation)) {
+            openMicrophone()
+            watchDictationLimit()
+        }
     }
 
     /// Two quick presses: hands-free until the next press.
@@ -149,11 +154,14 @@ extension ArisController {
         let starting = self.starting
         let style = state.style
         let polish = state.takeForPolish()
-        let long = listeningSince.map { ContinuousClock.now - $0 >= Self.dictationWhisperLimit } ?? false
-        turn = Task {
+        runTurn(.dictation) {
             await starting?.value
             let apple = (try? await Self.within(Self.stopTimeout, cancelsWork: false) { await listener.stop() }) ?? session.heard
-            let recording = long ? [] : listener.recordedSamples
+            // Any length up to the five minutes the recording holds goes to Whisper whole: past 30 s it reads window by
+            // window, each cut where the voice was quietest (ArisLongTurn), and the live recognizer's text is kept only
+            // when Whisper isn't ready, runs out of time (3 s, plus 2 s a window, at most 12 s), or the dictation outran
+            // the recording. Before, past 28 s Whisper was skipped and the weaker live text typed (2026-11-18 audit).
+            let recording = listener.secondListenSamples
             self.listener = nil
             level = 0
             let heard = await secondListen(recording, apple: apple)
@@ -162,10 +170,11 @@ extension ArisController {
             guard !Task.isCancelled, dictation == .listening else { return }
             guard !cleaned.isEmpty else { return cancel() }
             dictation = .cleaning(ArisDictationCleaner.marked(heard))
-            session = session.hearing(heard).thinking()
+            setSession(session.hearing(heard).thinking())
             let text = await polishedDictation(cleaned, style: style, session: polish.session, context: polish.context)
             guard !Task.isCancelled else { return }
-            let outcome = await ArisAgentClient.insertDictation(text, learn: true)
+            // The notch says when it waits for the keys; the words are kept for ⌃⌘V and copied if the wait is long.
+            let outcome = await insertDictationShowingWait(text, state: state)
             guard !Task.isCancelled else { return }
             // Nowhere took it (no app read the paste, or it couldn't be typed): it goes on the clipboard instead.
             let copied = ArisDictationCopy.copies(outcome)
@@ -176,10 +185,16 @@ extension ArisController {
                 let appOn = AXIsProcessTrusted()
                 if ArisHelperInstallWords.mappingLost(appSwitchOn: appOn, helperSays: false) { log.error("\(ArisHelperInstallWords.mappingLostLog, privacy: .public)") }
                 _ = state.copy(text)
-                return failDictation(ArisHelperInstallWords.notTyped(appSwitchOn: appOn))
+                let line = ArisHelperInstallWords.notTyped(appSwitchOn: appOn)
+                // The pill has room for a few words: the whole reason, with the list to open, goes on the notice pill.
+                guard ArisDictationPillGate.on else { return failDictation(line) }
+                let notice = ArisNoticeRoute.problem(line: line, title: ArisDictationWait.pillLine(english: ArisUIWords.english), english: ArisUIWords.english)
+                ArisTurnScope.outside { Task { [weak self] in await self?.notify(notice) } }
+                return failDictation(ArisDictationWait.pillLine(english: ArisUIWords.english))
             }
             if copied {
                 guard state.copy(text) else {
+                    // Still there for ⌃⌘V (state.lastText).
                     log.error("dictation: nowhere to type it and the clipboard refused it")
                     return failDictation(ArisUIWords.text("입력하지 못했어요", "Couldn't type it"))
                 }
@@ -188,12 +203,12 @@ extension ArisController {
             state.lastText = text
             state.copied = copied
             dictation = .typed
-            session = session.answering(text)
+            setSession(session.answering(text))
             finishTurn("ok")
             if startQueuedDictation() { return }
             await lingerAfterDictation(copied: copied)
             guard !Task.isCancelled, dictation == .typed else { return }
-            session = session.done()
+            setSession(session.done())
         }
     }
 
@@ -217,6 +232,8 @@ extension ArisController {
     /// quiet for dictation); otherwise the notch says it, as before (`endsDictation`: the stage goes first, so the notch
     /// shows the line as a failed turn).
     func failDictation(_ line: String, endsDictation: Bool = false) {
+        // A dictation that is over fails nothing: the turn after it is not its to end.
+        guard turnIsCurrent else { return }
         guard ArisDictationPillGate.on else {
             if endsDictation { dictation = nil }
             return fail(line)
@@ -225,11 +242,20 @@ extension ArisController {
         ArisDictationState.shared.showPillError(line)
         gestureCancelled()
         finishTurn("error")
-        turn?.cancel()
+        endTurn(.failed)
         releaseListener()
         level = 0
-        session = session.done()
+        setSession(session.done(), from: nil)
         resumeMusicIfPaused()
+    }
+
+    /// 받아쓰기 쓰기 was turned off: a dictation still listening is dropped, and a press waiting for the last words is
+    /// forgotten (words already on their way in still go in).
+    func dictationTurnedOff() {
+        dictationQueue = ArisDictationQueue()
+        guard dictation == .listening, !ArisDictationState.shared.finishing else { return }
+        log.notice("dictation: turned off, dropping the one listening")
+        cancel()
     }
 
     // MARK: - The pill's controls
@@ -237,7 +263,8 @@ extension ArisController {
     /// A click on the idle pill: a hands-free dictation into the app in front (the pill's panel never activates Aris,
     /// so that app keeps the keyboard). ✕ cancels it, ↑ or the key puts it in.
     func startDictationFromPill() {
-        guard dictation != .listening else { return }
+        // 받아쓰기 쓰기 off: the pill is hidden, and a click that still lands where it was does nothing.
+        guard ArisDictationSwitch.on, dictation != .listening else { return }
         startDictation()
         guard dictation == .listening else { return }
         log.notice("dictation: started from the pill")
@@ -275,7 +302,7 @@ extension ArisController {
         let next = queue.typed()
         dictationQueue = queue
         guard next.start else { return false }
-        session = session.done()
+        setSession(session.done())
         startDictation()
         if next.locked { lockDictation() }
         return true
@@ -304,7 +331,7 @@ extension ArisController {
     /// ⌃⌘V: the last dictation typed again where the cursor is, once the shortcut's keys are let go (so ⌃ isn't
     /// still down when ⌘V is pressed).
     func pasteLastDictation() {
-        guard let text = ArisDictationState.shared.lastText, dictation == nil else { return }
+        guard ArisDictationSwitch.on, let text = ArisDictationState.shared.lastText, dictation == nil else { return }
         Task {
             for _ in 0..<50 where !NSEvent.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
                 try? await Task.sleep(for: .milliseconds(20))
@@ -312,7 +339,7 @@ extension ArisController {
             if case .failed(let problem) = await ArisAgentClient.insertDictation(text, learn: false) {
                 log.error("last dictation not typed: \(problem, privacy: .public)")
                 // Said in the notch, never over a turn that started meanwhile.
-                if session.phase == .idle { fail(ArisUIWords.text("마지막 받아쓰기를 넣지 못했어요: \(problem)", "Couldn't type the last dictation: \(problem)")) }
+                if session.phase == .idle { fail(ArisToolErrorWords.line("마지막 받아쓰기를 넣지 못했어요", "Couldn't type the last dictation", problem: problem)) }
             }
         }
     }

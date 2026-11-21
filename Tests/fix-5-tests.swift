@@ -236,9 +236,9 @@ private func fix5HelperWiringTests() {
           && ArisFixReturn.watches(.pane(.disk), request: "read my mail", handsFree: false) == .agentDisk,
           "final 1: the older watch never takes the helper's question (it would be asked a second time); a permission's it still takes")
     check(model.contains("worked: !session.steps.isEmpty || session.question != nil"), "final 1: wiring: a step or a card marks the turn as having worked")
-    let controller = fix5Code("Aris/private/Aris/ArisController.swift")
+    let controller = fix5Code("Aris/private/Aris/Routing/ArisController+Funnel.swift")
     check(controller.contains("turnTyped = typed\n        ArisFixModel.shared.watch()"), "final 1: wiring: the button's rules follow every turn from its start")
-    check(controller.contains("guard ArisHelperWatch.isLostLine(session.reply) else { return }\n        session = session.corrected(ArisFixWords.helperBackLine(english: ArisUIWords.english))"),
+    check(fix5Code("Aris/private/Aris/ArisController.swift").contains("guard ArisHelperWatch.isLostLine(session.reply) else { return }\n        setSession(session.corrected(ArisFixWords.helperBackLine(english: ArisUIWords.english)))"),
           "final 1: wiring: only the helper's own line is replaced")
 }
 
@@ -644,7 +644,7 @@ private func fix5PracticeLeftoverTests() {
           "final-new 1: wiring: a setup put off or closed early does the same, and a finished one does not clear the tries' own turn")
     let practiceCode = fix5Code("Aris/private/Aris/ArisController+Practice.swift")
     check(practiceCode.contains("ArisOnboardingGuide.shared.practiceTimer = ArisTimerModel.shared.state") && practiceCode.contains("ArisTimerModel.shared.cancel()")
-          && practiceCode.contains("endConversation()\n        session = ArisSession()"), "final-new 1: wiring: the practice notes its timer, and the leftovers are a cancelled timer and an empty notch")
+          && practiceCode.contains("endConversation()\n        setSession(ArisSession(), from: nil)"), "final-new 1: wiring: the practice notes its timer, and the leftovers are a cancelled timer and an empty notch")
 }
 
 // MARK: - final-new 2: a key that has never answered
@@ -766,7 +766,7 @@ private func fix5FilesNoteLanguageTests() {
     check(english.contains(ArisPendingFiles.note) && fix5HasHangul(english), "final-new 3: (a request with a dropped file carries Aris's own Korean note)")
     check(!ArisBrainFailure.korean(request: english, prompt: "ctx\n" + english) && ArisBrainFailure.korean(request: korean, prompt: korean),
           "final-new 3: the helper's lines for that turn follow his own words, not the note: English for “Mail this to minsu”, Korean for Korean")
-    check(ArisBrainTrouble(brain: nil, missing: .any).line(korean: ArisBrainFailure.korean(request: english, prompt: english)) == "No AI is ready on this Mac. Connect one in Settings › AI services.",
+    check(ArisBrainTrouble(brain: nil, missing: .any).line(korean: ArisBrainFailure.korean(request: english, prompt: english)) == "No AI is ready on this Mac. Connect one in Settings › Talking to Aris › AI · Model.",
           "final-new 3: so the no-AI line after a dropped file is English on an English request")
     check(!ArisBrainFailure.korean(request: bare, prompt: bare) && ArisBrainFailure.korean(request: "", prompt: "매일 아침 요약") && !ArisBrainFailure.korean(request: "", prompt: "Daily summary"),
           "final-new 3: with no words of his own the note still decides nothing; a schedule's prompt decides as before")
@@ -813,7 +813,7 @@ private func fix5ReceiptUndoTests() {
           && ArisActionGrant.isUndoKey("todo|set-due|id=R-1"), "final-new 4: the write that puts the date back is one the helper's undo vouches for")
     let model = fix5Code("Aris/private/Aris/ArisReceiptModel.swift")
     check(model.contains("log.notice(\"receipt: Undo pressed for \\(pressed.act.id, privacy: .public)\")") && model.contains("log.notice(\"receipt: the undo ended: \\(ArisReceiptUndo.said(outcome), privacy: .public)\")")
-          && model.contains("if clock.isOver(failed: line.saysNotUndone) { show(desk.closing()) }") && model.contains("{ show(desk.showing(failed)) }"),
+          && model.contains("if clock.isOver(failed: line.saysNotUndone, offersUndo: line.offersUndo) { show(desk.closing()) }") && model.contains("{ show(desk.showing(failed)) }"),
           "final-new 4: wiring: the press, its outcome and a press that found nothing are logged, and a failure is never dropped")
 }
 

@@ -109,6 +109,8 @@ struct ArisAPIProfile: Codable, Equatable, Sendable {
     var vision: Bool?
     /// The model calls functions; false: the text relay (an ```aris-run block, ArisAgyRelay's protocol).
     var tools: Bool?
+    /// The model that does the quick understanding when this profile does it (nil: ArisAPIRouterCall's small default).
+    var router: String? = nil
 
     var preset: ArisAPIPreset? { ArisAPIPreset.named(id) }
 
@@ -126,7 +128,7 @@ struct ArisAPIProfile: Codable, Equatable, Sendable {
         guard let preset else { return false }
         if let baseURL { guard !preset.needsKey, ArisAPIPreset.checkLocalBase(baseURL) == baseURL else { return false } }
         let shape = #"^[A-Za-z0-9._:/@+\-]{0,200}$"#
-        return [quick, strong].allSatisfy { $0.range(of: shape, options: .regularExpression) != nil }
+        return [quick, strong, router ?? ""].allSatisfy { $0.range(of: shape, options: .regularExpression) != nil }
     }
 
     var takesImages: Bool { vision ?? preset?.vision ?? false }

@@ -93,6 +93,9 @@ enum ArisTurnGate {
         // The user's routines: aris-tools only hands the words to the agent, which asks them on a card before one is saved or
         // removed, and marks the conversation itself when it hands AI-worded steps back (ArisRoutineRoutes).
         if first == "routine" { return true }
+        // The background tasks: the agent refuses an added instruction once this conversation read outside text, and marks
+        // the conversation itself when a status brings a tainted task's steps back (ArisTaskTool).
+        if first == "task" { return true }
         // Website work for Aside: the agent's one gate knows this conversation read outside text (then the user's card).
         if first == "aside" { return true }
         // A prompt into one of the user's Claude Code sessions: the agent asks them on their card every time (ArisSessionSend).
@@ -162,7 +165,7 @@ enum ArisTurnGate {
             if rest.first == "mail", !ArisLocalReadPolicy.isRead(rest), !ArisHandOff.names(rest) { return .deny("Refused: mail is read only here.") }
             // A service call runs alone, and the agent's gate marks the conversation itself before the service is reached
             // (so it judges the call by the taint as it was: M8).
-            if rest.first == "mcp" || rest.first == "skill" || rest.first == "aside" || rest.first == "routine" || rest.first == "session" {
+            if rest.first == "mcp" || rest.first == "skill" || rest.first == "aside" || rest.first == "routine" || rest.first == "session" || rest.first == "task" {
                 guard pieces.count == 1 else { return .deny(unreadable) }
                 continue
             }

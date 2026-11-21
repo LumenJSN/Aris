@@ -35,6 +35,8 @@ final class ArisSettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
         let wasVisible = window.isVisible
         if !wasVisible {
             window.center()
+            // Option A: it opens on Aris와 말하기's AI · 모델, unless a link just chose where.
+            ArisSettingsNav.shared.opening()
             ArisSettingsNav.shared.opens += 1
         }
         window.makeKeyAndOrderFront(nil)
@@ -76,6 +78,7 @@ final class ArisSettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.managed, .participatesInCycle, .fullScreenAuxiliary]
         window.identifier = NSUserInterfaceItemIdentifier("ArisSettingsWindow")
+        ArisRecordingPrivacy.follow(window)
         // Transparent, so the material is the window's whole face (the sidebar and the gutter round the content card).
         window.isOpaque = false
         window.backgroundColor = .clear

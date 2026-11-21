@@ -64,7 +64,8 @@ private func firstRunPinTests() {
 
     let keys = code("Aris/private/Aris/ArisPreferenceKeys.swift")
     check(keys.contains(#"Key<Bool>("arisWakeWord", default: false)"#), "F4: on a fresh install the wake word is off")
-    check(keys.contains(#"Key<String>("arisBrain", default: ArisBrain.codex.rawValue)"#), "F2: the stored brain's own default is unchanged for everyone")
+    check(keys.contains(#"Key<String>("arisBrain", default: ArisBrain.standard.rawValue)"#) && F.earlierBrain == "codex",
+          "F2: the brain's default is the one every reader shares (jv-polish); an earlier install with none stored is still pinned to Codex")
     let entry = code("Aris/private/App/ArisEntry.swift")
     let pin = entry.range(of: "ArisFirstRun.pinEarlierDefaults"), launch = entry.range(of: "func applicationDidFinishLaunching")
     check(pin != nil && launch != nil && pin!.lowerBound < launch!.lowerBound, "F4: the pinning runs before anything else at launch")
@@ -116,11 +117,11 @@ private func firstRunBrainWordsTests() {
                   "F2: \(brain.rawValue) not starting is a sentence for a person, and the notch knows it (\(korean ? "ko" : "en"))")
         }
     }
-    check(T.cannotStart(.codex, korean: true).contains("설정 › AI 서비스") && T.cannotStart(.codex, korean: false).contains("Settings › AI services"),
+    check(T.cannotStart(.codex, korean: true).contains("설정 › Aris와 말하기 › AI · 모델") && T.cannotStart(.codex, korean: false).contains("Settings › Talking to Aris › AI · Model"),
           "F2: it says where to fix it")
     check(T.cannotStart(.claude, korean: false).contains("Claude") && !T.cannotStart(.api, korean: false).contains("브레인"), "F2: it names the AI, in the sentence's language")
     check(!T.isCannotStart("Claude 한도에 닿았어요. 잠시 뒤에 다시 해 주세요.") && !T.isCannotStart("") && !T.isCannotStart("파리예요."), "F2: no other answer gets the settings button")
-    check(T.settingsButton(english: false) == "설정 › AI 서비스 열기" && T.settingsButton(english: true) == "Open Settings › AI services", "F2: the button's words")
+    check(T.settingsButton(english: false) == "설정 › AI · 모델 열기" && T.settingsButton(english: true) == "Open Settings › AI · Model", "F2: the button's words")
     let runner = code("ArisAgent/ArisAgentRunner.swift")
     check(!runner.contains("is it installed") && runner.contains("ArisBrainFailure.startLine(brain: brain, missing: driver.missing"), "F2: the agent says it that way")
     check(code("Aris/private/Aris/Home/ArisTurnView.swift").contains("ArisBrainTrouble.isCannotStart(session.reply)"), "F2: the notch offers Settings under it")
@@ -131,28 +132,31 @@ private func firstRunBrainWordsTests() {
 private func firstRunFlowTests() {
     // The owner's picks of 2026-11-11 (onboarding 4-A): the shortcut's practice and the first question are one page, before
     // the AI page (onboard2-tests.swift has each kind of user's pages).
-    check(ArisSetupPage.allCases == [.permissions, .ask, .brain, .wake, .dictation],
-          "F2/F4: 권한 → 눌러서 말하기 → AI 고르기 → 아리스라고 부르기 → 받아쓰기")
+    check(ArisSetupPage.allCases == [.permissions, .ask, .brain, .wake, .dictation, .done],
+          "F2/F4: 권한 → 눌러서 말하기 → AI 고르기 → 아리스라고 부르기 → 받아쓰기 → 준비 끝")
     var flow = ArisSetupFlow(page: .ask)
     check(flow.next() && flow.page == .brain, "F2: the AI is picked right after the first request, which needs none")
-    check(flow.next() && flow.page == .wake && flow.next() && flow.page == .dictation && !flow.next() && flow.finished, "F4: the wake word is asked before the last page")
+    check(flow.next() && flow.page == .wake && flow.next() && flow.page == .dictation && flow.next() && flow.page == .done && !flow.next() && flow.finished,
+          "F4: the wake word is asked before dictation, and 준비 끝 is the last page")
 
     var none = ArisSetupFlow(page: .ask)
     check(none.next(skipping: [.brain]) && none.page == .wake, "F2: a page that is left out: 계속 goes past it")
     none.back(skipping: [.brain])
     check(none.page == .ask, "F2: and 뒤로 comes back over it")
-    var last = ArisSetupFlow(page: .wake)
-    check(last.next(skipping: [.dictation]) == false && last.finished, "F2: skipping the last page finishes")
+    var last = ArisSetupFlow(page: .dictation)
+    check(last.next(skipping: [.done]) == false && last.finished, "F2: skipping the last page finishes")
     var first = ArisSetupFlow(page: .ask)
     first.back(skipping: [.permissions])
     check(first.page == .permissions, "F2: 뒤로 never leaves the first page")
 
-    let fifth = 1.0 / 5
-    check(abs(ArisSetupFlow(page: .brain).progress(granted: [:]) - 2 * fifth) < 1e-9 && abs(ArisSetupFlow(page: .dictation).progress(granted: [:]) - 4 * fifth) < 1e-9,
+    let sixth = 1.0 / 6
+    check(abs(ArisSetupFlow(page: .brain).progress(granted: [:]) - 2 * sixth) < 1e-9 && abs(ArisSetupFlow(page: .dictation).progress(granted: [:]) - 4 * sixth) < 1e-9
+          && abs(ArisSetupFlow(page: .done).progress(granted: [:]) - 5 * sixth) < 1e-9,
           "F2/F4: the rail moves an equal share a page")
     check(ArisOnboardingTalk.mode(phase: .setup, page: .brain) == .turn && ArisOnboardingTalk.mode(phase: .setup, page: .wake) == .turn
           && ArisOnboardingTalk.mode(phase: .setup, page: .ask) == .practice, "F2/F4: only the try page is practice")
-    check(ArisSetupPage.resume(saved: 2) == .brain && ArisSetupPage.resume(saved: 5) == .dictation && ArisSetupPage.resume(saved: 6) == .permissions,
+    check(ArisSetupPage.resume(saved: 2) == .brain && ArisSetupPage.resume(saved: 5) == .dictation && ArisSetupPage.resume(saved: 6) == .done
+          && ArisSetupPage.resume(saved: 7) == .permissions,
           "F2/F4: a saved page resumes; one that doesn't exist starts at 권한")
 
     typealias B = ArisOnboardingBrainRows
@@ -181,10 +185,10 @@ private func firstRunWakeTests() {
 
     check(A.speechRecheck(after: 0) == .seconds(30) && A.speechRecheck(after: 1) == .seconds(120) && A.speechRecheck(after: 2) == .seconds(600),
           "F4: a model still not ready is looked for again later, each time further off")
-    check(A.speechRecheck(after: 3) == nil && A.speechRecheck(after: 50) == nil, "F4: then it stops looking until something changes")
+    check(A.speechRecheck(after: 3) == .seconds(600) && A.speechRecheck(after: 50) == .seconds(600), "F4: then it keeps looking every ten minutes (jv-wake)")
     check(A.pause(afterListenFailures: 1) == .seconds(30) && A.pause(afterListenFailures: 2) == .seconds(120) && A.pause(afterListenFailures: 3) == .seconds(600),
           "F4: a check that couldn't listen keeps the microphone closed longer each time")
-    check(A.pause(afterListenFailures: 4) == nil && A.pause(afterListenFailures: 0) == .seconds(30), "F4: after three in a row it stays closed")
+    check(A.pause(afterListenFailures: 4) == .seconds(600) && A.pause(afterListenFailures: 0) == .seconds(30), "F4: after three in a row it is tried every ten minutes (jv-wake)")
 
     let wake = code("Aris/private/Aris/ArisController+Wake.swift")
     check(wake.contains("speechReady: Self.wakeSpeechReady") && wake.contains("case .speechModel?:"), "F4: the arming asks whether the model is there")

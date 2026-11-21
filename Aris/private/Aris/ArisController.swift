@@ -21,7 +21,9 @@ private let log = Logger(subsystem: "com.lumenjsn.aris", category: "turn")
 final class ArisController: ObservableObject {
     static let shared = ArisController()
 
-    @Published var session = ArisSession() {
+    /// What the notch shows of the turn. Written only through `setSession` (below), which drops a write from a turn
+    /// that is over.
+    @Published private(set) var session = ArisSession() {
         didSet {
             lastActivity = Date()
             if oldValue.phase == .speaking, session.phase != .speaking {
@@ -30,15 +32,19 @@ final class ArisController: ObservableObject {
                 conversation = conversation.spoke(at: Self.uptime)
             }
             // A new turn starts not handed off.
-            if oldValue.phase == .idle, session.phase != .idle { handedOff = false }
+            if oldValue.phase == .idle, session.phase != .idle {
+                handedOff = false
+                answeredUndo = false
+            }
             if session.phase != oldValue.phase || session.question != oldValue.question { updateVoiceWatch() }
             // The card's click hold follows the card: gone with it, and started for a card put up by any path (ArisCardHold).
             if session.question?.id != oldValue.question?.id { ArisCardStill.shared.follow(session.question?.id) }
             // So does what has been seen of it: the next card starts unread (ArisCardRead).
             if session.question?.id != oldValue.question?.id { ArisCardReadLive.shared.follow(session.question?.id) }
             guard session.phase == .idle, oldValue.phase != .idle else { return }
-            // Whatever ended the turn, no overlay it put up stays on screen (QA BUG-44).
+            // Whatever ended the turn, no overlay it put up stays on screen (QA BUG-44), and no request it never took runs on.
             closeGestureLeftovers()
+            dropEarlyRequest()
             endedDictation = dictation != nil
             dictation = nil
             if dictationQueue.waiting { dictationQueue = ArisDictationQueue() }
@@ -53,6 +59,13 @@ final class ArisController: ObservableObject {
             waitForWakeWordSoon(after: conversation.isOpen ? .zero : Self.wakeDelayAfterTurn)
             turnHeard = false
         }
+    }
+    /// The one way `session` changes (ARCHITECTURE.md target 4): a write from code working for `turn` (by default the
+    /// turn the calling code was started for, ArisTurnScope) is dropped once that turn is over, cancelled or replaced.
+    /// Code working for no turn (a key press, a click, a watcher) always writes.
+    func setSession(_ next: ArisSession, from turn: ArisTurnID? = ArisTurnScope.current) {
+        guard kernel.admitsWrite(from: turn) else { return log.notice("a write from \(turn?.description ?? "", privacy: .public), which is over, was dropped") }
+        session = next
     }
     /// The always-on conversation (ArisController+Conversation): its stage and silence clock.
     var conversation = ArisConversation() {
@@ -87,6 +100,8 @@ final class ArisController: ObservableObject {
     }
     /// The turn that just ended was dictation: the notch closes at once (its words are already in place).
     private(set) var endedDictation = false
+    /// The turn's answer is an undo's (what was taken back, or why not): it stays up a little longer (ArisNotch.undoStay).
+    var answeredUndo = false
     /// Loudness of whoever is talking (you, then Aris), 0...1, for the orb. Published on `audioLevel`, not here, so
     /// views observing the controller don't re-render at audio rate.
     let audioLevel = ArisAudioLevel()
@@ -137,6 +152,13 @@ final class ArisController: ObservableObject {
     var turn: Task<Void, Never>? {
         didSet { watchTurnEnd(turn) }
     }
+    /// Which turn is current, and the confirm cards' waits (Shared/Core, ArisController+Kernel). A turn it ends or
+    /// replaces has its task cancelled.
+    lazy var kernel: ArisKernel = {
+        let kernel = ArisKernel()
+        kernel.cancelWork = { [weak self] _ in self?.turn?.cancel() }
+        return kernel
+    }()
     /// The turn in progress, in numbers (ArisController+Stats), from when Aris stopped listening.
     var stats: ArisTurnStats?
     var resumeMusic = false
@@ -166,12 +188,14 @@ final class ArisController: ObservableObject {
     /// Smart Turn's score for the pause after the voice heard at `voiceAt` (ArisController+Turn).
     var pauseScore: (voiceAt: ContinuousClock.Instant, score: Float)?
     var scoringPause = false
-    /// Voice readings since the grace moment began (ArisController+Turn).
-    var graceVoiceFrames = 0
-    /// Whisper's reading of the turn, started during the grace moment; good only while no voice came after `voiceAt`.
-    var preparedWhisper: (voiceAt: ContinuousClock.Instant?, task: Task<String?, Never>)?
-    /// The turn streaming to ElevenLabs Scribe (ArisScribe), while it's being heard; nil: Whisper listens.
-    var scribe: ArisScribe?
+    /// The turn's hearing between the end of speech and the request: its stage clock and speculative turn (ArisTurnHearing).
+    let turnHearing = ArisTurnHearing()
+    /// The turn streaming to the cloud recogniser the plan put first (Scribe or Soniox), while it's being heard; nil:
+    /// nothing streams, and the turn is read from its recording.
+    var scribe: (any ArisLiveHearing)?
+    /// Who hears this turn and in what order (ArisHearPlan), and the live engine that gave no answer (ArisController+Hear).
+    var hearPlan: ArisHearPlan?
+    var liveFailed: ArisHearEngine?
     /// Scribe has sent words this turn: they, not Apple's Korean-only ones, are what the notch shows.
     var scribeIsHearing = false
     /// A conversation's turn warms the brain and starts streaming to Scribe at its first words (ArisController+Conversation).
@@ -243,6 +267,8 @@ final class ArisController: ObservableObject {
     /// This conversation has taken in outside text (the agent's untrusted reply said so): it never dispatches, and every
     /// later /ask says so, resumes too.
     var outsideConversation = false
+    /// The quick understanding's misses in a row and its rest (routeNow).
+    var routerRest = ArisRouterRest()
     static var conversationLasts: Duration { .seconds(Defaults[.arisConversationMinutes] * 60) }
     var pauseWatch: Task<Void, Never>?
     /// Listening right after an answer: a follow-up needs no wake word, and silence ends the conversation.
@@ -300,8 +326,6 @@ final class ArisController: ObservableObject {
     @Published var pastTurns: [ArisHistoryEntry] = ArisHistory.load()
     /// The past turn put back in the notch from the 기록 tab (resume), for the line saying when it was.
     @Published var restored: ArisHistoryRestore.Shown?
-    /// A yes or no given with a button or the Y/N keys while Aris asks.
-    var typedAnswer: Bool?
     /// When a dictated message's countdown began (the confirm card's ring empties from here; ArisController+Countdown).
     @Published var countdownStarted: Date?
     /// The microphone while Aris is idle: loudness only, then a check against your trained "아리스".
@@ -336,7 +360,10 @@ final class ArisController: ObservableObject {
     static let trainingTimeLimit: Duration = .seconds(60)
 
     init() {
-        speaker.onLevel = { [weak self] in self?.level = $0 }
+        speaker.onLevel = { [weak self] level in
+            self?.level = level
+            if level > 0 { self?.turnHearing.mark(.firstAudio) }
+        }
         Task { await ArisWhisper.shared.prepare() }
         Task { await ArisListener.prepareHearing() }
         // The turn-end model loads now: a lazy load after an in-place update of the bundle would find no file.
@@ -344,6 +371,8 @@ final class ArisController: ObservableObject {
         Task { [weak self] in
             for await _ in Defaults.updates(.arisWakeWord) { self?.waitForWakeWordSoon(after: .zero) }
         }
+        // One observer per source; the watches below subscribe to it (ARCHITECTURE.md 3.5).
+        ArisWorld.shared.start(aris: self)
         watchScreen()
         watchForBrief()
         watchForDayEnd()
@@ -392,6 +421,7 @@ final class ArisController: ObservableObject {
         let heldFor = tapProbe?.wasTap == true ? .zero : (keyDownAt.map { ContinuousClock.now - $0 } ?? .zero)
         switch ArisTalkKey.release(heldFor: heldFor) {
         case .finish:
+            noteKeyHeldTurn()
             stopListening()
         case .keepListening:
             listenHandsFree()
@@ -406,30 +436,33 @@ final class ArisController: ObservableObject {
         if dictation != nil { dictation = nil }
         seeTurnStarting()
         followingUp = false
-        if let lastTurnAt, ContinuousClock.now - lastTurnAt > Self.conversationLasts { endConversation() }
+        endConversationIfLongAgo()
         stopWaitingForWakeWord()
         // The user pressed the key: the screen is on, whatever a missed notice said (QA BUG-38).
         screenAway = false
-        turn?.cancel()
+        // A new turn: the one before is over (its task cancelled, its card closed, its late writes dropped).
+        let opened = openTurn(.key)
         dropPendingAnswer()
         speaker.stop()
         handsFree = false
         pauseWatch?.cancel()
         if let problem = Self.permissionProblem() {
             log.notice("permissions not ready: \(problem.rawValue, privacy: .public)")
-            return askForPermissions(problem)
+            return ArisTurnScope.within(opened) { askForPermissions(problem) }
         }
         pauseMusic()
         ArisAgentClient.warm(ArisBrain.named(Defaults[.arisBrain]))
         ArisTurnDetector.shared.warm()
         Self.listeningHaptic()
-        openConversation()
-        openMicrophone()
+        ArisTurnScope.within(opened) {
+            openConversation()
+            openMicrophone()
+        }
     }
 
     /// A fresh listening session: the counters reset, the recognizer and recording started.
     func openMicrophone() {
-        session = session.listening()
+        setSession(session.listening())
         listeningSince = .now
         recordingLead = .zero
         lastWordsAt = nil
@@ -439,7 +472,7 @@ final class ArisController: ObservableObject {
         practiceTurn = onboardingTalk == .practice
         voiceFloor = ArisTalkKey.startingFloor
         pauseScore = nil
-        preparedWhisper = nil
+        beginTurnHearing()
         scribeOnWords = false
         turnHandsFree = false
         turnByWakeWord = false
@@ -473,6 +506,7 @@ final class ArisController: ObservableObject {
     func follow(_ listener: ArisListener) {
         listener.onText = { [weak self, weak listener] text in
             guard let self else { return }
+            self.turnHearing.appleText = text
             // A wake turn's call may be a near spelling ("알리스"): only the call so far is no words yet either.
             let onlyTheName = self.turnByWakeWord ? ArisWakeWord.isOnlyTheCall(text) : ArisWakeWord.isOnlyTheName(text)
             if text != self.session.heard, !onlyTheName,
@@ -487,7 +521,7 @@ final class ArisController: ObservableObject {
                 }
             }
             guard !self.scribeIsHearing else { return }
-            self.session = self.session.hearing(text)
+            self.setSession(self.session.hearing(text))
             // A borderline wake's words are judged as they come (ArisWakeEvidence).
             if self.wakeEvidence != nil { self.settleWakeEvidence() }
         }
@@ -498,12 +532,14 @@ final class ArisController: ObservableObject {
             let voice = ArisTalkKey.isVoice(level: level, floor: self.voiceFloor)
             if voice {
                 self.lastVoiceAt = .now
-                self.graceVoiceFrames += 1
                 self.turnVoiceFrames += 1
+                self.turnHearing.mark(.firstVoice)
             }
             // A wake-word turn's quiet lap opens the notch on the user's voice (the same gate), not on their first word.
             self.quietLapLevel(voice: voice)
             self.voiceFloor = ArisTalkKey.nextFloor(self.voiceFloor, level: level)
+            // Hands-free: every reading is a look at the turn's end (ArisController+Endpoint).
+            self.endpointLook(voiceNow: voice)
         }
         // The microphone changed or went away mid-turn (a headset connected, a device unplugged): the turn ends with a
         // reason, not on a silence timer with half the words.
@@ -527,42 +563,18 @@ final class ArisController: ObservableObject {
         }
     }
 
-    /// Hands-free: send what you said once you pause.
+    /// Hands-free: send what you said once you pause. The end is looked at on every voice reading, change of words and
+    /// score (ArisController+Endpoint), not on a poll; the cap and the give-up come first (ArisEndpointPolicy.mustEnd).
     func listenHandsFree() {
         guard listener != nil else { return }
         handsFree = true
         log.notice("tapped: listening until you pause")
-        pauseWatch = Task {
-            while !Task.isCancelled && session.phase == .listening && handsFree {
-                try? await Task.sleep(for: .milliseconds(200))
-                let now = ContinuousClock.now
-                let sinceStart = listeningSince.map { now - $0 } ?? .zero
-                let said = turnByWakeWord ? ArisWakeWord.strippedCall(session.heard) : ArisWakeWord.stripped(session.heard)
-                let complete = ArisEndpoint.looksComplete(said), hanging = ArisEndpoint.isHanging(said)
-                let sinceWords = lastWordsAt.map { now - $0 }, sinceVoice = lastVoiceAt.map { now - $0 }
-                // Smart Turn only once there are words: a follow-up that's still only noise isn't scored.
-                if !(followingUp && lastWordsAt == nil) { scorePauseIfNeeded(sinceVoice: sinceVoice) }
-                let score = currentPauseScore
-                if ArisTalkKey.heardEnough(sinceStart: sinceStart, sinceLastWords: sinceWords, sinceLastVoice: sinceVoice,
-                                           waitForWords: followingUp ? ArisTalkKey.waitForFollowUp : ArisTalkKey.waitForWords,
-                                           complete: complete, turnScore: score, hanging: hanging) {
-                    let ms = { (gap: Duration?) in gap.map { Int($0 / .milliseconds(1)) } ?? -1 }
-                    log.notice("you paused (loudest \(self.voicePeak, privacy: .public), quiet \(ms(sinceVoice), privacy: .public) ms, no new words \(ms(sinceWords), privacy: .public) ms, finished \(complete, privacy: .public), hanging \(hanging, privacy: .public), smart turn \(score.map { String(format: "%.2f", $0) } ?? "-", privacy: .public))")
-                    logEndpoint(score: score, sinceVoice: sinceVoice, sinceWords: sinceWords, complete: complete, hanging: hanging, said: said)
-                    // A follow-up that heard no words is over at once: no grace moment, so no Whisper on noise.
-                    if followingUp, lastWordsAt == nil { return stopListening() }
-                    // The cap, or no word in the longest wait: over now, whatever the room sounds like (audit voice-4).
-                    if ArisTalkKey.mustEnd(sinceStart: sinceStart, heardWords: lastWordsAt != nil) { return stopListening() }
-                    let confident = ArisTalkKey.isConfidentEnd(turnScore: score, complete: complete, hanging: hanging)
-                    if await heldUpByGrace(confident: confident) { continue }
-                    guard !Task.isCancelled else { return }
-                    return stopListening()
-                }
-            }
-        }
+        beginEndpointing()
     }
 
     func stopListening() {
+        // A hands-free turn ends through its endpoint, so a speculation it has running is what it commits with.
+        if let pending = turnHearing.turn, !pending.committed, session.phase == .listening { return pending.finish() }
         gestureFinished()
         handsFree = false
         pauseWatch?.cancel()
@@ -580,20 +592,29 @@ final class ArisController: ObservableObject {
         // A wake-word turn ticks only once it has words: one that heard nothing closes without a sound.
         if ArisWakeDoubt.ticks(byWakeWord: turnByWakeWord, heardSoFar: session.heard, voiceHeard: lastVoiceAt != nil), ArisQuietLive.shared.heardUser() { Self.heardSound?.play() }
         stats = ArisTurnStats(startedAt: .now)
-        turn = Task {
+        markFirmEnd()
+        runTurn(.key) {
             // The drawing (if the user circled) is collected while the words are picked.
             async let drawn = collectGestureTurn()
             await starting?.value
-            let apple = (try? await Self.within(Self.stopTimeout, cancelsWork: false) { await listener.stop() }) ?? session.heard
+            // An end that was speculated has its words already (ArisController+Endpoint): the microphone closes behind it.
+            let speculated = turnHearing.turn?.committedSpeculation == true
+            let apple = speculated ? turnHearing.appleText
+                : (try? await Self.within(Self.stopTimeout, cancelsWork: false) { await listener.stop() }) ?? session.heard
+            if speculated { Task { _ = await listener.stop() } }
             let recording = listener.secondListenSamples
+            let voiceCheck = startVoiceCheck(listener)
             self.listener = nil
             level = 0
             log.notice("heard \(apple.count, privacy: .public) characters")
             // Talking over Aris on speakers: its own words heard back at the start are dropped. A wake turn loses the call
             // it was woken by, whichever spelling the check took ("어, 알리스 …").
-            let heard = await secondListen(recording, apple: apple)
-            let text = ArisEchoTrim.trimmed(turnByWakeWord ? ArisWakeWord.strippedCall(heard) : ArisWakeWord.stripped(heard),
+            var heard = await committedSpeculationWords()
+            if heard == nil { heard = await secondListen(recording, apple: apple, budgeted: true) }
+            turnHearing.mark(.transcriptFinal, again: !speculated)
+            let text = ArisEchoTrim.trimmed(turnByWakeWord ? ArisWakeWord.strippedCall(heard ?? "") : ArisWakeWord.stripped(heard ?? ""),
                                             arisWasSaying: arisWasSaying, atMost: echoWords)
+            noteWordsWentOn(text.trimmingCharacters(in: .whitespacesAndNewlines), wasSaying: arisWasSaying, echoWords: echoWords)
             arisWasSaying = ""
             echoWords = 0
             // The exact words, to tell a mishearing from a misunderstanding: in turns.jsonl (0600), private in the log.
@@ -610,11 +631,12 @@ final class ArisController: ObservableObject {
             // A borderline wake's request runs only once it is known to be the user's (ArisWakeEvidence): a song's lyrics,
             // the TV or other people talking close it here, before anything is routed or asked.
             if let end = await wakeEvidenceAtEnd(said: text) { return closeWakeTurnQuietly(end) }
+            if await voiceClosesTurn(voiceCheck) { return }
             guard session.phase == .listening, !Task.isCancelled else { return seeEnded() }
             if let gesture { attachGesture(gesture) }
             // A wake turn whose lap never opened (a key press ended it) is kept now: its music pauses before the answer.
             if turnByWakeWord { pauseMusic() }
-            session = session.hearing(gesture?.display(text) ?? text).thinking()
+            setSession(session.hearing(gesture?.display(text) ?? text).thinking())
             guard session.phase == .thinking else {
                 // Nothing in the turn was speech (silence, noise, Whisper's made-up words): said so, nothing routed. A turn
                 // the wake word started was most likely not the user calling: it closes without a word (2026-11-14).
@@ -632,33 +654,41 @@ final class ArisController: ObservableObject {
     }
 
     /// Scribe's take on the turn when it streamed; else Whisper's when it's ready and quick enough; Apple's live one
-    /// otherwise.
-    func secondListen(_ recording: [Float], apple: String) async -> String {
-        ArisHeardFix.corrected(await bestTranscript(recording, apple: apple))
+    /// otherwise. `budgeted` (a talk turn): never waits past ArisSecondPass's budget, the best words at hand go on and a
+    /// later, better take replaces them only while the request is unsent. Dictation waits as before.
+    func secondListen(_ recording: [Float], apple: String, budgeted: Bool = false) async -> String {
+        let raw = await bestTranscript(recording, apple: apple, budgeted: budgeted)
+        let fixed = ArisHeardFix.corrected(ArisHeardPairs.applied(raw, pairs: ArisVocabulary.loadPairs()))
+        // A talk turn's words are repaired (ArisHeardRepair); dictation has its own polish.
+        return budgeted ? await repairedWords(fixed, apple: apple) : fixed
     }
 
-    private func bestTranscript(_ recording: [Float], apple: String) async -> String {
+    private func bestTranscript(_ recording: [Float], apple: String, budgeted: Bool) async -> String {
         let heardVoice = lastVoiceAt != nil
-        let scribed = await finishScribe()
+        let scribeLive = scribeIsHearing ? session.heard : nil
+        var scribed: ArisHeard?
+        if budgeted, scribe != nil {
+            // Late: Scribe's live words (else Apple's) go on now; its whole take may still come before the request.
+            guard let inTime = await scribeWithinBudget() else { return scribeLive ?? apple }
+            scribed = inTime
+        } else {
+            scribed = await finishScribe()
+        }
+        // The live engine gave no answer, or none streams (OpenAI): the next cloud engines read the recording.
+        if scribed == nil, heardVoice, !recording.isEmpty { scribed = await cloudFallback(recording) }
         heardLanguage = scribed?.language
         guard heardVoice, !recording.isEmpty else { return scribed?.text ?? apple }
         if let scribed {
-            preparedWhisper?.task.cancel()
-            preparedWhisper = nil
-            stats?.recognized(apple: apple, whisper: scribed.text)
+            noteRecognized(apple: apple, whisper: scribed.text)
             return scribed.text
         }
         let start = ContinuousClock.now
-        // Whisper read during the grace moment holds unless you talked again since (then it misses the end).
-        let prepared = preparedWhisper.flatMap { $0.voiceAt == lastVoiceAt ? $0.task : nil }
-        if prepared == nil { preparedWhisper?.task.cancel() }
-        preparedWhisper = nil
-        let whisper = if let prepared { await prepared.value } else { await whisperTranscript(recording) }
+        let whisper = budgeted ? await whisperWithinBudget(recording, apple: apple) : await whisperTranscript(recording)
         let text = ArisTranscript.pick(whisper: whisper, apple: apple, heardVoice: heardVoice, voiceFrames: turnVoiceFrames, loudest: voicePeak,
                                        languages: Defaults[.arisLanguages], recognizer: Self.locale.identifier)
-        stats?.recognized(apple: apple, whisper: whisper)
+        noteRecognized(apple: apple, whisper: whisper)
         let milliseconds = Int((ContinuousClock.now - start) / .milliseconds(1))
-        log.notice("whisper: \(whisper == nil ? "not ready" : "\(text.count) characters", privacy: .public) in \(milliseconds, privacy: .public) ms\(prepared == nil ? "" : " (read during the grace moment)", privacy: .public)")
+        log.notice("whisper: \(whisper == nil ? "not ready" : "\(text.count) characters", privacy: .public) in \(milliseconds, privacy: .public) ms")
         if text.isEmpty, let whisper, !whisper.isEmpty {
             log.notice("whisper alone, taken for noise (\(whisper.count, privacy: .public) characters, \(self.turnVoiceFrames, privacy: .public) voice frames, loudest \(self.voicePeak, privacy: .public))")
         }
@@ -706,7 +736,7 @@ final class ArisController: ObservableObject {
         let shown = ArisHistoryRestore.shown(entry)
         restored = shown
         ArisWidgetModel.shared.restore(ArisHistoryRestore.card(of: entry), reply: shown.reply)
-        session = .parked(heard: shown.heard, reply: shown.reply)
+        setSession(.parked(heard: shown.heard, reply: shown.reply))
         NotificationCenter.default.post(name: .arisHistoryRestored, object: nil)
     }
 
@@ -727,6 +757,8 @@ final class ArisController: ObservableObject {
         // spoken words need no hold.
         if ArisCardHold.applies(allow: allow, source: source), !ArisCardStill.shared.clickCounts(card: question.id) {
             log.notice("a click on the card's yes came before the card had been still for a moment: ignored")
+            // The press is dropped, never kept for later; the card says it wasn't taken (eighth VM run, item 2).
+            ArisCardStill.shared.refusedClick(card: question.id)
             return
         }
         // A pressed yes (the button, Y, Return) counts only once the card's end has been on screen: a card taller than its
@@ -742,8 +774,9 @@ final class ArisController: ObservableObject {
             NSApp.keyWindow?.makeFirstResponder(nil)
             if allow, !ArisCardEditor.shared.yesCounts(changedBefore: changedBefore) { return }
         }
-        typedAnswer = allow
+        // The card's wait is the kernel's: this resumes it, once (ArisController+Tasks).
         cardAnswerSource = source
+        kernel.answerCard(question.id, allow: allow)
         speaker.stop()
     }
 
@@ -786,18 +819,21 @@ final class ArisController: ObservableObject {
         screenConversation = false
         outsideConversation = false
         putAwayJobs = ArisJobContext.puttingAway(tasks, into: putAwayJobs)
-        if !isActive { session = ArisSession() }
+        if !isActive { setSession(ArisSession()) }
     }
 
     /// Drops whatever Aris is doing (clicking the pill).
     func cancel() {
+        // Code still working for a turn that is over cancels nothing: the turn after it is not its to drop.
+        guard turnIsCurrent else { return }
         log.notice("cancelled")
         gestureCancelled()
         finishTurn("cancelled")
         if training != nil { return endTraining() }
         handsFree = false
         pauseWatch?.cancel()
-        turn?.cancel()
+        // The turn ends: its task is cancelled, its card's wait resumed as cancelled, its late writes dropped.
+        endTurn(.cancelled)
         dropPendingAnswer()
         starting?.cancel()
         speaker.stop()
@@ -809,10 +845,11 @@ final class ArisController: ObservableObject {
         level = 0
         // A follow-up that never came leaves the answer parked: the notch shows it again when
         // it opens, until 닫기 or the next turn.
+        // The cancel's own writes: the turn it ended is no longer current.
         if followingUp, session.heard.isEmpty, let answer = answerBeforeFollowUp {
-            session = .parked(heard: answer.heard, reply: answer.reply)
+            setSession(.parked(heard: answer.heard, reply: answer.reply), from: nil)
         } else {
-            session = session.done()
+            setSession(session.done(), from: nil)
         }
         answerBeforeFollowUp = nil
         resumeMusicIfPaused()
@@ -824,8 +861,8 @@ final class ArisController: ObservableObject {
         case .denied:
             fail(ArisPermissionWords.turnOn)
         case .undecided:
-            session = session.listening()
-            turn = Task {
+            setSession(session.listening())
+            runTurn(.permission) {
                 let microphone = await AVCaptureDevice.requestAccess(for: .audio)
                 let speech = await withCheckedContinuation { continuation in
                     SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
@@ -837,265 +874,13 @@ final class ArisController: ObservableObject {
                 }
                 // Granted while the key is still down (no dialog was needed): carry on listening.
                 guard keyHeld else { return fail(ArisPermissionWords.ready) }
-                session = session.done()
+                setSession(session.done())
                 startListening()
             }
         }
     }
 
-    // MARK: - A turn
-
-    /// `gesture`: the turn's drawing. With circled shots the words carry `[img N]` markers and the brain answers
-    /// whatever a local intent would have made of them (the router may still set the tier); the AI named up front is
-    /// picked from the unmarked words. A drawing without shots keeps every local path (which then drops its images).
-    /// Files given to Aris ride along with this turn however it was asked (typed, the talk key, the wake word, a
-    /// follow-up) and are no longer pending; with them, "이거" is the files: no screenshot, no look at the screen.
-    func answer(_ said: String, gesture: ArisGestureTurn? = nil, typed: Bool = false) async {
-        turnMemory.start()
-        turnTyped = typed
-        // The button under a failure follows every turn from its start: whether it had begun a tool or a card decides
-        // if a question lost to a stopped helper is asked again by itself (ArisHelperWatch).
-        ArisFixModel.shared.watch()
-        // The onboarding's 물어보기: answered read-only here, nothing routed or done (QA BUG-31); files given to Aris
-        // stay pending for a real turn.
-        if practiceTurn { return await answerPractice(said) }
-        // Never on a hands-free turn, nor while the notch is closed with no chips to see; gone after 5 minutes.
-        let heard = ArisAttachments.shared.take(into: said, handsFree: turnHandsFree, shown: ArisNotchPresence.shared.isOpen)
-        // What he asks of files he dropped is remembered by its shape, for the chips that learn (ArisDropLearned).
-        ArisDropModel.shared.learn(from: heard)
-        let shots = gesture?.hasShots == true
-        // The files stand in for the screenshot; shots the user circled still go with their `[img N]` markers.
-        if ArisPendingFiles.dropsTurnImages(heard, circledShots: shots) { seeEnded() }
-        // The files' text came with it: outside text from here on, as anything read (QA BUG-35).
-        if ArisAttachmentText.carriesText(heard) { outsideConversation = true }
-        // "아니 그냥 클로드 시켜": an AI (or a teammate) named as the one to do it takes the work as a background job
-        // (ArisBrainHandOff), decided before an AI is picked to answer this turn; never "no such teammate".
-        let handOff = shots ? nil : await brainHandOff(ArisPendingFiles.words(of: heard))
-        // "GPT한테 물어봐, …" goes straight to that AI; anything else tries the Mac first, then the default AI.
-        let named = handOff == nil ? ArisBrain.pick(from: heard) : nil
-        // `whole` is what the AI or a job gets: the user's words, then the files they gave and their text. `unmarked` is their
-        // own words alone, the only part ever read as a command, sent to the router or matched against a phrase (audit
-        // files-1: a file named "timer 5 min.png" set a timer, and a document saying "in the background" became a job).
-        let whole = named?.request ?? heard
-        let unmarked = ArisPendingFiles.words(of: whole)
-        let text = shots ? (gesture?.markedRequest(heard) ?? whole) : whole
-        let brain = named?.brain ?? ArisBrain.named(Defaults[.arisBrain])
-        // "클로드 앱으로 해", "ChatGPT 열어서 물어봐": the apps on this Mac the words name, for the context (ArisProgramMention).
-        turnPrograms = handOff == nil && !shots ? await programsLine(unmarked) : nil
-        // "세션 읽어줘", "뭐 기다려?", "클로드 뭐 하고 있어?": answered from the sessions Aris's hooks know, not a look at the
-        // screen (the owner, 2026-11-14: "클로드 코드 저거, 세션 … 읽어줘" got "I can't see any session on the screen").
-        turnAsksSessions = handOff == nil && !shots && ClaudeSessionsContext.asks(unmarked)
-        // "응" or "아니" while the new-teammate card is up answers it first, on every path, before the done words and the
-        // router (BUG-25c reopened: "응" went to the router and on to the brain, and the turn hung).
-        let madeAnswer = !shots && named == nil ? ArisTeamMadeAnswer.reply(unmarked, cardUp: ArisTeamModel.shared.made != nil) : nil
-        // A follow-up like "됐어" or "고마워" just ends the conversation.
-        // "괜찮아" or "없어" right after Aris asked something answers it; it doesn't end the conversation.
-        let afterQuestion = ArisFollowUp.asksSomething(history.last?.reply ?? "")
-        if !shots, madeAnswer == nil, followingUp || conversation.isOpen, ArisFollowUp.isDone(ArisPendingFiles.words(of: text), afterQuestion: afterQuestion) {
-            log.notice("follow-up: done")
-            understood(text, path: "done", tier: .quick)
-            finishTurn("ok")
-            // The answer before "됐어" stays parked, as after a follow-up that never came.
-            if let answer = answerBeforeFollowUp { session = .parked(heard: answer.heard, reply: answer.reply) } else { session = session.done() }
-            answerBeforeFollowUp = nil
-            closeConversation(.donePhrase)
-            return resumeMusicIfPaused()
-        }
-        // A plain currency question ("100 위안 캐나다 달러로 얼마야") is read and answered here: never the router's or a brain's.
-        let fx = !shots && named == nil && madeAnswer == nil ? currencyAsk(unmarked) : nil
-        var intent = named == nil ? ArisGestureTurn.intent(unmarked: unmarked, marked: text, hasShots: shots) : .ask(text)
-        var tier = ArisTier.quick
-        var browserWork = false
-        if named == nil, madeAnswer == nil, handOff == nil, fx == nil, !ArisIntent.isRecurring(unmarked), needsSecondGuess(shots ? ArisIntent.parse(unmarked) : intent) {
-            let routed = await route(unmarked)
-            tier = routed.tier
-            if !shots {
-                // Several steps on websites go to the background for Aside on every brain; agy's job has no relay, so
-                // agy hands it to Aside in the conversation instead (ArisAgyRelay).
-                // Never Aris's own schedules, to-dos, memory, teammates, timers or settings: those are done in this turn
-                // with their own tool and card (QA BUG-60: "… 예약 지워 줘" went to Aside as website work).
-                browserWork = routed.browserWork && brain != .antigravity && !ArisOwnData.mentions(unmarked) && !ArisRoutineWords.mentions(unmarked)
-                if let action = routed.intent { intent = action }
-            }
-        }
-        // One guard for every local action, whichever matcher or router picked it (BUG-58 audit).
-        if named == nil, !shots { intent = ArisIntent.guarded(intent, said: unmarked) }
-        if ArisRouter.asksForCare(unmarked) { tier = .critical }
-        let korean = ArisSpeech.language(of: unmarked) == "ko-KR"
-        // Who the words are for is worked out before anything acts (the teammates' list may have to be read first).
-        let plain = !shots && named == nil && madeAnswer == nil
-        let link = plain ? ArisSkillIntent.link(in: unmarked) : nil
-        let removal = plain && link == nil ? await teammateRemoval(unmarked) : nil
-        let making = plain && link == nil && removal == nil ? ArisTeamMaking.parse(unmarked) : nil
-        let called = plain && link == nil && removal == nil && making == nil ? await teammateCalled(unmarked) : nil
-        // "<…> 다 했어": only an open item those words name exactly is ticked here; anything looser is the AI's (audit intent-2).
-        var finishing: ArisTodoModel.Finishable?
-        if case .finishTodo(let item) = intent { finishing = await ArisTodoModel.shared.finishable(item) }
-        // Stopped or replaced while the router or the list was asked: this turn does nothing more (audit turn-2).
-        guard !Task.isCancelled else { return }
-        // A teammate called by name with its task ("코디한테 이거 정리하라고 시켜") goes the way it always did, with its files;
-        // everything else the hand-off names is handed over here, the last request carried over when no task was said.
-        let handing = plain && link == nil && removal == nil && making == nil ? handOff.flatMap { called != nil && $0.task != nil ? nil : $0 } : nil
-        let reply: String
-        if let yes = madeAnswer {
-            // "응" or "아니" while the new-teammate card is up answers the card, never the brain (BUG-25c).
-            understood(text, path: "local", tier: tier)
-            reply = await answerMadeCard(yes)
-        } else if let link {
-            // "이 링크 스킬 추가해줘 <link>": Aris does it itself, no brain; the notch shows each step (ArisSkillFlowCard), and
-            // the check goes on in aris-agent when the notch closes (the inbox says how it ended).
-            understood(text, path: "local", tier: tier)
-            let line = korean ? "스킬을 확인할게요." : "I'll check that skill."
-            ArisSkillsModel.shared.startNotchFlow(request: session.heard, link: link)
-            reply = korean ? "스킬 추가를 시작했어요." : "Started adding the skill."
-            await sayLocal(reply, heard: unmarked, showing: line)
-        } else if let removal {
-            // "큐에이봇 팀원 지워 줘": asked with the settings' 빼기 card, removed only on yes; never a job (BUG-26).
-            understood(text, path: "local", tier: tier)
-            reply = await removeTeammate(removal)
-        } else if let making {
-            // "문서 정리하는 팀원 하나 만들어줘, 이름은 코디": made here, no brain; the notch shows it (ArisTeammateMadeCard).
-            understood(text, path: "local", tier: tier)
-            reply = await makeTeammate(making)
-        } else if let handing {
-            // "아니 그냥 클로드 시켜": that AI (or teammate) takes the request as a background job; an AI that isn't set up
-            // here is said as exactly that (ArisController+BrainHandOff).
-            understood(text, path: "task:handoff", tier: tier)
-            reply = await handOver(handing, words: unmarked, whole: whole, tier: tier, brain: brain, korean: korean)
-        } else if let job = called?.asking(whole) {
-            // "큐에이봇, 17 곱하기 23은?": the teammate called by name takes it, on its own brain (BUG-25b), with the files
-            // The user gave.
-            understood(text, path: "task:teammate", tier: tier)
-            stats?.firstSound(at: .now)
-            let handed = handOut([job], turn: ArisHandOutPlan.Turn(words: unmarked, brain: brain, turnId: nil, screenConversation: screenConversation,
-                                                                    outsideConversation: outsideConversation, handsFree: turnHandsFree),
-                                 tier: tier, korean: korean)
-            reply = handed.line
-            session = session.answering(reply)
-            // One 기록 entry, updated with the job's result (BUG-21).
-            recordTurn(heard: unmarked, reply: reply, job: handed.job)
-            await speak { await self.speaker.speak(reply) }
-        } else if let fx {
-            // The rate of exactly that pair, read through aris-agent; the line and the card are one number (ArisController+Currency).
-            understood(text, path: "local", tier: tier)
-            guard let told = await answerCurrency(fx, heard: unmarked, korean: korean) else { return }
-            reply = told
-        } else if let asked = ArisMemoryImportWords.asked(unmarked) {
-            // "다른 AI에서 기억 가져올래": the import opens in Settings › 기억 (no AI); a named AI only fills in where it comes from.
-            understood(text, path: "local", tier: tier)
-            ArisMemoryImportModel.openFromWords(source: asked.source)
-            reply = ArisMemoryImportWords.reply(korean: korean)
-            await sayLocal(reply, heard: unmarked)
-        } else if case .timerLeft = intent {
-            understood(text, path: "local", tier: tier)
-            reply = ArisTimerModel.shared.leftLine(korean: korean)
-            await sayLocal(reply, heard: unmarked)
-        } else if case .listTodos = intent {
-            understood(text, path: "local", tier: tier)
-            // Nil: the list could not be read (Reminders is off for Aris), and Aris says that, never "비어 있어요".
-            let read = await ArisTodoModel.shared.summary(korean: korean)
-            guard !Task.isCancelled else { return }
-            // Canvas titles are other people's words: what's remembered for the AI is just that the list was read.
-            reply = read == nil ? ArisLocalReply.todosUnread(korean: korean) : korean ? "할 일 목록을 읽어 줬어요." : "Read out the to-do list."
-            await sayLocal(reply, heard: unmarked, showing: read)
-        } else if case .addTodo(let item) = intent {
-            understood(text, path: "local", tier: tier)
-            // Said from what Reminders did with it (audit turn-1), and logged with its undo only when it was saved, so
-            // "방금 한 거 되돌려" takes it back (QA BUG-18).
-            reply = ArisLocalReply.todoAdded(await addTodo(item), korean: korean)
-            guard !Task.isCancelled else { return }
-            await sayLocal(reply, heard: unmarked)
-        } else if let found = finishing {
-            understood(text, path: "local", tier: tier)
-            reply = await finishTodo(found, heard: unmarked, korean: korean)
-        } else if case .brief = intent {
-            understood(text, path: "local", tier: tier)
-            guard await showBrief(inTurn: true) != nil else { return }
-            // Canvas titles are other people's words: they stay out of the history the AI reads later.
-            reply = ArisBrief.remembered(english: ArisUILanguage.english)
-        } else if case .dayEnd = intent {
-            // "오늘 정리해 줘": the day-end card, made here from the day's own records (ArisController+DayEnd).
-            understood(text, path: "local", tier: tier)
-            guard let told = await showDayEnd(heard: unmarked, korean: korean) else { return }
-            reply = told
-        } else if case .undo = intent {
-            understood(text, path: "local", tier: tier)
-            // Its one card names exactly what is undone (the newest of the kind the user named), on every path.
-            reply = await undoLast(korean: korean, heard: unmarked)
-        } else if case .readAgain = intent {
-            understood(text, path: "local", tier: tier)
-            reply = await readLastAnswer(heard: unmarked, korean: korean)
-        } else if case .saveAnswer(let save) = intent {
-            understood(text, path: "local", tier: tier)
-            reply = await saveLastAnswer(save, heard: unmarked, korean: korean)
-        } else if case .arrange(let app, let count) = intent {
-            understood(text, path: "local", tier: tier)
-            reply = await arrange(app, count: count, korean: korean)
-        } else if case .media(let media) = intent {
-            // What Aris says comes from the player's answer: never "틀게요" when it didn't (QA BUG-37's follow-up).
-            understood(text, path: "local", tier: tier)
-            let done = await performMedia(media)
-            guard !Task.isCancelled else { return }
-            if done { resumeMusic = false }
-            reply = media.reply(done: done, korean: korean)
-            await sayLocal(reply, heard: unmarked)
-        } else if case .whatsPlaying = intent {
-            // "지금 무슨 노래야?": from what is playing, here (never the AI).
-            understood(text, path: "local", tier: tier)
-            let now = await ArisNowPlaying.shared.currentPlayback()
-            guard !Task.isCancelled else { return }
-            reply = ArisIntent.nowPlayingLine(title: now?.title ?? "", artist: now?.artist ?? "", playing: now?.isPlaying ?? false, korean: korean)
-            await sayLocal(reply, heard: unmarked)
-        } else if let control = ArisControl(intent) {
-            // Volume and brightness: said and logged from whether anything really moved (audit platform-1).
-            understood(text, path: "local", tier: tier)
-            reply = await performControl(control, korean: korean)
-            guard !Task.isCancelled else { return }
-            await sayLocal(reply, heard: unmarked)
-        } else if let said = await doOnMac(intent, korean: korean) {
-            // The time, the date, the timer, opening an app: done here, and said from what happened (audit turn-1).
-            understood(text, path: "local", tier: tier)
-            guard !Task.isCancelled else { return }
-            reply = said
-            await sayLocal(reply, heard: unmarked)
-        } else if !shots, ArisHandoff.isHandoff(unmarked) || browserWork {
-            // "해 놔", "끝나면 알려줘", or several steps on websites (for Aside): the work goes to the background and
-            // the conversation is free again.
-            understood(text, path: browserWork ? "task:browser" : "task", tier: tier)
-            stats?.firstSound(at: .now)
-            let handed = handOut([], turn: ArisHandOutPlan.Turn(words: text, brain: brain, turnId: nil, screenConversation: screenConversation,
-                                                                outsideConversation: outsideConversation, handsFree: turnHandsFree),
-                                 tier: tier, korean: korean, browser: browserWork)
-            reply = handed.line
-            session = session.answering(reply)
-            recordTurn(heard: unmarked, reply: reply, job: handed.job)
-            await speak { await self.speaker.speak(reply) }
-        } else if !shots, !turnAsksSessions, ArisDeixis.refersToScreen(text) || ArisDeixis.refersToClipboard(unmarked) {
-            log.notice("asking about the screen (\(tier.rawValue, privacy: .public))")
-            understood(text, path: "screen", tier: tier)
-            guard let answer = await answerAboutScreen(text, tier: tier, brain: brain) else { return }
-            reply = answer
-        } else {
-            // "sent", not "asking": aris-agent may still answer this one itself (it then says so: "aris-agent answers this itself").
-            log.notice("sent to aris-agent for \(brain.rawValue, privacy: .public) (\(tier.rawValue, privacy: .public))")
-            understood(text, path: "brain:\(brain.rawValue)", tier: tier)
-            // With markers in the words, the agent matches policy against the unmarked ones.
-            guard let answer = await askAndSpeak(text, tier: tier, brain: brain, request: shots ? whole : nil) else { return }
-            reply = answer
-        }
-        guard !Task.isCancelled else { return }
-        // Paths that speak before they know their reply (the brief, arranging windows) are recorded here.
-        recordTurn(heard: unmarked, reply: reply)
-        // The conversation's quiet is counted from when the voice finished, as before.
-        lastTurnAt = .now
-        finishTurn("ok")
-        // The answer stays up and the conversation stays open; the next ⌥Space or "아리스" carries it on.
-        // A hand-off's turn ends as its line ends: the notch goes and the jobs' pill tells how the work goes.
-        try? await Task.sleep(for: ArisNotch.linger(handedOff: handedOff))
-        guard !Task.isCancelled else { return }
-        session = session.done()
-        resumeMusicIfPaused()
-    }
+    // MARK: - A turn (answer() and its funnel: Routing/ArisController+Funnel.swift)
 
     /// Asks the AI and speaks its answer while it's still being written: the notch shows what the AI is doing,
     /// then the answer as it grows, and each finished sentence goes to the voice at once. Nil when it failed
@@ -1111,35 +896,19 @@ final class ArisController: ObservableObject {
         // or data is never read (ArisSpeechStream).
         var speech = ArisSpeechStream()
         let askedAt = ContinuousClock.now
-        var saidHold = false
         skillInUse = nil
-        // The agent's id for this turn when its answer dispatches a Claude Code job (it vouches for that job).
-        var turnId: String?
-        // The agent counts this turn as outside content (the screen, or others' words): its answer dispatches only when
-        // the agent says it may (a screen turn: every job untrusted, a Claude Code launch always asks the user).
-        var untrustedTurn = false
-        var dispatchAllowed = false
-        // Something readable was said this turn (code and JSON never are: ArisSpeakable).
-        var saidAnything = false
-        // The agent took this turn's jobs block out (its refusedJobs line).
-        var refusedJobs = false
-        /// aris-agent said it answers this turn itself (ArisAgentReply.helperAnswers).
-        var helperAnswers = false
-        // A hands-free turn read the user's messages, mail or notes: shown, never spoken (its shownOnly line).
-        var shownOnly = false
-        // A card of this turn nobody answered, or one the user said no to: the reply is told in their terms (QA BUG-39, BUG-43).
-        var cardUnansweredThisTurn = false, cardDeclinedThisTurn = false, cardApprovedThisTurn = false
-        // The steps a no dropped in this turn, by their tool: a status for one of them is ignored until a later yes.
-        var declinedTools: Set<String> = []
+        // What this turn has seen so far: its own value, made fresh here, gone with the turn (ArisBrainTurnState).
+        var state = ArisBrainTurnState()
         turnReachedAI = true
         func say(_ lines: [String]) {
             let found = lines.map(ArisSpeakable.speakable).filter { !$0.isEmpty }
             guard !found.isEmpty else { return }
-            saidAnything = true
+            state.saidAnything = true
             if speaking == nil {
                 let aloud = !silentSpeech && ArisQuietGate.maySpeak(heard: session.heard)
                 log.notice("\(ArisQuiet.voiceLog(aloud: aloud), privacy: .public)")
                 stats?.firstSound(at: .now)
+                turnHearing.mark(.firstSentence)
                 // The preview harness reads the answer off the screen; the voice would play out loud.
                 speaking = silentSpeech || !ArisQuietGate.maySpeak(heard: session.heard)
                     ? Task { for await _ in sentences {} }
@@ -1153,10 +922,13 @@ final class ArisController: ObservableObject {
         async let taking = turnImages()
         async let gathering = currentContext(sessions: true)
         let (images, focus) = await taking
-        let context = await gathering
+        let gathered = await gathering
         // A turn stopped during that wait never asked: the next one still starts the new conversation (audit turn-2).
         guard !Task.isCancelled else { return nil }
-        let fresh = freshConversation
+        // A request sent at the plausible end for exactly this turn is taken as it is (ArisController+Endpoint).
+        let early = await takeEarlyRequest(text, tier: tier, brain: brain, screen: screen, request: request, images: !images.isEmpty)
+        let context = withCutOffNote(gathered) // after the take: a request it cancelled counts (ArisCutOffNote)
+        let fresh = early?.fresh ?? freshConversation
         freshConversation = false
         // A new conversation whose first turn never got an answer from the helper (it wasn't running, the stream failed)
         // is still new on the next turn: the helper then starts afresh too, the turns it kept for the automatic check
@@ -1165,19 +937,19 @@ final class ArisController: ObservableObject {
         defer { if fresh, !reachedHelper { freshConversation = true } }
         if !images.isEmpty {
             // Defence in depth: the agent says so too, but an image turn is outside content from here on.
-            untrustedTurn = true
+            state.untrustedTurn = true
             screenConversation = true
         }
         // An untrusted turn's <say> line is plain text: everything said is also shown (ArisSpeakable.SayHandling.keep).
-        speech.honoursSay = !untrustedTurn && screen == nil
+        speech.honoursSay = !state.untrustedTurn && screen == nil
         let outgoing = ArisOutgoingImages(images)
         // The "working on this window" overlay never outlives the turn (an answer, a failure, a stop).
         defer { ArisOperatingOverlay.shared.end() }
-        let asked = ArisAgentClient.ask(text, context: context, tier: tier, brain: brain, screen: screen, fresh: fresh,
+        let asked = early?.replies ?? ArisAgentClient.ask(sendingWords(text), context: context, tier: tier, brain: brain, screen: screen, fresh: fresh,
                                         request: request, screenConversation: screenConversation, outsideConversation: outsideConversation,
                                         handsFree: turnHandsFree, images: outgoing, focus: focus)
         // Nothing at all back within a minute: a short failure line, never a turn that hangs (BUG-25c reopened).
-        let failure = ArisAgentReply.failure(ArisTurnWatchdog.line(korean: ArisSpeech.language(of: text) == "ko-KR"))
+        let failure = ArisAgentReply.failure(ArisTurnWatchdog.line(korean: Self.replyKorean))
         for await reply in ArisTurnWatchdog.guarded(asked, within: ArisTurnWatchdog.firstWord, failure: failure) {
             if case .failure = reply {} else { reachedHelper = true }
             guard !Task.isCancelled else {
@@ -1187,85 +959,95 @@ final class ArisController: ObservableObject {
             switch reply {
             case .status(let status):
                 // A late line about a step he just said no to is no step (ArisSession.ignoresStatus).
-                guard !ArisSession.ignoresStatus(ArisUIWords.status(status), declined: declinedTools) else { break }
-                session = session.working(ArisUIWords.status(status))
+                guard !ArisSession.ignoresStatus(ArisUIWords.status(status), declined: state.declinedTools) else { break }
+                setSession(session.working(ArisUIWords.status(status)))
                 // A turn that has to look things up says so at once, before the slow work (ArisThinking, look first).
-                if speaking == nil, !saidHold, ArisThinking.saysAtOnce(status) {
-                    saidHold = true
-                    say([ArisThinking.lookingLine(korean: ArisSpeech.language(of: text) == "ko-KR")])
+                if speaking == nil, !state.saidHold, ArisThinking.saysAtOnce(status) {
+                    state.saidHold = true
+                    say([ArisThinking.lookingLine(korean: Self.replyKorean)])
                 }
                 // The AI went off to do something and nothing's been said yet: a word, so the silence isn't a mystery.
-                if speaking == nil, !saidHold, ContinuousClock.now - askedAt > Self.holdAfter {
-                    saidHold = true
-                    say([ArisSpeech.language(of: text) == "ko-KR" ? "확인해 볼게요." : "One moment."])
+                if speaking == nil, !state.saidHold, ContinuousClock.now - askedAt > Self.holdAfter {
+                    state.saidHold = true
+                    say([Self.replyKorean ? "확인해 볼게요." : "One moment."])
                 }
             case .file, .launched, .work:
                 break
             case .stepFailed(let label):
-                session = session.stepFailed(label.map { ArisUIWords.status($0) })
+                setSession(session.stepFailed(label.map { ArisUIWords.status($0) }))
             case .operating(let target):
                 // Computer use is working in that window: the overlay on it, and its line in the notch.
                 ArisOperatingOverlay.shared.show(target)
-                session = session.working(target.line)
+                // In the UI's language like every other step (VM run 2026-11-18: "TextEdit 보는 중…" beside "Typing").
+                setSession(session.working(ArisUIWords.status(target.line)))
             case .refusedJobs:
-                refusedJobs = true
+                state.refusedJobs = true
             case .shownOnly:
-                shownOnly = true
+                state.shownOnly = true
             case .skill(let title):
                 skillInUse = title
             case .helperAnswers:
                 // aris-agent answers this one itself: no AI is asked, and the record says so (not "brain:api").
-                helperAnswers = true
+                state.helperAnswers = true
                 stats?.answered(by: ArisTurnPath.helper)
                 log.notice("aris-agent answers this itself (no AI asked)")
             case .savedSteps:
                 // The request's saved steps were done again with no AI: the record says "saved-steps" (not "brain:api").
-                helperAnswers = true
+                state.helperAnswers = true
                 stats?.answered(by: ArisTurnPath.savedSteps)
                 log.notice("the saved steps answer this (no AI asked)")
             case .turn(let id):
-                turnId = id
+                state.turnId = id
             case .untrusted(let sawScreen, let dispatch, let outside):
-                untrustedTurn = true
+                state.untrustedTurn = true
                 speech.honoursSay = false
-                dispatchAllowed = dispatch
+                state.dispatchAllowed = dispatch
                 if sawScreen { screenConversation = true }
                 if outside { outsideConversation = true }
             case .confirm(let ask):
                 // Finish what Aris was saying, ask, and carry on with a fresh voice for the rest of the answer.
                 dropPendingAnswer()
-                say(speech.finish(shown: ArisSpeakable.shown(speech.display, korean: ArisSpeech.language(of: text) == "ko-KR")))
+                say(speech.finish(shown: ArisSpeakable.shown(speech.display, korean: Self.replyKorean)))
                 voice.finish()
-                if let speaking { await speak { await speaking.value } }
+                // A card never waits behind Aris's own voice (eighth VM run, item 3: the go-on card after a failed step
+                // came up only when the ten-second sentence had been read): it is up at once, and what was being said
+                // is finished before its question is read (cardWait). A countdown says its own line first, as before.
+                let said = ArisCardWait.upWhileSpeaking(countdown: ask.countdown) ? speaking : nil
+                if said == nil, let speaking { await speak { await speaking.value } }
+                // Stopped or replaced while the voice finished: no card comes up for a turn that is over.
+                guard turnIsCurrent, !Task.isCancelled else { return nil }
                 speaking = nil
                 speech = ArisSpeechStream()
-                speech.honoursSay = !untrustedTurn && screen == nil
+                speech.honoursSay = !state.untrustedTurn && screen == nil
                 (sentences, voice) = AsyncStream.makeStream(of: String.self)
                 let waiting = session.runningTools
-                let allow = await askUser(ask, handsFree: turnHandsFree, waiter: true)
-                guard !Task.isCancelled else { return nil }
-                declinedTools = allow ? [] : declinedTools.union(waiting)
+                // Nil: the turn ended before an answer, which is never a no; nothing more happens in it.
+                // What the card says is the user's own only when this conversation has read nothing from outside (ArisCardIntent).
+                let ownerContent = !state.untrustedTurn && screen == nil && !screenConversation && !outsideConversation
+                guard let allow = await askUser(ask, handsFree: turnHandsFree, waiter: true, ownerContent: ownerContent, after: said), !Task.isCancelled else { return nil }
                 // 그래도 하기 on the automatic check's stopped card approves nothing: the action's own card comes next.
-                if !allow { if cardUnanswered { cardUnansweredThisTurn = true } else { cardDeclinedThisTurn = true } } else if !ask.stopped { cardApprovedThisTurn = true }
+                state.answered(allow: allow, unanswered: cardUnanswered, stopped: ask.stopped, waiting: waiting)
                 // 하지 않기 there settles the card into its one line (ArisStoppedCard).
                 if ask.stopped, !allow, !cardUnanswered {
-                    session = session.stoppedSettled(english: ArisCardEnglish.isEnglish(request: session.heard) || ArisConfirmReply.isEnglish(ask))
+                    setSession(session.stoppedSettled(english: ArisCardEnglish.isEnglish(request: session.heard) || ArisConfirmReply.isEnglish(ask)))
                 }
                 stats?.asked(allowed: allow)
                 // A yes on a desktop card: activation goes back to the process the card names before the agent acts
                 // (the click on the card made Aris the active app).
                 ArisActivationHandoff.yield(after: allow, on: ask)
+                ArisFleetGrantApply.apply(after: allow, on: ask)
                 let delivered = await ArisAgentClient.confirm(ask.id, allow: allow, shown: ask, unanswered: !allow && cardUnanswered)
-                log.notice("you said \(allow ? "yes" : "no", privacy: .public) to \(ask.title, privacy: .private)\(delivered == .ok ? "" : delivered == .refused ? " (refused)" : " (too late)", privacy: .public)")
+                log.notice("\(ArisCardWait.answerLog(allow: allow, unanswered: !allow && self.cardUnanswered), privacy: .public) \(ask.title, privacy: .private)\(delivered == .ok ? "" : delivered == .refused ? " (refused)" : " (too late)", privacy: .public)")
                 // On the size clock: the card's room goes as one eased resize of the surface, not a one-frame snap
                 // (the notch's outline follows only animated layout changes).
-                withAnimation(ArisGlass.resize) { session = session.answered(delivered: delivered == .ok, allowed: allow) }
+                withAnimation(ArisGlass.resize) { setSession(session.answered(delivered: delivered == .ok, allowed: allow)) }
                 // The agent couldn't tell this was the app: the user's answer didn't arrive, and they hears so.
                 if delivered == .refused { say([ArisConfirmResult.refusedNotice(english: ArisUIWords.english)]) }
             case .delta(let piece):
+                turnHearing.mark(.firstDelta)
                 // After a card nobody answered or the user said no to, the reply waits for the whole answer: it may be
                 // rewritten in his terms (ArisCardWait.replyAfterCards), so none of it is said or shown before.
-                guard !cardUnansweredThisTurn, !cardDeclinedThisTurn else { break }
+                guard !state.holdsAnswer else { break }
                 say(speech.add(piece))
                 // A block never shows while it streams: the notch shows the text up to the hold point, without a source
                 // link or label at its end.
@@ -1273,34 +1055,38 @@ final class ArisController: ObservableObject {
             case .answer(let written):
                 // A card the owner approved this turn: what happened to it (done, or why not) is in the brain's answer, which an
                 // unanswered later card never replaces (QA retest: an approved batch that failed was told as "답이 없어서").
-                let answer = ArisCardWait.replyAfterCards(written, unanswered: cardUnansweredThisTurn && !cardApprovedThisTurn, declined: cardDeclinedThisTurn && !cardApprovedThisTurn,
+                let answer = ArisCardWait.replyAfterCards(written, unanswered: state.cardUnanswered && !state.cardApproved, declined: state.cardDeclined && !state.cardApproved,
                                                           korean: ArisSpeech.language(of: text) == "ko-KR")
-                log.notice("\(ArisTurnPath.answerer(brain: brain.rawValue, helper: helperAnswers), privacy: .public) answered (\(answer.count, privacy: .public) characters, \(speech.written.isEmpty ? "whole" : "streamed", privacy: .public))")
-                let mayDispatch = ArisDispatch.mayDispatch(screenText: screen != nil, untrustedTurn: untrustedTurn, dispatchAllowed: dispatchAllowed)
+                log.notice("\(ArisTurnPath.answerer(brain: brain.rawValue, helper: state.helperAnswers), privacy: .public) answered (\(answer.count, privacy: .public) characters, \(speech.written.isEmpty ? "whole" : "streamed", privacy: .public))")
+                let mayDispatch = ArisDispatch.mayDispatch(screenText: screen != nil, untrustedTurn: state.untrustedTurn, dispatchAllowed: state.dispatchAllowed)
                 // The agent took the jobs out (outside text came into the conversation): the user's own words go as one job,
                 // untrusted (ArisHandOutPlan).
-                let refused = screen == nil && refusedJobs
-                let specs = mayDispatch && !refusedJobs ? ArisDispatch.parse(answer, teammateIds: Self.teammateIds) : nil
+                let refused = screen == nil && state.refusedJobs
+                let specs = mayDispatch && !state.refusedJobs ? ArisDispatch.parse(answer, teammateIds: Self.teammateIds) : nil
                 if specs != nil || refused {
                     // Only this turn dispatches; the jobs' own answers are never parsed (no recursive fan-out). An untrusted
                     // turn's jobs carry no turn id, so a Claude Code launch from it always asks the user.
-                    say(speech.finish(shown: ""))
+                    // The brain's own sentence before its block ("네, 비교해 보고 알려 드릴게요.") is said whole (ArisDelegationLine).
+                    let brainSaid = ArisDelegationLine.brainSentence(answer)
+                    say(speech.finish(shown: brainSaid))
                     let handing = ArisHandOutPlan.Turn(words: request ?? text, brain: brain,
-                                                       turnId: ArisDispatch.turnId(turnId, untrustedTurn: untrustedTurn),
-                                                       untrustedTurn: untrustedTurn, screenConversation: screenConversation,
+                                                       turnId: ArisDispatch.turnId(state.turnId, untrustedTurn: state.untrustedTurn),
+                                                       untrustedTurn: state.untrustedTurn, screenConversation: screenConversation,
                                                        outsideConversation: outsideConversation || refused, handsFree: turnHandsFree)
-                    let handed = handOut(specs ?? [], turn: handing, tier: tier, korean: ArisSpeech.language(of: text) == "ko-KR")
-                    say([handed.line])
+                    let handed = handOut(specs ?? [], turn: handing, tier: tier, korean: Self.replyKorean)
+                    let told = ArisDelegationLine.after(brainSaid: brainSaid, handed: handed.line, plain: handed.plain)
+                    if let spoken = told.spoken { say([spoken]) }
                     voice.finish()
-                    showFinalAnswer(handed.line)
-                    recordTurn(heard: request ?? text, reply: handed.line, job: handed.job)
+                    showFinalAnswer(told.shown)
+                    recordTurn(heard: request ?? text, reply: told.shown, job: handed.job)
                     if let speaking { await speak { await speaking.value } }
-                    return handed.line
+                    return told.shown
                 }
                 // A machine block (a jobs fence that wasn't dispatched, any JSON) is never shown, read aloud or stored:
-                // a jobs block becomes one short line. Code the user asked for stays on screen but is never read.
-                let korean = ArisSpeech.language(of: text) == "ko-KR"
-                if shownOnly {
+                // a jobs block becomes one short line. Code the user asked for stays on screen but is never read. Aris's own
+                // lines here (the refusal, "화면에 띄워 뒀어요", "자세한 건 화면에") are in the UI's language (fourth VM run).
+                let korean = Self.replyKorean
+                if state.shownOnly {
                     // Heard hands-free and it read the user's private data: on the screen only, and "읽어줘" has nothing to read.
                     let shown = ArisSpeakable.shown(answer, korean: korean, say: .keep)
                     lastAnswer = nil
@@ -1314,9 +1100,9 @@ final class ArisController: ObservableObject {
                 // An answer sent whole (nothing streamed) goes through the voice's stream first, so the voice and the
                 // notch agree on its <say> line: honoured only as the voice took it, kept as written on an untrusted turn.
                 if speech.written.isEmpty { say(speech.add(answer)) }
-                let handling: ArisSpeakable.SayHandling = untrustedTurn || screen != nil ? .keep : speech.tookSayLine ? .honour : .unwrap
+                let handling: ArisSpeakable.SayHandling = state.untrustedTurn || screen != nil ? .keep : speech.tookSayLine ? .honour : .unwrap
                 // Nothing to show and no card (an empty answer, or only data): the reason is shown and said instead.
-                let card = ArisWidget.presentation(in: answer, untrusted: untrustedTurn || screen != nil) != nil
+                let card = ArisWidget.presentation(in: answer, untrusted: state.untrustedTurn || screen != nil) != nil
                 let shown = ArisSpeakable.visible(answer, shown: ArisSpeakable.shown(answer, korean: korean, say: handling), card: card, korean: korean)
                 if shown == ArisSpeakable.emptyAnswer(korean: korean) { log.error("\(brain.rawValue, privacy: .public)'s answer left nothing to show") }
                 lastAnswer = (shown, .now)
@@ -1324,18 +1110,18 @@ final class ArisController: ObservableObject {
                 // start, then "자세한 건 화면에"), its code and data taken out first.
                 say(speech.finish(shown: shown, korean: korean))
                 // All of it was code or data: one line says where it is.
-                if !saidAnything { say([ArisSpeakable.onScreen(korean: korean)]) }
+                if !state.saidAnything { say([ArisSpeakable.onScreen(korean: korean)]) }
                 voice.finish()
                 showFinalAnswer(shown)
                 // The card it asks for (pick B): named by the answer, read on the Mac, never acting on an untrusted turn.
-                ArisWidgetModel.shared.present(answer: answer, reply: shown, untrusted: untrustedTurn || screen != nil, asked: request ?? text)
+                ArisWidgetModel.shared.present(answer: answer, reply: shown, untrusted: state.untrustedTurn || screen != nil, asked: request ?? text)
                 // In the history before the voice reads it, so 닫기 mid-speech keeps it (a gesture turn's words unmarked).
                 recordTurn(heard: request ?? text, reply: shown)
                 if let speaking { await speak { await speaking.value } }
                 return shown
             case .failure(let message):
                 dropPendingAnswer()
-                log.error("\(brain.rawValue, privacy: .public) failed: \(message, privacy: .public)")
+                log.error("\(brain.rawValue, privacy: .public) failed: \(ArisProviderWords.loggable(message), privacy: .public)")
                 speaker.stop()
                 fail(message)
                 return nil
@@ -1345,20 +1131,20 @@ final class ArisController: ObservableObject {
     }
 
     /// "읽어줘": the last answer read whole (code and data still left out), as interruptible as any answer.
-    private func readLastAnswer(heard: String, korean: Bool) async -> String {
+    func readLastAnswer(heard: String, korean: Bool) async -> String {
         if let muted = await mutedReading(heard: heard, korean: korean) { return muted }
         let fresh = lastAnswer.flatMap { ArisSpeakable.stillReadable(since: $0.at) ? $0.text : nil }
         // Read as the notch showed it: a <say> line still in it (an untrusted turn's) is read as words, not honoured.
         let sentences = fresh.map { ArisSpeakable.fullReading($0, korean: korean, say: .keep) } ?? []
         guard let last = fresh, !sentences.isEmpty else {
             let none = korean ? "다시 읽어 드릴 답이 없어요." : "There's no answer to read."
-            session = session.answering(none)
+            setSession(session.answering(none))
             stats?.firstSound(at: .now)
             recordTurn(heard: heard, reply: none)
             await speak { await self.speaker.speak(none) }
             return none
         }
-        session = session.answering(last)
+        setSession(session.answering(last))
         stats?.firstSound(at: .now)
         let reply = korean ? "방금 답을 처음부터 다 읽어 줬어요." : "Read the last answer out in full."
         recordTurn(heard: heard, reply: reply)
@@ -1385,7 +1171,7 @@ final class ArisController: ObservableObject {
     /// The whole answer, once the stream is over: whatever was still waiting is dropped.
     func showFinalAnswer(_ text: String) {
         dropPendingAnswer()
-        session = session.answering(text)
+        setSession(session.answering(text))
     }
 
     private func flushAnswer() {
@@ -1393,7 +1179,7 @@ final class ArisController: ObservableObject {
         // Nil when nothing waits or the turn it was written for was dropped since (cancelled, replaced, finished).
         guard let text = answerPacer.take(at: ProcessInfo.processInfo.systemUptime) else { return }
         guard session.question == nil, session.phase == .thinking || session.phase == .speaking else { return }
-        session = session.answering(text)
+        setSession(session.answering(text))
     }
 
     /// Forgets the streamed text still waiting; called whenever a turn is cancelled, replaced or finished.
@@ -1411,6 +1197,8 @@ final class ArisController: ObservableObject {
     var lastAnswer: (text: String, at: Date)?
 
     func speak(timeout: Duration = speakTimeout, _ talking: @escaping @MainActor () async -> Void) async {
+        // A turn that is over says nothing more (target 4): its voice is not the current turn's.
+        guard turnIsCurrent else { return }
         guard !silentSpeech else { return }
         guard ArisQuietGate.maySpeak(heard: session.heard) else { return }
         do {
@@ -1424,15 +1212,6 @@ final class ArisController: ObservableObject {
         }
     }
 
-    /// The rules found nothing to do here (or named an app the Mac doesn't have).
-    func needsSecondGuess(_ intent: ArisIntent) -> Bool {
-        switch intent {
-        case .ask: return true
-        case .openApp(let name), .arrange(let name, _): return Self.application(named: name) == nil
-        default: return false
-        }
-    }
-
     /// Jev's guess at an everyday request; nil (ask Claude) when it's unsure, slow, or not set up.
     /// What the moment looks like, for the AI (the calendar covers the coming week).
     /// `conversation`: with the recent turns and the jobs (false: only the moment, for a job that must not hear them).
@@ -1442,27 +1221,22 @@ final class ArisController: ObservableObject {
         let now = Date()
         // Never asked from here (QA BUG-55: a weather question popped the Calendar prompt): read only when already allowed.
         let upcoming = await ArisCalendarStore.shared.upcomingEvents(days: ArisContext.calendarDays)
-        log.notice("calendar: \(upcoming.count, privacy: .public) events this week (access \(EKEventStore.authorizationStatus(for: .event).rawValue, privacy: .public))")
+        log.notice("calendar: \(upcoming.count, privacy: .public) events this week (access \(ArisEventGrants.shared.status(.events).rawValue, privacy: .public))")
         return ArisContext.make(
             now: now, timeZone: .current,
-            frontApp: NSWorkspace.shared.frontmostApplication?.localizedName,
+            frontApp: ArisWorld.shared.snapshot.frontApp?.name,
             music: music.isPlayerIdle ? nil : ArisContext.Music(title: music.songTitle, artist: music.artistName, playing: music.isPlaying),
             events: upcoming.map { ArisContext.Event(start: $0.start, end: $0.end, title: $0.title, allDay: $0.isAllDay, outside: ArisOutsideItems.shared.contains($0.id),
                                                         todo: $0.kind.isReminder) },
             recent: conversation ? history : [], tasks: conversation ? contextTasks() : [],
             shelfFiles: ShelfStateViewModel.shared.items.filter { $0.fileURL != nil }.count, userName: ArisUserName.current,
-            programs: turnPrograms, claudeSessions: sessions ? contextClaudeSessions() : [])
+            programs: turnPrograms, claudeSessions: sessions ? contextClaudeSessions() : [],
+            asked: sessions ? (turnTyped ? .typed : .byVoice) : nil, home: ArisContext.realHome)
     }
 
-    /// The Claude Code sessions' context lines. What they said goes in only when the words ask about them, and is
-    /// outside text from then on (outsideConversation, which the agent also sees from the header), as a job's result is.
-    private func contextClaudeSessions() -> [String] {
-        let store = ClaudeStore.shared
-        let lines = ClaudeSessionsContext.lines(Array(store.sessions.values), approvals: store.approvals, now: Date(), home: UserHome.path,
-                                                withText: turnAsksSessions)
-        if ClaudeSessionsContext.carriesText(lines) { outsideConversation = true }
-        return lines
-    }
+    /// (jv-fleet) The fleet block: every coding session's number, state and strict names, never a session's own words;
+    /// those come only through `aris-tools session status`, which marks the conversation as outside text.
+    private func contextClaudeSessions() -> [String] { contextFleet() }
 
     /// The background tasks' context lines. A finished or failed one carries an untrusted job's words: from then on the
     /// conversation is outside text (outsideConversation, which the agent also sees from the line itself). Those put
@@ -1474,20 +1248,43 @@ final class ArisController: ObservableObject {
     }
 
     /// Jev's guess at an everyday request (nil intent: ask the AI), and how much work it is.
-    func route(_ text: String) async -> (intent: ArisIntent?, tier: ArisTier, browserWork: Bool) {
-        guard let key = ArisKeyFile.load(ArisRouter.keyName) else { return (nil, .quick, false) }
+    /// (route(), ArisController+Endpoint, takes the answer it asked during the pause when there is one.)
+    func routeNow(_ text: String) async -> (intent: ArisIntent?, tier: ArisTier, browserWork: Bool) {
+        let unrouted = ArisTurnRequest.Routed.withoutRouter(text)
+        // Who understands it (설정 › 짧은 명령 빨리 알아듣기, ArisRouterModels): Jev or another decision model, an API profile, or the keyword rules.
+        let route = ArisDeciders.route()
+        if route == .rules { return (nil, unrouted.tier, false) }
+        // Only a chat profile used as the router gets the longer wait and the rest after misses (ArisRouterPatience): Jev
+        // and the other decision models keep their one short limit and are asked every turn.
+        var isChat = false
+        if case .api = route { isChat = true }
+        // After misses in a row a chat model is left alone for a while (ArisRouterRest): the keyword rules meanwhile.
+        let routeName = String(describing: route)
+        if isChat, routerRest.isResting(route: routeName, now: Date()) { return (nil, unrouted.tier, false) }
         let apps = await Self.installedApps.value
         let start = ContinuousClock.now
         do {
-            let answers = try await Self.within(ArisRouter.timeout) { try await ArisRouter.ask(text, apps: apps, key: key) }
+            let answers = try await Self.within(isChat ? .milliseconds(Int(ArisRouterPatience.appWait(api: true) * 1_000)) : ArisRouter.timeout) {
+                if case .api(let profile) = route { return try await ArisRouterModels.ask(text, apps: apps, profile: profile) }
+                // Jev, or another decision model, through the one seam (ArisDecider).
+                guard let decider = ArisDeciders.decider(route.logName) else { throw ArisRouterModels.NoModel() }
+                return try await ArisRouter.ask(text, apps: apps, decider: decider)
+            }
             let milliseconds = Int((ContinuousClock.now - start) / .milliseconds(1))
             let decided = ArisRouter.decide(answers, text: text)
-            log.notice("router: \(answers.intent.rawValue, privacy: .public) \(answers.intentConfidence, privacy: .public) -> \(decided == nil ? "Claude" : "Mac", privacy: .public) in \(milliseconds, privacy: .public) ms")
+            log.notice("router (\(route.logName, privacy: .public)): \(answers.intent.rawValue, privacy: .public) \(answers.intentConfidence, privacy: .public) -> \(decided == nil ? "Claude" : "Mac", privacy: .public) in \(milliseconds, privacy: .public) ms")
             ArisRouter.record(text, answers, acted: decided != nil, milliseconds: milliseconds)
+            if isChat { routerRest.answered(route: routeName) }
             return (decided, answers.tier, answers.browserWork)
+        } catch is ArisRouterModels.NoModel {
+            // 자동 with no Jev key and no API profile connected: the keyword rules, as with no key before.
+            return (nil, unrouted.tier, false)
         } catch {
-            log.error("router skipped: \(String(describing: error), privacy: .public)")
-            return (nil, .quick, false)
+            log.error("router skipped: \(ArisProviderWords.loggable(String(describing: error)), privacy: .public)")
+            if isChat, routerRest.missed(route: routeName, now: Date()) {
+                log.error("router resting \(Int(ArisRouterRest.restSeconds / 60), privacy: .public) min after \(ArisRouterRest.missesBeforeRest, privacy: .public) misses in a row: the keyword rules meanwhile")
+            }
+            return (nil, unrouted.tier, false)
         }
     }
 
@@ -1524,17 +1321,18 @@ final class ArisController: ObservableObject {
 
     /// Nothing in the turn was speech: "못 들었어요" for a moment, never said aloud, routed or acted on (QA BUG-30).
     func notHeard() {
+        guard turnIsCurrent else { return }
         log.notice("nothing heard")
         gestureCancelled()
         finishTurn("unheard")
         releaseListener()
-        session = session.failing(ArisTranscript.notHeard(korean: !ArisUILanguage.english))
+        setSession(session.failing(ArisTranscript.notHeard(korean: !ArisUILanguage.english)))
         level = 0
-        turn = Task {
+        runTurn(.key) {
             try? await Task.sleep(for: Self.lingerAfterFailure)
             guard !Task.isCancelled else { return }
             // Nothing is parked: the next time the notch opens it doesn't say "못 들었어요" again.
-            session = ArisSession()
+            self.setSession(ArisSession())
             resumeMusicIfPaused()
         }
     }
@@ -1543,20 +1341,23 @@ final class ArisController: ObservableObject {
     /// that said it isn't running says what is true now. Only that line, and only while it still stands.
     func helperCameBack() {
         guard ArisHelperWatch.isLostLine(session.reply) else { return }
-        session = session.corrected(ArisFixWords.helperBackLine(english: ArisUIWords.english))
+        setSession(session.corrected(ArisFixWords.helperBackLine(english: ArisUIWords.english)))
     }
 
     func fail(_ message: String) {
+        // A turn that is over fails nothing: its failure is not the current turn's.
+        guard turnIsCurrent else { return }
         gestureCancelled()
         finishTurn("error")
+        // The turn's work stops; the turn stays current while its failure shows.
         turn?.cancel()
         releaseListener()
-        session = session.failing(message)
+        setSession(session.failing(message))
         level = 0
-        turn = Task {
+        runTurn(.key) {
             try? await Task.sleep(for: Self.lingerAfterFailure)
             guard !Task.isCancelled else { return }
-            session = session.done()
+            self.setSession(self.session.done())
             resumeMusicIfPaused()
         }
     }

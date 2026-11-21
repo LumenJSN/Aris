@@ -223,12 +223,14 @@ struct ArisGlassRect: View {
     }
 }
 
-private struct ArisGlassRectBody: View {
+struct ArisGlassRectBody: View {
     let dark: Bool
     let hover: Bool
+    /// 14 for the rect button; the repository card's small one is 12 (ArisGlassSmall).
+    var radius: CGFloat = 14
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         ZStack {
             if dark {
                 shape.fill(RadialGradient(stops: [.init(color: ArisOBColor.hexa(0xffffff22), location: 0), .init(color: ArisOBColor.hexa(0xe4f0fc14), location: 0.45),

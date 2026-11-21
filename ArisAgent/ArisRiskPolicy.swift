@@ -66,6 +66,8 @@ enum ArisRiskPolicy {
         if namesArisSecret(scanned, tools: tools) { return "it names Aris's own token or keys" }
         if let problem = desktopProblem(command, tools: tools) { return problem }
         if barePathProblem(command, tools: tools) != nil { return barePathReason }
+        if arisCalls(in: command, tools: tools)?.contains(where: ArisPaymentHandOff.refuses) == true { return ArisPaymentBoundary.refusedLine }
+        if let why = arisCalls(in: command, tools: tools)?.compactMap({ broadTargetRefusal($0, request: ArisMemoryText.ownWords(request), home: home) }).first { return why }
         if let pieces = ArisCommandPolicy.segments(command), pieces.count > 1,
            let never = pieces.first(where: { shell($0, tools: tools, home: home, critical: critical, request: request) == .never }) {
             return "one of the chained commands: " + shellNeverReason(never, tools: tools, home: home, critical: critical, request: request)
@@ -565,6 +567,9 @@ enum ArisRiskPolicy {
 
     private static func arisTool(_ arguments: [String], critical: Bool, request: String, home: String) -> ArisRisk {
         guard let tool = arguments.first else { return .auto }
+        // Words handed to Aside, a task, a schedule or a routine that tell it to pay: never, before any card and before
+        // the agent's own routes (ArisPaymentHandOff).
+        if ArisPaymentHandOff.refuses(arguments) { return .never }
         // External services: aris-tools only hands the call to the agent, whose one gate (ArisMCPPolicy) runs reads and
         // puts every write to the user, for every brain alike; asking here too would ask twice.
         if tool == "mcp" { return .auto }
@@ -574,6 +579,9 @@ enum ArisRiskPolicy {
         // The user's routines: aris-tools only hands the words to the agent, which reads a routine back to the user on its own card
         // before one is saved or removed (ArisRoutineRoutes), for every brain alike; listing and showing only read.
         if tool == "routine" { return .auto }
+        // The background tasks the conversation handed out: aris-tools hands the words to the agent, which reads its own
+        // journals and refuses an added instruction after outside text (ArisTaskTool), for every brain alike.
+        if tool == "task" { return .auto }
         // Website work for Aside: aris-tools hands the brief to the agent, whose one gate (ArisAside.risk, Codex's rule)
         // asks the user when it should, for every brain alike.
         if tool == "aside" { return .auto }
@@ -599,6 +607,9 @@ enum ArisRiskPolicy {
            arguments.dropFirst().filter({ $0 != "--" }).contains(where: { touchesProtected($0, home: home) }) {
             return .never
         }
+        // Home's own folders, home and what holds them, and a folder the user's words don't name as one: refused before any
+        // card, as the trust gate refuses them (ArisBroadTarget).
+        if broadTargetRefusal(arguments, request: request, home: home) != nil { return .never }
         // A rename is a move within its folder, gated like one: never a protected place (the item or its new path), else
         // The user's card. A new folder too.
         if tool == "rename" {

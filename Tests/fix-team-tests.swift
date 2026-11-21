@@ -171,6 +171,10 @@ private func teammateSilenceTests() {
           "team-4: both the start and the stop must be hooked")
     check(!ArisClaudeHookCheck.reports(settings(["SessionStart": [ours], "Stop": [ours]], extra: ["disableAllHooks": true])),
           "team-4: hooks switched off altogether don't report")
+    let command: [String: Any] = ["hooks": [["type": "command", "command": "/bin/sh \"/Applications/Aris.app/Contents/Resources/aris-claude-hook.sh\" 2", "timeout": 2]]]
+    check(ArisClaudeHookCheck.reports(settings(["SessionStart": [command], "Stop": [theirs, command]])),
+          "team-4: the app's command hooks (aris-claude-hook.sh) report to Aris as the http ones do")
+    check(ArisClaudeHookCheck.reports(settings(["SessionStart": [ours], "Stop": [command]])), "team-4: one of each kind reports too")
 
     // The agent says what it found with the launch; an older agent says nothing.
     let launch = ArisTeammateLaunch(job: job, pid: 7, cwd: "/Users/x/proj", at: fixT0, window: nil, hooks: false)

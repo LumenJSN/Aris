@@ -590,6 +590,22 @@
       "comment" : "A description of the necessity of granting accessibility permissions for the notification view.",
       "localizations" : {}
     },
+    "Hide from screen recording" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide from screen recording"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "화면 녹화 시 숨기기"
+          }
+        }
+      }
+    },
     "High" : {
       "localizations" : {
         "en" : {
@@ -1401,6 +1417,57 @@
         }
       }
     },
+    "countdown.doing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doing it…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "하는 중…"
+          }
+        }
+      }
+    },
+    "countdown.go" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go ahead"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "진행"
+          }
+        }
+      }
+    },
+    "countdown.gopresshint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No microphone: press Go ahead or Cancel"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마이크가 없어요. 진행이나 취소를 눌러 주세요"
+          }
+        }
+      }
+    },
     "countdown.hint" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1435,6 +1502,40 @@
         }
       }
     },
+    "countdown.noanswer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No answer"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "답이 없었어요"
+          }
+        }
+      }
+    },
+    "countdown.notdone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not done"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "하지 않았어요"
+          }
+        }
+      }
+    },
     "countdown.notsent" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1448,6 +1549,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "보내지 않았어요"
+          }
+        }
+      }
+    },
+    "countdown.presshint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No microphone: press Send or Cancel"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마이크가 없어요. 보내기나 취소를 눌러 주세요"
           }
         }
       }
@@ -2202,7 +2320,7 @@
       }
     },
     "onboarding.dictate.finish" : {
-      "comment" : "Dictation page: ends the setup",
+      "comment" : "Dictation page: on to the last page",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -2341,6 +2459,78 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "말로 받아쓰기"
+          }
+        }
+      }
+    },
+    "onboarding.done.lead" : {
+      "comment" : "Last setup page body with the wake word off; the argument is the talk shortcut, e.g. ⌥ Space",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press %@, anytime."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "언제든 %@를 누르세요."
+          }
+        }
+      }
+    },
+    "onboarding.done.lead.wake" : {
+      "comment" : "Last setup page body with the wake word on; the argument is the talk shortcut, e.g. ⌥ Space",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Say “Aris” or press %@, anytime."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "언제든 “아리스”라고 부르거나 %@를 누르세요."
+          }
+        }
+      }
+    },
+    "onboarding.done.start" : {
+      "comment" : "Last setup page: ends the setup",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "시작하기"
+          }
+        }
+      }
+    },
+    "onboarding.done.title" : {
+      "comment" : "Last setup page heading",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're all set"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "준비 끝났어요"
           }
         }
       }
@@ -3691,6 +3881,132 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aris"
+          }
+        }
+      }
+    },
+    "onboarding.star.ask" : {
+      "comment" : "Repository card button with gh logged in; the argument is the GitHub account, e.g. @octocat",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star Aris as %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 계정으로 별 남기기"
+          }
+        }
+      }
+    },
+    "onboarding.star.busy" : {
+      "comment" : "Repository card: while the star is being left",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starring"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "별 남기는 중"
+          }
+        }
+      }
+    },
+    "onboarding.star.count" : {
+      "comment" : "VoiceOver: the repository card's star count",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld stars"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "별 %lld개"
+          }
+        }
+      }
+    },
+    "onboarding.star.done" : {
+      "comment" : "Repository card: the star was just left",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starred. Thank you"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "별 남겼어요, 고마워요"
+          }
+        }
+      }
+    },
+    "onboarding.star.repoSub" : {
+      "comment" : "Last setup page, the repository card: under the repository's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub repository"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub 저장소"
+          }
+        }
+      }
+    },
+    "onboarding.star.thanks" : {
+      "comment" : "Repository card: the account had starred it before",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thanks for the star"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "별 고마워요"
+          }
+        }
+      }
+    },
+    "onboarding.star.web" : {
+      "comment" : "Repository card button without gh: opens the repository in the browser",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star on GitHub ↗"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub에서 별 남기기 ↗"
           }
         }
       }

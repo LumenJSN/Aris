@@ -30,7 +30,15 @@ struct ArisSettingOption: Equatable {
 }
 
 /// `select`: the measured settings select (a choice that opens a picker: 쓰는 언어), drawn as ArisSettingSelect.
-enum ArisSettingButtonKind: Equatable { case ghost, primary, danger, solidRed, select }
+enum ArisSettingButtonKind: Equatable {
+    case ghost, primary, danger, solidRed, select
+
+    /// How a button of `kind` is drawn: a red one that can't be pressed is drawn plain, since red at half strength read
+    /// as pressable (VM run 2026-11-18: 모두 지우기 looked ready with nothing learned).
+    static func drawn(_ kind: ArisSettingButtonKind, enabled: Bool) -> ArisSettingButtonKind {
+        !enabled && (kind == .danger || kind == .solidRed) ? .ghost : kind
+    }
+}
 
 struct ArisSettingButton: Equatable {
     let title: String
@@ -41,19 +49,29 @@ struct ArisSettingButton: Equatable {
 
 /// A value a control writes.
 enum ArisSettingKey: Hashable {
-    case wakeWord, minutes, sounds, brain, computerEngine, cloud, speed, silence, bargeInSpeakers
+    case wakeWord, minutes, sounds, brain, computerEngine, speed, silence, bargeInSpeakers
+    /// 다른 AI로 넘기기 (ArisBrainFallbackSetting).
+    case brainFallback
     case dayEndOffer
+    /// 하루 정리를 자세히 말하기: the day in review (ArisRecapSwitch, `arisRecap`).
+    case recap
     /// Aris's mute, and the night hours of quiet time (ArisQuiet).
     case muted, quietHours
     /// The night hours' own start and end, each a time of the day ("22:30": ArisQuietSpan).
     case quietStart, quietEnd
     /// The terminal a Claude Code teammate opens in ("auto" or ArisTerminal's raw value).
     case teammateTerminal
+    /// 받아쓰기 쓰기: dictation as a whole (ArisDictationSwitch).
+    case dictationOn
     /// Dictation: polish through a brain when the Mac can't; the writing style for an app kind (ArisAppKind raw value).
     case dictationBrainPolish, dictationStyle(String)
+    /// 들은 말 다듬기: a fast model repairs what the recogniser misheard (ArisHeardRepair).
+    case hearRepair
     /// Dictation in the pill at the bottom of the screen (the notch stays quiet for it); its idle sliver between dictations.
     case dictationPill, dictationPillIdle
     case todoList(String), todoDefault, newListName
+    /// 저장된 단계: the new name typed for a taught procedure (ArisSavedStepsSettingsRows).
+    case savedStepsName
     case calendar(String), allDay, joinMeeting, openIn
     case seesScreen, circle
     case autoMemory, memoryQuery
@@ -65,17 +83,29 @@ enum ArisSettingKey: Hashable {
     /// A side notch's tab showing or not (ArisSideTab's raw value).
     case sideTab(String)
     case theme, accentCustom, reduceMotion, settingsIcon, alwaysTabs
+    /// 에코 제거 오디오 (새 엔진): `arisDuplexAudio`.
+    case duplexAudio
+    /// 내 목소리만 듣기 (F1): `arisOwnerVoice` (ArisVoiceID.key).
+    case voiceID
+    /// 실험 기능 (ArisLabsSetting): the helper's switches the app owns and sends it (ArisExperimentSwitch).
+    case core2, teach
     /// The notch's look (ArisNotchLookSetting): its theme (ArisNotchTheme's raw value), the text backing and the star at rest.
     case notchTheme, textBacking, restStar
     case login, displayMode, screen, appLanguage, userName
+    /// 자동으로 업데이트 (ArisUpdater).
+    case autoUpdate
     /// The notch, music and shelf rows (ArisMoreSettings).
     case more(ArisMoreKey)
     /// The API brain row's dropdowns: "provider", "quick" or "strong" (ArisAPIBrainModel).
     case apiBrain(String)
+    /// 모델 고르기's dropdowns: "claude.conversation.model", "codex.deep.effort"… (ArisModelChoiceRows).
+    case modelChoice(String)
     /// What the closed notch's Claude ring shows (ClaudeRingMode's raw value).
     case claudeRing
     /// 하루 소리 모으기 (ArisWakeCollect), on for a day.
     case wakeCollect
+    /// The name that wakes Aris (ArisWakeName), saved as it is typed.
+    case wakeName
 }
 
 enum ArisSettingValue: Equatable {
@@ -93,8 +123,11 @@ enum ArisSettingsAction: Equatable {
     case keepHeldMemory(String), dropHeldMemory(String), settleMemoryConflict(String, keep: String), forgetMemoryEntity(String), undoMemoryChange(Int)
     /// 일하면서 배운 것: one lesson forgotten, all of it (asked twice), or kept after all.
     case forgetWorkLesson(Int), forgetAllWork, keepWork
-    /// 저장된 단계: one saved request forgotten (ArisSavedStepsSettingsRows).
-    case forgetSavedSteps(String)
+    /// 저장된 단계: one saved request forgotten (ArisSavedStepsSettingsRows): the first press asks, the second (정말 지우기)
+    /// forgets; 취소 keeps it.
+    case forgetSavedSteps(String), keepSavedSteps
+    /// 저장된 단계: a taught procedure's 이름 바꾸기 (its row turns into a field), and the field's 저장.
+    case renameSavedSteps(String), saveSavedStepsName(String)
     /// 다른 AI에서 가져오기: the import sheet opens (ArisMemoryImportSheet).
     case importMemory
     /// A feature's detail sheet opens (ArisFeatureSheet).
@@ -102,7 +135,13 @@ enum ArisSettingsAction: Equatable {
     /// Forgets every learned suggestion for dropped files (ArisDropLearned).
     case forgetDropHabits
     case unhideSides, go(ArisSettingsPage, anchor: String?)
+    /// The 팀원 or 스킬 sheet opens ("team", "skills"), on `anchor` when one is named.
+    case openSheet(String, anchor: String?)
     case export, diagnostics, wipe, uninstall
+    /// 업데이트 확인 (ArisUpdater.checkNow).
+    case checkUpdate
+    /// Claude Code 연결: Aris's hooks and status line into ~/.claude/settings.json, or out of it (ClaudeConnect).
+    case claudeConnect, claudeDisconnect
     case onboarding, restart, quit, openFolder, clearName
     case accent(String?), pickAccent
     /// A slider's drag began (true) or ended.
@@ -114,6 +153,10 @@ enum ArisSettingsAction: Equatable {
     case learnWord(String), dismissWord(String), forgetWord(String)
     /// 호출어 녹음: the recording sheet opens; every recording erased (asked twice), or kept after all.
     case recordWakeCalls, clearWakeRecordings, keepWakeRecordings
+    /// The wake name back to "아리스" (ArisWakeNameRows).
+    case resetWakeName
+    /// 내 목소리 (ArisVoiceIDRows): the enrolment sheet opens; the print deleted (asked twice), or kept after all.
+    case enrolVoice, forgetVoice, keepVoice
 }
 
 enum ArisChipTone: Equatable { case plain, ok, warn }
@@ -127,8 +170,8 @@ enum ArisSettingControl: Equatable {
     case buttons([ArisSettingButton])
     /// A green dot when `ok`, and a button.
     case status(ok: Bool, ArisSettingButton?)
-    /// A shortcut that can be changed, shown as caps (KeyboardShortcuts' name).
-    case shortcut(name: String, caps: [String])
+    /// A shortcut that can be changed, shown as caps (KeyboardShortcuts' name); dimmed and inert when not `enabled`.
+    case shortcut(name: String, caps: [String], enabled: Bool = true)
     /// Caps that can't be changed.
     case caps([String])
     /// The whole row is a button with a chevron, and the current value before it.
@@ -190,6 +233,13 @@ struct ArisSettingSection: Identifiable, Equatable {
     var fold: ArisSettingFold?
     /// A feature whose detail sheet a small 알아보기 link at the end of the section's title opens.
     var feature: ArisFeature?
+}
+
+/// A part of a long page (ArisSettingsParts) and the sections it draws under its title.
+struct ArisPartSections: Identifiable, Equatable {
+    let part: ArisSettingsPart
+    var sections: [ArisSettingSection]
+    var id: String { part.id }
 }
 
 /// Where a range slider lands: dragged to a point along its track, or moved one step by VoiceOver.

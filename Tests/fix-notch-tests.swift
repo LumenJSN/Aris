@@ -292,24 +292,25 @@ private func relaunchTargetTests() {
 
 private func rightPanelKeyTests() {
     let fresh = ArisSettingsSnapshot()
-    let side = ArisSettingsBuilder.sections(.notch, fresh).first { $0.id == "notch.side" }
-    check(side?.rows.map(\.id) == ["notch.unhide", "notch.clipKey", "notch.rightKey"], "right panel key: its row sits right after the left side's")
-    let row = side?.rows.last
+    // Option A: one row per shortcut, all in 앱 › 단축키; the right one sits right after the left one.
+    let keys = ArisSettingsBuilder.sections(.keys, fresh).first { $0.id == "keys.all" }?.rows.map(\.id) ?? []
+    check(keys.firstIndex(of: "keys.right") == keys.firstIndex(of: "keys.clipboard").map { $0 + 1 }, "right panel key: its row sits right after the left side's")
+    let row = ArisSettingsBuilder.sections(.keys, fresh).flatMap(\.rows).first { $0.id == "keys.right" }
     check(row?.title == "오른쪽 사이드 노치 열기" && row?.control == .shortcut(name: "openRightPanel", caps: []),
           "right panel key: no key until the user picks one (nothing is taken from other apps)")
     var picked = ArisSettingsSnapshot()
     picked.rightPanelCaps = ["⌃", "⌥", "T"]
-    check(ArisSettingsBuilder.sections(.notch, picked).flatMap(\.rows).first { $0.id == "notch.rightKey" }?.control == .shortcut(name: "openRightPanel", caps: ["⌃", "⌥", "T"]),
+    check(ArisSettingsBuilder.sections(.keys, picked).flatMap(\.rows).first { $0.id == "keys.right" }?.control == .shortcut(name: "openRightPanel", caps: ["⌃", "⌥", "T"]),
           "right panel key: the key he picked shows on the row")
 
     let desc = { (hidden: Set<String>) -> String in
         var s = ArisSettingsSnapshot()
         s.hiddenSideTabs = hidden
-        return ArisSettingsBuilder.sections(.notch, s).flatMap(\.rows).first { $0.id == "notch.rightKey" }?.desc ?? ""
+        return ArisSettingsBuilder.sections(.keys, s).flatMap(\.rows).first { $0.id == "keys.right" }?.desc ?? ""
     }
     check(desc([]) == desc(["todo"]) && desc([]) == desc(["clipboard", "usage"]) && desc([]) != desc(["todo", "calendar"]) && desc(["todo", "calendar"]).contains("꺼져"),
           "right panel key: the row says so while every right tab is off, and only then")
-    check(ArisSettingsIndex.search("오른쪽 사이드 노치 열기").contains { $0.id == "notch.rightKey" } && ArisSettingsIndex.search("할 일").contains { $0.id == "notch.rightKey" },
+    check(ArisSettingsIndex.search("오른쪽 사이드 노치 열기").contains { $0.id == "keys.right" } && ArisSettingsIndex.search("할 일", limit: 40).contains { $0.id == "keys.right" },
           "right panel key: a search finds the row")
 
     check(ArisSideTabWork.takesRightKey(hidden: []) && ArisSideTabWork.takesRightKey(hidden: ["todo"]) && ArisSideTabWork.takesRightKey(hidden: ["calendar", "history", "clipboard"]),

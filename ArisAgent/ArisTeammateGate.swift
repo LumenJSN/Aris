@@ -71,10 +71,22 @@ enum ArisTeammateGate {
         }
     }
 
+    /// The step a prompt about paying is asked for.
+    static let paymentStep = "결제·주문 (pay, order)"
+
+    /// What Claude Code is given: a prompt about paying ends with the owner's rule (ArisPaymentBoundary.bounded), shown on
+    /// the card that asks for it; any other prompt as written.
+    static func handed(_ prompt: String, outbound: [String], english: Bool) -> String {
+        outbound.contains(paymentStep) ? ArisPaymentBoundary.bounded(prompt, english: english) : prompt
+    }
+
     /// Outbound steps in the brief and in the user's own words for that turn, each once.
     static func outbound(prompt: String, request: String?) -> [String] {
         var seen = Set<String>()
-        return (ArisClaudeLaunch.outboundSteps(in: prompt) + ArisClaudeLaunch.outboundSteps(in: request ?? "")).filter { seen.insert($0).inserted }
+        // A prompt or a request about paying, buying, ordering or moving money is never opened without the owner's card
+        // (ArisPaymentBoundary): named as a step, so the launch asks and the card says so.
+        let paying = ArisPaymentBoundary.involves(prompt) || ArisPaymentBoundary.involves(request ?? "") ? [paymentStep] : []
+        return (ArisClaudeLaunch.outboundSteps(in: prompt) + ArisClaudeLaunch.outboundSteps(in: request ?? "") + paying).filter { seen.insert($0).inserted }
     }
 
     /// The folder to work in, resolved; nil when it isn't an existing folder under `home` or `home` itself, or it is

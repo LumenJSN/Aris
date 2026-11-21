@@ -17,7 +17,7 @@ func logActivity(_ summary: String, undo: ArisUndo?, id: UUID = UUID()) -> UUID 
     let environment = ProcessInfo.processInfo.environment
     ArisActivity.append(ArisActivityEntry(id: id, date: Date(), job: environment["ARIS_JOB"] ?? "Aris",
                                           worker: environment["ARIS_WORKER"] ?? "aris-tools", summary: summary, undo: undo, undone: false,
-                                          teammate: environment["ARIS_TEAMMATE"]),
+                                          teammate: environment["ARIS_TEAMMATE"], call: environment[ArisActivity.callMarkKey].flatMap(ArisActivity.callMark)),
                         file: ArisActivity.defaultFile)
     return id
 }
@@ -104,6 +104,10 @@ private func undoLocal(_ undo: ArisUndo) throws {
         appleScript(script)
     case .stopTimer:
         try postTimer(["action": "stop"])
+    case .deleteEvent(let id):
+        try removeEvent(uid: id)
+    case .restoreWindow(let app, let from, let to):
+        try restoreWindow(app: app, from: from, to: to)
     default:
         throw ArisActivity.UndoError(message: "that can't be undone")
     }

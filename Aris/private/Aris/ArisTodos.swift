@@ -156,8 +156,27 @@ enum ArisDueAlert: String, Equatable {
 enum ArisTodoDate {
     private static let weekdays: [String: Int] = ["일": 1, "월": 2, "화": 3, "수": 4, "목": 5, "금": 6, "토": 7]
 
+    /// A date word that is part of a name stays in the title: inside quotes ("‘내일의 나’ 읽기"), run into a word
+    /// ("오늘의 집", "일요일마다"), after "the", or a capitalised name ("watch Tomorrow Never Dies"). Only one that stands as
+    /// a date is the due date (audit todo-2: they were all taken out of the title).
+    private static let quoted = #"[‘“"'「『][^’”"'」』]*[’”"'」』]"#
+    private static let dayEnd = #"(?:(?![가-힣])|(?=밤|저녁|아침|오후|오전|중|안))"#
+
+    /// A capitalised "Tomorrow" that isn't the item's first word is a name's ("watch Tomorrow Never Dies").
+    private static func isNamePart(_ word: String, in text: String) -> Bool {
+        guard word.first?.isUppercase == true else { return false }
+        return !text.trimmingCharacters(in: .whitespaces).hasPrefix(word)
+    }
+
     static func parse(_ raw: String, now: Date, calendar: Calendar = .current) -> (text: String, due: Date?) {
-        var text = ArisNumbers.normalize(raw)
+        // Quoted names are set aside while the dates are read, then put back as they were.
+        var names: [String] = []
+        var masked = ArisNumbers.normalize(raw)
+        while let range = masked.range(of: quoted, options: .regularExpression) {
+            names.append(String(masked[range]))
+            masked.replaceSubrange(range, with: "\u{E000}\(names.count - 1)\u{E001}")
+        }
+        var text = masked
         var day: Date?
         var hour: Int?, minute = 0
 
@@ -173,10 +192,10 @@ enum ArisTodoDate {
         }
 
         let today = calendar.startOfDay(for: now)
-        if let found = take(#"(오늘|내일|모레|글피)(까지|에)?"#) {
+        if let found = take(#"(?<![가-힣])(오늘|내일|모레|글피)(까지|에)?"# + dayEnd) {
             let offset = ["오늘": 0, "내일": 1, "모레": 2, "글피": 3][found[1]] ?? 0
             day = calendar.date(byAdding: .day, value: offset, to: today)
-        } else if let found = take(#"(이번\s?주|다음\s?주)?\s*([월화수목금토일])요일(까지|에)?"#), let weekday = weekdays[found[2]] {
+        } else if let found = take(#"(이번\s?주|다음\s?주)?\s*(?<![가-힣])([월화수목금토일])요일(까지|에)?"# + dayEnd), let weekday = weekdays[found[2]] {
             let thisWeekday = calendar.component(.weekday, from: today)
             if found[1].hasPrefix("다음") {
                 let mondayOffset = (thisWeekday + 5) % 7
@@ -218,7 +237,8 @@ enum ArisTodoDate {
 
         // The same in English: "tomorrow", "on friday", "next monday", "at 5", "by 6:30 pm" (never "tomorrow's game", and
         // a bare "at 5" only where the words end, so "meet at 5 guys" keeps its words).
-        if day == nil, let found = take(#"(?i)\b(?:(?:by|on|for|until)\s+)?(today|tonight|tomorrow)\b(?!['’])"#) {
+        if day == nil, let found = take(#"(?<![Tt]he\s)(?<!\S\s[Tt]he\s)\b(?:(?:[Bb]y|[Oo]n|[Ff]or|[Uu]ntil)\s+)?(today|tonight|tomorrow|Today|Tonight|Tomorrow)\b(?!['’])(?!\s+[A-Z])"#),
+           !Self.isNamePart(found[1], in: text) {
             day = calendar.date(byAdding: .day, value: found[1].lowercased() == "tomorrow" ? 1 : 0, to: today)
         } else if day == nil, let found = take(#"(?i)\b(?:(?:on|by|until)\s+(?:(this|next)\s+)?|(this|next)\s+)(sun|mon|tues|wednes|thurs|fri|satur)day\b(?!['’])"#),
                   let weekday = ["sun": 1, "mon": 2, "tues": 3, "wednes": 4, "thurs": 5, "fri": 6, "satur": 7][found[3].lowercased()] {
@@ -248,6 +268,7 @@ enum ArisTodoDate {
             minute = Int(found[2]) ?? 0
         }
 
+        for (index, name) in names.enumerated() { text = text.replacingOccurrences(of: "\u{E000}\(index)\u{E001}", with: name) }
         let cleaned = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
         let original = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -298,7 +319,20 @@ enum ArisTodoDate {
     static func due(_ words: String, now: Date, calendar: Calendar = .current) -> Date? {
         let plain = words.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !plain.isEmpty else { return nil }
+        if let exact = moment(plain, calendar: calendar) { return exact }
         return parse(dated(plain), now: now, calendar: calendar).due
+    }
+
+    /// "YYYY-MM-DD HH:MM" read exactly, a 24-hour clock (what `aris-tools remind --at` takes, now added through the app:
+    /// jv-prompts); nil for any other words, or a day or time that doesn't exist.
+    static func moment(_ words: String, calendar: Calendar = .current) -> Date? {
+        guard let regex = try? NSRegularExpression(pattern: #"^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})$"#),
+              let match = regex.firstMatch(in: words, range: NSRange(words.startIndex..., in: words)) else { return nil }
+        let parts = (1...5).compactMap { Range(match.range(at: $0), in: words).flatMap { Int(words[$0]) } }
+        guard parts.count == 5, (1...12).contains(parts[1]), (0...23).contains(parts[3]), (0...59).contains(parts[4]) else { return nil }
+        let wanted = DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: parts[3], minute: parts[4])
+        guard let date = calendar.date(from: wanted), calendar.component(.day, from: date) == parts[2] else { return nil }
+        return date
     }
 
     /// A date at the start of the words written with a month's name or in figures, as "M월 D일", or "Y년 M월 D일" when
@@ -485,6 +519,20 @@ enum ArisTodoGroup: Int, CaseIterable, Comparable {
         return allCases.compactMap { group in
             guard let list = buckets[group], !list.isEmpty else { return nil }
             return (group, list.sorted { ($0.due ?? .distantFuture, $0.title) < ($1.due ?? .distantFuture, $1.title) })
+        }
+    }
+}
+
+/// What "<…> 다 했어" names: one open reminder of yours, else one Canvas deadline (which is only hidden).
+enum ArisTodoFinishable: Equatable {
+    case reminder(ArisTodoItem)
+    case deadline(ArisDue)
+
+    /// As a card shows it. A deadline's title is other people's words: it is shown to the user, never remembered.
+    var shown: String {
+        switch self {
+        case .reminder(let item): return item.title
+        case .deadline(let due): return due.title
         }
     }
 }

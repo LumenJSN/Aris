@@ -33,6 +33,35 @@ struct ArisAdapterFiles {
         [script.path, framework.path] + command
     }
 
+    /// Perl run before the script for the stream: a watcher that ends the stream when Aris is gone. The stream only
+    /// writes when something plays, so after Aris was killed it ran on with no one to read it (VM run 2026-11-18: an
+    /// orphaned mediaremote-adapter.pl beside the new Aris's). The watcher waits on standard input, a pipe only Aris
+    /// writes to: when Aris ends, however it ends, the pipe closes and the stream is told to stop. It also goes when
+    /// the stream ends on its own. Then the script runs as it would from the command line.
+    static let streamGuard = #"""
+    my $stream = $$;
+    my $watcher = fork();
+    if (defined $watcher && $watcher == 0) {
+      close STDOUT; close STDERR;
+      my $wanted = ''; vec($wanted, fileno(STDIN), 1) = 1;
+      while (getppid() == $stream) {
+        my $ready = select(my $got = $wanted, undef, undef, 1);
+        next unless $ready > 0;
+        my $read = sysread(STDIN, my $bytes, 64);
+        last if !$read;
+      }
+      kill('TERM', $stream) if getppid() == $stream;
+      exit 0;
+    }
+    my $script = shift @ARGV; $0 = $script;
+    do $script; die $@ if $@; exit 0;
+    """#
+
+    /// The stream's arguments for the system Perl: the watcher first, then the script's own.
+    func streamArguments(_ command: [String]) -> [String] {
+        ["-e", Self.streamGuard, "--"] + arguments(command)
+    }
+
     /// Runs the adapter's self-test up to `attempts` times, pausing `backoff` × the attempt number between tries;
     /// true as soon as one passes.
     func probe(attempts: Int = ArisMusicRules.probeAttempts, timeout: TimeInterval = ArisMusicRules.probeTimeout,
@@ -101,6 +130,8 @@ final class ArisNowPlayingAdapter: ArisMusicSource {
     private let files: ArisAdapterFiles
     private let transport: ArisTransport?
     private var process: Process?
+    /// The stream's standard input, held for its life (ArisAdapterFiles.streamGuard).
+    private var lifeline: Pipe?
     private var state = ArisAdapterState()
     private var stopping = false
 
@@ -114,7 +145,11 @@ final class ArisNowPlayingAdapter: ArisMusicSource {
         stopping = false
         let process = Process()
         process.executableURL = ArisAdapterFiles.perl
-        process.arguments = files.arguments(["stream", "--micros"])
+        process.arguments = files.streamArguments(["stream", "--micros"])
+        // Its standard input is a pipe only this process holds open: the stream's watcher ends it once Aris is gone.
+        let lifeline = Pipe()
+        process.standardInput = lifeline
+        self.lifeline = lifeline
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
@@ -138,6 +173,7 @@ final class ArisNowPlayingAdapter: ArisMusicSource {
             self.process = process
         } catch {
             Log.music.error("Now Playing stream did not start: \(error.localizedDescription, privacy: .public)")
+            closeLifeline()
             output.fileHandleForReading.readabilityHandler = nil
             onFailure?()
         }
@@ -147,6 +183,12 @@ final class ArisNowPlayingAdapter: ArisMusicSource {
         stopping = true
         process?.terminate()
         process = nil
+        closeLifeline()
+    }
+
+    private func closeLifeline() {
+        try? lifeline?.fileHandleForWriting.close()
+        lifeline = nil
     }
 
     /// The stream is live; there is nothing newer to ask for.
@@ -165,6 +207,7 @@ final class ArisNowPlayingAdapter: ArisMusicSource {
 
     private func ended() {
         process = nil
+        closeLifeline()
         guard !stopping else { return }
         Log.music.error("Now Playing stream ended")
         onFailure?()

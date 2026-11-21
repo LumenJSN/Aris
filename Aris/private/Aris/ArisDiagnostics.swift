@@ -20,7 +20,7 @@ enum ArisDiagnostics {
         let name = ArisAppData.fileName("Aris 진단", ext: "zip", now: now)
         guard let destination = ArisDataModel.Actions.saveZip(name: name) else { return nil }
         let agentLogs = await ArisAgentClient.diagnosticLogs()
-        let secrets = ([ClaudeHookToken.load()] + ArisKeyFile.names.map(ArisKeyFile.load)).compactMap { $0 }
+        let secrets = ([ClaudeHookToken.load()] + ArisKeyFile.allNames.map(ArisKeyFile.load)).compactMap { $0 }
         let home = UserHome.path
         var files: [(String, String)] = [("info.txt", info(agentAnswered: agentLogs != nil, now: now)), ("app.log", appLog(since: now.addingTimeInterval(-7_200)))]
         files += (agentLogs ?? []).map { ("agent-\($0.name)", $0.text) }
@@ -49,6 +49,7 @@ enum ArisDiagnostics {
         만든 때 \(ISO8601DateFormatter().string(from: now))
         에이전트 \(agentAnswered ? "응답함" : "응답 없음")
         로그인 시 실행 \(ArisLoginItem.isEnabled ? "켜짐" : "꺼짐")
+        호출어 \(ArisWakeStatusLive.shared.line(english: false)) (\(ArisWakeStatusLive.shared.line(english: true)))
         권한
         \(permissions.joined(separator: "\n"))
 

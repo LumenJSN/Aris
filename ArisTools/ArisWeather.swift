@@ -56,8 +56,9 @@ enum ArisWeather {
         var hourly: Hourly?
     }
 
-    /// `hourly`: the card's request, with the hours and day or night too.
-    static func forecastURL(latitude: Double, longitude: Double, timezone: String, days: Int, hourly: Bool = false) -> URL {
+    /// `hourly`: the card's request, with the hours and day or night too. `fahrenheit`: degrees in °F and wind in mph
+    /// (the spoken answer for a Mac set to Fahrenheit; the notch's card stays in °C, the range it reads).
+    static func forecastURL(latitude: Double, longitude: Double, timezone: String, days: Int, hourly: Bool = false, fahrenheit: Bool = false) -> URL {
         var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
         components.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
@@ -68,6 +69,9 @@ enum ArisWeather {
             URLQueryItem(name: "forecast_days", value: String(days)),
         ]
         if hourly { components.queryItems?.append(URLQueryItem(name: "hourly", value: "temperature_2m,weather_code,is_day")) }
+        if fahrenheit {
+            components.queryItems? += [URLQueryItem(name: "temperature_unit", value: "fahrenheit"), URLQueryItem(name: "wind_speed_unit", value: "mph")]
+        }
         return components.url!
     }
 
@@ -217,21 +221,44 @@ enum ArisWeather {
         return components.url!
     }
 
-    static func summary(_ forecast: Forecast, place: String, korean: Bool) -> String {
+    /// Whether temperatures are in °F: the Mac's own setting (System Settings › General › Language & Region ›
+    /// Temperature, the global AppleTemperatureUnit), else what its region measures in (the US). Never the language of
+    /// the request or of the answer: the sentence and the notch's card are one unit (eleventh VM run, P02: an English
+    /// answer said 49°F beside a card of 9°).
+    static func usesFahrenheit(appleUnit: String?, locale: Locale = .current) -> Bool {
+        switch appleUnit?.lowercased() {
+        case "fahrenheit": return true
+        case "celsius": return false
+        default: return locale.measurementSystem == .us
+        }
+    }
+
+    /// The Mac's choice, read from the global preferences.
+    static var macUsesFahrenheit: Bool { usesFahrenheit(appleUnit: UserDefaults.standard.string(forKey: "AppleTemperatureUnit")) }
+
+    /// `fahrenheit`: the forecast was asked in °F and mph (forecastURL), and is said so.
+    static func summary(_ forecast: Forecast, place: String, korean: Bool, fahrenheit: Bool = false) -> String {
         let now = forecast.current
         let condition = describe(code: now.code, korean: korean)
-        var sentences = [korean
-            ? "\(place) 지금 \(degrees(now.temperature))°C (체감 \(degrees(now.feelsLike))°C), \(condition), 바람 \(degrees(now.wind))km/h."
-            : "\(place) now \(degrees(now.temperature))°C (feels \(degrees(now.feelsLike))°C), \(condition), wind \(degrees(now.wind)) km/h."]
+        let unit = fahrenheit ? "°F" : "°C", speed = fahrenheit ? "mph" : "km/h"
+        // Korean in °F names the scale in words, so no reply says a bare "28도" for 28°F (twelfth VM run, Q: "28도… 추워요").
+        let koreanF = korean && fahrenheit
+        var sentences = [koreanF
+            ? "\(place) 지금 화씨 \(degrees(now.temperature))도(\(degrees(now.temperature))°F) (체감 화씨 \(degrees(now.feelsLike))도), \(condition), 바람 \(degrees(now.wind))\(speed)."
+            : korean
+            ? "\(place) 지금 \(degrees(now.temperature))\(unit) (체감 \(degrees(now.feelsLike))\(unit)), \(condition), 바람 \(degrees(now.wind))\(speed)."
+            : "\(place) now \(degrees(now.temperature))\(unit) (feels \(degrees(now.feelsLike))\(unit)), \(condition), wind \(degrees(now.wind)) \(speed)."]
         let daily = forecast.daily
         for index in daily.dates.indices {
             guard let high = daily.highs[safe: index] ?? nil, let low = daily.lows[safe: index] ?? nil else { continue }
             let day = dayName(daily.dates[index], index: index, korean: korean)
             let sky = describe(code: (daily.codes[safe: index] ?? nil) ?? -1, korean: korean)
             let rain = (daily.rainChances[safe: index] ?? nil) ?? 0
-            sentences.append(korean
-                ? "\(day) \(degrees(low))~\(degrees(high))°C, \(sky), 비 올 확률 \(rain)%."
-                : "\(day) \(degrees(low))–\(degrees(high))°C, \(sky), \(rain)% chance of rain.")
+            sentences.append(koreanF
+                ? "\(day) 화씨 \(degrees(low))~\(degrees(high))도, \(sky), 비 올 확률 \(rain)%."
+                : korean
+                ? "\(day) \(degrees(low))~\(degrees(high))\(unit), \(sky), 비 올 확률 \(rain)%."
+                : "\(day) \(degrees(low))–\(degrees(high))\(unit), \(sky), \(rain)% chance of rain.")
         }
         return sentences.joined(separator: " ")
     }
@@ -241,9 +268,10 @@ enum ArisWeather {
 
     /// The weather card's values (ArisWeatherCard in the app): now, today's high and low, and the next hours, each
     /// hour as its hour of the day at the place.
-    static func card(_ forecast: Forecast, place: String) -> [String: Any] {
+    /// `fahrenheit`: the forecast was asked in °F (the same choice as the sentence's); the card says which.
+    static func card(_ forecast: Forecast, place: String, fahrenheit: Bool = false) -> [String: Any] {
         let now = forecast.current
-        var card: [String: Any] = ["place": place, "temp": degrees(now.temperature), "code": now.code, "day": now.isDay != 0]
+        var card: [String: Any] = ["place": place, "temp": degrees(now.temperature), "code": now.code, "day": now.isDay != 0, "unit": fahrenheit ? "F" : "C"]
         if let high = forecast.daily.highs.first ?? nil, let low = forecast.daily.lows.first ?? nil {
             card["high"] = degrees(high)
             card["low"] = degrees(low)

@@ -316,16 +316,25 @@ enum ArisRoutineDesk {
         return changed
     }
 
+    /// Deletes the routine and the schedules that ran it (its card named them: deleteCard), so none is left asking
+    /// for a routine that is gone.
     static func delete(_ routine: ArisRoutine, home: String) throws -> ArisRoutine {
+        let routines = ArisRoutineStore.load(file: ArisRoutineStore.file(home: home))
         let removed = try ArisRoutineStore.remove(id: routine.id, file: ArisRoutineStore.file(home: home))
         audit("routine: deleted \(routine.name)")
+        var gone: [ArisScheduledJob] = []
+        ArisScheduleStore.update(file: ArisScheduleStore.file(home: home)) { jobs in
+            gone = ArisRoutineChain.schedules(running: routine, routines: routines, in: jobs)
+            return jobs.filter { job in !gone.contains { $0.id == job.id } }
+        }
+        for job in gone { audit("schedule: removed \(job.title) with routine \(routine.name)") }
         return removed
     }
 
     /// The schedules whose job is to run this routine, as the delete card names them ("출근 루틴 (매일 09:00)").
     static func schedules(running routine: ArisRoutine, home: String, korean: Bool) -> [String] {
-        ArisScheduleStore.load(file: ArisScheduleStore.file(home: home))
-            .filter { $0.nextRun != nil && ArisRoutineChain.routine(forPrompt: $0.prompt, in: [routine]) != nil }
+        let routines = ArisRoutineStore.load(file: ArisRoutineStore.file(home: home))
+        return ArisRoutineChain.schedules(running: routine, routines: routines, in: ArisScheduleStore.load(file: ArisScheduleStore.file(home: home)))
             .map { "\($0.title) (\(ArisScheduleCard.when($0.rule, english: !korean, calendar: .current)))" }
     }
 

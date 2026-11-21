@@ -56,7 +56,7 @@ final class ArisListener {
     private var heard = ArisHeardText()
     private let recording = Recording()
     private var configuration: NSObjectProtocol?
-    private var source: ArisWakeDetector?
+    private var source: ArisAudioSource?
 
     /// The whole turn so far, 16 kHz mono, for Whisper.
     var recordedSamples: [Float] { recording.samples }
@@ -91,28 +91,48 @@ final class ArisListener {
         self.recognizer = recognizer
         // A test file in place of the microphone, when the hidden setting names one (a VM has no microphone).
         let feed = source == nil ? Self.testFeed() : nil
+        // The duplex engine (arisDuplexAudio) on a key turn or a card: taken now, before the recognizer starts, so what is
+        // said meanwhile waits in its ring (ArisDuplexKeySource). Nil, and with the switch off not even asked: the
+        // microphone below, as before.
+        let duplex = source == nil && feed == nil && ArisDuplexSwitch.isOn ? await ArisDuplexKeySource.open(use: use) { [weak self] in
+            MainActor.assumeIsolated { self?.onInterrupted?() }
+        } : nil
+        if let duplex {
+            self.source = duplex
+            // Stopped while the engine started: nothing stays held with nobody listening.
+            if stopped {
+                duplex.forward(to: nil)
+                throw ArisFailure(message: ArisUIWords.text("듣기를 그만뒀어요.", "Stopped listening."))
+            }
+        }
         // The language's model isn't installed yet (a first run): it downloads in the background, and this turn says so
         // instead of timing out while it waits. With no microphone on this Mac at all, that is what is said, first:
         // "say it again in a moment" would change nothing (ArisListenStart).
         let modelMissing = try await recognizer.modelMissing(locale: locale)
-        switch ArisListenStart.problem(usesMicrophone: source == nil && feed == nil, hasMicrophone: ArisMicChoice.hasMicrophone(), modelMissing: modelMissing) {
+        switch ArisListenStart.problem(usesMicrophone: source == nil && feed == nil, hasMicrophone: ArisMicChoice.hasMicrophone(), modelMissing: modelMissing,
+                                       microphoneAllowed: AVCaptureDevice.authorizationStatus(for: .audio) == .authorized) {
         case .noMicrophone: throw ArisFailure(message: ArisListenerWords.noMicrophone())
+        case .microphoneOff: throw ArisFailure(message: ArisListenStart.line(.microphoneOff, english: ArisUIWords.english))
         case .modelPreparing: throw ArisFailure(message: ArisListenerWords.modelPreparing())
         case nil: break
         }
+        // The talk key with the duplex switch off: the microphone opens before the speech engine starts, and what it hears
+        // meanwhile waits for the engine (ArisRecognizerFeed), so the first word is never lost. With the switch on the
+        // duplex ring holds it instead (above), and the microphone is never opened twice.
+        let micFeed = ArisRecognizerFeed()
+        if source == nil, feed == nil, duplex == nil { try await startMicrophone(feed: micFeed) }
         let vocabulary = ArisHearingLocale.hints(vocabulary: ArisVocabulary.load(), locale: locale.identifier,
                                                  waitingForWakeWord: waitingForWakeWord)
         let input = try await recognizer.start(locale: locale, hints: vocabulary)
         self.input = input
+        micFeed.attach(input)
         // The older engine without the language's on-device model: Apple's servers hear it, said once.
         if let older = recognizer as? ArisRotatingRecognizer, older.place == .server { ArisLegacyServerNotice.sayOnce(locale: locale) }
-        if let source {
+        if let source = source.map({ $0 as ArisAudioSource }) ?? duplex {
             self.source = source
             try listen(to: source, feeding: input, from: from)
         } else if let feed {
             try listen(to: feed, feeding: input)
-        } else {
-            try await startMicrophone(feeding: input)
         }
     }
 
@@ -193,8 +213,8 @@ final class ArisListener {
 
     /// Off the main thread: moving off a Bluetooth headset can wait seconds for the device (2026-11-01: 3 s), and
     /// on the main thread that froze the notch while it opened.
-    private func startMicrophone(feeding input: ArisRecognizerInput) async throws {
-        let parts = MicrophoneParts(engine: engine, use: use, input: input, levels: levels, recording: recording, samples: samples,
+    private func startMicrophone(feed: ArisRecognizerFeed) async throws {
+        let parts = MicrophoneParts(engine: engine, use: use, feed: feed, levels: levels, recording: recording, samples: samples,
                                     speech: speechChunks)
         self.parts = parts
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -289,7 +309,8 @@ final class ArisListener {
 private struct MicrophoneParts: @unchecked Sendable {
     let engine: AVAudioEngine
     let use: ArisMicUse
-    let input: ArisRecognizerInput
+    /// The recogniser's way in: holds what is heard before it is ready (ArisRecognizerFeed).
+    let feed: ArisRecognizerFeed
     let levels: LevelRelay
     let recording: Recording
     let samples: SampleRelay
@@ -301,17 +322,14 @@ private struct MicrophoneParts: @unchecked Sendable {
 /// built for that format, once per tap.
 private struct TapSink: @unchecked Sendable {
     let parts: MicrophoneParts
-    let converter: AVAudioConverter
     let whisperConverter: AVAudioConverter
     let whisperFormat: AVAudioFormat
 
     init?(_ parts: MicrophoneParts, from format: AVAudioFormat) {
         let whisperFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: ArisWhisper.sampleRate,
                                           channels: 1, interleaved: false)!
-        guard let converter = AVAudioConverter(from: format, to: parts.input.format),
-              let whisperConverter = AVAudioConverter(from: format, to: whisperFormat) else { return nil }
+        guard let whisperConverter = AVAudioConverter(from: format, to: whisperFormat) else { return nil }
         self.parts = parts
-        self.converter = converter
         self.whisperConverter = whisperConverter
         self.whisperFormat = whisperFormat
     }
@@ -319,9 +337,7 @@ private struct TapSink: @unchecked Sendable {
     func take(_ buffer: AVAudioPCMBuffer) {
         let level = ArisAudio.level(of: buffer), levels = parts.levels
         DispatchQueue.main.async { levels.handler?(level) }
-        if let converted = ArisAudio.convert(buffer, with: converter, to: parts.input.format) {
-            parts.input.append(converted)
-        }
+        parts.feed.take(buffer)
         if let forWhisper = ArisAudio.convert(buffer, with: whisperConverter, to: whisperFormat),
            let channel = forWhisper.floatChannelData?[0] {
             let chunk = UnsafeBufferPointer(start: channel, count: Int(forWhisper.frameLength))
@@ -337,8 +353,8 @@ extension ArisListener {
     /// The test file (ArisListenFeed) in place of the microphone: its chunks at the pace they were spoken, through
     /// the microphone's own path (level, recognizer, recording), then silence until the turn ends.
     fileprivate func listen(to feed: ArisListenFeed, feeding input: ArisRecognizerInput) throws {
-        let parts = MicrophoneParts(engine: engine, use: use, input: input, levels: levels, recording: recording, samples: samples,
-                                    speech: speechChunks)
+        let parts = MicrophoneParts(engine: engine, use: use, feed: ArisRecognizerFeed(input: input), levels: levels, recording: recording,
+                                    samples: samples, speech: speechChunks)
         guard let sink = TapSink(parts, from: feed.format) else { throw ArisFailure(message: "Couldn't read the test audio file.") }
         self.feed = feed
         NSLog("Aris: listening to the test file \(feed.url.lastPathComponent) (\(String(format: "%.1f", feed.duration)) s), not the microphone")
@@ -346,7 +362,7 @@ extension ArisListener {
     }
 
     /// The wake detector's 16 kHz audio, to the recognizer, the recording and the level, as the microphone would.
-    fileprivate func listen(to source: ArisWakeDetector, feeding input: ArisRecognizerInput, from: Int? = nil) throws {
+    fileprivate func listen(to source: ArisAudioSource, feeding input: ArisRecognizerInput, from: Int? = nil) throws {
         let detectorFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: ArisVoicePrint.sampleRate,
                                            channels: 1, interleaved: false)!
         let format = input.format

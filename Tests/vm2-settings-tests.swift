@@ -60,7 +60,7 @@ private func vm2BrainTruthTests() {
     // A new Mac with no AI: nothing is shown as chosen.
     let nobody = vm2State { $0.choices.think = "" }
     let empty = page(nobody)
-    check(empty.think.rows.count == 1 && empty.think.rows[0].title == "생각" && empty.think.rows[0].desc == "고른 AI가 없어요" && empty.think.rows[0].warn == nil
+    check(empty.think.rows.count == 1 && empty.think.rows[0].title == "답하는 AI" && empty.think.rows[0].desc == "고른 AI가 없어요" && empty.think.rows[0].warn == nil
           && empty.think.rows[0].control == .select(.provider(.think), ArisAISelectFace(label: "AI 고르기")),
           "vm2 bug 4: on a Mac with no AI the 생각 card names no AI as chosen, and its dropdown says to choose one")
     check(empty.think.need == .message(ArisAIServicesBuilder.noBrainHow) && ArisAIServicesBuilder.noBrainHow.hasPrefix("아직 답할 수 있는 AI가 없어요")
@@ -118,7 +118,7 @@ private func vm2PageTopTests() {
     check(scroll != nil && page != nil && jump != nil && scroll!.upperBound < page!.lowerBound && page!.upperBound < jump!.lowerBound,
           "vm2 bug 11: a page change scrolls the pane to its top, and a jump to a row is still scrolled to after the page is there")
     let sidebar = vm2Source("Aris/components/Settings/ArisSettingsSidebar.swift")
-    check(sidebar.contains("nav.go(entry.page, anchor: entry.id, byKey: byKey)") && sidebar.contains("if let anchor { flash = ArisSettingsFlashTarget(id: anchor"),
+    check(sidebar.contains("nav.go(anchor: entry.id, byKey: byKey)") && sidebar.contains("flash = ArisSettingsFlashTarget(id: landing"),
           "vm2 bug 11: a search result still asks for its row, and only a jump with a row scrolls anywhere but the top")
 }
 
@@ -206,22 +206,13 @@ private func vm2CheckedAgainTests() {
 }
 
 private func vm2VoicePageTests() {
-    func scribe(_ change: (inout ArisSettingsSnapshot) -> Void) -> ArisSettingItem? {
-        var s = ArisSettingsSnapshot()
-        change(&s)
-        return ArisSettingsBuilder.sections(.voice, s).flatMap(\.rows).first { $0.id == "voice.scribe" }
-    }
-    let noKey = scribe { $0.cloud = true; $0.hasVoiceKey = false }
-    check(noKey?.control == .toggle(.cloud, false, enabled: false) && noKey?.desc?.contains("ElevenLabs 키를 넣으면") == true,
-          "vm2 voice: with no ElevenLabs key, ElevenLabs Scribe로 듣기 reads as off and can't be switched, and its line says a key is needed")
-    check(scribe { $0.cloud = true; $0.hasVoiceKey = true }?.control == .toggle(.cloud, true) && scribe { $0.cloud = false; $0.hasVoiceKey = true }?.control == .toggle(.cloud, false)
-          && ArisSettingsBuilder.sections(.voice, { var s = ArisSettingsSnapshot(); s.hasVoiceKey = true; return s }()).first { $0.id == "voice.language" }?.note?.contains("요금") == true,
-          "vm2 voice: with a key the switch shows and changes the stored choice as before")
-
-    ArisSettingsCopy.install(vm2Catalog())
-    defer { ArisSettingsCopy.install([:]) }
-    let english = ArisSettingsWording.make(page: .voice, english: true)
-    check(english(noKey?.desc ?? "가").unicodeScalars.allSatisfy { !(0xAC00...0xD7A3).contains($0.value) }, "vm2 voice: the no-key line has its English")
+    // Option A (D6): the second Scribe switch is gone; 듣기's one choice (arisHearEngine) is the source, and with no key
+    // Scribe is a choice that asks for one (the AI view's own need row), not a switch that reads on.
+    let rows = ArisSettingsPage.allCases.flatMap { ArisSettingsBuilder.sections($0, ArisSettingsSnapshot()).flatMap(\.rows) }
+    check(!rows.contains { $0.id == "voice.scribe" }, "vm2 voice: no second ElevenLabs Scribe로 듣기 switch to disagree with 듣기")
+    check(!ArisHearSource.scribeListens { ["arisHearEngine": "whisper", "arisCloudListening": true][$0] }
+          && ArisHearSource.scribeListens { ["arisHearEngine": "scribe", "arisCloudListening": false][$0] },
+          "vm2 voice: what 듣기 says is what listens")
 }
 
 private func vm2WordCountTests() {
@@ -292,8 +283,8 @@ private func vm2uMenuHighlightTests() {
     check(fromNone == ["claude", "connect"] && fromGone == "claude" && inEmpty == nil,
           "vm2u bug 8: with nothing highlighted (or an item the search took away) ↓ starts at the first and ↑ at the last; an empty list has none")
     let hear = ArisAIServicesBuilder.menu(.provider(.hear), state)
-    let afterLast = ArisAIMenuHighlight(id: "scribe").moved(1, in: hear, pointer: rest).id
-    check(!ArisAIMenuHighlight.stops(hear).contains("deepgram") && afterLast == "apple",
+    let afterLast = ArisAIMenuHighlight(id: "openai-stt").moved(1, in: hear, pointer: rest).id
+    check(!ArisAIMenuHighlight.stops(hear).contains("deepgram") && afterLast == "auto",
           "vm2u bug 8: an item that can't be picked (준비 중) is never highlighted")
 
     // One highlight: the pointer's moving takes it; a row sliding under a pointer at rest doesn't.

@@ -206,6 +206,11 @@ enum ArisOnboardingCopy {
 
     /// What the page says over the rows: some AI is set up, none is, or the agent didn't answer.
     static func brainHeading(_ heading: ArisOnboardingBrainRows.Heading) -> String {
+        // The page a line points to is named as the settings window names it now (ArisSettingsPath).
+        ArisSettingsPath.shown(brainHeadingText(heading), english: language != "ko")
+    }
+
+    private static func brainHeadingText(_ heading: ArisOnboardingBrainRows.Heading) -> String {
         switch heading {
         case .some: String(localized: "onboarding.brain.some", defaultValue: "These are on this Mac. Pick the one that answers by default; you can change it later in Settings.", bundle: bundle, locale: locale, comment: "AI page: at least one AI is set up")
         case .none: String(localized: "onboarding.brain.none", defaultValue: "No AI is set up on this Mac yet, so I can't answer questions. Get one of these ready, or continue and add one later in Settings › AI services.", bundle: bundle, locale: locale, comment: "AI page: no AI is set up on this Mac")
@@ -270,11 +275,30 @@ enum ArisOnboardingCopy {
     static var dictateTitle: String { String(localized: "onboarding.dictate.title", defaultValue: "Dictation", bundle: bundle, locale: locale, comment: "Dictation page heading") }
     static var dictateLead: String { String(localized: "onboarding.dictate.lead", defaultValue: "In any app, hold the right ⌥ and talk. Let go, and I'll type it, tidied up.", bundle: bundle, locale: locale, comment: "Dictation page body") }
     static var dictateNarration: String { String(localized: "onboarding.dictate.narration", defaultValue: "Speak, and I'll tidy up the filler.", bundle: bundle, locale: locale, comment: "The notch says this on the dictation page") }
-    static var finish: String { String(localized: "onboarding.dictate.finish", defaultValue: "Finish", bundle: bundle, locale: locale, comment: "Dictation page: ends the setup") }
+    static var finish: String { String(localized: "onboarding.dictate.finish", defaultValue: "Finish", bundle: bundle, locale: locale, comment: "Dictation page: on to the last page") }
     static var note: String { String(localized: "onboarding.dictate.note", defaultValue: "Note", bundle: bundle, locale: locale, comment: "Dictation page: the practice note's title") }
     static var noteHint: String { String(localized: "onboarding.dictate.noteHint", defaultValue: "I'll type here. Say anything you like.", bundle: bundle, locale: locale, comment: "Dictation page: under the practice note") }
     static var dictateStart: String { String(localized: "onboarding.dictate.start", defaultValue: "Click here to start", bundle: bundle, locale: locale, comment: "Dictation page: starts a real dictation into the note") }
     static var dictateStop: String { String(localized: "onboarding.dictate.stop", defaultValue: "Done talking", bundle: bundle, locale: locale, comment: "Dictation page: ends the dictation") }
+
+    // MARK: - 준비 끝 (the last page) and its repository card
+
+    static var doneTitle: String { String(localized: "onboarding.done.title", defaultValue: "You're all set", bundle: bundle, locale: locale, comment: "Last setup page heading") }
+    /// The lead with the wake word on: the name and the talk shortcut.
+    static func doneLeadWake(_ keys: String) -> String { String(localized: "onboarding.done.lead.wake", defaultValue: "Say “Aris” or press \(keys), anytime.", bundle: bundle, locale: locale, comment: "Last setup page body with the wake word on; the argument is the talk shortcut, e.g. ⌥ Space") }
+    /// The lead with the wake word off: the talk shortcut alone.
+    static func doneLead(_ keys: String) -> String { String(localized: "onboarding.done.lead", defaultValue: "Press \(keys), anytime.", bundle: bundle, locale: locale, comment: "Last setup page body with the wake word off; the argument is the talk shortcut, e.g. ⌥ Space") }
+    /// The page's line: the name only when the wake word is on (the page before asked), and the talk shortcut as it is set.
+    static func doneLine(wakeWord: Bool, keys: String) -> String { wakeWord ? doneLeadWake(keys) : doneLead(keys) }
+    static var doneStart: String { String(localized: "onboarding.done.start", defaultValue: "Start", bundle: bundle, locale: locale, comment: "Last setup page: ends the setup") }
+    static var starRepoSub: String { String(localized: "onboarding.star.repoSub", defaultValue: "GitHub repository", bundle: bundle, locale: locale, comment: "Last setup page, the repository card: under the repository's name") }
+    /// The button with gh logged in; the argument is "@login".
+    static func starAsk(_ account: String) -> String { String(localized: "onboarding.star.ask", defaultValue: "Star Aris as \(account)", bundle: bundle, locale: locale, comment: "Repository card button with gh logged in; the argument is the GitHub account, e.g. @octocat") }
+    static var starBusy: String { String(localized: "onboarding.star.busy", defaultValue: "Starring", bundle: bundle, locale: locale, comment: "Repository card: while the star is being left") }
+    static var starDone: String { String(localized: "onboarding.star.done", defaultValue: "Starred. Thank you", bundle: bundle, locale: locale, comment: "Repository card: the star was just left") }
+    static var starWeb: String { String(localized: "onboarding.star.web", defaultValue: "Star on GitHub ↗", bundle: bundle, locale: locale, comment: "Repository card button without gh: opens the repository in the browser") }
+    static var starThanks: String { String(localized: "onboarding.star.thanks", defaultValue: "Thanks for the star", bundle: bundle, locale: locale, comment: "Repository card: the account had starred it before") }
+    static func starCount(_ count: Int) -> String { String(localized: "onboarding.star.count", defaultValue: "\(count) stars", bundle: bundle, locale: locale, comment: "VoiceOver: the repository card's star count") }
 
     // MARK: - The finish
 

@@ -22,13 +22,20 @@ private let notesBundle = "com.apple.Notes"
 private let foregroundKey = "ARIS_FOREGROUND"
 
 func note(_ args: [String]) {
-    switch ArisActions.noteRequest(args) {
+    let request = ArisActions.noteRequest(args)
+    if request == .invalid { fail("usage: note <text> | note <title> --checklist <item> <item> … | note --markdown '<markdown>'") }
+    // Notes has no other way in: Apple Events, asked once at the first use in a turn the user is in front of, after the
+    // app's line of why; never asked from a background job (jv-prompts).
+    automationGate(notesBundle, app: "Notes", feature: .notes)
+    switch request {
     case .invalid:
         fail("usage: note <text> | note <title> --checklist <item> <item> … | note --markdown '<markdown>'")
     case .plain(let lines):
-        _ = appleScript(ArisActions.noteScript(body: ArisActions.noteBody(title: lines[0], lines: Array(lines.dropFirst())), show: false), app: "Notes")
+        let started = Date()
+        let late = appleScript(ArisActions.noteScript(body: ArisActions.noteBody(title: lines[0], lines: Array(lines.dropFirst())), show: false), app: "Notes",
+                               found: { noteExists(titled: lines[0], since: started) }) == nil
         logActivity(ArisActSummary.noteSaved(lines[0]), undo: nil)
-        print("note added")
+        print("note added" + (late ? ArisPermissionWait.lateDoneNote : ""))
     case .checklist(let title, let items):
         add(ArisNoteMarkdown.checklist(title: title, items: items))
     case .markdown(let markdown):
@@ -37,10 +44,23 @@ func note(_ args: [String]) {
     }
 }
 
+/// Whether a note with this title was made or changed since `since`, read from Notes' own store (no Apple Event, so
+/// nothing is asked and nothing is sent again); nil when the store can't be read (it needs Full Disk Access).
+private func noteExists(titled title: String, since: Date) -> Bool? {
+    let path = ArisNotesRead.databasePath(home: FileManager.default.homeDirectoryForCurrentUser.path)
+    guard let notes = try? ArisNotesRead.read(path: path, query: nil, limit: ArisNotesRead.defaultLimit) else { return nil }
+    return ArisNoteLate.exists(notes.map { ($0.title, $0.modified) }, titled: title, since: since)
+}
+
 private func add(_ plan: ArisNoteMarkdown.Plan) {
     let foreground = ProcessInfo.processInfo.environment[foregroundKey] == "1"
     let show = foreground && !plan.groups.isEmpty
-    let id = appleScript(ArisActions.noteScript(body: plan.html, show: show), app: "Notes")
+    let started = Date()
+    guard let id = appleScript(ArisActions.noteScript(body: plan.html, show: show), app: "Notes", found: { noteExists(titled: plan.title, since: started) }) else {
+        // It didn't answer in its time, but the note is there (read back from Notes' own store; nothing was sent again).
+        logActivity(ArisActSummary.noteSaved(plan.title), undo: nil)
+        return print("note added: \(plan.title)" + ArisPermissionWait.lateDoneNote + (plan.groups.isEmpty ? "" : ", its lists as plain lines"))
+    }
     logActivity(ArisActSummary.noteSaved(plan.title), undo: nil)
     if plan.groups.isEmpty { return print("note added: \(plan.title)") }
     if !show { return print("note added: \(plan.title), its lists as plain lines (not a turn the user is in front of, so Notes stayed in the background)") }

@@ -28,6 +28,9 @@ struct ArisAIConnectDraft: Equatable, Sendable {
     var errors: [String: String] = [:]
     /// Saving now.
     var busy = false
+    /// A provider Aris ships whose saved key is being replaced (a key it refused: the "API 키 넣기" chip, or 키 바꾸기
+    /// in the sheet): the key field shows although a key is saved, and the key typed takes the saved one's place.
+    var replacing = false
 }
 
 struct ArisAILibraryState: Equatable, Sendable {
@@ -61,6 +64,8 @@ enum ArisAISheetAction: Equatable, Sendable {
     /// 연결 / 저장; `force`: 그래도 저장 after the list couldn't be had.
     case save(force: Bool)
     case useShipped
+    /// 키 바꾸기: the saved key of the provider picked is to be replaced (the key field shows).
+    case replaceKey
     case searchLibrary
     case filter(String, String)
     case addFromLibrary(String)
@@ -166,6 +171,16 @@ enum ArisAIConnect {
         let picked: Bool
     }
 
+    /// The sheet that replaces the key of the API service that thinks now (`think`: the stored choice, "api:deepseek"),
+    /// for the "API 키 넣기" chip under a refused key; nil when no API service of Aris's own list is chosen (a
+    /// connection of the user's own is changed from its row, whose sheet always has the key field).
+    static func replacingKey(think: String, in state: ArisAIServicesState) -> ArisAIConnectDraft? {
+        guard let id = ArisAIStore.apiID(think), let preset = state.preset(id), preset.needsKey, !preset.custom else { return nil }
+        var draft = ArisAIConnectDraft(shipped: id)
+        draft.replacing = true
+        return draft
+    }
+
     static func view(_ draft: ArisAIConnectDraft, in state: ArisAIServicesState) -> View {
         let quick = draft.editing != nil ? [] : ArisAICatalogue.quickAPI.compactMap { id in
             state.preset(id).map { QuickPick(id: id, name: ArisAICatalogue.apiName($0), picked: draft.shipped == id) }
@@ -176,8 +191,8 @@ enum ArisAIConnect {
             let note = preset.local ? "\(ArisParticle.attach(name, .eulReul)) 이 Mac에서 바로 써요"
                 : ArisAICatalogue.listedAPI.contains(id) ? "\(ArisParticle.attach(name, .eunNeun)) 목록에 이미 있어요"
                 : "\(ArisParticle.attach(name, .eunNeun)) Aris가 주소를 알고 있어요 · API 키만 넣으면 돼요"
-            let key = preset.needsKey && !saved ? Field(id: "key", label: "API 키", placeholder: "\(name) API 키", secure: true, error: draft.errors["key"]) : nil
-            return View(title: "다른 AI 연결", meta: "생각에 써요 · OpenAI 호환 주소", quick: quick, body: .shipped(note: note, key: key, saved: preset.needsKey && saved),
+            let key = preset.needsKey && (!saved || draft.replacing) ? Field(id: "key", label: "API 키", placeholder: "\(name) API 키", secure: true, error: draft.errors["key"]) : nil
+            return View(title: "다른 AI 연결", meta: "생각에 써요 · OpenAI 호환 주소", quick: quick, body: .shipped(note: note, key: key, saved: preset.needsKey && saved && key == nil),
                         force: false, primary: "\(name) 쓰기", primaryEnabled: !draft.busy, error: draft.errors["form"])
         }
         let local = (try? checkBase(draft.base).get())?.local ?? false

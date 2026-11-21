@@ -4,7 +4,8 @@
 //
 //  `mail recent [--limit N]` and `mail search "<words>" [--limit N]`: Apple Mail's Envelope Index (every account set
 //  up in Mail.app), read only: subject, sender, date and Mail's own short preview, newest first, each with the number
-//  `mail read` takes. Deleted mail, junk and trash are left out. Searches subject, sender and preview, narrowed by
+//  `mail read` takes. Deleted mail, junk and trash are left out (a mailbox named so, word for word: "Cabinet" and
+//  "Binance" are kept), page after page, so a mail behind a run of junk is still found. Searches subject, sender and preview, narrowed by
 //  sender, subject words, days and unread (ArisMailFilter). A whole mail and a thread are read by ArisMailStore.
 //
 
@@ -32,8 +33,12 @@ struct ArisMailFilter: Equatable {
 enum ArisMailRead {
     static let defaultLimit = 10
     static let maximum = 30
-    /// Mailboxes never listed (by URL fragment, any case).
-    static let skippedBoxes = ["junk", "spam", "trash", "deleted", "bin", "휴지통", "정크"]
+    /// Mailboxes never listed: a word of the mailbox's own name, any case ("[Gmail]/Bin", "Deleted Items", "Junk E-mail").
+    static let skippedWords: Set<String> = ["junk", "spam", "trash", "deleted", "bin", "bulk"]
+    /// The same in Korean, anywhere in the name ("휴지통", "정크 메일", "스팸편지함").
+    static let skippedKorean = ["휴지통", "정크", "스팸"]
+    /// How many windows of rows a list reads at most, looking past junk and trash for the mail it shows.
+    static let mostWindows = 10
 
     /// The newest Mail data folder's Envelope Index (~/Library/Mail/V10/MailData/Envelope Index). Full Disk Access is
     /// checked first (M5): listing ~/Library/Mail is what macOS refuses without it, so that is told apart from no Mail.
@@ -58,7 +63,10 @@ enum ArisMailRead {
     static func skipped(box url: String?) -> Bool {
         guard let url, let last = url.split(separator: "/").last else { return false }
         let name = (String(last).removingPercentEncoding ?? String(last)).lowercased()
-        return skippedBoxes.contains { name.contains($0) }
+        if skippedKorean.contains(where: name.contains) { return true }
+        // Whole words only: "bin" is the trash in Gmail's UK English, never the "bin" inside "Cabinet" or "Robin".
+        let words = name.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        return words.contains(where: skippedWords.contains)
     }
 
     /// The newest mail, at most `limit`; with `query`, only mail whose subject, sender or preview contains it.
@@ -70,14 +78,17 @@ enum ArisMailRead {
         let hasBox = columns.contains("mailbox") && !db.columns("mailboxes").isEmpty
         var filters: [String] = []
         if columns.contains("deleted") { filters.append("IFNULL(m.deleted, 0) = 0") }
-        // Junk and trash are dropped by name after the query, so it reads a few more rows than it shows.
-        var bind: [Any] = [hasBox ? limit * 4 + 20 : limit]
+        // Junk and trash are dropped by name after the query, so it reads a few more rows than it shows, window after
+        // window until enough are kept (at most mostWindows of them).
+        let window = hasBox ? limit * 4 + 20 : limit
+        var bind: [Any] = [window]
         if let query {
             bind.append(ArisLocalStore.likePattern(query))
             let fields = ["s.subject", "a.address", "a.comment"] + (hasSummary ? ["u.summary"] : [])
             filters.append("(" + fields.map { "\($0) LIKE ?2 ESCAPE '\\'" }.joined(separator: " OR ") + ")")
         }
         filters += ArisMailFind.conditions(filter, columns: columns, bind: &bind)
+        let offsetSlot = bind.count + 1
         let sql = """
             SELECT m.ROWID AS id, \(columns.contains("subject_prefix") ? "m.subject_prefix" : "NULL") AS prefix,
                    s.subject AS subject, a.address AS address, a.comment AS name, m.date_received AS date,
@@ -89,12 +100,18 @@ enum ArisMailRead {
             \(hasSummary ? "LEFT JOIN summaries u ON u.ROWID = m.summary" : "")
             \(hasBox ? "LEFT JOIN mailboxes b ON b.ROWID = m.mailbox" : "")
             \(filters.isEmpty ? "" : "WHERE " + filters.joined(separator: " AND "))
-            ORDER BY m.date_received DESC, m.ROWID ASC LIMIT ?1
+            ORDER BY m.date_received DESC, m.ROWID ASC LIMIT ?1 OFFSET ?\(offsetSlot)
             """
         // A mail kept in two mailboxes (the inbox and Gmail's All Mail) is listed once.
         var seen = Set<Int64>()
         let once = { (row: [String: Any]) -> Bool in (row["global"] as? Int64).map { $0 == 0 || seen.insert($0).inserted } ?? true }
-        return try db.rows(sql, bind: bind).filter { !skipped(box: $0["box"] as? String) && once($0) }.prefix(limit).map { row in
+        var kept: [[String: Any]] = []
+        for page in 0..<mostWindows {
+            let rows = try db.rows(sql, bind: bind + [page * window])
+            kept += rows.filter { !skipped(box: $0["box"] as? String) && once($0) }
+            if kept.count >= limit || rows.count < window { break }
+        }
+        return kept.prefix(limit).map { row in
             let name = (row["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             let address = row["address"] as? String ?? ""
             return ArisMail(date: Date(timeIntervalSince1970: Double(row["date"] as? Int64 ?? 0)),

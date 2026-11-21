@@ -30,6 +30,23 @@ enum ArisSideEdgeRules {
         near && (!shared || restedFor >= restAtSharedEdge)
     }
 
+    /// Whether a closed side's screen-tall window takes the pointer: only on what is visible (the sliver once it is
+    /// out, the popover), never along the bare edge, where the click belongs to the app below.
+    static func closedTakesMouse(revealed: Bool, onSliver: Bool, inPopover: Bool) -> Bool {
+        (revealed && onSliver) || inPopover
+    }
+
+    /// Pointer moves are watched only while at least one side has a tab to show.
+    static func watchesMoves(sidesOn: Int) -> Bool { sidesOn > 0 }
+
+    /// Whether a pointer move needs the sides' check: something is showing or counting (`busy`), or the pointer is
+    /// within `reach` of the left or right edge of the display it is on. Elsewhere a move changes nothing.
+    static func moveMatters(pointer: CGPoint, screens: [CGRect], busy: Bool, reach: CGFloat) -> Bool {
+        guard !busy else { return true }
+        guard let screen = screens.first(where: { $0.insetBy(dx: -1, dy: -1).contains(pointer) }) else { return true }
+        return pointer.x - screen.minX <= reach || screen.maxX - pointer.x <= reach
+    }
+
     /// A press in a panel opened Aris's Settings: an open panel folds out of the window's way, but for one the user locked
     /// open.
     static func stepsAside(open: Bool, pinned: Bool) -> Bool { open && !pinned }

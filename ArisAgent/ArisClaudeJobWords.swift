@@ -43,8 +43,12 @@ enum ArisClaudeJobWords {
     /// one plain sentence that says what to do, never the raw path with a parenthetical (the owner, 2026-11-14).
     static let notAFolder = "그 폴더에서는 Claude Code를 열 수 없으니 다른 프로젝트 폴더를 같이 말해 주세요."
 
+    /// Said when the prompt tells Claude Code to pay, buy, order, subscribe or move money (ArisPaymentBoundary).
+    static let paymentRefused = "결제·주문·구독·송금을 하라는 프롬프트라 Claude Code를 열지 않았어요. 결제 직전에서 멈추도록 다시 맡겨 주세요."
+
     static func english(_ korean: String) -> String {
         if korean == notAFolder { return "Claude Code can't open in that folder, so name another project folder with the request." }
+        if korean == paymentRefused { return "Claude Code wasn't opened: its prompt tells it to pay, order, subscribe or move money. Hand it over again so that it stops before paying." }
         if let known = lines[korean] { return known }
         if let lead = leads.first(where: { korean.hasPrefix($0.korean) }) { return lead.english + korean.dropFirst(lead.korean.count) }
         return korean

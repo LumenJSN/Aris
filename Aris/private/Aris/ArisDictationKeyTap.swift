@@ -5,12 +5,14 @@
 //  Watches the keyboard (listen only: nothing is changed or swallowed) for the right ⌥ and Esc, and hands each press,
 //  with its time, to ArisDictationKey; at the double-tap window's end it delivers the tick. Its actions go to
 //  ArisController. While hands-free is locked, and only then, a second, narrow tap takes Esc (down and up) so it
-//  cancels the dictation without reaching the front app; every other key passes untouched. Also registers ⌃⌘V (paste
-//  the last dictation, rebindable). Needs the Accessibility permission the app already uses for media keys; without
-//  it, it looks again every 30 s.
+//  cancels the dictation without reaching the front app; every other key passes untouched. Also registers ⌃⌘V (paste the last dictation, rebindable). Needs the Accessibility permission the
+//  app already uses for media keys; without it, it looks again every 30 s. With 받아쓰기 쓰기 off (ArisDictationSwitch) it
+//  hands nothing on and ⌃⌘V is unregistered, live: turning it back on restores both.
 //
 
 import AppKit
+import Combine
+import Defaults
 import KeyboardShortcuts
 import os
 
@@ -45,9 +47,11 @@ final class ArisDictationKeyTap {
     /// The Esc it took went down: its release is taken too, then the tap goes.
     private var escapeUpPending = false
     private var pasteLastRegistered = false
+    private var switchWatch: AnyCancellable?
 
     func start() {
         registerPasteLast()
+        watchSwitch()
         guard tap == nil else { return }
         let mask = CGEventMask(1 << CGEventType.flagsChanged.rawValue) | CGEventMask(1 << CGEventType.keyDown.rawValue)
         tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
@@ -97,6 +101,27 @@ final class ArisDictationKeyTap {
         guard !pasteLastRegistered else { return }
         pasteLastRegistered = true
         KeyboardShortcuts.onKeyUp(for: .pasteLastDictation) { ArisController.shared.pasteLastDictation() }
+        if !ArisDictationSwitch.on { KeyboardShortcuts.disable(.pasteLastDictation) }
+    }
+
+    /// 받아쓰기 쓰기, live: off, a press under way is forgotten, a running dictation is dropped and ⌃⌘V goes back to the
+    /// apps; on, ⌃⌘V is Aris's again.
+    private func watchSwitch() {
+        guard switchWatch == nil else { return }
+        switchWatch = Defaults.publisher(.arisDictationOn, options: []).map(\.newValue).removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] on in MainActor.assumeIsolated { self?.switched(on: on) } }
+    }
+
+    private func switched(on: Bool) {
+        log.notice("dictation: \(on ? "on" : "off", privacy: .public)")
+        if on {
+            KeyboardShortcuts.enable(.pasteLastDictation)
+            return
+        }
+        KeyboardShortcuts.disable(.pasteLastDictation)
+        reset()
+        ArisController.shared.dictationTurnedOff()
     }
 
     private func handle(_ type: CGEventType, keyCode: UInt16, flags: CGEventFlags, repeated: Bool) {
@@ -120,9 +145,12 @@ final class ArisDictationKeyTap {
         default:
             event = .otherKey
         }
-        if Self.paused { return }
+        // Off (another dictation app has the key) or Settings recording a new one: nothing is handed on. The tap only
+        // listens, so the key reaches the apps either way.
+        guard ArisDictationSwitch.reacts(on: ArisDictationSwitch.on, paused: Self.paused) else { return }
         // A press while the app isn't dictating any more (it was cancelled from the notch) starts fresh.
-        if case .down = event, !state.isIdle, ArisController.shared.dictation != .listening { state.reset() }
+        // A press that started nothing yet (under the tap threshold, or a first quick tap) is not one of those.
+        if case .down = event, state.hasStarted, ArisController.shared.dictation != .listening { state.reset() }
         deliver(state.handle(event, at: .now))
     }
 

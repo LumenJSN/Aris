@@ -24,17 +24,23 @@ private func fullSnapshot() -> ArisSettingsSnapshot {
     s.googleCalendars = 1
     s.services = [.init(id: "claude", title: "Claude", detail: "Max", status: "연결됨", tone: .ok)]
     s.permissions = [.init(id: "ax", title: "손쉬운 사용", desc: "d", granted: true), .init(id: "screen", title: "화면 기록", desc: "d", granted: false),
-                     .init(id: "mic", title: "마이크", desc: "d", granted: true)]
+                     .init(id: "mic", title: "마이크", desc: "d", granted: true), .init(id: "speech", title: "음성 인식", desc: "d", granted: true),
+                     .init(id: "input", title: "입력 모니터링", desc: "d", granted: false)]
     s.standing = [.init(id: "p1", title: "메시지 보내기", desc: "대상: 엄마", symbol: "message")]
     s.standingLoaded = true
     s.memories = [ArisMemoryItem(id: "m1", kind: "preference", subject: "커피", text: "커피는 아이스 아메리카노", source: "said", said: 1_762_300_000, used: nil)]
     s.memoriesLoaded = true
+    s.savedSteps = []
     s.heightMode = "custom"
     s.displayMode = "preferred"
     s.screens = [.init(id: "u1", title: "내장 Retina 디스플레이")]
     s.customAccent = true
     s.more.flatHeightMode = "custom"
     s.more.peek = true
+    s.updates = true
+    // Option A's rows that show only with something on: 스피커로 들을 때도 끼어들기 (the echo-cancelled engine) and the saved keys.
+    s.duplexAudio = true
+    s.savedKeys = 1
     return s
 }
 
@@ -60,10 +66,8 @@ private func indexTests() {
     check(untagged.isEmpty, "settings index: every entry's id is a tag a page's view carries, so a search can scroll to it (\(untagged))")
     let orphans = ids.filter { !anchors.contains($0) }
     check(orphans.isEmpty, "settings index: every entry is something a page draws (orphans: \(orphans))")
-    check(ArisSettingsGroup.allCases.flatMap(\.pages) == ArisSettingsPage.allCases, "pages: the groups hold every page once, in order")
-    check(ArisSettingsPage.allCases.count == 14 && ArisSettingsGroup.aris.pages == [.aris, .ai, .voice, .memory, .team, .skills]
-          && ArisSettingsGroup.tools.pages == [.dictation, .todo, .control] && ArisSettingsGroup.app.pages == [.notch, .features, .general, .keys, .about],
-          "pages: 14 in three groups, 아리스 six, 도구 three, 화면 · 앱 five (pick 6-B)")
+    check(ArisSettingsPage.allCases == [.talk, .able, .look, .app] && ArisSettingsPage.allCases.map { $0.parts.count } == [6, 8, 5, 5],
+          "pages: four pages of 6, 8, 5 and 5 parts (settings-ia option A)")
 }
 
 private func searchTests() {
@@ -73,11 +77,11 @@ private func searchTests() {
     check(ArisSettingsIndex.search("아리스라고").first?.id == "aris.wake", "search: quotes don't matter")
     check(ArisSettingsIndex.search("다크 모드").first?.id == "look.theme", "search: a keyword finds the setting (다크 모드 → 설정 창 모양)")
     check(ArisSettingsIndex.search("답하는 ai").first?.id == "ai.brain", "search: 기본으로 답하는 AI is found in AI 서비스, where it moved")
-    check(!ArisSettingsIndex.search("답하는").contains { $0.page == .aris }, "search: the 대화 page's link row isn't a second result")
+    check(!ArisSettingsIndex.search("답하는").contains { $0.id == "aris.brainLink" }, "search: no link row is a second result for the AI")
     check(ArisSettingsIndex.search("GEMINI").first?.id == "ai.brain", "search: Latin letters ignore case")
     check(ArisSettingsIndex.search("ㅁㅎㄱㅅㄷ").first?.id == "voice.speed", "search: initial consonants (초성) find a title")
     let keys = ArisSettingsIndex.search("단축키")
-    check(keys.first?.id == "aris.talkKey" && keys.contains { $0.id == "keys.talk" }, "search: a title match ranks above keyword matches")
+    check(keys.first?.id == "keys.talk" && keys.contains { $0.id == "keys.dictation" }, "search: a title match (말하기 단축키, its former name) ranks above keyword matches")
     check(ArisSettingsIndex.search("권한").contains { $0.id == "control.mic" }, "search: 권한 finds the permissions")
     check(ArisSettingsIndex.search("캘린더").count > 3, "search: a page's name finds its settings")
     check(ArisSettingsIndex.search("없는설정").isEmpty, "search: nothing matching, nothing found")
@@ -119,14 +123,16 @@ private func wordTests() {
 private func moreTests() {
     let fresh = ArisSettingsSnapshot()
     let notch = ArisSettingsBuilder.sections(.notch, fresh)
-    check(notch.map(\.id) == ["notch.top", "notch.side", "notch.sideLeft", "notch.sideRight", "notch.advanced", "notch.gestureDetail", "notch.window"]
-          && notch.suffix(3).map { $0.fold?.title ?? "" } == ["열기와 움직임", "제스처 세부", "창"],
-          "more: 노치 has 열기와 움직임, 제스처 세부 and 창 after the side notch and its tabs, each folded to one line (pick 7-A)")
+    check(notch.map(\.id) == ["notch.top", "notch.advanced", "notch.gestureDetail", "notch.window", "notch.side", "notch.sideLeft", "notch.sideRight",
+                              "features.music", "features.shelf", "look.all"]
+          && notch.filter { $0.fold != nil }.map { $0.fold?.title ?? "" } == ["열기와 움직임", "제스처 세부", "창"],
+          "more: 모양 has 노치 with 열기와 움직임, 제스처 세부 and 창 each folded to one line (pick 7-A), then 사이드 노치, 음악, 선반 and 창 · 테마")
     check(!notch.flatMap(\.rows).contains { if case .buttons(let b) = $0.control { b.contains { $0.title == "열기 ›" } } else { false } }
           && !ArisSettingsBuilder.sections(.todo, fresh).flatMap(\.rows).contains { $0.id == "calendar.widgetDetail" },
           "more: no row opens an old screen any more")
     let features = ArisSettingsBuilder.sections(.features, fresh)
-    check(features.map(\.id) == ["features.music", "features.shelf", "features.more"], "more: 음악 · 선반 is 음악, 선반, then the link to the calendar's settings")
+    check(features.contains { $0.id == "features.music" } && features.contains { $0.id == "features.shelf" } && !features.contains { $0.id == "features.more" },
+          "more: 음악 and 선반 are parts of 모양, with no calendar link among them")
     let rows = (notch + features).flatMap(\.rows)
     let row = { (id: String) in rows.first { $0.id == id } }
     check(row("notch.hoverDelay")?.control == .slider(.more(.hoverDelay), value: 0.3, min: 0, max: 1, unit: "초", step: 0.1, zero: "바로")
@@ -197,7 +203,7 @@ private func moreTests() {
     all.more.animation = true
     let moved = ArisMoreRows.notch(all.more, gestures: true) + [ArisMoreRows.music(all.more), ArisMoreRows.shelf(all.more)]
     let movedIDs = ArisSettingsLayout.tags(moved)
-    let pageTags = ArisSettingsLayout.tags(ArisSettingsBuilder.sections(.notch, all) + ArisSettingsBuilder.sections(.features, all))
+    let pageTags = ArisSettingsLayout.tags(ArisSettingsPage.allCases.flatMap { ArisSettingsBuilder.sections($0, all) })
     check(movedIDs.allSatisfy { ArisSettingsIndex.entry($0) != nil } && movedIDs.isSubset(of: pageTags) && movedIDs.count == 35,
           "more: every moved row and section is in the search index and is a tag its page carries (\(movedIDs.count))")
 }
@@ -205,15 +211,26 @@ private func moreTests() {
 private func builderTests() {
     let s = fullSnapshot()
     let ai = ArisSettingsBuilder.sections(.ai, s)
-    check(ai.first?.heading == "생각" && ai.first?.rows.first?.id == "ai.brain" && ai.first?.rows.first?.control == .custom("ai.think"),
-          "builder: AI 서비스 opens with 생각 › who answers, drawn by the page itself (ArisAIServicesPage)")
-    check(ai.flatMap(\.rows).filter(\.indexed).map(\.id) == ["ai.brain", "ai.jev", "ai.hear", "ai.speak", "ai.mcp.composio", "ai.mcp.add", "ai.computerEngine", "ai.teamBrain"],
-          "builder: AI 서비스 lists 생각, Jev, 듣기 and 말하기 for the search, then the connected services and the two rows it had")
-    if case .menu(.computerEngine, let engines, let chosen) = ai.flatMap(\.rows).first(where: { $0.id == "ai.computerEngine" })?.control {
+    check(ai.first?.id == "ai.think" && ai.first?.heading == nil && ai.first?.rows.first?.id == "ai.brain" && ai.first?.rows.first?.control == .custom("ai.think"),
+          "builder: Aris와 말하기 opens with AI · 모델 › who answers, drawn by the AI view itself (ArisAIThinkPart)")
+    check(ArisSettingsBuilder.sections(part: "talk.ai", s).flatMap(\.rows).filter(\.indexed).map(\.id) == ["ai.brain", "ai.jev", "ai.models", "ai.fallback", "aris.claudeBudget", "aris.claudeConnect"],
+          "builder: AI · 모델 lists who answers and Jev for the search, and Claude Code's budget and its connection in 연결된 서비스")
+    let fallbackRow = ArisSettingsBuilder.sections(part: "talk.ai", s).flatMap(\.rows).first { $0.id == "ai.fallback" }
+    check(fallbackRow?.control == .toggle(.brainFallback, false) && ArisSettingsIndex.search("다른 AI로 넘기기").first?.id == "ai.fallback"
+          && ArisSettingsIndex.search("fallback").contains { $0.id == "ai.fallback" } && !ArisSettingsParts.slots.contains("ai.fallback"),
+          "builder: 다른 AI로 넘기기 is a real switch, off by default, in the catalog and found by search")
+    var fallbackOn = s
+    fallbackOn.brainFallback = true
+    check(ArisSettingsBuilder.sections(part: "talk.ai", fallbackOn).flatMap(\.rows).first { $0.id == "ai.fallback" }?.control == .toggle(.brainFallback, true),
+          "builder: the switch shows the stored setting")
+    let permissionRows = ArisSettingsBuilder.sections(part: "app.permissions", s).flatMap(\.rows).map(\.id)
+    check(ArisSettingsIndex.search("입력 모니터링").first?.id == "control.input" && ArisSettingsIndex.search("음성 인식").first?.id == "control.speech"
+          && ArisSettingsParts.part("app.permissions")?.rows.contains("control.input") == true,
+          "builder: Input Monitoring and Speech Recognition have their rows in 앱 › 권한, found by search (\(permissionRows))")
+    if case .menu(.computerEngine, let engines, let chosen) = ArisSettingsBuilder.sections(.control, s).flatMap(\.rows).first(where: { $0.id == "ai.computerEngine" })?.control {
         check(engines.map(\.id) == ["aris", "peekaboo", "codex"] && chosen == "aris", "builder: the computer-use engine is a plain menu, Aris's own by default")
     } else { check(false, "builder: the computer-use engine has its row") }
-    let link = ArisSettingsBuilder.sections(.aris, s).flatMap(\.rows).first { $0.id == "aris.brainLink" }
-    check(link?.control == .link(.go(.ai, anchor: "ai.brain"), value: "Codex") && link?.indexed == false, "builder: 대화 keeps a row that goes to the brain, showing it")
+    check(!ArisSettingsBuilder.sections(.aris, s).flatMap(\.rows).contains { $0.id == "aris.brainLink" }, "builder: no row only links to the AI: AI · 모델 is on the same page")
     check(!ArisSettingsBuilder.sections(.aris, s).flatMap(\.rows).contains { if case .choice(.brain, _, _, _, _) = $0.control { true } else { false } },
           "builder: the brain is chosen in one place only")
     var fresh = ArisSettingsSnapshot()
@@ -230,12 +247,13 @@ private func builderTests() {
           && ArisSettingsBuilder.sections(.general, ArisSettingsSnapshot()).flatMap(\.rows).contains { $0.id == "general.screen" }, "builder: 선호하는 화면 only when it applies")
     var one = ArisSettingsSnapshot()
     one.languages = [.init(id: "ko", title: "한국어")]
-    check(ArisSettingsBuilder.sections(.voice, one).flatMap(\.rows).first?.control == .buttons([ArisSettingButton(title: "한국어", action: .addLanguage, kind: .select)]),
+    check(ArisSettingsBuilder.sections(.voice, one).flatMap(\.rows).first { $0.id == "voice.languages" }?.control == .buttons([ArisSettingButton(title: "한국어", action: .addLanguage, kind: .select)]),
           "builder: one language: the select names it alone (the sheet keeps the last one on)")
-    check(ArisSettingsBuilder.sections(.team, s).isEmpty, "builder: 팀원 draws itself")
+    check(ArisSettingsBuilder.sections(part: "able.team", s).flatMap(\.rows).map(\.id) == ["team.add", "team.detail", "team.make", "team.terminal"],
+          "builder: 팀원 is its ways into the team's sheet and the terminal row")
     let total = allRows(s).count
     check(total >= 70, "builder: every page's rows are there (\(total))")
-    check(ArisSettingsBuilder.sections(.control, ArisSettingsSnapshot()).last?.rows.first?.title == "불러오는 중", "builder: standing permissions loading")
+    check(ArisSettingsBuilder.sections(part: "able.control", ArisSettingsSnapshot()).last?.rows.first?.title == "불러오는 중", "builder: standing permissions loading")
     moreTests()
     let sees = ArisSettingsBuilder.sections(.control, s).flatMap(\.rows).first { $0.id == "control.sees" }
     let circle = ArisSettingsBuilder.sections(.control, s).flatMap(\.rows).first { $0.id == "control.circle" }

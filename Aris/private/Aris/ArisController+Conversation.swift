@@ -39,6 +39,7 @@ extension ArisController {
         let wasOpen = conversation.isOpen
         conversation = conversation.opened(at: Self.uptime)
         guard !wasOpen else { return }
+        if ArisDuplexSwitch.isOn { ArisDuplexAudio.conversation(open: true) }
         echoLoop = ArisEchoLoop()
         log.notice("conversation open")
         watchEscape()
@@ -59,6 +60,7 @@ extension ArisController {
         log.notice("conversation over (\(reason.rawValue, privacy: .public))")
         if ArisPendingFiles.clearedWhenConversationEnds(reason) { ArisAttachments.shared.clear() }
         conversation = conversation.closed()
+        ArisDuplexAudio.conversation(open: false)
         conversationWatch?.cancel()
         conversationWatch = nil
         echoTailWatch?.cancel()
@@ -106,7 +108,8 @@ extension ArisController {
     /// another app's sound or microphone pauses listening.
     private func watchSilence() {
         conversationWatch?.cancel()
-        conversationWatch = Task { [weak self] in
+        // The conversation outlives the turn that opened it: its watch works for no turn.
+        conversationWatch = ArisTurnScope.outside { Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, self.conversation.isOpen else { return }
@@ -116,7 +119,7 @@ extension ArisController {
                 }
                 self.checkOtherAudio()
             }
-        }
+        } }
     }
 
     /// Pauses listening between turns while another app plays or records, and resumes once it stops.
@@ -162,11 +165,12 @@ extension ArisController {
     }
 
     /// A hands-free turn's local change (an undo, ticking a to-do) asks first on the card, yes by a click or Y only
-    /// (security review M1). True when it may go ahead (always, for a turn that wasn't hands-free).
-    func confirmHandsFree(_ title: String, _ detail: String) async -> Bool {
+    /// (security review M1). True when it may go ahead (always, for a turn that wasn't hands-free); nil when the turn
+    /// ended before an answer (nothing more is done or said).
+    func confirmHandsFree(_ title: String, _ detail: String) async -> Bool? {
         guard turnHandsFree else { return true }
-        let allow = await askUser(ArisConfirmation(id: "hands-free-" + UUID().uuidString, title: title, detail: detail), handsFree: true)
-        withAnimation(ArisGlass.resize) { session = session.answered() }
+        guard let allow = await askUser(ArisConfirmation(id: "hands-free-" + UUID().uuidString, title: title, detail: detail), handsFree: true) else { return nil }
+        withAnimation(ArisGlass.resize) { setSession(session.answered()) }
         return allow
     }
 
@@ -175,7 +179,7 @@ extension ArisController {
         let reply = cardUnanswered ? ArisCardWait.unansweredLine(korean: korean) : declined ?? (korean ? "안 했어요." : "I left it.")
         // The user started another turn over the card: nothing is shown or said over it (audit card-1).
         guard !Task.isCancelled else { return reply }
-        session = session.answering(reply)
+        setSession(session.answering(reply))
         stats?.firstSound(at: .now)
         await speak { await self.speaker.speak(reply) }
         return reply
@@ -214,6 +218,9 @@ extension ArisController {
             if otherAudioPresent() { return nil }
             // On speakers only with an echo canceller (there is none): Aris's own voice must never stop it or become a turn.
             let mode = ArisBargeIn.mode(headphones: ArisDucking.outputIsHeadphones(), speakersAllowed: Defaults[.arisBargeInOnSpeakers], echoCancelled: ArisBargeIn.echoCancellerOn)
+                // The duplex engine's canceller hears past Aris's line (arisDuplexAudio): armed on speakers, stricter.
+                ?? ArisBargeIn.cancelledMode(headphones: ArisDucking.outputIsHeadphones(), speakersAllowed: Defaults[.arisBargeInOnSpeakers],
+                                             voiceCancelled: speaker.voiceIsEchoCancelled)
             // After a ⌥Space turn the listener had the microphone: the detector opens now, for the barge-in.
             if mode != nil, detector == nil, !screenAway, listener == nil { startDetector(paused: true) }
             return mode
@@ -279,8 +286,12 @@ extension ArisController {
     /// is lost to the hand-over). Hands-free, as a follow-up: no words within a few seconds was noise.
     func startConversationTurn(from sample: Int, lookback: Double) {
         guard let detector else { return }
+        // A new turn: the one before is over. Everything below, and every task it starts, works for the new one.
+        ArisTurnScope.within(openTurn(.voice)) { startConversationTurn(detector, from: sample, lookback: lookback) }
+    }
+
+    private func startConversationTurn(_ detector: ArisWakeDetector, from sample: Int, lookback: Double) {
         wakeRestart?.cancel()
-        turn?.cancel()
         dropPendingAnswer()
         speaker.stop()
         pauseWatch?.cancel()
@@ -304,7 +315,7 @@ extension ArisController {
         let listener = ArisListener()
         seeTurnStarting()
         conversation = conversation.turnStarted()
-        session = session.listening()
+        setSession(session.listening())
         listeningSince = since
         recordingLead = .zero
         lastWordsAt = nil
@@ -314,8 +325,6 @@ extension ArisController {
         practiceTurn = onboardingTalk == .practice
         voiceFloor = ArisTalkKey.startingFloor
         pauseScore = nil
-        preparedWhisper = nil
-        graceVoiceFrames = 0
         followingUp = true
         pauseMusic()
         // The brain is warmed and Scribe streams only once there are words (follow): noise wakes neither.
@@ -348,9 +357,9 @@ extension ArisController {
         listener = nil
         level = 0
         if let answer = answerBeforeFollowUp {
-            session = .parked(heard: answer.heard, reply: answer.reply)
+            setSession(.parked(heard: answer.heard, reply: answer.reply))
         } else {
-            session = session.done()
+            setSession(session.done())
         }
         answerBeforeFollowUp = nil
     }
@@ -359,6 +368,8 @@ extension ArisController {
     func heardVoice(_ talking: Bool) {
         userTalking = talking
         lastHeardVoiceAt = .now
+        // Outside a conversation too: nothing Aris says on its own starts over the user's voice (ArisInterruption).
+        ArisWorld.shared.heardVoice(talking)
     }
 
     // MARK: - Speaking up at a pause

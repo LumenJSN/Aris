@@ -21,15 +21,15 @@ final class ArisSealedOneShot: ArisOneShotAsking {
     init(environment: [String: String]) { self.environment = environment }
 
     /// The command line on each brain: the judge's sealed flags, the instruction as the system prompt where there is one.
-    static func arguments(brain: ArisBrain, model: String, instruction: String) -> [String] {
+    static func arguments(brain: ArisBrain, model: String, instruction: String, effort: String = "low") -> [String] {
         switch brain {
         case .claude:
-            return ["-p", "--model", model, "--effort", "low", "--tools", "", "--permission-mode", "dontAsk",
+            return ["-p", "--model", model, "--effort", effort, "--tools", "", "--permission-mode", "dontAsk",
                     "--setting-sources", "", "--settings", #"{"disableAllHooks":true}"#,
                     "--strict-mcp-config", "--mcp-config", #"{"mcpServers":{}}"#,
                     "--no-session-persistence", "--output-format", "text", "--system-prompt", instruction]
         case .codex, .antigravity:
-            return ArisReadJudge.arguments(brain: brain, model: model)
+            return ArisReadJudge.arguments(brain: brain, model: model, effort: effort)
         case .api:
             // No process: an API brain is one HTTP call with no functions (askAPI).
             return []
@@ -60,7 +60,10 @@ final class ArisSealedOneShot: ArisOneShotAsking {
         defer { folder.map(ArisSealedScratch.remove) }
         let process = ArisExactProcess()
         process.executableURL = executable
-        process.arguments = Self.arguments(brain: brain, model: brain.model(tier: .work), instruction: instruction)
+        // The 작은 도우미 choice (ArisModelChoice), else the strong model at low as before.
+        let choices = ArisModelChoiceBox.shared.current
+        process.arguments = Self.arguments(brain: brain, model: ArisThinking.helperModel(brain, auto: brain.model(tier: .work), choices: choices),
+                                           instruction: instruction, effort: ArisThinking.helperEffort(brain, choices: choices))
         process.environment = ArisReadJudge.environment(brain: brain, base: environment)
         if let folder { process.currentDirectoryURL = folder }
         let stdin = Pipe(), stdout = Pipe()

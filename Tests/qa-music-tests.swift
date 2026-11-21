@@ -163,7 +163,7 @@ private func qaMusicReadGateTests() {
 private func qaMusicWiringTests() {
     let player = musicSource("Music/ArisScriptedPlayer.swift")
     check(!player.contains("ArisAppleScript") && player.contains("ArisAppleEventClient(bundle: app.bundleID"), "music: the player sends raw events, never a script")
-    let controller = musicSource("Aris/ArisController.swift")
-    check(controller.contains("reply = media.reply(done: done, korean: korean)") && controller.contains("case .whatsPlaying = intent"),
+    let controller = musicSource("Aris/Routing/ArisController+TurnRuns.swift")
+    check(controller.contains("let reply = media.reply(done: done, korean: korean)") && controller.contains("case .whatsPlaying:"),
           "music: the voice command's line comes from the result, and the song question is answered here")
 }

@@ -1,6 +1,7 @@
 // Tests for the notice pill under the notch (the owner's pick D, 2026-11-16, "노치 아래 알약"): 6 under the closed notch in
 // the dictation pill's body; one line 38 high, 284 / 364 / 440 wide by its words; under the pointer a 364-wide card of
-// corner 24; its motion (from the 36 × 8 bar in 250 ms, content 150 ms; grow 250, fold 180; leave .8 in 150, CSS ease);
+// corner 24; its motion (from the 36 × 8 bar in 250 ms, content 150 ms, leave .8 in 150, CSS ease; line <-> card on a
+// spring, grow 0.34 s / fold 0.22 s, one progress for size, corner and crossfade; hover intent 100 ms in, 150 ms grace);
 // its phases; who has the room under the notch; what waits for a turn or a dictation; the deadline's chip and colours;
 // a deadline's and a Claude Code session's notice in Korean and English; and the wiring that put them all on the pill.
 // Called from main.swift; uses its check(). Nothing is drawn on screen (notice-pill-render draws it offscreen).
@@ -26,7 +27,7 @@ func runNoticePillTests() {
           "notice pill: one line 38 high (a capsule, 19), the card 364 wide at corner 24")
     check(P.widths == [284, 364, 440] && P.shortUnder == 40 && P.mediumUnder == 100, "notice pill: 284 / 364 / 440 by length (under 40, under 100)")
     check(P.belowNotch == 6, "notice pill: 6 under the closed notch, where the jobs' pill hangs")
-    check(P.barSize == ArisDictationPillRules.idleSize, "notice pill: arrives from the dictation pill's 36 × 8 idle bar")
+    check(P.barSize == CGSize(width: 36, height: 8), "notice pill: arrives from a 36 × 8 bar (its own, kept when the dictation pill was re-measured)")
     check(P.leading == 10 && P.trailing == 13 && P.gap == 8 && P.markSize == 20 && P.textSize == 13,
           "notice pill: 10 in, 13 at the right, gap 8, a 20 mark, 13-pt text")
     check(P.chipHeight == 20 && P.chipPadding == 7 && P.chipSize == 11 && P.chipFill == 0.16, "notice pill: the deadline chip 20 high, 7 in, 11 bold, its colour at .16")
@@ -46,22 +47,24 @@ func runNoticePillTests() {
 
     // --- the motion
     check(P.arrive == 0.25 && P.contentFade == 0.15 && abs(P.contentDelay - 0.1) < 1e-9, "notice motion: arrives in 250 ms, its content fading in over the last 150")
-    check(P.expand == 0.25 && P.collapse == 0.18 && P.exit == 0.15 && P.exitScale == 0.8, "notice motion: grows 250 ms, folds 180 ms, leaves .8 in 150 ms")
-    check(P.ease == ArisDictationPillRules.ease && P.ease == (0.25, 0.1, 0.25, 1.0), "notice motion: CSS ease, the dictation pill's")
+    check(P.expand == 0.34 && P.expandBounce == 0.08 && P.collapse == 0.22 && P.collapseBounce == 0 && P.exit == 0.15 && P.exitScale == 0.8,
+          "notice motion: grows on a 0.34 s spring of bounce .08, folds on a 0.22 s one of none (faster out), leaves .8 in 150 ms")
+    check(P.ease == (0.25, 0.1, 0.25, 1.0), "notice motion: CSS ease")
 
     // --- the phases
     check(Phase.of(arrived: false, hovered: false) == .bar && Phase.of(arrived: false, hovered: true) == .bar,
           "notice phase: before it arrives, the bar")
     check(Phase.of(arrived: true, hovered: false) == .collapsed && Phase.of(arrived: true, hovered: true) == .expanded,
           "notice phase: arrived, the line; under the pointer, the card")
-    let bar = Phase.bar.size(width: 364), oneLine = Phase.collapsed.size(width: 284), card = Phase.expanded.size(width: 440)
-    check(bar.width == 36 && bar.height == 8 && oneLine.width == 284 && oneLine.height == 38 && card.width == 364 && card.height == nil,
-          "notice phase: 36 × 8, then its width × 38, then 364 wide as tall as its text")
+    let bar = Phase.bar.size(width: 364, card: 180), oneLine = Phase.collapsed.size(width: 284, card: 180), card = Phase.expanded.size(width: 440, card: 180)
+    check(bar.width == 36 && bar.height == 8 && oneLine.width == 284 && oneLine.height == 38 && card.width == 364 && card.height == 180,
+          "notice phase: 36 × 8, then its width × 38, then 364 wide as tall as its text measures (a number, never nil)")
     check(Phase.radius(height: 8) == 4 && Phase.radius(height: 38) == 19 && Phase.radius(height: 180) == 24,
           "notice phase: the corner 4 on the bar, 19 on the line, 24 on the card")
-    check(Phase.bar.duration(to: .collapsed) == 0.25 && Phase.collapsed.duration(to: .expanded) == 0.25
-          && Phase.expanded.duration(to: .collapsed) == 0.18 && Phase.bar.duration(to: .expanded) == 0.25,
-          "notice phase: arrive 250, grow 250, fold 180")
+    check(Phase.bar.duration(to: .collapsed) == 0.25 && Phase.collapsed.duration(to: .expanded) == 0.34
+          && Phase.expanded.duration(to: .collapsed) == 0.22 && Phase.bar.duration(to: .expanded) == 0.25,
+          "notice phase: arrive 250, grow 340, fold 220")
+    runNoticePillMotionTests()
     check(!Phase.bar.contentShown && Phase.collapsed.contentShown && Phase.expanded.contentShown, "notice phase: no content on the bar")
 
     // --- who has the room under the notch
@@ -218,7 +221,7 @@ func runNoticePillTests() {
           "notice fit: a deadline too long for 440 stays 440; its bold part shortens, its time left and chip don't")
     let fitView = pillSource("Aris/private/Aris/Notice/ArisNoticePillView.swift")
     check(fitView.contains(".lineLimit(1).fixedSize().layoutPriority(2)") && fitView.contains("trailing.layoutPriority(3)")
-          && fitView.contains(".layoutPriority(line.restTinted ? 0 : 1)") && fitView.contains("ArisNoticePillFit.width(notice, now: now ?? Date(), english: english)"),
+          && fitView.contains(".layoutPriority(whole ? 0 : 1)") && fitView.contains("let whole = ArisNoticePillFit.readWhole(notice)") && fitView.contains("ArisNoticePillFit.width(notice, now: now ?? Date(), english: english)"),
           "notice fit: drawn so — a deadline's time left fixed, the chip and time first, the bold part before a preview, the fitted width")
 
     // --- the words
@@ -257,9 +260,10 @@ func runNoticePillTests() {
           && pillSource("Aris/private/Aris/Dictation/ArisDictationPillRecoveredCard.swift").contains("shadow: .black.opacity(0.38))"),
           "notice look: the shadow is the recovered card's .38")
     check(view.contains(".scale(scale: L.exitScale)") && view.contains("ease(L.exit)") && view.contains("withAnimation(Self.ease(L.arrive))")
-          && view.contains("Self.ease(hovered ? L.expand : L.collapse)") && view.contains("accessibilityReduceMotion"),
-          "notice motion: arrives, grows, folds and leaves on the numbers; Reduce Motion only fades")
-    for file in ["ArisNoticePill.swift", "ArisNoticePillView.swift", "ArisNoticeCenter.swift"] {
+          && view.contains(".spring(duration: L.expand, bounce: L.expandBounce) : .spring(duration: L.collapse, bounce: L.collapseBounce)")
+          && view.contains("guard !reduceMotion else { return nil }") && view.contains("accessibilityReduceMotion"),
+          "notice motion: arrives and leaves on the numbers, grows and folds on its springs; Reduce Motion only fades")
+    for file in ["ArisNoticePill.swift", "ArisNoticePillView.swift", "ArisNoticePillMorphView.swift", "ArisNoticeCenter.swift"] {
         let text = pillSource("Aris/private/Aris/Notice/" + file)
         check(!text.isEmpty && !text.lowercased().contains("voice" + "os") && !text.contains("repeatForever"),
               "notice sources: \(file) names no other app and nothing blinks or pulses")

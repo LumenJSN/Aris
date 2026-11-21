@@ -1,0 +1,7 @@
+{"menus":[
+ {"title":"카카오톡","items":[{"title":"카카오톡 정보"},{"title":"설정…","key":",","modifiers":0},{"title":"카카오톡 종료","key":"Q","modifiers":0}]},
+ {"title":"파일","items":[{"title":"새로운 채팅","key":"N","modifiers":0},{"title":"친구 추가","key":"A","modifiers":1},{"title":"창 닫기","key":"W","modifiers":0}]},
+ {"title":"편집","items":[{"title":"복사","key":"C","modifiers":0},{"title":"붙여넣기","key":"V","modifiers":0},{"title":"찾기","key":"F","modifiers":0}]},
+ {"title":"보기","items":[{"title":"친구","key":"1","modifiers":0},{"title":"채팅","key":"2","modifiers":0},{"title":"더보기","key":"3","modifiers":0}]},
+ {"title":"윈도우","items":[{"title":"최소화","key":"M","modifiers":0}]}
+]}

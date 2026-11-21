@@ -42,7 +42,7 @@ private func qaTaskResultShownTests() {
           "BUG-20a: the result draws as a lead, a label and a table (answer format A)")
     // The announcement shows what is shown, not what is said (the said text is one flattened line).
     let team = qaSource("Aris/private/Aris/ArisController+Team.swift")
-    check(team.contains("ArisNoticeRoute.jobDone(title: job.title, shown: report.shown") && team.contains("notify(card, saying: report.spoken, parking: report.shown)"),
+    check(team.contains("ArisNoticeRoute.jobDone(title: job.title, shown: report.shown") && team.contains("colleagueLine(for: job, result: report.shown, own: report.spoken)") && team.contains("notify(card, saying: said, parking: report.shown)"),
           "BUG-20a: a finished job's card and parked answer show report.shown, never the spoken line (notify-card)")
     let inbox = qaSource("Aris/private/Aris/ArisController+Inbox.swift")
     check(inbox.contains("ArisNoticeRoute.inbox(kind: item.kind, title: item.title, shown: report.shown") && inbox.contains("notify(card, saying: said, parking: report.shown)"),
@@ -169,7 +169,8 @@ private func qaTaskHistoryTests() {
     check(team.contains("pastTurns = ArisHistory.finishing(job: job.id"), "BUG-21: a finished job updates its entry")
     let controller = qaSource("Aris/private/Aris/ArisController.swift")
     // The teammate called by name (BUG-25b) hands out too, so it records its job the same way.
-    check(controller.components(separatedBy: "recordTurn(heard: unmarked, reply: reply, job: handed.job)").count == 3
-          && controller.contains("recordTurn(heard: request ?? text, reply: handed.line, job: handed.job)"),
+    let runs = qaSource("Aris/private/Aris/Routing/ArisController+TurnRuns.swift")
+    check(runs.contains("recordTurn(heard: recorded, reply: handed.line, job: handed.job)") && runs.components(separatedBy: "await handOutNow(").count == 3
+          && controller.contains("recordTurn(heard: request ?? text, reply: told.shown, job: handed.job)"),
           "BUG-21: both hand-out turns record their job")
 }

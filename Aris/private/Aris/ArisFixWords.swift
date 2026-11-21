@@ -32,12 +32,14 @@ enum ArisFixWords {
             case .microphone: return say("마이크 권한 열기", "Open Microphone access")
             case .speech: return say("음성 인식 권한 열기", "Open Speech Recognition")
             case .folders: return say("파일 및 폴더 권한 열기", "Open Files & Folders")
+            case .listen: return say("입력 모니터링 권한 열기", "Open Input Monitoring")
             case nil: return say("시스템 설정 열기", "Open System Settings")
             }
         case .settings:
             switch fix.row {
             case .brain, nil: return ArisBrainTrouble.settingsButton(english: english)
-            case .key: return say("API 키 넣기", "Add the API key")
+            // The same chip for no key and a key the service refused: it says both (twelfth VM run: "Add the API key" over a saved key).
+            case .key: return say("API 키 넣기·바꾸기", "Add or replace the API key")
             case .services: return say("서비스 연결하기", "Connect a service")
             case .todoAccess: return say("미리 알림 접근 켜기", "Turn on Reminders access")
             case .calendarAccess: return say("캘린더 접근 켜기", "Turn on Calendar access")

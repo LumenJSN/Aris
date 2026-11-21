@@ -5,6 +5,9 @@
 //  When you start talking over Aris, it turns itself down at once instead of talking on at full volume (as
 //  ChatGPT's voice does: -10 dB, held at least 0.75 s, back up over a second). Saying "아리스" still stops it.
 //  Only with headphones: through speakers the microphone would hear Aris itself and keep turning it down.
+//  Headphones are the duplex path's (ArisDuplexRoute.isHeadphones) on both paths: the Mac's jack, or a Bluetooth device
+//  that also has a microphone (a headset). A Bluetooth loudspeaker is a speaker: the Mac's microphone hears it, so
+//  Aris neither ducks under its own voice nor takes the name from it for the user's (2026-11-18 audit).
 //
 
 import CoreAudio
@@ -24,13 +27,15 @@ enum ArisDucking {
         return duckedVolume + (1 - duckedVolume) * done
     }
 
-    /// Output through headphones: Bluetooth, or the Mac's own jack (data source "hdpn").
-    static func isHeadphones(transport: ArisMicChoice.Device.Transport, dataSource: String?) -> Bool {
-        switch transport {
-        case .bluetooth: return true
-        case .builtIn: return dataSource == "hdpn"
-        case .other: return false
+    /// Output through headphones: the Mac's own jack (data source "hdpn"), or a Bluetooth device with a microphone of
+    /// its own (`hasInput`: a headset); a Bluetooth loudspeaker is not (ArisDuplexRoute.isHeadphones decides).
+    static func isHeadphones(transport: ArisMicChoice.Device.Transport, dataSource: String?, hasInput: Bool) -> Bool {
+        let kind: ArisDuplexRoute.Kind = switch transport {
+        case .builtIn: .builtIn
+        case .bluetooth: .bluetooth
+        case .other: .other
         }
+        return ArisDuplexRoute.isHeadphones(.init(id: 0, kind: kind, dataSource: dataSource, hasInput: hasInput))
     }
 
     /// Whether the Mac's sound goes to headphones right now.
@@ -54,7 +59,17 @@ enum ArisDucking {
                                              mElement: kAudioObjectPropertyElementMain)
         size = UInt32(MemoryLayout<UInt32>.size)
         let hasSource = AudioObjectGetPropertyData(device, &address, 0, nil, &size, &source) == noErr
-        return isHeadphones(transport: transport, dataSource: hasSource ? fourCharacters(source) : nil)
+        // A Bluetooth loudspeaker, with no microphone of its own, is no headphone, on the duplex path and the old one alike.
+        return isHeadphones(transport: transport, dataSource: hasSource ? fourCharacters(source) : nil,
+                            hasInput: transport == .bluetooth && hasInputStreams(device))
+    }
+
+    /// Whether `device` also has an input side (a Bluetooth headset's microphone).
+    private static func hasInputStreams(_ device: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioObjectPropertyScopeInput,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        return AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr && size > 0
     }
 
     private static func fourCharacters(_ code: UInt32) -> String {

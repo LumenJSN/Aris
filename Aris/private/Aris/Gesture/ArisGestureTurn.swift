@@ -20,6 +20,8 @@ struct ArisGestureTurn {
     let images: [ArisTurnImage]
     /// The chips' thumbnails by badge (PNG, no number on them): for the transcript only, never sent or saved.
     let thumbs: [Int: Data]
+    /// The circled regions in global points (jv-focus: the look reads the words inside them).
+    let regions: [CGRect]
     private let shots: [ArisMarkedShot]
     private let speech: (startedAtMs: Double, endedAtMs: Double, totalVoicedMs: Double)?
 
@@ -30,6 +32,7 @@ struct ArisGestureTurn {
         guard !images.isEmpty else { return nil }
         self.images = images
         thumbs = Dictionary(result.shots.map { ($0.badge, $0.thumb) }, uniquingKeysWith: { first, _ in first })
+        regions = result.shots.sorted { $0.badge < $1.badge }.compactMap(\.region)
         shots = result.shots.map { ArisMarkedShot(badge: $0.badge, voicedMsAtCapture: $0.voicedMsAtCapture, capturedAtMs: $0.capturedAtMs) }
         speech = result.speech
     }

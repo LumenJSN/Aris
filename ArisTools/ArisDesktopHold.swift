@@ -12,23 +12,25 @@
 import Foundation
 
 /// The turn's hold, or a refusal that stops the command (nothing moved). With no turn and no hold of the agent's own,
-/// it fails closed (ArisDesktopHoldPlan).
-func desktopHold() {
-    let asked: [String: Any]
+/// it fails closed (ArisDesktopHoldPlan). `gap`: the agent also waits for a moment with no input from the user (the command
+/// raises, opens or moves windows: never under his hands, ArisNativeFocusGap).
+func desktopHold(gap: Bool = true) {
+    var asked: [String: Any]
     switch ArisDesktopHoldPlan.plan(environment: ProcessInfo.processInfo.environment, read: readCredential) {
     case .refuse(let why): fail(why)
     case .turn(let turn): asked = ["turn": turn]
     case .held(let id): asked = ["held": id]
     }
+    if gap { asked["gap"] = true }
     guard let token = ClaudeHookToken.load(), let url = URL(string: "http://127.0.0.1:23351/desktop-hold") else { fail("Aris's agent isn't set up (no token)") }
-    // The lock's own wait (90 s) and a little more.
-    let wait: TimeInterval = 120
+    // The lock's own wait (90 s), a job's wait for a gap (45 s), and a little more.
+    let wait: TimeInterval = 150
     var request = URLRequest(url: url, timeoutInterval: wait)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
     request.httpBody = try? JSONSerialization.data(withJSONObject: asked)
-    let configuration = URLSessionConfiguration.ephemeral
+    let configuration = ArisNoStore.configuration()
     configuration.timeoutIntervalForRequest = wait
     configuration.timeoutIntervalForResource = wait
     let done = DispatchSemaphore(value: 0)

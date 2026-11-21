@@ -127,6 +127,8 @@ struct ArisCostEvent {
     let model: String
     let tokens: Int
     let usd: Double
+    /// False: no price is known for its model (a model chosen by hand, a new one): its tokens count, its cost is no guess.
+    var priced = true
 }
 
 enum ArisUsageAggregate {
@@ -145,6 +147,7 @@ enum ArisUsageAggregate {
         let week: TimeInterval = 7 * 86_400
         var windows = (0..<3).map { (start: end.addingTimeInterval(-week * Double($0 + 1)), end: end.addingTimeInterval(-week * Double($0)), usd: 0.0, tokens: 0) }
         var byModel: [String: (usd: Double, tokens: Int)] = [:]
+        var unpriced = Set<String>()
         for event in events {
             if event.at >= days[0], event.at < (calendar.date(byAdding: .day, value: 1, to: today) ?? now) {
                 var index = 29
@@ -153,6 +156,7 @@ enum ArisUsageAggregate {
                 tokens[index] += event.tokens
                 byModel[event.model, default: (0, 0)].usd += event.usd
                 byModel[event.model, default: (0, 0)].tokens += event.tokens
+                if !event.priced, event.tokens > 0 { unpriced.insert(event.model) }
             }
             for index in windows.indices where event.at >= windows[index].start && event.at < windows[index].end {
                 windows[index].usd += event.usd
@@ -165,7 +169,7 @@ enum ArisUsageAggregate {
             last30: ArisUsageSpend(usd: usd.reduce(0, +), tokens: tokens.reduce(0, +)),
             daily: (0..<30).map { ArisUsageDay(day: days[$0], usd: usd[$0], tokens: tokens[$0]) },
             windows: windows.map { ArisUsageSpendWindow(start: $0.start, end: $0.end, usd: $0.usd, tokens: $0.tokens) },
-            topModel: top)
+            topModel: top, unpricedModels: unpriced.isEmpty ? nil : unpriced.sorted())
     }
 }
 
@@ -232,11 +236,12 @@ final class ArisUsageScanner: @unchecked Sendable {
             if let claude {
                 let usd = rate.map { ArisUsagePricing.claudeCost($0, input: claude.input, output: claude.output, cacheRead: claude.cacheRead,
                                                                  cacheCreation: claude.cacheCreation, cache1h: claude.cache1h) } ?? 0
-                return ArisCostEvent(at: at, model: model, tokens: claude.input + claude.output + claude.cacheRead + claude.cacheCreation, usd: usd)
+                return ArisCostEvent(at: at, model: model, tokens: claude.input + claude.output + claude.cacheRead + claude.cacheCreation, usd: usd,
+                                     priced: rate != nil)
             }
             guard let usage = codex?.usage else { return ArisCostEvent(at: at, model: model, tokens: 0, usd: 0) }
             let usd = rate.map { ArisUsagePricing.codexCost($0, input: usage.input, cached: usage.cached, cacheWrite: usage.cacheWrite, output: usage.output) } ?? 0
-            return ArisCostEvent(at: at, model: model, tokens: usage.input + usage.output, usd: usd)
+            return ArisCostEvent(at: at, model: model, tokens: usage.input + usage.output, usd: usd, priced: rate != nil)
         }
         return ArisUsageAggregate.cost(events, now: now, weekEnd: weekEnd)
     }

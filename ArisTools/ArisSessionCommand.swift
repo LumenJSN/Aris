@@ -15,12 +15,11 @@ func sessionRequest(_ args: [String], environment: [String: String]) -> Result<[
     guard let path = environment["ARIS_MCP_TURN_FILE"], path.hasPrefix("/"), let turn = readCredential(path), !turn.isEmpty else {
         return .failure(ArisMCPUsage(text: "aris-tools session works only inside an Aris turn"))
     }
-    let usage = "usage: aris-tools session list | aris-tools session send \"<session folder or id>\" \"<text to type into it>\""
-    switch args.first {
-    case "list" where args.count == 1: return .success(["turn": turn, "words": args])
-    case "send" where args.count >= 3 && args.joined(separator: " ").count <= 4_096: return .success(["turn": turn, "words": args])
-    default: return .failure(ArisMCPUsage(text: usage))
-    }
+    let usage = "usage: aris-tools session list | status <session> | send <session> <text> | interrupt <session> | answer <session> allow|deny"
+        + " | start <folder> <instruction> [--tool claude|codex] | stop <session>"
+    // The same forms the sealed list allows (ArisSealedTools.sessionForm); the agent reads them again.
+    guard ArisSealedTools.sessionForm(args) else { return .failure(ArisMCPUsage(text: usage)) }
+    return .success(["turn": turn, "words": args])
 }
 
 func session(_ args: [String]) {
@@ -37,7 +36,7 @@ func session(_ args: [String]) {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
     request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-    let configuration = URLSessionConfiguration.ephemeral
+    let configuration = ArisNoStore.configuration()
     configuration.timeoutIntervalForRequest = wait
     configuration.timeoutIntervalForResource = wait
     let done = DispatchSemaphore(value: 0)

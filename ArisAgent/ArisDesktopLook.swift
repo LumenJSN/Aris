@@ -31,7 +31,13 @@ extension ArisDesktopSession {
         if let refused = held(look, field: nil) { return refused }
         let marks = look.elements.filter { $0.actionable }.map(\.id)
         guard engine.vision.available(for: turn.brain) else { return .failed(ArisDesktopEngine.noVisionLine(app: target.name)) }
-        guard let answer = engine.vision.locateAnswer(png: png, width: size.width, height: size.height, target: request.target ?? "", marks: marks, brain: turn.brain) else {
+        // The brain gets the picture at the size it works with (a Retina shot is scaled down) and answers in its pixels;
+        // the point is mapped back to the full picture (the zoom crops that) and to the window exactly.
+        let shot = ArisDesktopVisionFrame(full: CGSize(width: size.width, height: size.height), window: window.frame)
+        let sentPNG = shot.scaled ? ArisDesktopVisionFrame.scaled(png, to: shot.sent) : png
+        let sent = sentPNG == nil ? shot.full : shot.sent
+        guard let answer = engine.vision.locateAnswer(png: sentPNG ?? png, width: Int(sent.width), height: Int(sent.height), target: request.target ?? "", marks: marks,
+                                                      brain: turn.brain) else {
             return .failed("Aris looked at \(target.name)'s window, but the AI that looks at the picture couldn't find that there (or gave no answer in time), so nothing was clicked. " +
                            "`desktop see --app \"\(target.name)\" --ocr` lists the text on the window with boxes.")
         }
@@ -47,12 +53,13 @@ extension ArisDesktopSession {
             let envelope = run(ArisPeekabooCommands.click(element.id, snapshot: look.peekaboo))
             let after = lookAfter(window.id)
             return readBack(after.map { ArisDesktopVerify.acted(on: element, before: look, after: $0) } ?? .notSeen("the window is gone"), envelope: envelope, after: after, before: before)
-        case .point(let first):
+        case .point(let sentFirst):
+            let first = sentPNG == nil ? sentFirst : shot.fullPixel(sentFirst)
             let scale = window.frame.width / CGFloat(max(size.width, 1))
             // Unsure, or a small target: one closer look at an enlarged crop of the same (privacy-painted) picture, its
             // point mapped back (ArisDesktopZoom). The control under the first point, in points, tells "small" too.
             let firstPoint = CGPoint(x: window.frame.minX + first.x * scale, y: window.frame.minY + first.y * scale)
-            let refined = ArisDesktopZoom.refine(answer, png: png, width: size.width, height: size.height, target: request.target ?? "",
+            let refined = ArisDesktopZoom.refine(ArisDesktopVisionAnswer(pick: .point(first), sure: answer.sure, small: answer.small), png: png, width: size.width, height: size.height, target: request.target ?? "",
                                                  under: Self.control(at: firstPoint, in: look)?.bounds) { picture, width, height, question in
                 engine.vision.locateAnswer(png: picture, width: width, height: height, target: question, marks: [], brain: turn.brain)?.pick
             }

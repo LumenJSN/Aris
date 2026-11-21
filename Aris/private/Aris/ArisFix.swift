@@ -37,6 +37,8 @@ struct ArisFix: Equatable, Sendable {
     /// The lists of System Settings › Privacy & Security a failure can point at.
     enum Pane: String, Sendable, CaseIterable {
         case disk, screen, accessibility, automation, contacts, calendars, reminders, microphone, speech, folders
+        /// Input Monitoring: the dictation and gesture keys' event taps.
+        case listen
 
         /// The list's name in the settings deep link.
         var anchor: String {
@@ -51,6 +53,7 @@ struct ArisFix: Equatable, Sendable {
             case .microphone: "Privacy_Microphone"
             case .speech: "Privacy_SpeechRecognition"
             case .folders: "Privacy_FilesAndFolders"
+            case .listen: "Privacy_ListenEvent"
             }
         }
 
@@ -83,6 +86,7 @@ struct ArisFix: Equatable, Sendable {
             case .microphone: return english ? "Microphone" : "마이크"
             case .speech: return english ? "Speech Recognition" : "음성 인식"
             case .folders: return english ? "Files & Folders" : "파일 및 폴더"
+            case .listen: return english ? "Input Monitoring" : "입력 모니터링"
             }
         }
 
@@ -105,16 +109,12 @@ struct ArisFix: Equatable, Sendable {
     enum Row: String, Sendable, CaseIterable {
         case brain, key, services, todoAccess, calendarAccess, skills, team, helper, control, memory
 
+        /// The settings page (option A's four: ArisSettingsPage's raw values) the row is on.
         var page: String {
             switch self {
-            case .brain, .key, .services: "ai"
-            case .todoAccess: "todo"
-            case .calendarAccess: "todo"
-            case .skills: "skills"
-            case .team: "team"
-            case .helper: "general"
-            case .control: "control"
-            case .memory: "memory"
+            case .brain, .key, .services: "talk"
+            case .todoAccess, .calendarAccess, .helper, .control: "app"
+            case .skills, .team, .memory: "able"
             }
         }
 

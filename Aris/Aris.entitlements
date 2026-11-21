@@ -32,5 +32,10 @@
 	<array>
 		<string>/.config/aris/</string>
 	</array>
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>com.lumenjsn.aris-spks</string>
+		<string>com.lumenjsn.aris-spki</string>
+	</array>
 </dict>
 </plist>

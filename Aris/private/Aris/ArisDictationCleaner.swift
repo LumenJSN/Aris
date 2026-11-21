@@ -5,7 +5,10 @@
 //  Dictation types what you meant, not every sound: fillers (어, 음, um, uh) go, and a word you took back
 //  goes with the take-back ("6시, 아니 7시로" is "7시로"; "6, I mean 7" is "7"). Rules only, no AI, so it's
 //  instant. A take-back counts only after a comma or between two numbers: "아니 근데…" at the start of a
-//  sentence, or "그거 아니 이거", is how you talk and stays.
+//  sentence, or "그거 아니 이거", is how you talk and stays. Nor is it a take-back when what follows starts a new clause
+//  ("왔어, 아니 근데 왜", "we went home, I mean we had to"): the word before it stays (2026-11-18 audit). Fillers go only
+//  as whole words ("음식", "어디", "그 그림" stay), and nothing else is collapsed: a repeated word ("많이 많이", "no no")
+//  is said that way on purpose. The sentences that must come through unchanged are a table in the tests.
 //
 
 import Foundation
@@ -18,6 +21,11 @@ enum ArisDictationCleaner {
 
     private static let fillers: Set<String> = ["어", "음", "으음", "음음", "어어", "um", "umm", "uh", "uhm", "erm", "hmm"]
     private static let takeBacks: Set<String> = ["아니", "아니아니"]
+    /// Words that start a new clause after "아니" or "I mean": what came before is kept, not taken back.
+    private static let clauseStarts: Set<String> = [
+        "근데", "그런데", "그게", "그건", "진짜", "정말", "그냥", "뭐", "왜", "그래서", "그러니까", "그니까", "내", "제", "솔직히", "그러면", "그럼",
+        "i", "you", "we", "they", "he", "she", "it", "that", "this", "there", "the", "a", "an", "like", "really", "just", "honestly", "what", "why", "so",
+    ]
     private static let trailing = CharacterSet(charactersIn: ",.!?…")
 
     /// Each word as said, and whether it's typed.
@@ -58,10 +66,12 @@ enum ArisDictationCleaner {
         return 0
     }
 
-    /// The word before a take-back is replaced when it was followed by a comma, or both sides are numbers.
+    /// The word before a take-back is replaced when both sides are numbers, or it was followed by a comma and what
+    /// comes after isn't a new clause.
     private static func corrects(_ before: String, with after: String) -> Bool {
         let digits = { (word: String) in word.contains(where: \.isNumber) }
-        return before.hasSuffix(",") || (digits(before) && digits(after))
+        if digits(before) && digits(after) { return true }
+        return before.hasSuffix(",") && !clauseStarts.contains(core(after).lowercased())
     }
 
     private static func core(_ word: String) -> String {

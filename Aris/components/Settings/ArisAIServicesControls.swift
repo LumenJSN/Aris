@@ -31,6 +31,8 @@ final class ArisAIServicesModel: ObservableObject {
     @Published var sheet: ArisAISheet?
     /// Typed text by field: "key:<holder>", "jev", "model:<id>".
     @Published var drafts: [String: String] = [:]
+    /// 저장된 키's rows while one is being cleared (ArisSavedKeyRows): a first press asks, a cleared row keeps its place.
+    @Published var keyRows = ArisSavedKeyRows()
     var perform: (ArisAIAction) -> Void = { _ in }
     var performSheet: (ArisAISheetAction) -> Void = { _ in }
 

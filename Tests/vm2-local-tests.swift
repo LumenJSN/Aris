@@ -442,16 +442,16 @@ private func routineStopAccountTests() {
     let noAI = vm2NoAI.line(korean: false)
     // Local step, then an AI step on a Mac with no AI, then a step never reached.
     let mixed = vm2Feed(ArisRoutineRun(routine: vm2Mixed, korean: false), [.answer("Timer set."), .failure(noAI)])
-    let account = "The “mix” routine stopped at step 2: No AI is ready on this Mac. Connect one in Settings › AI services.\n\n### 1. set a 1 minute timer\nTimer set.\n\n### 2. check my mail\nNot done.\n\n### Not run\n- 3. tell me the time"
+    let account = "The “mix” routine stopped at step 2: No AI is ready on this Mac. Connect one in Settings › Talking to Aris › AI · Model.\n\n### 1. set a 1 minute timer\nTimer set.\n\n### 2. check my mail\nNot done.\n\n### Not run\n- 3. tell me the time"
     check(mixed.effects.last == .finish(.answer(account)), "routine stop: with no AI the local step is done, the AI step stops the routine, and the account says where, why, what was done and what was not")
     check(ArisRoutineAccount.stoppedShort(mixed.run.outcomes) && ArisRoutineAccount.failureLine(mixed.run.outcomes) == noAI,
           "routine stop: the step that stopped it is marked failed, and its failure line is kept for the button")
     // The first step is the AI's and there is none: nothing was done, and the turn says the routine stopped (never the bare line).
     let first = vm2Feed(ArisRoutineRun(routine: vm2Routine("mail", ["check my mail", "tell me the time"]), korean: false), [.failure(noAI)])
-    check(first.effects == [.finish(.failure("The “mail” routine stopped at step 1: No AI is ready on this Mac. Connect one in Settings › AI services.\n\n### 1. check my mail\nNot done.\n\n### Not run\n- 2. tell me the time"))],
+    check(first.effects == [.finish(.failure("The “mail” routine stopped at step 1: No AI is ready on this Mac. Connect one in Settings › Talking to Aris › AI · Model.\n\n### 1. check my mail\nNot done.\n\n### Not run\n- 2. tell me the time"))],
           "routine stop: a first step with no AI says the routine stopped at step 1 and lists what was not done")
     let korean = vm2Feed(ArisRoutineRun(routine: vm2Routine("test", ["메일 확인해 줘", "지금 몇 시야"]), korean: true), [.failure(vm2NoAI.line(korean: true))])
-    check(korean.effects == [.finish(.failure("‘test’ 루틴은 1단계에서 멈췄어요: 지금 쓸 수 있는 AI가 없어요. 설정 › AI 서비스에서 AI를 하나 연결해 주세요.\n\n### 1. 메일 확인해 줘\n하지 못했어요.\n\n### 하지 않은 단계\n- 2. 지금 몇 시야"))],
+    check(korean.effects == [.finish(.failure("‘test’ 루틴은 1단계에서 멈췄어요: 지금 쓸 수 있는 AI가 없어요. 설정 › Aris와 말하기 › AI · 모델에서 AI를 하나 연결해 주세요.\n\n### 1. 메일 확인해 줘\n하지 못했어요.\n\n### 하지 않은 단계\n- 2. 지금 몇 시야"))],
           "routine stop: the same in Korean")
     // Every way a routine stops leaves its last step unfinished; a run to the end does not.
     let stops: [ArisRoutineRun.Outcome] = [.failed("x"), .declined("no"), .unanswered(""), .handedOut]
@@ -617,18 +617,18 @@ private func whyNotAfterTheAIsOwnRefusalTests() {
     rig.turn("pay my phone bill", answer: refusedByAI)
     let answer = rig.why("why not?", after: "pay my phone bill", reply: refusedByAI)
     check(answer != nil, "why not: after a request the AI turned down itself, “why not?” is answered from the record, not by the AI")
-    check(vm2Lead(answer) == "Aris's rules didn't refuse that. Claude answered in its own words, and no command was tried. Your request does have a word about paying, and Aris never pays, orders, subscribes or moves money.",
+    check(vm2Lead(answer) == "Aris's rules didn't refuse that. Claude answered in its own words, and no command was tried. Your request does have a word about paying, and Aris pays only on your own yes on its card, each time.",
           "why not: it says Aris's rules refused nothing, who answered, that nothing was tried, and the money rule their words point at")
     let copy = ArisWhyCopy(korean: false)
-    check(answer?.contains("- " + copy.label(copy.requestLabel, "“pay my phone bill”")) == true && answer?.contains("- " + copy.label(copy.insteadLabel, "That part is yours to do.")) == true
-          && answer?.contains("Nothing was refused by Aris's gate. Your request has a word about paying: Aris never pays, orders, subscribes or moves money.") == true,
+    check(answer?.contains("- " + copy.label(copy.requestLabel, "“pay my phone bill”")) == true && answer?.contains("- " + copy.label(copy.insteadLabel, "Ask again and answer the card yourself.")) == true
+          && answer?.contains("Nothing was refused by Aris's gate. Your request has a word about paying: Aris pays only on your own yes on its card, each time.") == true,
           "why not: the list has the request, the rule in plain words and what he can do instead")
     check(answer?.contains("I don't know") == false && answer?.contains("that wasn't done:") == false, "why not: nothing is guessed, and no gate refusal is claimed")
     // Korean, and a request with no rule known: only that Aris did not refuse it and the AI answered in its own words.
     let korean = VM2WhyRig()
     korean.turn("휴대폰 요금 결제해 줘", answer: "결제는 제가 할 수 없어요.")
     check(vm2Lead(korean.why("왜 안 돼?", after: "휴대폰 요금 결제해 줘", reply: "결제는 제가 할 수 없어요."))
-          == "Aris의 규칙이 막은 건 아니에요. Claude가 자기 말로 답한 거예요, 실행하려던 명령도 없었고요. 다만 요청에 돈을 내는 말이 있는데, 돈이 드는 일은 할 수 없어요.",
+          == "Aris의 규칙이 막은 건 아니에요. Claude가 자기 말로 답한 거예요, 실행하려던 명령도 없었고요. 다만 요청에 돈을 내는 말이 있는데, 결제는 할 때마다 카드에서 직접 ‘네’라고 하셔야 해요.",
           "why not: the same in Korean, with the gate's own money line")
     let plain = VM2WhyRig()
     plain.turn("book me a table at the italian place", answer: "I can't book tables.")

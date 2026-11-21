@@ -55,25 +55,52 @@ struct ArisSettingsSnapshot: Equatable {
 
     // 대화
     var wakeWord = true
+    /// The wake name as typed, and why the wake word is or isn't listening (ArisWakeStatus).
+    var wakeName = ArisWakeName.defaultName
+    var wakeStatus = ""
     var hasVoiceModel = false
     /// 호출어 녹음 and 하루 소리 모으기 (ArisWakeRecordRows).
     var wakeRecord = ArisWakeRecordSummary()
+    /// 내 목소리 (ArisVoiceIDRows).
+    var voiceID = ArisVoiceIDSummary()
     var busy = false
     var talkCaps = ["⌥", "Space"]
     var minutes = 5
     /// The always-on conversation: seconds of silence that end it (0: off), and barge-in through the speakers.
     var silence = 30
     var bargeInSpeakers = true
+    /// 에코 제거 오디오 (새 엔진): `arisDuplexAudio`, off unless turned on.
+    var duplexAudio = false
+    /// 들은 말 다듬기 as it is in effect (ArisHearRepairSetting: on with 자동 until it is set).
+    var hearRepair = false
+    /// 팀원 and 스킬, counted for their rows (the sheets show the rest).
+    var teamCount = 0
+    var skillCount = 0
+    /// API keys saved in the keychain (데이터 · 개인정보 lists them: the AI view draws them).
+    var savedKeys = 0
+    /// The terminal a Claude Code teammate opens in, and the ones installed.
+    var teammateTerminal = "auto"
+    var terminals: [ArisTerminal] = []
     /// The output meter hears only zeros while an app plays: System Audio permission is likely missing.
     var systemAudioMissing = false
+    /// A tap has read real sound since launch (ArisOutputMeter.tapProven): the permission is known to be there. macOS
+    /// can't be asked about it otherwise, so until then it is not shown as allowed (VM run 2026-11-18, D6).
+    var systemAudioProven = false
     var sounds = true
     /// The evening chip that offers the day-end summary (ArisDayEndSetting).
     var dayEndOffer = true
+    /// The day in review (ArisRecapSetting): `arisRecap`, off unless turned on.
+    var recap = false
+    /// 실험 기능 (ArisLabsSetting): Core 2 and show it once, off unless turned on.
+    var core2 = false
+    var teach = false
     /// Aris is muted; and the night part of quiet time as stored (ArisQuietHours).
     var muted = false
     var quietHours = ArisQuietHours.standard
     /// What the Claude ear's ring shows: "fiveHour", "sevenDay" or "auto" (ClaudeRingMode).
     var claudeRing = "fiveHour"
+    /// Aris's hooks are in Claude Code's settings (as last read through the folder's grant; false when never granted).
+    var claudeConnected = false
     var brain = "codex"
     var computerEngine = "aris"
     var computerEngines: [ArisSettingOption] = [.init(id: "aris", title: "Aris (기본)"), .init(id: "peekaboo", title: "Peekaboo (무료)"), .init(id: "codex", title: "GPT (Codex)")]
@@ -102,10 +129,15 @@ struct ArisSettingsSnapshot: Equatable {
     var confirmingWorkClear = false
     /// 저장된 단계 (ArisSavedStepsSettingsRows): the saved desktop steps (nil until the agent answers).
     var savedSteps: [ArisSavedStepsItem]?
+    /// The saved request whose 지우기 was pressed once and waits for 정말 지우기 (fifth VM run, M1).
+    var savedStepsConfirming: String?
+    /// The taught procedure being renamed (its row's key), the name typed so far, and why the last 저장 didn't take.
+    var savedStepsRenaming: String?
+    var savedStepsName = ""
+    var savedStepsRenameProblem: ArisSavedStepsSettingsRows.RenameProblem?
 
     // 목소리 · 언어
     var languages: [ArisSettingOption] = [.init(id: "ko", title: "한국어"), .init(id: "en", title: "English")]
-    var cloud = true
     var hasVoiceKey = false
     var voiceName = ""
     var speed = 1.0
@@ -122,6 +154,8 @@ struct ArisSettingsSnapshot: Equatable {
     }
     var pasteLastCaps = ["⌃", "⌘", "V"]
     var brainPolish = false
+    /// 받아쓰기 쓰기 (ArisDictationSwitch): off, the page's other dictation rows are dimmed.
+    var dictationOn = true
     /// 받아쓰기 알약 보이기 (ArisDictationPillCenter).
     var dictationPill = true
     /// 쉴 때도 보이기: the pill's idle sliver between dictations (ArisDictationPillRules showIdle).
@@ -146,6 +180,8 @@ struct ArisSettingsSnapshot: Equatable {
     var googleCalendars = 0
     var allDay = true
     var joinMeeting = true
+    /// 다른 AI로 넘기기, off by default.
+    var brainFallback = false
     var openIn = "apple"
 
     // AI 서비스
@@ -206,6 +242,11 @@ struct ArisSettingsSnapshot: Equatable {
 
     // 정보
     var versionLine = ""
+    /// 정보 › 업데이트: only a build that updates itself has the section (ArisUpdatePolicy); its 자동으로 업데이트 switch
+    /// and the version 업데이트 확인 stands beside.
+    var updates = false
+    var autoUpdate = true
+    var appVersion = ""
 
     // 노치 · 노치 기능's further rows
     var more = ArisMoreSettings()

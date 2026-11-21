@@ -71,6 +71,16 @@ final class ArisStallWatch: @unchecked Sendable {
         }
     }
 
+    /// Stops watching while nothing can use it (the displays asleep, another user's session in front): no beat
+    /// every half second then. `start()` begins again with a fresh clock, so the pause isn't taken for a stall.
+    func stop() {
+        queue.async { [self] in
+            timer?.cancel()
+            timer = nil
+            clock = ArisStallClock()
+        }
+    }
+
     private func tick() {
         switch clock.tick(now: Self.now) {
         case .post:

@@ -34,11 +34,32 @@ enum ArisDeixis {
         + #"|\b(remember|memorize|note|know|hear|write|jot|take|save)\s+(down\s+)?this(\s+down)?\s*[:,;—–-]\s*\S|\bthis\s*:\s*\S"#
     private static let rewriteWords = #"(?i)바꿔|고쳐|다듬어|번역해|교정해|줄여|늘려|정리해서 바꿔|\b(rewrite|rephrase|translate|fix|shorten|polish)\b"#
 
+    /// What he selected, however he says it (tenth VM run, item 5: "선택한 파일 이름을 …로 바꿔 줘" went without the Finder
+    /// selection that "이 파일 …" carried): 선택한 / 선택된 / 선택해 둔 / 고른 / 지금 고른 / 골라 놓은 before a thing or
+    /// 거, "the file I selected", "these files", "the files I picked". "파일 선택하는 법" and "잘 고른 것 같아" select nothing.
+    private static let picked = #"(선택(한|된|해 ?둔|해 ?놓은|되어 ?있는|돼 ?있는)|(?<![가-힣])고른|골라 ?(둔|놓은))"#
+    private static let selection = picked + #"\s*("# + things + #"|폴더|항목|거|것|걸|게|건)"# + #"(?![가-힣]*\s*(같|맞))"#
+        + #"|(?i)\bthese\s+(\w+\s+)?(files?|folders?|documents?|docs?|pdfs?|photos?|pictures?|images?|items?)\b"#
+        + #"|\b(files?|folders?|documents?|photos?|pictures?|images?|items?|ones?|things?)\s+(that\s+)?(i|i've|i have)\s+(just\s+)?(selected|picked|chose|chosen|highlighted)\b"#
+
+    static func refersToSelection(_ text: String) -> Bool {
+        text.range(of: selection, options: .regularExpression) != nil
+    }
+
     static func refersToScreen(_ text: String) -> Bool {
         // Files given to Aris ride along (ArisPendingFiles): "이 파일" / "이거" is them, not the screen.
         guard !meansFileWork(text), !ArisPendingFiles.carriesFiles(text) else { return false }
         let text = text.replacingOccurrences(of: setAside, with: " ", options: .regularExpression)
         return text.range(of: korean, options: .regularExpression) != nil || text.range(of: english, options: .regularExpression) != nil
+            || actsHere(text) || refersToSelection(text)
+    }
+
+    /// "여기 고쳐 줘", "여기에 써 줘", "put it here" (jv-focus): "여기" as the place on screen to act, never the owner's own
+    /// place ("여기 날씨", "near here": ArisFocusWords.pointsHere).
+    private static let hereVerbs = #"고쳐|고치|바꿔|바꾸|써|쓰고|적어|넣어|붙여|채워|정리|요약|번역|답장|지워|다듬어|(?i)\b(fix|change|write|put|fill|paste|translate|summari[sz]e|edit|reply)\b"#
+
+    static func actsHere(_ text: String) -> Bool {
+        ArisFocusWords.pointsHere(text) && text.range(of: hereVerbs, options: .regularExpression) != nil
     }
 
     /// Asking Aris to look, in words that name no "이거": the screen itself ("화면 봐 줘", "화면에 뭐 있어", "look at my

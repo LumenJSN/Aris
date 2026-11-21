@@ -83,6 +83,16 @@ final class ArisVolume: @unchecked Sendable {
         }
     }
 
+    /// Whether the default output is muted now (its hardware mute, else a level at silence); nil without a device. For
+    /// what Aris says after a spoken mute.
+    func isMutedNow() -> Bool? {
+        queue.sync {
+            guard let current = output.defaultDevice() else { return nil }
+            if output.hasMute(current) { return output.isMuted(current) }
+            return ((current == device ? target.pending : nil) ?? output.volume(current)).map { $0 <= ArisVolumeRules.silence }
+        }
+    }
+
     /// For tests: returns once queued commands and their delayed writes are done.
     func waitUntilIdle() {
         queue.sync {}

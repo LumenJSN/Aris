@@ -83,7 +83,8 @@ enum ArisActionGate {
     /// `notes`: what this turn's hand-offs did so far (a card shown, his no), kept by the caller for the turn.
     static func answer(_ words: [String], turn: ArisMessageTurn, tools: String, home: String, limit: TimeInterval, notes: ArisHandOffNotes,
                        alwaysAsks: Bool = false, run: ([String]) -> ArisMCPOutcome) -> ArisMCPOutcome {
-        let decided = decide(words, turn: turn, tools: tools, home: home, declined: notes.declined, alwaysAsks: alwaysAsks)
+        // Through the one gate entry (ArisCapabilityGate), which asks `decide` below.
+        let decided = ArisCapabilityGate.handOff(words, turn: turn, tools: tools, home: home, declined: notes.declined, alwaysAsks: alwaysAsks)
         turn.auditLine(decided.audit)
         let what = words.prefix(2).joined(separator: " ")
         // When the automatic check let the call run (its "확인함" mark is given only once the call worked).

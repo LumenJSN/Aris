@@ -1,6 +1,86 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "다른 AI로 넘기기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hand off to another AI"
+          }
+        }
+      }
+    },
+    "안 될 때": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When it can't answer"
+          }
+        }
+      }
+    },
+    "고른 AI가 한도에 닿거나 이 Mac에 없으면 다른 AI가 대신 답해요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When the AI you chose reaches its limit or isn't on this Mac, another AI answers instead."
+          }
+        }
+      }
+    },
+    "꺼 두면 고른 AI만 답해요. 안 될 때는 왜 안 되는지 말해요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While it's off, only the AI you chose answers. When it can't, it says why."
+          }
+        }
+      }
+    },
+    "음성 인식": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech Recognition"
+          }
+        }
+      }
+    },
+    "들은 말을 글로 옮겨요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turns what it hears into text."
+          }
+        }
+      }
+    },
+    "입력 모니터링": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input Monitoring"
+          }
+        }
+      }
+    },
+    "어느 앱에서나 받아쓰기 키와 동그라미 키를 들어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hears the dictation key and the circle key in any app."
+          }
+        }
+      }
+    },
     "%@ 외 %d개": {
       "localizations": {
         "en": {
@@ -841,6 +921,16 @@
         }
       }
     },
+    "%d명": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d teammates"
+          }
+        }
+      }
+    },
     "%d일 전 업데이트": {
       "localizations": {
         "en": {
@@ -1237,6 +1327,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "The only AI"
+          }
+        }
+      }
+    },
+    "AI · 모델": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI · Model"
+          }
+        }
+      }
+    },
+    "AI · 모델 열기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open AI · Model"
           }
         }
       }
@@ -1811,12 +1921,32 @@
         }
       }
     },
-    "Aris가 이 Mac에 만든 것을 모두 찾아 지워요. 끝나면 앱이 닫혀요.": {
+    "Aris가 말하는 동안 말을 걸면 멈추고 들어요.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Finds and removes everything Aris made on this Mac. The app closes when it's done."
+            "value": "Speak while Aris is talking and it stops to listen."
+          }
+        }
+      }
+    },
+    "Aris가 이 Mac에 만든 것을 모두 찾아 지워요. 끝나면 닫기를 눌러 앱을 닫아 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finds and removes everything Aris made on this Mac. When it's done, press Close to quit the app."
+          }
+        }
+      }
+    },
+    "Aris가 해 주는 일과 그 일에 쓰는 것들이에요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What Aris does for you, and what it uses to do it."
           }
         }
       }
@@ -1867,6 +1997,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Talk to Aris"
+          }
+        }
+      }
+    },
+    "Aris와 말하기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Talking to Aris"
           }
         }
       }
@@ -2157,6 +2297,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Paste a GitHub link"
+          }
+        }
+      }
+    },
+    "GitHub 링크를 붙여 넣거나 말로 설명해요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste a GitHub link or describe it in words."
           }
         }
       }
@@ -2671,12 +2821,12 @@
         }
       }
     },
-    "같은 일을 세 번 연달아 허락하면 앞으로 그냥 할지 물어보고, 여기서 취소하면 다시 물어봐요. 앱 조작, 명령 실행, 파일 수정, 메일 보내기, 영구 삭제는 늘 물어보고, 돈이 드는 일은 하지 않아요.": {
+    "같은 일을 세 번 연달아 허락하면 앞으로 그냥 할지 물어보고, 여기서 취소하면 다시 물어봐요. 앱 조작, 명령 실행, 파일 수정, 메일 보내기, 영구 삭제는 늘 물어보고, 결제는 할 때마다 카드로 물어봐요.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow the same thing three times in a row and Aris asks whether to just do it from then on; cancel it here and it asks again. Working in apps, running commands, changing files, sending mail and deleting for good are always asked, and Aris never spends money."
+            "value": "Allow the same thing three times in a row and Aris asks whether to just do it from then on; cancel it here and it asks again. Working in apps, running commands, changing files, sending mail and deleting for good are always asked, and every payment is asked on its own card."
           }
         }
       }
@@ -2851,6 +3001,16 @@
         }
       }
     },
+    "대화 기록, 기억과 로그는 이 Mac의 ~/.config/aris에만 있어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversations, memories and logs are kept only on this Mac, in ~/.config/aris."
+          }
+        }
+      }
+    },
     "대화 기록과 로그가 있는 폴더예요.": {
       "localizations": {
         "en": {
@@ -2877,6 +3037,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Moves files in Desktop, Documents and Downloads, and puts them back."
+          }
+        }
+      }
+    },
+    "데이터가 있는 곳": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where your data is"
           }
         }
       }
@@ -2997,6 +3167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "The dictation key is one key held by itself. Pick the right ⌥, ⌘ or ⌃, or fn"
+          }
+        }
+      }
+    },
+    "받아쓰기 키를 두 번 빠르게 누르면 손을 떼고 말할 수 있고, 한 번 더 누르면 넣어요. Esc로 취소하고, 한 번에 20분까지예요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press the dictation key twice quickly to talk hands-free, and once more to insert. Esc cancels; up to 20 minutes at a time."
           }
         }
       }
@@ -3241,6 +3421,16 @@
         }
       }
     },
+    "에코 제거 오디오 (새 엔진)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Echo-cancelled audio (new engine)"
+          }
+        }
+      }
+    },
     "여기 없는 언어로 말하면 소리 나는 대로 적혀요.": {
       "localizations": {
         "en": {
@@ -3407,26 +3597,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "A meeting that is on, or starts within 10 minutes, opens its join link."
-          }
-        }
-      }
-    },
-    "짧은 말을 AI보다 먼저 알아듣는 작은 모델(TypeSafe Jev) · 없어도 돼요": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A small model that takes short requests before the AI does (TypeSafe Jev) · optional"
-          }
-        }
-      }
-    },
-    "TypeSafe Jev · 켜짐 · ": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TypeSafe Jev · on · "
           }
         }
       }
@@ -4341,6 +4511,16 @@
         }
       }
     },
+    "권한, 단축키, 시작, 업데이트와 내 데이터예요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permissions, shortcuts, startup, updates and your data."
+          }
+        }
+      }
+    },
     "귀: ": {
       "localizations": {
         "en": {
@@ -5001,6 +5181,16 @@
         }
       }
     },
+    "노치": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notch"
+          }
+        }
+      }
+    },
     "노치 · 사이드 노치": {
       "localizations": {
         "en": {
@@ -5121,6 +5311,16 @@
         }
       }
     },
+    "노치, 사이드 노치, 음악, 선반과 창의 모양이에요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The notch, side notches, music, shelf and the window's look."
+          }
+        }
+      }
+    },
     "노치가 없는 화면의 노치를 미션 컨트롤에 보이지 않게 해요.": {
       "localizations": {
         "en": {
@@ -5207,6 +5407,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Corners that follow the height"
+          }
+        }
+      }
+    },
+    "누가 답하고, 어떤 모델이 얼마나 깊이 생각할지": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Who answers, and which model thinks how hard"
+          }
+        }
+      }
+    },
+    "누가 답하고, 어떻게 듣고 말하고, 언제 조용한지 정해요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Who answers, how Aris hears and speaks, and when it stays quiet."
           }
         }
       }
@@ -5731,6 +5951,16 @@
         }
       }
     },
+    "데이터 · 개인정보": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Data · Privacy"
+          }
+        }
+      }
+    },
     "데이터 내보내기": {
       "localizations": {
         "en": {
@@ -5987,6 +6217,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sign in"
+          }
+        }
+      }
+    },
+    "로그인 정보는 각 앱의 것을 읽기만 하고 Aris가 따로 저장하지 않아요. 키와 토큰은 키체인에만 저장돼요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-ins are only read from each app; Aris keeps no copy. Keys and tokens are kept only in the keychain."
           }
         }
       }
@@ -6987,6 +7227,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Documents"
+          }
+        }
+      }
+    },
+    "문서 담당, 리서처, 일정 비서": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Docs writer, researcher, scheduler"
           }
         }
       }
@@ -8461,6 +8711,16 @@
         }
       }
     },
+    "시스템 오디오": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System audio"
+          }
+        }
+      }
+    },
     "시스템 오디오 권한 필요": {
       "localizations": {
         "en": {
@@ -8517,6 +8777,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Downloads code when it runs"
+          }
+        }
+      }
+    },
+    "실험 중인 엔진으로, 스피커로 나오는 Aris 목소리를 빼고 들어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An experimental engine that hears past Aris's own voice from the speakers."
           }
         }
       }
@@ -8701,6 +8971,76 @@
         }
       }
     },
+    "%@가 이 Mac에 설치되어 있지 않아 기본 이름만 보여요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ isn't installed on this Mac, so only the usual names are shown"
+          }
+        }
+      }
+    },
+    "이름 바꾸기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename"
+          }
+        }
+      }
+    },
+    "새 이름": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New name"
+          }
+        }
+      }
+    },
+    "이름을 바꿨어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renamed"
+          }
+        }
+      }
+    },
+    "보여 주고 가르친 것": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taught by showing"
+          }
+        }
+      }
+    },
+    "그 이름은 이미 있어요. 다른 이름을 써 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That name is already taken. Use another one."
+          }
+        }
+      }
+    },
+    "이름을 바꾸지 못했어요. 바뀐 건 없어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't rename it. Nothing changed."
+          }
+        }
+      }
+    },
     "아직 답할 수 있는 AI가 없어요": {
       "localizations": {
         "en": {
@@ -8711,12 +9051,12 @@
         }
       }
     },
-    "아직 답할 수 있는 AI가 없어요. 위에서 Claude, ChatGPT, Gemini나 API 키로 쓰는 AI를 하나 골라 주세요.": {
+    "아직 답할 수 있는 AI가 없어요. 오른쪽 메뉴에서 Claude, ChatGPT, Gemini나 API 키로 쓰는 AI를 하나 골라 주세요.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No AI can answer yet. Choose Claude, ChatGPT, Gemini or one that uses an API key above."
+            "value": "No AI can answer yet. Choose Claude, ChatGPT, Gemini or one that uses an API key from the menu on the right."
           }
         }
       }
@@ -8961,6 +9301,16 @@
         }
       }
     },
+    "앱 다루기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working in apps"
+          }
+        }
+      }
+    },
     "앱 데이터와 API 키": {
       "localizations": {
         "en": {
@@ -9037,6 +9387,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "about 220 MB"
+          }
+        }
+      }
+    },
+    "어느 AI로 답하든 똑같이 써요. 읽기는 바로 하고, 보내거나 바꾸는 일은 매번 카드로 물어봐요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used the same whichever AI answers. Reading happens right away; sending or changing anything is asked on a card each time."
           }
         }
       }
@@ -10006,7 +10366,17 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Name (for example github)"
+            "value": "Name (e.g. github)"
+          }
+        }
+      }
+    },
+    "이름, 역할, 두뇌, 쓸 수 있는 것, 기억": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name, role, brain, what it can use, memory"
           }
         }
       }
@@ -10461,6 +10831,26 @@
         }
       }
     },
+    "하루 정리를 자세히 말하기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tell the day in more detail"
+          }
+        }
+      }
+    },
+    "“오늘 뭐 했어?”에 네다섯 문장으로 답해요: 끝낸 일, Aris가 한 일, 끝난 작업, 기다리는 것, 내일. “뭐 남았어?”도 알아들어요. 목록은 그대로예요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“What did I do today?” gets four or five sentences: what you finished, what Aris did, the work that ended, what waits for you, and tomorrow. “What's left?” works too. The list stays as it is."
+          }
+        }
+      }
+    },
     "저장": {
       "localizations": {
         "en": {
@@ -10487,6 +10877,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "The saved API key is used as it is"
+          }
+        }
+      }
+    },
+    "저장된 키": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved keys"
           }
         }
       }
@@ -10687,6 +11087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Gesture details"
+          }
+        }
+      }
+    },
+    "조용히 · 알림": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quiet · Alerts"
           }
         }
       }
@@ -11007,6 +11417,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Window"
+          }
+        }
+      }
+    },
+    "창 · 테마": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window · Theme"
           }
         }
       }
@@ -11551,6 +11971,16 @@
         }
       }
     },
+    "클립보드 열기 (왼쪽 사이드 노치)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open clipboard (left side notch)"
+          }
+        }
+      }
+    },
     "클립보드 탭": {
       "localizations": {
         "en": {
@@ -11567,6 +11997,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "The clipboard tab is off, so this opens nothing for now."
+          }
+        }
+      }
+    },
+    "키 바꾸기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replace the key"
           }
         }
       }
@@ -12431,6 +12871,16 @@
         }
       }
     },
+    "하루 예산": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daily budget"
+          }
+        }
+      }
+    },
     "하루 예산 (달러)": {
       "localizations": {
         "en": {
@@ -12477,6 +12927,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "한국어"
+          }
+        }
+      }
+    },
+    "할 수 있는 일": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What Aris can do"
           }
         }
       }
@@ -12586,7 +13046,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Header or environment variable name (optional)"
+            "value": "Header or env var (optional)"
           }
         }
       }
@@ -12807,6 +13267,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Empty the Trash and it's gone. Thank you for having Aris."
+          }
+        }
+      }
+    },
+    "빠른 명령": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick commands"
           }
         }
       }
@@ -13177,6 +13647,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Before adding"
+          }
+        }
+      }
+    },
+    "시작 · 언어 · 화면": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Startup · Language · Displays"
           }
         }
       }
@@ -13767,6 +14247,1116 @@
           "stringUnit": {
             "state": "translated",
             "value": "When off, it appears only while you dictate."
+          }
+        }
+      }
+    },
+    "업데이트": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updates"
+          }
+        }
+      }
+    },
+    "자동으로 업데이트": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update automatically"
+          }
+        }
+      }
+    },
+    "새 버전을 받아 두었다가 Aris가 쉴 때 설치하고 다시 열어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads new versions in the background, installs them while Aris is idle and reopens it."
+          }
+        }
+      }
+    },
+    "업데이트 확인": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for updates"
+          }
+        }
+      }
+    },
+    "지금 버전 %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current version %@"
+          }
+        }
+      }
+    },
+    "확인하기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check now"
+          }
+        }
+      }
+    },
+    "받아쓰기 쓰기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use dictation"
+          }
+        }
+      }
+    },
+    "끄면 단축키와 알약이 꺼지고, 다른 받아쓰기 앱과 겹치지 않아요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When off, the shortcut and the pill are off too, so another dictation app has the keys to itself."
+          }
+        }
+      }
+    },
+    "기록 폴더가 아직 없어요. Aris 도우미가 처음 켜지면 생겨요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The records folder isn't there yet. Aris's helper makes it the first time it runs."
+          }
+        }
+      }
+    },
+    "내 단어장을 만들어요. 이 자리에 저장해야 Aris가 읽어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create your word list. Save it here so Aris can read it."
+          }
+        }
+      }
+    },
+    "단어장은 처음 보여 준 자리에 저장해야 Aris가 읽어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save the word list where it was first shown, or Aris can't read it."
+          }
+        }
+      }
+    },
+    "단어장을 만들지 못했어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't create the word list."
+          }
+        }
+      }
+    },
+    "단어장을 열지 못했어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't open the word list."
+          }
+        }
+      }
+    },
+    "Claude Code 연결": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect Claude Code"
+          }
+        }
+      }
+    },
+    "세션과 승인 요청이 노치에 와요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sessions and approval requests come to the notch."
+          }
+        }
+      }
+    },
+    "연결 끊기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect"
+          }
+        }
+      }
+    },
+    "이 Aris에는 Claude Code 연결 스크립트가 들어 있지 않아요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This copy of Aris has no Claude Code connection script."
+          }
+        }
+      }
+    },
+    "이미 연결돼 있어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Already connected."
+          }
+        }
+      }
+    },
+    "Claude Code를 연결했어요. 새로 여는 세션부터 노치에 보여요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code is connected. Sessions you start from now show in the notch."
+          }
+        }
+      }
+    },
+    "연결돼 있지 않아요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not connected."
+          }
+        }
+      }
+    },
+    "Claude Code 연결을 끊었어요. 설정 파일은 백업해 뒀어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code is disconnected. Its settings file was backed up."
+          }
+        }
+      }
+    },
+    "~/.claude 폴더를 고르지 않아서 아무것도 바꾸지 않았어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No ~/.claude folder was chosen, so nothing changed."
+          }
+        }
+      }
+    },
+    "~/.claude/settings.json을 읽을 수 없어서 아무것도 바꾸지 않았어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~/.claude/settings.json couldn't be read, so nothing changed."
+          }
+        }
+      }
+    },
+    "Claude Code 설정을 고치지 못했어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't change Claude Code's settings."
+          }
+        }
+      }
+    },
+    "곧 제거해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removing shortly"
+          }
+        }
+      }
+    },
+    "몇 초 뒤에 시작해요. 그 전에는 취소할 수 있어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It starts in a few seconds. Until then you can cancel."
+          }
+        }
+      }
+    },
+    "세션과 승인 요청을 노치로 받아요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get sessions and approval requests in the notch."
+          }
+        }
+      }
+    },
+    "모델 고르기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose models"
+          }
+        }
+      }
+    },
+    "깊은 일": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deep work"
+          }
+        }
+      }
+    },
+    "작업": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jobs"
+          }
+        }
+      }
+    },
+    "작은 도우미": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Small helper"
+          }
+        }
+      }
+    },
+    "말하거나 입력한 질문에 답할 때": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Answering what you say or type"
+          }
+        }
+      }
+    },
+    "찾아보거나 신중해야 하거나 화면을 볼 때": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Looking things up, careful work, reading the screen"
+          }
+        }
+      }
+    },
+    "백그라운드 작업과 팀원": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background jobs and teammates"
+          }
+        }
+      }
+    },
+    "요약, 받아쓰기 다듬기 같은 짧은 일": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Short tasks like summaries and polishing dictation"
+          }
+        }
+      }
+    },
+    "안전 확인은 바꾸지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safety checks stay as they are"
+          }
+        }
+      }
+    },
+    "직접 입력": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type a name"
+          }
+        }
+      }
+    },
+    "모델 이름을 써서 골라요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose by typing the model's name"
+          }
+        }
+      }
+    },
+    "목록에 없는 모델": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No longer listed"
+          }
+        }
+      }
+    },
+    "지금은 %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Now %@"
+          }
+        }
+      }
+    },
+    "말로 묻는 짧은 질문은 낮음, 여러 단계 일은 보통": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low for short spoken questions, medium for work with several steps"
+          }
+        }
+      }
+    },
+    "높음": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High"
+          }
+        }
+      }
+    },
+    "낮음": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low"
+          }
+        }
+      }
+    },
+    "최소": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimal"
+          }
+        }
+      }
+    },
+    "아주 높음": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extra high"
+          }
+        }
+      }
+    },
+    "최대": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Max"
+          }
+        }
+      }
+    },
+    "울트라": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ultra"
+          }
+        }
+      }
+    },
+    "추론 수준": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reasoning"
+          }
+        }
+      }
+    },
+    "%@가 알려 준 모델이에요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The models %@ lists"
+          }
+        }
+      }
+    },
+    "%@에서 목록을 받지 못해 기본 이름만 보여요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ didn't give its list, so only the usual names are shown"
+          }
+        }
+      }
+    },
+    "모델 목록을 확인하는 중이에요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking the model list"
+          }
+        }
+      }
+    },
+    "자동은 지금처럼 Aris가 일에 맞게 골라요. 고른 모델을 쓸 수 없게 되면 그 답만 자동으로 하고 알려 드려요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic lets Aris pick for the work, as now. If a model you chose stops working, that one answer uses automatic and says so."
+          }
+        }
+      }
+    },
+    "작은 도우미의 모델과 추론 수준": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The small helper's model and reasoning"
+          }
+        }
+      }
+    },
+    "모델 이름 (예: claude-opus-5-5)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model name (e.g. claude-opus-5-5)"
+          }
+        }
+      }
+    },
+    "모델 이름에는 영문, 숫자, - . _ : / 만 쓸 수 있어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A model name may use only letters, digits and - . _ : /"
+          }
+        }
+      }
+    },
+    "%@에서 쓸 수 없는 모델이에요: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ can't use this model: %2$@"
+          }
+        }
+      }
+    },
+    "고급 설정": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Advanced settings"
+          }
+        }
+      }
+    },
+    "백그라운드 에이전트가 제거를 거절해서 아무것도 지우지 않았어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The background helper refused the removal, so nothing was removed."
+          }
+        }
+      }
+    },
+    "허용됐는지는 처음 쓸 때 알 수 있고, 다른 앱에서 소리가 나면 듣기를 잠깐 멈춰요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whether it's allowed shows the first time it's used; it stops listening for a moment while another app makes sound."
+          }
+        }
+      }
+    },
+    "%@ 권한이 더 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ permission needed"
+          }
+        }
+      }
+    },
+    "%@ 외 권한 %d개가 더 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ and %d more permissions needed"
+          }
+        }
+      }
+    },
+    "짧은 말을 AI보다 먼저 알아듣는 작은 모델(TypeSafe) · 없어도 돼요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A small model that takes short requests before the AI does (TypeSafe) · optional"
+          }
+        }
+      }
+    },
+    "TypeSafe · 켜짐 · ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TypeSafe · on · "
+          }
+        }
+      }
+    },
+    "1명": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 teammate"
+          }
+        }
+      }
+    },
+    "%@ 외 권한 하나가 더 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ and one more permission needed"
+          }
+        }
+      }
+    },
+    "하루 정리를 저녁에 알려주기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offer the day's summary in the evening"
+          }
+        }
+      }
+    },
+    "새 코어 (Core 2)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New core (Core 2)"
+          }
+        }
+      }
+    },
+    "새 코어를 켠 채로 한 번 해 보이면, 이름을 붙여 저장하고 그 이름으로 다시 해요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "With the new core on, do something once and give it a name, and Aris does it again when you say the name."
+          }
+        }
+      }
+    },
+    "Aris가 직접 도구를 다루고, 모든 동작을 한 기준으로 판단해 기록하고 되돌릴 수 있게 해요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aris works its tools itself, judges every action by one rule, keeps a record of it and can undo it."
+          }
+        }
+      }
+    },
+    "보여 주고 가르치기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show it once"
+          }
+        }
+      }
+    },
+    "아직 시험 중인 기능이에요. 켜면 다음 질문부터 적용돼요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Features still being tried out. Turned on, they apply from the next question."
+          }
+        }
+      }
+    },
+    "실험 기능": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experimental"
+          }
+        }
+      }
+    },
+    "무료": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "free"
+          }
+        }
+      }
+    },
+    "연결된 API": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected APIs"
+          }
+        }
+      }
+    },
+    "TypeSafe 키": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TypeSafe key"
+          }
+        }
+      }
+    },
+    "요청한 말만 보내요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sends only the words of the request"
+          }
+        }
+      }
+    },
+    "한 달 약 %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "about %@ a month"
+          }
+        }
+      }
+    },
+    "$0.01 미만": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "under $0.01"
+          }
+        }
+      }
+    },
+    "키워드 규칙으로 알아들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "understood by keyword rules"
+          }
+        }
+      }
+    },
+    "말이 Mac 밖으로 나가지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nothing leaves this Mac"
+          }
+        }
+      }
+    },
+    "이 Mac에서 판단해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "decided on this Mac"
+          }
+        }
+      }
+    },
+    "그 서비스 요금으로": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "at that service's rates"
+          }
+        }
+      }
+    },
+    "%@ 키가 없어서 키워드 규칙으로 알아들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No %@ key, so keyword rules understand it for now"
+          }
+        }
+      }
+    },
+    "Jev 키가 있으면 Jev, 없으면 키가 있는 판단 모델, 그다음 연결된 API (요금을 아는 것 중 가장 싼 것 먼저), 그것도 없으면 키워드 규칙": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jev when its key is saved, else a decision model with a saved key, then a connected API (the cheapest with a known price first), else the keyword rules"
+          }
+        }
+      }
+    },
+    "키가 있는 것 중 가장 잘 듣는 순서로, 안 되면 다음으로 넘어가요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The best one that has a key; if it fails, the next one takes over"
+          }
+        }
+      }
+    },
+    "말하는 대로 글자가 떠요 · 한국어에 영어를 섞어도 잘 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Words appear as you speak · good at Korean mixed with English"
+          }
+        }
+      }
+    },
+    "듣기에만 써요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used only for listening"
+          }
+        }
+      }
+    },
+    "듣는 순서": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Order"
+          }
+        }
+      }
+    },
+    "지금은 이 Mac에서만 들어요. 위 메뉴에서 ElevenLabs Scribe, Soniox나 OpenAI를 한 번 골라 API 키를 넣으면 자동이 그것부터 써요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right now only this Mac listens. Pick ElevenLabs Scribe, Soniox or OpenAI in the menu above once and add its API key, and Automatic will use it first."
+          }
+        }
+      }
+    },
+    "추천": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recommended"
+          }
+        }
+      }
+    },
+    "OpenAI · 듣기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI · Listening"
+          }
+        }
+      }
+    },
+    "들은 말 다듬기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repair what was heard"
+          }
+        }
+      }
+    },
+    "잘못 들은 단어, 띄어쓰기, 한글로 적힌 영어 단어를 빠른 AI가 바로잡아요. 1초쯤 안에 안 되면 들은 그대로 써요. 자동일 때는 처음부터 켜져 있어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A fast AI corrects misheard words, spacing and English terms written in Hangul. If it takes more than about a second, the words are used as heard. On by default with Automatic."
+          }
+        }
+      }
+    },
+    "Aris가 알아야 할 단어": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Words Aris should know"
+          }
+        }
+      }
+    },
+    "이름, 앱, 용어를 한 줄에 하나씩 적어요. ‘들린 말 -> 맞는 말’처럼 적으면 그렇게 고쳐 들어요 · %d개": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Names, apps and terms, one per line. Write ‘heard -> meant’ and Aris hears it that way · %d"
+          }
+        }
+      }
+    },
+    "판단 모델": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decision models"
+          }
+        }
+      }
+    },
+    "키워드 규칙": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyword rules"
+          }
+        }
+      }
+    },
+    "설정 필요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setup needed"
+          }
+        }
+      }
+    },
+    "Jev와 같은 API(/v1/systemone)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jev-compatible API (/v1/systemone)"
+          }
+        }
+      }
+    },
+    "%@ 설정이 덜 돼서 키워드 규칙으로 알아들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ isn't fully set up, so keyword rules understand it for now"
+          }
+        }
+      }
+    },
+    "%@ 키": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ key"
+          }
+        }
+      }
+    },
+    "키 없이도 돼요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Works without a key"
+          }
+        }
+      }
+    },
+    "이 모델에 물어보려면 키가 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This model needs its key before it can be asked"
+          }
+        }
+      }
+    },
+    "배포 이름": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deployment name"
+          }
+        }
+      }
+    },
+    "모델 ID": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model ID"
+          }
+        }
+      }
+    },
+    "계정 ID": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account ID"
+          }
+        }
+      }
+    },
+    "리소스 주소": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resource endpoint"
+          }
+        }
+      }
+    },
+    "서버 주소": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server address"
+          }
+        }
+      }
+    },
+    "직접 띄운 서버": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your own server"
+          }
+        }
+      }
+    },
+    "지우면 이 키를 쓰는 기능이 멈춰요. 정말 지울까요?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What uses this key will stop working. Clear it?"
+          }
+        }
+      }
+    },
+    "지웠어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleared"
           }
         }
       }

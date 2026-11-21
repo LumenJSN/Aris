@@ -3,7 +3,8 @@
 //  aris-agent
 //
 //  What a brain's command-line tool says when it can't answer, turned into one line the user can read: a login that
-//  expired, a quota or load limit (another AI can take the question), or the tool's own words, named. Also the small
+//  expired, a quota or load limit (another AI can take the question, when 다른 AI로 넘기기 is on; for Claude only its
+//  plan's limit: a rate limit or an overload is a busy moment), or the tool's own words, named. Also the small
 //  pieces the runner uses to tell a changed CLI apart from a slow one: the last bytes of a child's stderr, and a count
 //  of lines its driver didn't recognise.
 //
@@ -17,6 +18,23 @@ enum ArisBrainFailure {
         text.range(of: #"(?i)(?<![a-z0-9])(usage limits?|rate limits?|rate_limits?|overloaded|quotas?|too many requests|429|529|capacity)(?![a-z0-9])"#,
                    options: .regularExpression) != nil
     }
+
+    /// The plan's own limit ran out ("usage limit", "limit reached", a quota): the brain really can't answer until it resets.
+    static func isUsageLimit(_ text: String) -> Bool {
+        text.range(of: #"(?i)(?<![a-z0-9])(usage limits?|quotas?|limit reached|hit your (?:usage )?limit)(?![a-z0-9])"#,
+                   options: .regularExpression) != nil
+    }
+
+    /// Whether `brain` is out for a while, as its error text says. Claude is out only when its plan's limit ran out: a
+    /// rate limit, an overload (429, 529) or a busy moment is a turn that failed, never "Claude is gone" (nothing then
+    /// skips it for the cooldown or sends the question to another company). The other brains keep every quota or load
+    /// word, as before.
+    static func isUnavailable(_ text: String, brain: ArisBrain) -> Bool {
+        brain == .claude ? isUsageLimit(text) : isUnavailable(text)
+    }
+
+    /// A busy moment (rate limit, overload) that is not the brain being out: said as a failure to try again.
+    static func isBusy(_ text: String, brain: ArisBrain) -> Bool { isUnavailable(text) && !isUnavailable(text, brain: brain) }
 
     /// The tool's login is missing or expired: only the user can fix it, in a terminal.
     static func isLoginProblem(_ text: String) -> Bool {
@@ -45,6 +63,9 @@ enum ArisBrainFailure {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = brain.title(english: !korean)
         if trimmed.isEmpty { return korean ? "\(brain.title)가 답하지 않았어요." : "\(name) didn't answer." }
+        if isBusy(trimmed, brain: brain) {
+            return korean ? "\(brain.title)가 지금 붐벼요. 잠시 뒤에 다시 해 주세요." : "\(name) is busy right now. Please try again in a moment."
+        }
         if isUnavailable(trimmed) {
             guard let reset = ArisBrainHealth.resetDate(in: trimmed, now: now, timeZone: timeZone) else {
                 return korean ? "\(brain.title) 한도에 닿았어요. 잠시 뒤에 다시 해 주세요." : "\(name) has reached its limit. Please try again in a little while."
@@ -60,8 +81,9 @@ enum ArisBrainFailure {
             // An API brain's login is its key, which the user saves in settings (never a terminal). The English names the
             // page alone: the app writes it as its own window names it (ArisSettingsPath).
             if brain == .api {
-                return korean ? "\(brain.title) 키가 맞지 않아요. 설정 › AI 서비스 › 두뇌에서 키를 다시 넣어 주세요."
-                    : "The key for the \(name) isn't right. Enter it again in Settings › AI 서비스."
+                let place = ArisSettingsNames.aiPlace(english: !korean)
+                return korean ? "\(brain.title) 키가 맞지 않아요. \(place)에서 키를 다시 넣어 주세요."
+                    : "The key for the \(name) isn't right. Enter it again in \(place)."
             }
             return korean ? "\(brain.title) 로그인이 필요해요: 터미널에서 \(command(for: brain)) 를 한 번 실행해 주세요."
                 : "\(name) needs you to log in: run \(command(for: brain)) once in Terminal."
@@ -104,7 +126,9 @@ enum ArisBrainFailure {
         // Only its last few lines count as why it ended: older ones are whatever it logged along the way.
         let tail = stderr.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             .suffix(3).joined(separator: "\n")
-        if isUnavailable(tail) { return .unavailable(tail) }
+        if isUnavailable(tail, brain: brain) { return .unavailable(tail) }
+        // Claude busy (a rate limit, an overload): said as such, never asked again at once (it would only meet the same).
+        if isBusy(tail, brain: brain) { return .say(friendly(tail, brain: brain, korean: korean)) }
         let login = isLoggedOut(tail)
         if !login, !acted, !isTask, events == 0, !retried { return .askAgain }
         let said = lastWords(tail)
@@ -165,7 +189,7 @@ enum ArisBrainFailure {
     /// The driver's event for a tool's error text: unavailable (raw, so the reset time can still be read) or a failure
     /// the user can read.
     static func event(_ text: String, brain: ArisBrain) -> ArisBrainEvent {
-        isUnavailable(text) ? .unavailable(text) : .failure(friendly(text, brain: brain))
+        isUnavailable(text, brain: brain) ? .unavailable(text) : .failure(friendly(text, brain: brain))
     }
 }
 

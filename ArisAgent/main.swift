@@ -33,7 +33,10 @@
 //    POST /open  {"path": "..."}   ->  {} (404 unless it's a .md right in ~/Documents/Aris): opens it in its default app
 //    POST /result {"op": "read"|"note", "path", "pid", "started"}  ->  read: {"text", "modified"}; note: {} or {"error"}
 //                 (404 unless it's a saved task result; the app's reader reads results here, the app can't)
-//    POST /warm  {"brain": "..."}   ->  {}   (the user started talking: start that AI's quick and work models)
+//    POST /warm  {"brain": "...", "fallback"?: bool}   ->  {}   (the user started talking: start that AI's quick and work
+//                models; another AI's only with "fallback" (다른 AI로 넘기기) from the app while the chosen one is out)
+//    POST /ask's "fallback": true (from the app itself only, ArisBrainFallback) lets a turn go to another AI on its own
+//                when the chosen one is out of its limit or missing; without it the chosen brain answers or says why not
 //    POST /stop                   ->  {}
 //    POST /log   {"turn": {...}}  ->  {}   (one turn's numbers, ArisTurnStats; kept in turns.jsonl)
 //    POST /todos {"op": "list"|"hide"|"finish", "text"?, "id"?}  ->  {"todos": [...], "due": [...]}
@@ -44,7 +47,7 @@
 //    POST /stock {symbol}  ->  the stock card (aris-tools stock <symbol> --json: price, change, high, low, time, points)
 //    POST /currency {ask}  ->  the currency card (aris-tools currency <amount> <FROM> <TO> --json: rate, time, the day's points)
 //    POST /maps {place, from?}  ->  the map card (aris-tools maps search|directions … --json: place, address, ETAs, route)
-//    POST /look  {}  ->  {"context": "...", "selected": bool, "editable": bool}: what "이거" points at (ArisLook)
+//    POST /look  {words?, regions?}  ->  {"context": "...", "selected": bool, "editable": bool, "focusKind"?, "writesHere"?}: what "이거" points at (ArisLook, jv-focus)
 //    POST /ask also takes "screen": that context; it then goes to Codex only, marked as outside text
 //    POST /ask also takes "images": [{"kind": "cursor"|"gesture"|"drawing", "mime": "image/png"|"image/jpeg", "data": base64,
 //                "badge"?: 1…8, "app"?, "title"?}] and "focus": "screen"|"panel" (ArisTurnImage; the body may be up to 24 MiB).
@@ -70,6 +73,9 @@
 //                and repeat with confirmed and the 409's summary as shown), 403 (not the Aris app itself (ArisPeer), or a
 //                yes that doesn't echo a live 409 card for that id, once: ArisPendingUndos), or {"error"} (500). No id: the
 //                latest undoable thing from the last day. The user's own request, so no AI gate; aris-tools checks every path.
+//    POST /trust {"op": "list"|"level"|"add"|"remove"|"cell", …}  ->  the trust settings (ArisTrustRoute; Core 2's level, standing
+//                grants and table cells, data only), 403 unless the caller is the Aris app itself. With `arisCore2` on, /activity,
+//                /undo and /undo-folder also read the record (ArisRecordRoutes) and /confirm answers its cards (ArisTrustGate).
 //    POST /inbox {"op": "fetch"}  ->  {"items": [{"id", "date", "kind", "title", "text", "file"?, "confirm"?}]}  (what scheduled
 //                jobs left for the user, oldest first: "result", "failure", "note", or "confirm" with a parked question's card,
 //                which the app asks when the user is there; ArisScheduler. The agent nudges com.lumenjsn.aris.inbox.)
@@ -87,6 +93,8 @@
 //    POST /message-tool {"turn", "to", "text"}  ->  {"status", "output"}: aris-tools message from the open Claude (ArisMessageGate)
 //    POST /action-tool {"turn", "words"}  ->  {"status", "output"}: a Claude's write, send or thing opened, handed over by aris-tools
 //                (ArisHandOff), judged as Codex's same command and asked on the user's card when that says to (ArisActionGate)
+//    POST /mind-call {"op": "decide"|"done", "turn", "id", …}  ->  with arisCore2 on, the MCP face's call through Core 2's
+//                one decision (the owner's card when due) and its record line (ArisMindRoute)
 //    POST /routine-tool {"turn", "words"}  ->  {"status", "output"}: aris-tools routine (the user's routines; ArisRoutineRoutes)
 //    POST /routine-step {"id", "local", "ok"?, "reply"?}  ->  {}: the app's answer for a routine's step offered to it (ArisRoutineHandBack)
 //    POST /aside-tool {"turn", "brief"}  ->  {"status", "output"}: aris-tools aside (website work for Aside), the same checks
@@ -113,7 +121,9 @@ signal(SIGPIPE) { _ in }
 // everything the user granted Aris, whoever started it: so it serves only as Aris's own launchd job, and its helper
 // modes below run only when that job stands behind them (or macOS charges the program that started them instead).
 // launchd's record is asked a few times: it names a job's process a moment after the process starts.
-let helperMode = CommandLine.arguments.dropFirst().first == "api-brain" || CommandLine.arguments.contains("--usage-report")
+let helperMode = CommandLine.arguments.dropFirst().first == "api-brain" || CommandLine.arguments.dropFirst().first == ArisHandsFace.mode
+    || CommandLine.arguments.dropFirst().first == "mind-brain"
+    || CommandLine.arguments.contains("--usage-report")
 var origin = ArisOrigin.facts(serving: !helperMode)
 // Looked at again only while launchd has not yet named its job's process; a record that names anything else is final.
 for _ in 0..<10 where !helperMode && !ArisOrigin.decision(origin, serving: true).allowed && ArisOrigin.mayYetBeJob(origin) {
@@ -126,11 +136,20 @@ guard ArisOrigin.allows(origin, serving: !helperMode) else {
 }
 if helperMode { ArisOrigin.armRecheck() }
 ArisOrigin.settleHome()
+// A child the helper started: its switches are the ones the helper put in its environment (ArisHelperSwitches).
+// The serving helper never reads them from its environment: it starts with every switch off until the app speaks.
+if helperMode { ArisHelperSwitches.shared.adopt(environment: ProcessInfo.processInfo.environment) }
 
 // `aris-agent api-brain --profile <id>`: an API brain's helper process (ArisAPIHelper), started by its runner. Nothing
 // else of the agent runs in it.
 if CommandLine.arguments.dropFirst().first == "api-brain" {
     ArisAPIHelper.runProcess()
+}
+// `aris-agent mind-brain --profile <id>`: the Mind's own loop for an API brain with arisCore2 on (ArisMindBrain).
+if CommandLine.arguments.dropFirst().first == "mind-brain" { ArisMindBrain.runProcess() }
+// `aris-agent hands-mcp --tools <aris-tools>`: the MCP face's stdio server, started by an open Claude (ArisHandsShim).
+if CommandLine.arguments.dropFirst().first == ArisHandsFace.mode {
+    ArisHandsShim.serve()
 }
 
 // `aris-agent --usage-report`: the usage report as JSON on stdout (every source, one whole cost pass), then exit.
@@ -149,6 +168,12 @@ ArisUsageScanner.shared.kick()
 
 // The shared secret, made here when none exists (the agent owns ~/.config/aris; the app and the hooks read the same file).
 if ClaudeHookToken.createIfMissing() { FileHandle.standardError.write(Data("aris-agent: made a new token file\n".utf8)) }
+// The HTTP caches earlier builds of the helper and of aris-tools wrote (they used the shared session; tenth VM run,
+// item 1): removed at each start; said only when something was there, as a count.
+do {
+    let removed = ArisHelperCaches.purge(home: FileManager.default.homeDirectoryForCurrentUser)
+    if removed > 0 { FileHandle.standardError.write(Data("aris-agent: removed \(removed) old HTTP cache files; nothing is cached now\n".utf8)) }
+}
 // launchd keeps agent.log open as this process's stderr: over 20 MB it's copied to a dated file and emptied in place,
 // and our own write offset moves to the new end (launchd's fd may not be O_APPEND).
 if ArisLogRotation.rotateOpenLog(ArisAgentRunner.directory.appendingPathComponent("agent.log"), limit: 20 * 1_024 * 1_024) {
@@ -217,7 +242,8 @@ func respond(_ connection: NWConnection, _ status: String, _ body: Data) {
 func ask(_ requested: ArisBrain, tier: ArisTier, prompt: String, request: String, learnAs: String?, untrusted: Bool = false,
          screenSeen: Bool = false, outsideConversation conversationOutside: Bool = false, vouches: Bool = false, handsFree: Bool = false,
          images: [ArisTurnImage] = [], sealed: Bool = false, learnFrom: String? = nil, relayRound: Int = 0, shownOnly: Bool = false,
-         ownData: Bool = false, screenText: Bool = false, savedStepsKey: String? = nil, on connection: NWConnection, retried: Bool = false) {
+         ownData: Bool = false, screenText: Bool = false, savedStepsKey: String? = nil, choices: ArisModelChoices = ArisModelChoiceBox.shared.current,
+         notice: String? = nil, fallback: Bool = false, on connection: NWConnection, retried: Bool = false) {
     // The app dropped the stream (a cancel, a timeout) before this turn started: nothing of it starts (audit
     // orphan-turn-11: a relay round or a shortcut's fall-through started a turn nobody was waiting for, and the next
     // question met "still answering the last one").
@@ -231,9 +257,11 @@ func ask(_ requested: ArisBrain, tier: ArisTier, prompt: String, request: String
         ArisTurnFallback.route(insteadOf: failing, turn: fallbackTurn, apiVision: ArisAPIActive.profile()?.takesImages == true,
                                usable: ArisSealedOneShot.available, available: { brainHealth.isAvailable($0) })
     }
-    // Out of quota, or not on this Mac: another brain takes it from the start (a relay round stays with agy).
+    // Out of quota, or not on this Mac: another brain takes it from the start, only with 다른 AI로 넘기기 on
+    // (ArisBrainFallback; a relay round stays with agy). Off, the chosen brain is asked and says what it lacks.
     let missing = !ArisSealedOneShot.available(requested)
-    let instead = !retried && relayRound == 0 && (missing || !brainHealth.isAvailable(requested)) ? another(requested) : nil
+    let instead = ArisBrainFallback.switchesFirst(allowed: fallback, retried: retried, relayRound: relayRound, missing: missing,
+                                                  available: brainHealth.isAvailable(requested)) ? another(requested) : nil
     let brain = instead?.brain ?? requested
     let images = instead.map { $0.sendsImages ? images : [] } ?? images
     let sealed = instead?.sealed ?? sealed
@@ -241,14 +269,41 @@ func ask(_ requested: ArisBrain, tier: ArisTier, prompt: String, request: String
     ArisWhyDesk.shared.asking(brain, instead: requested, on: ObjectIdentifier(connection))
     // Claude, agy and the API brain each have a sealed process of their own (agy's: no tools at all, ArisAgyRelay).
     let sealable = brain == .claude || brain == .antigravity || brain == .api
-    let runner = ArisAgentRunner.shared(brain: brain, model: ArisThinking.model(brain, tier: tier), sealed: sealed && sealable,
+    let runner = ArisAgentRunner.shared(brain: brain, model: ArisThinking.model(brain, tier: tier, choices: choices), sealed: sealed && sealable,
                                         handsFree: handsFree && sealed && sealable)
     // What this turn's handed-off calls do (a Claude's writes, judged by the agent: ArisActionGate) is noted from here.
     ArisHandOffLedger.shared.startTurn(runner, underWay: runner.mcpTurn)
     // Called on the runner's queue, where its taint is read.
     // The app is told once when outside text came in during this turn.
     let toldOutside = ArisCancelFlag()
-    let reply = { (reply: ArisAgentReply) in
+    let reply = { (said: ArisAgentReply) in
+        // The model chosen for this turn's role stopped working (the tool's own words): the same brain answers on 자동,
+        // saying so first, only when nothing was done yet; the retry carries what the first attempt took on (ArisModelTurn).
+        if relayRound == 0, case .failure = said {
+            let ledger = ArisHandOffLedger.shared.current(runner)
+            let taint = runner.currentTaint
+            let marked = ArisLocalReadPolicy.marksTurn(untrusted: untrusted, outsideConversation: conversationOutside)
+            let acted = ArisModelTurn.acted(usedTools: runner.turnUsedTools, handedOff: ledger?.didRun == true || ledger?.showed == true, taint: taint,
+                                            startedAt: ArisModelTurn.startTaint(marked: marked, screen: screenSeen || !images.isEmpty))
+            switch ArisModelTurn.retired(said, brain: brain, tier: tier, choices: choices, acted: acted,
+                                         korean: ArisBrainFailure.korean(request: request, prompt: prompt)) {
+            case .end(let line)?:
+                return queue.async { stream(.failure(line), on: connection) }
+            case .again(let again, let notice)?:
+                let carried = ArisModelTurn.carried(untrusted: untrusted, screenSeen: screenSeen, taint: taint)
+                return queue.async {
+                    if taint == .outsideText { outsideConversation.mark() }
+                    stream(.delta(ArisModelTurn.lead(notice)), on: connection)
+                    ask(brain, tier: tier, prompt: prompt, request: request, learnAs: learnAs, untrusted: carried.untrusted, screenSeen: carried.screenSeen,
+                        outsideConversation: conversationOutside || taint == .outsideText, vouches: vouches && taint == .none, handsFree: handsFree,
+                        images: images, sealed: sealed, learnFrom: taint == .none ? learnFrom : nil, shownOnly: shownOnly, ownData: ownData,
+                        screenText: screenText, choices: again, notice: notice, fallback: fallback, on: connection, retried: retried)
+                }
+            case nil:
+                break
+            }
+        }
+        let reply = ArisModelTurn.noted(said, notice: notice)
         // Outside text came in during this turn: the conversation keeps it (and the app, for a resume). Told before the
         // answer's next words, so the app reads a <say> line after it as plain text.
         let tellOutside = {
@@ -320,7 +375,8 @@ func ask(_ requested: ArisBrain, tier: ArisTier, prompt: String, request: String
             FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue) unavailable (\(message))\n".utf8))
             // A turn whose handed-off call already ran is never asked again on another brain (it would act twice).
             let alreadyActed = ArisHandOffLedger.shared.current(runner)?.didRun == true
-            guard !retried, !alreadyActed, relayRound == 0, let route = another(brain) else {
+            guard ArisBrainFallback.retriesElsewhere(allowed: fallback, retried: retried, alreadyActed: alreadyActed, relayRound: relayRound),
+                  let route = another(brain) else {
                 return stream(.failure(ArisBrainFailure.friendly(message, brain: brain, korean: ArisBrainFailure.korean(request: request, prompt: prompt))), on: connection)
             }
             stream(.status(ArisTurnFallback.status(from: brain, to: route.brain, missing: false)), on: connection)
@@ -328,7 +384,7 @@ func ask(_ requested: ArisBrain, tier: ArisTier, prompt: String, request: String
             // the sealed or gated process such a turn runs in there.
             ask(route.brain, tier: tier, prompt: prompt, request: request, learnAs: learnAs, untrusted: untrusted, screenSeen: screenSeen,
                 outsideConversation: conversationOutside, vouches: vouches, handsFree: handsFree, images: route.sendsImages ? images : [],
-                sealed: route.sealed, learnFrom: learnFrom, ownData: ownData, screenText: screenText, on: connection, retried: true)
+                sealed: route.sealed, learnFrom: learnFrom, ownData: ownData, screenText: screenText, fallback: fallback, on: connection, retried: true)
         }
     }, listener: reply)
 }
@@ -491,6 +547,7 @@ func handle(_ request: HTTPRequest, on connection: NWConnection) {
     switch request.path {
     case "/ask":
         guard let text = object["text"] as? String, !text.isEmpty else { return respond(connection, "400 Bad Request", Data()) }
+        ArisTurnArrivals.shared.received(connection)
         // Too long: said as that (413, with the limit), never as a request the helper didn't take.
         guard ArisMemoryText.ownWords(text).count <= maxText, text.count <= maxText + maxAttachedText else {
             return respond(connection, "413 Payload Too Large", (try? JSONSerialization.data(withJSONObject: ["error": "too long", "limit": maxText])) ?? Data())
@@ -501,6 +558,10 @@ func handle(_ request: HTTPRequest, on connection: NWConnection) {
         // Who asked: checked once, while the connection is open. Anything but the Aris app itself is outside text.
         let peerFailure = ArisPeer.failure(pid: (object["pid"] as? Int).flatMap { Int32(exactly: $0) }, started: object["started"] as? Double,
                                            remotePort: ArisTeammateDesk.remotePort(of: connection), agentPort: port.rawValue, requesterPort: nil)
+        // The app's experimental switches, before anything reads them for this turn (ArisHelperSwitches).
+        ArisSwitchEffects.take(object, fromApp: peerFailure == nil) { ArisAgentRunner.retire(brain: $0) }
+        // Who spoke it (the app's owner-voice verdict), for Core 2's trust gate with the turn's words (ArisTurnVoices).
+        ArisTurnVoices.shared.received(connection, raw: object["voice"], fromApp: peerFailure == nil && object["task"] as? Bool != true)
         if offered {
             guard object["task"] as? Bool != true else { return respond(connection, "400 Bad Request", Data()) }
             if let failure = peerFailure {
@@ -560,6 +621,8 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
         // clears them.
         if peerFailure == nil, object["task"] as? Bool != true {
             ArisShelfFiles.save((object["shelf"] as? [Any] ?? []).compactMap { $0 as? String }, front: object["frontApp"] as? String, home: NSHomeDirectory())
+            // Core 2: the app's World for the trust gate's facts (the contacts, the apps' nicknames, what is in front).
+            ArisMindLive.heard(object["world"], fromApp: true)
         }
         // What "이거" points at (ArisLook). Only a gated brain (Codex, an API brain) sees the screen: the others act without asking.
         var screen = (object["screen"] as? String).map { String($0.prefix(maxScreen)) }
@@ -685,9 +748,14 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
         let reach = dispatch.teammates && !isTask && !handsFree
             ? ArisThinking.reachLine(handTo: ArisThinking.handOffBrain { ArisSealedOneShot.available($0) && brainHealth.isAvailable($0) })
             : nil
-        let noteBlock = [knowhow, mateBlock ?? ArisTeamPrompt.noteRule(teammate: false), mateBlock == nil ? ArisTeamPrompt.teamTruth : nil, ownNote, worked.block, reach]
+        // The background work under way and just ended, from the journals (ArisWorkInProgress): conversation turns only.
+        let work = ArisWorkInProgressLive.block(task: isTask || handsFree, home: home)
+        let noteBlock = [knowhow, mateBlock ?? ArisTeamPrompt.noteRule(teammate: false), mateBlock == nil ? ArisTeamPrompt.teamTruth : nil, ownNote, worked.block, reach, work]
             .compactMap { $0 }.joined(separator: "\n")
-        let prompt = ArisAgentStream.prompt(request: text, context: context, memory: memory, screen: screen,
+        // A background job's words end with the owner's rule about paying, whatever they say (ArisPaymentBoundary: the
+        // eleventh VM run, R2, handed "결제해서 주문해 줘" to a job that told Aside to pay with his card).
+        let handedText = ArisPaymentBoundary.taskWords(text, task: isTask, english: ArisGateWords.isEnglish(request))
+        let prompt = ArisAgentStream.prompt(request: handedText, context: context, memory: memory, screen: screen,
                                             teammates: dispatch.teammates ? teammatesBlock(for: text) : nil,
                                             imageNote: notes.isEmpty ? nil : notes.joined(separator: "\n"),
                                             skills: ArisSkillPrompt.block(ArisSkills.live.listings(), tools: route.brain == .api ? ArisAPICatalog.generic : ArisAgentRunner.toolsPath),
@@ -697,7 +765,8 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
         let looksUp = ArisThinking.looksUp(ArisMemoryText.ownWords(request), task: isTask, images: !images.isEmpty, screenText: screen != nil,
                                            handsFree: handsFree)
         let tier = ArisThinking.tier(ArisTier.named(object["tier"] as? String), looksUp: looksUp)
-        let model = ArisThinking.model(brain, tier: tier)
+        // The model chosen for this turn's role (ArisModelChoice), sent by the app with the request; else today's.
+        let model = ArisThinking.model(brain, tier: tier, task: isTask, choices: ArisModelTurn.choices(object["models"], fromApp: peerFailure == nil))
         let key = ArisShortcuts.key(for: text)
         if fresh { ArisAgentRunner.startNewConversation() }
         if !ArisRoutineTurn.isStep(connection) {
@@ -730,7 +799,7 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
             // Website work goes to Aside with every name as the user said it; never when it is Aris's own data after all (the
             // job then does it with Aris's own tool, on its card).
             let taskPrompt = browser && ownData == nil
-                ? ArisAgentStream.prompt(request: text + "\n\n(Website work: hand it to Aside, the user's browser agent, in one Aside task as your tools describe. Keep every name in the brief exactly as the user said it.)", context: context, memory: memory, screen: screen)
+                ? ArisAgentStream.prompt(request: ArisPaymentBoundary.taskWords(text + "\n\n(Website work: hand it to Aside, the user's browser agent, in one Aside task as your tools describe, unless Aris reaches the site another way: " + ArisAgentPrompt.serviceOrder + " Keep every name in the brief exactly as the user said it.)", task: true, english: ArisGateWords.isEnglish(request)), context: context, memory: memory, screen: screen)
                 : prompt
             // An untrusted job (a screen turn's, outside text's, a model's) runs on Codex with web search off; a teammate's
             // on its own brain behind that brain's gates and its scopes (ArisTeammateJobs). The log names it and keeps its id.
@@ -738,30 +807,31 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
             let helper = peerFailure == nil ? ArisActivityBridge.helperLabel(object["helper"]) : nil
             guard let runner = ArisAgentRunner.task(brain: brain, model: model, title: title, job: ArisTaskEnd.jobId(object["job"]),
                                                     untrusted: untrusted, teammate: jobTeammate, handsFree: handsFree && route.sealed,
-                                                    helper: helper) else {
+                                                    heardHandsFree: handsFree, helper: helper) else {
                 return stream(.failure("이 작업은 취소됐어요."), on: connection)
             }
             ArisWorkDesk.live.bind(runner, to: ObjectIdentifier(connection))
-            // A cancelled job comes as POST /cancel. A connection that closes otherwise cancels the task only when the
-            // app's process is gone (quit, crashed): its pid no longer exists with the start time it sent. While that
-            // same process still runs it was a dropped stream (a long sleep), and the task carries on: its result is
-            // still saved and opened, and a parked question expires as a no.
-            let appPid = (object["pid"] as? Int).flatMap { Int32(exactly: $0) }
-            let appStarted = object["started"] as? Double
+            // A cancelled job comes as POST /cancel. A connection that closes (the app quit, slept or restarted) no longer
+            // ends the task: its replies go to the inbox under its job's id from then on (ArisTaskFollow), and its journal
+            // lets a helper that starts again take it back (ArisTaskRecoveryLive).
+            // A card it showed live that still waits when the stream goes is put in the inbox then (ArisTaskFollow.detach).
+            let follow = ArisTaskFollow(job: ArisTaskEnd.jobId(object["job"]) ?? "", title: title,
+                                        inbox: ArisInbox.file(home: FileManager.default.homeDirectoryForCurrentUser.path), live: { reply in
+                queue.async { stream(reply, on: connection) }
+            }, cardWaits: ArisAgentRunner.isWaiting)
             connection.stateUpdateHandler = { state in
                 switch state {
                 case .cancelled, .failed:
                     ArisWorkDesk.live.closed(ObjectIdentifier(connection))
-                    if ArisTaskEnd.cancelsOnClose(appAlive: ArisTaskEnd.isAlive(pid: appPid, started: appStarted)) { runner.cancelTask() }
+                    follow.detach()
                 default: break
                 }
             }
             if !watched { watchClose(connection) }
+            runner.keepJournal(jobText: text)
             return runner.ask(taskPrompt, tier: tier, request: request,
                               untrusted: ArisLocalReadPolicy.marksTurn(untrusted: outsideText, outsideConversation: sawOutside),
-                              screenSeen: sawScreen, handsFree: handsFree, ownData: ownData != nil) { reply in
-                queue.async { stream(reply, on: connection) }
-            }
+                              screenSeen: sawScreen, handsFree: handsFree, ownData: ownData != nil) { reply in follow.deliver(reply) }
         }
         // A conversation's answer can wait on a card or a judgement longer than the app's request timeout: blank lines keep
         // the connection alive, and when the app drops it anyway (a timeout, sleep, a cancel) the turn it owns ends at
@@ -776,6 +846,8 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
             }
         }
         if !watched { watchClose(connection) }
+        // "Show it once" (ArisTeachTurn, with arisTeach on): watching a demonstration, its card, and replays by name.
+        if ArisTeachTurn.takes(object, request: request, fromApp: peerFailure == nil, handsFree: handsFree, plain: images.isEmpty && screen == nil, on: connection) { return }
         // The user's routines ("출근 루틴 해 줘", "… 루틴 만들어 줘: …"): made, shown and changed here on their card, and run here
         // one step at a time, each step back through this function as a turn of its own (ArisRoutineTurn).
         if ArisRoutineTurn.takes(object, request: request, fromApp: peerFailure == nil, handsFree: handsFree, plain: images.isEmpty && screen == nil, on: connection,
@@ -863,7 +935,7 @@ func converse(_ object: [String: Any], text: String, request: String, prompt: St
                 learnAs: note != nil || untrusted || handsFree ? nil : key, untrusted: outsideText,
                 screenSeen: sawScreen, outsideConversation: sawOutside,
                 vouches: vouches, handsFree: handsFree, images: sent, sealed: sealed, learnFrom: learnFrom, ownData: ownData,
-                screenText: screenText, on: connection)
+                screenText: screenText, fallback: ArisBrainFallback.allowed(object, fromApp: fromApp), on: connection)
         }
         let askBrain = { askWith(nil) }
         let mayReplay = ArisHandsFree.mayReplayShortcut(untrusted: untrusted, handsFree: handsFree)
@@ -877,8 +949,8 @@ func converse(_ object: [String: Any], text: String, request: String, prompt: St
             }
             return askBrain()
         }
-        // Learned before questions were kept out: forgotten, and the AI answers.
-        guard !ArisShortcuts.isQuestion(key) else {
+        // Learned before questions and words that point at the moment were kept out: forgotten, and the AI answers.
+        guard ArisShortcuts.mayKeep(key) else {
             ArisShortcutStore.shared.forget(key)
             return askBrain()
         }
@@ -892,7 +964,8 @@ func converse(_ object: [String: Any], text: String, request: String, prompt: St
             let owner = ArisDesktopLock.oneOff("shortcut")
             let held = ArisDesktopLock.shared.holding(owner, live: { ArisAskAdmission.proceeds(state: connection.state, cancelled: false) },
                                                       waiting: { queue.async { stream(.status(ArisDesktopLockWords.waitingLine(english: english)), on: connection) } }) {
-                ArisShortcutStore.shared.replay(learned, tools: ArisAgentRunner.toolsPath,
+                ArisDesktopLock.shared.allowKeys(owner, ArisDesktopKeysPolicy.keys(in: learned.commands, tools: ArisAgentRunner.toolsPath))
+                return ArisShortcutStore.shared.replay(learned, tools: ArisAgentRunner.toolsPath,
                                                 environment: ArisAgentRunner.environment().merging([ArisDesktopLock.heldKey: owner]) { $1 })
             }
             guard case .success(let replayed) = held else {
@@ -987,6 +1060,8 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
             case .unknown: return respond(connection, "404 Not Found", Data("{}".utf8))
             }
         }
+        // Core 2's trust cards (ArisTrustGate), only with `arisCore2` on.
+        if let line = ArisCore2Trust.confirm(object, id: id, allow: allow) { return respond(connection, line, Data("{}".utf8)) }
         guard ArisAgentRunner.shownMatches(id, allow: allow, detail: detail, full: full, edits: allow ? edits : [:], shown: allow ? shown : nil) else {
             ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(["answer": "refused (the card shown isn't the card made)", "question": id]),
                                        key: "confirm")
@@ -1000,6 +1075,9 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
                                audit: { ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON($0), key: "api") }) { status, body in
             queue.async { respond(connection, status, body) }
         }
+    case "/models":
+        guard isAppItself(object, on: connection, question: "models") else { return }
+        ArisModelRoutes.handle(object, environment: { ArisAgentRunner.environment() }) { status, body in queue.async { respond(connection, status, body) } }
     case "/mcp":
         guard isAppItself(object, on: connection, question: "mcp") else { return }
         ArisMCPRoutes.settings(object) { status, body in queue.async { respond(connection, status, body) } }
@@ -1009,6 +1087,8 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         ArisDesktopRoutes.tool(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
     case "/desktop-hold":
         ArisDesktopRoutes.hold(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
+    case "/desktop-keys":
+        ArisDesktopRoutes.keys(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
     case "/skills":
         guard isAppItself(object, on: connection, question: "skills") else { return }
         ArisSkillRoutes.settings(object) { status, body in queue.async { respond(connection, status, body) } }
@@ -1018,10 +1098,17 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         ArisMessageRoutes.tool(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
     case "/action-tool":
         ArisMessageRoutes.action(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
+    case ArisMindRoute.path:
+        ArisMindRoute.call(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
     case "/aside-tool":
         ArisAsideRoutes.tool(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
     case "/session-tool":
         ArisSessionRoutes.tool(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
+    case "/task-tool":
+        ArisTaskToolRoute.tool(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
+    case "/report-line":
+        guard isAppItself(object, on: connection, question: "report-line") else { return }
+        ArisReportLine.route(object) { status, body in queue.async { respond(connection, status, body) } }
     case "/routine-tool":
         ArisRoutineRoutes.tool(object, on: connection, agentPort: port.rawValue) { status, body in queue.async { respond(connection, status, body) } }
     case "/routine-step":
@@ -1062,7 +1149,7 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
                 return respond(connection, "400 Bad Request", Data())
             }
             DispatchQueue.global(qos: .userInitiated).async {
-                let granted = ArisFolderAccess.touch(url)
+                let granted = ArisFolderAccess.granted(url)
                 queue.async { respond(connection, "200 OK", Data(granted ? #"{"granted":true}"#.utf8 : #"{"granted":false}"#.utf8)) }
             }
         case "diskAccess":
@@ -1154,10 +1241,19 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
             respond(connection, "400 Bad Request", Data())
         }
     case "/warm":
-        let brain = brainHealth.brain(for: ArisBrain.named(object["brain"] as? String))
+        // The chosen brain's runners (another's only with 다른 AI로 넘기기 on while the chosen one is out).
+        let fromApp = ArisPeer.failure(pid: (object["pid"] as? Int).flatMap { Int32(exactly: $0) }, started: object["started"] as? Double,
+                                       remotePort: ArisTeammateDesk.remotePort(of: connection), agentPort: port.rawValue, requesterPort: nil) == nil
+        // The app's experimental switches first: the runners warmed here start with the driver they choose.
+        ArisSwitchEffects.take(object, fromApp: fromApp) { ArisAgentRunner.retire(brain: $0) }
+        let brain = brainHealth.brain(for: ArisBrain.named(object["brain"] as? String), fallback: ArisBrainFallback.allowed(object, fromApp: fromApp))
         // The normal turn's runner (one for Claude: Sonnet for both tiers); a look-up turn's Opus starts on its first use.
-        for model in Set([ArisTier.quick, .work].map { ArisThinking.model(brain, tier: $0) }) { ArisAgentRunner.shared(brain: brain, model: model).warm() }
-        ArisAgentRunner.warmTask(brain: brain, model: ArisThinking.model(brain, tier: .deep))
+        // Each with a warm spare beside it, so a new conversation or a lost process never waits for one to start (ArisFastLane).
+        // The chosen 대화 and 작업 models when the app names them (ArisModelChoice), so the spares are the ones a turn will take.
+        // Only the app itself names them; anyone else's are ignored (the app's last word stands).
+        let choices = ArisModelTurn.choices(object["models"], fromApp: fromApp)
+        for model in Set([ArisTier.quick, .work].map { ArisThinking.model(brain, tier: $0, choices: choices) }) { ArisAgentRunner.warmConversation(brain: brain, model: model) }
+        ArisAgentRunner.warmTask(brain: brain, model: ArisThinking.model(brain, tier: .deep, task: true, choices: choices))
         respond(connection, "200 OK", Data("{}".utf8))
     case "/stop":
         guard isAppItself(object, on: connection, question: "stop") else { return }
@@ -1205,7 +1301,8 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         // Which protected folder (Desktop, Documents, Downloads) an undo touches, read from the log alone (no folder is
         // opened): the app names it while macOS may be asking aris-agent for it (QA BUG-17).
         guard isAppItself(object, on: connection, question: "undo-folder") else { return }
-        let folder = ArisActivityBridge.folder(ofEntry: object["id"] as? String)
+        let folder = ArisCore2Trust.undoFolder(object["id"] as? String, home: FileManager.default.homeDirectoryForCurrentUser.path)
+            ?? ArisActivityBridge.folder(ofEntry: object["id"] as? String)
         respond(connection, "200 OK", (try? JSONSerialization.data(withJSONObject: folder.map { ["folder": $0] } ?? [:])) ?? Data("{}".utf8))
     case "/activity", "/undo":
         let undoing = request.path == "/undo"
@@ -1230,10 +1327,23 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
                     return respond(connection, "403 Forbidden", Data("{}".utf8))
                 }
             }
+            // With `arisCore2` on, an undo of a record entry (or of the latest change, when the record's is newest).
+            if ArisCore2Trust.undo(object, home: FileManager.default.homeDirectoryForCurrentUser.path, reply: { line, body in queue.async { respond(connection, line, body) } }) {
+                return
+            }
             arguments = ArisActivityBridge.undoArguments(id: object["id"] as? String, confirmed: object["confirmed"] as? Bool == true)
             // The app asked for this undo: when it is a to-do's (a reopen or a removal by id), that one write may reach
-            // its route. Any other undo mints nothing, and a grant the run didn't use goes when it returns (review 3, L4).
-            undoGrant = arguments != nil && ArisActivityBridge.undoWritesTodo(ofEntry: object["id"] as? String) ? ArisActionGrants.shared.mintUndo() : nil
+            // its route; when it removes an event an add made, a one-shot grant for exactly that event's uid (never a
+            // scope any event removal could take). Any other undo mints nothing, and a grant the run didn't use goes when
+            // it returns (review 3, L4).
+            let entry = object["id"] as? String
+            if arguments == nil {
+                undoGrant = nil
+            } else if ArisActivityBridge.undoWritesTodo(ofEntry: entry) {
+                undoGrant = ArisActionGrants.shared.mintUndo()
+            } else {
+                undoGrant = ArisActivityBridge.eventUndoKey(ofEntry: entry).flatMap { ArisActionGrants.shared.mintUndo(exactly: $0) }
+            }
         } else {
             arguments = ArisActivityBridge.activityArguments(today: object["today"] as? Bool == true)
             undoGrant = nil
@@ -1262,10 +1372,22 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
                     let valid = result.status == 0 && (try? JSONSerialization.jsonObject(with: Data(result.out.utf8))) != nil
                     // Rows the automatic check let run come with "checked": true (ArisAutoMarks: the "확인함" mark).
                     respond(connection, valid ? "200 OK" : "500 Internal Server Error",
-                            valid ? ArisAutoMarks.shared.annotated(Data(result.out.utf8), log: ArisAutoMarks.logRows()) : Data("{}".utf8))
+                            valid ? ArisCore2Trust.activity(ArisAutoMarks.shared.annotated(Data(result.out.utf8), log: ArisAutoMarks.logRows()),
+                                                            today: object["today"] as? Bool == true, home: FileManager.default.homeDirectoryForCurrentUser.path)
+                                  : Data("{}".utf8))
                 }
             }
         }
+    case "/trust":
+        // Core 2's trust settings as data (ArisTrustRoute): the level, the standing grants, the table's cells.
+        guard isAppItself(object, on: connection, question: "trust") else { return }
+        let reply = ArisCore2Trust.settings(object, home: FileManager.default.homeDirectoryForCurrentUser.path)
+        respond(connection, reply.status, reply.body)
+    case "/tasks":
+        // Each job as its journal and this helper know it (ArisTaskRoutes): the app follows its jobs by id.
+        guard isAppItself(object, on: connection, question: "tasks") else { return }
+        respond(connection, "200 OK", ArisTaskRoutes.list(object["jobs"] as? [String] ?? [], home: FileManager.default.homeDirectoryForCurrentUser.path,
+                                                          running: ArisAgentRunner.hasJob, live: ArisTaskFollow.waitingCard(job:)))
     case "/inbox":
         guard isAppItself(object, on: connection, question: "inbox") else { return }
         let file = ArisInbox.file(home: FileManager.default.homeDirectoryForCurrentUser.path)
@@ -1319,6 +1441,15 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         guard isAppItself(object, on: connection, question: "currency") else { return }
         guard let arguments = ArisCurrencyRoute.arguments(request: object) else { return respond(connection, "400 Bad Request", Data("{}".utf8)) }
         respondWithCard(connection, arguments: arguments, timeout: 25)
+    case "/github-star":
+        // The setup's last page: is Aris's repository starred through the user's own gh, and the star itself, only
+        // from the app's own button (ArisGitHubStar). gh keeps its token; nothing of it is read here.
+        guard isAppItself(object, on: connection, question: "github-star") else { return }
+        guard let ask = ArisGitHubStar.ask(request: object) else { return respond(connection, "400 Bad Request", Data("{}".utf8)) }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let body = ArisGitHubStar.answer(ask, environment: ArisAgentRunner.environment())
+            queue.async { respond(connection, "200 OK", body) }
+        }
     case "/maps":
         // The map card's values: MapKit's place and ETAs through aris-tools (nothing opens).
         guard isAppItself(object, on: connection, question: "maps") else { return }
@@ -1332,10 +1463,13 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
             // `front`: the app Aris says he was in when he asked (Aris's own NSWorkspace is current; this process's is
             // not: second upgrade run, bug 1).
             let look = ArisLook.gather(tools: ArisAgentRunner.toolsPath, environment: ArisAgentRunner.environment(),
+                                       words: (object["words"] as? String).map { String($0.prefix(4_000)) }, regions: ArisFocusLive.regions(object["regions"]),
                                        aris: (object["pid"] as? Int).flatMap { Int32(exactly: $0) },
                                        told: (object["front"] as? Int).flatMap { Int32(exactly: $0) })
             let body: [String: Any] = ["context": look.context, "selected": look.selection != nil, "editable": look.editable, "confirmed": look.confirmed,
-                                       "unread": look.unread ?? "", "unselected": look.unselected ?? "", "needs": look.needs]
+                                       "unread": look.unread ?? "", "unselected": look.unselected ?? "", "needs": look.needs,
+                                       "target": look.fieldToken ?? ""]
+                .merging(ArisFocusLive.reply(look.focus, words: (object["words"] as? String) ?? "")) { old, _ in old }
             let data = (try? JSONSerialization.data(withJSONObject: body)) ?? Data("{}".utf8)
             queue.async { respond(connection, "200 OK", data) }
         }
@@ -1345,7 +1479,7 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         // and pointer (ArisDesktopLock), never while a desktop action of a turn or job holds them.
         let pasteOwner = ArisDesktopLock.oneOff("paste")
         DispatchQueue.global(qos: .userInitiated).async {
-            if ArisDesktopLock.shared.take(pasteOwner) != nil {
+            if ArisDesktopLock.shared.takeUrgent(pasteOwner) != nil {
                 let body = (try? JSONSerialization.data(withJSONObject: ArisInsertRefusal.reply(ArisDesktopLockWords.insertRefusal))) ?? Data("{}".utf8)
                 return queue.async { respond(connection, "500 Internal Server Error", body) }
             }
@@ -1363,11 +1497,15 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         }
         // What was typed stays private: only how much.
         ArisAgentRunner.writeAudit("{\"action\":\"insert: \(text.count) characters\",\"risk\":\"dictated\"}", key: "local")
+        // A rewrite or a draft goes into the field its look read, by that element (ArisFieldWrite), never where the keyboard is now.
+        if let token = object["target"] as? String, !token.isEmpty {
+            return ArisTypeHereRoutes.writeField(text, token: token, caretOnly: object["caretOnly"] as? Bool == true, on: connection)
+        }
         let learn = object["learn"] as? Bool ?? false
-        // Typing the dictated text takes its turn at the keys and pointer too (ArisDesktopLock).
+        // Typing the dictated text takes its turn at the keys and pointer too, ahead of computer use (ArisDesktopLock.acquireUrgent).
         let insertOwner = ArisDesktopLock.oneOff("insert")
         DispatchQueue.global(qos: .userInitiated).async {
-            if ArisDesktopLock.shared.take(insertOwner) != nil {
+            if ArisDesktopLock.shared.takeUrgent(insertOwner) != nil {
                 let body = (try? JSONSerialization.data(withJSONObject: ArisInsertRefusal.reply(ArisDesktopLockWords.insertRefusal))) ?? Data("{}".utf8)
                 return queue.async { respond(connection, "500 Internal Server Error", body) }
             }
@@ -1380,6 +1518,12 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
                 }
             }
         }
+    case "/aside-ready":
+        guard isAppItself(object, on: connection, question: "aside-ready") else { return }
+        ArisAsideRoutes.ready(on: connection)
+    case _ where ArisTypeHereRoutes.paths.contains(request.path):
+        guard isAppItself(object, on: connection, question: "insert-undo") else { return }
+        ArisTypeHereRoutes.handle(request.path, object, on: connection)
     case _ where ArisDictationRoutes.paths.contains(request.path):
         guard isAppItself(object, on: connection, question: "insert") else { return }
         ArisDictationRoutes.handle(request.path, object, on: connection)
@@ -1427,6 +1571,12 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         var effects = ArisDataRoute.Effects.live { line in
             ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(["action": line, "risk": "settings"]), key: "data")
         }
+        // A wipe leaves no copy in memory: the next turn is given only what is left on disk.
+        effects.wiped = { items in
+            guard items.contains("memory") else { return }
+            ArisMemoryCurator.live.wiped()
+            ArisWorkDesk.live.wiped()
+        }
         // Uninstall stops the skills setup before its folder goes (security review M5).
         effects.stopSkills = {
             let done = DispatchSemaphore(value: 0)
@@ -1443,7 +1593,9 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
         // The settings 기억 page: only the Aris app itself (ArisPeer). Off the server queue (SQLite).
         guard isAppItself(object, on: connection, question: "memory") else { return }
         DispatchQueue.global(qos: .userInitiated).async {
-            let reply = ArisMemoryRoute.handle(object, store: ArisMemoryCurator.live.store, savedSteps: ArisSavedStepsLive.store)
+            let reply = ArisMemoryRoute.handle(object, store: ArisMemoryCurator.live.store, savedSteps: ArisSavedStepsLive.store,
+                                               shortcuts: ArisShortcutStore.shared.access, tools: ArisAgentRunner.toolsPath,
+                                               taught: ArisTaughtRoute.live(home: FileManager.default.homeDirectoryForCurrentUser.path))
             ArisMemoryCurator.live.refresh()
             ArisWorkDesk.live.refresh()
             if let line = reply.audit { ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(["action": line, "risk": "settings"]), key: "memory") }
@@ -1457,8 +1609,14 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
     case "/health":
         // Which process answers here: the app asks before a question and again when its stream ends with no last
         // line, to tell a helper that went away (another process now, or none) from an AI that did not answer.
+        // The app sends its experimental switches with every /health (ArisHelperSwitches): taken from the app itself only.
+        let healthFromApp = ArisPeer.failure(pid: (object["pid"] as? Int).flatMap { Int32(exactly: $0) }, started: object["started"] as? Double,
+                                             remotePort: ArisTeammateDesk.remotePort(of: connection), agentPort: port.rawValue, requesterPort: nil) == nil
+        ArisSwitchEffects.take(object, fromApp: healthFromApp) { ArisAgentRunner.retire(brain: $0) }
         let own = ProcessInfo.processInfo.processIdentifier
-        let who: [String: Any] = ["pid": Int(own), "started": ArisProcessStart.of(pid: own) ?? 0]
+        var who: [String: Any] = ["pid": Int(own), "started": ArisProcessStart.of(pid: own) ?? 0]
+        // Core 2 on: the app then takes its World along with each conversation turn (ArisWorldOutbox).
+        if ArisCore2.isOn() { who["core2"] = true }
         respond(connection, "200 OK", (try? JSONSerialization.data(withJSONObject: who)) ?? Data("{}".utf8))
     default:
         respond(connection, "404 Not Found", Data())
@@ -1546,6 +1704,11 @@ ArisMCPCards.shared.audit = { ArisAgentRunner.writeAudit(ArisAgentRunner.auditJS
 
 // A prompt names GPT as the one to ask only on a Mac where Codex is installed (QA F1).
 ArisAgentPrompt.gptInstalled = { ArisReadJudge.executable(.codex) != nil }
+// Canvas is named to a brain only once it is set up; Codex gets Notion only with Aris's login (ArisConnectedServices).
+ArisAgentPrompt.canvasSetUp = { ArisCanvasSetup.isSetUp(folder: ArisAgentRunner.directory.deletingLastPathComponent()) }
+ArisNotionLink.warm()
+// The login shell's PATH is asked for now, in the background: no lookup waits on it (ArisLoginPath).
+ArisLoginPath.warm()
 
 // The sealed Claude's working folders an earlier run left (each is removed with its process).
 ArisSealedScratch.sweep()
@@ -1556,6 +1719,13 @@ ArisTeammateLauncher.sweep(ArisTeammateLauncher.launchFolder(home: FileManager.d
 ArisTeammateLauncher.sweep(ArisTeammateLauncher.workFolder(home: FileManager.default.homeDirectoryForCurrentUser.path), now: Date())
 // No teammate's brain outlives the agent that started it: their job files go.
 ArisTeammateJobFile.sweep(home: FileManager.default.homeDirectoryForCurrentUser.path)
+
+// Brains an earlier helper left running (it crashed, or was killed) are stopped, once their pid and start time both
+// match (ArisChildLedger); then every background task whose journal has no end is taken back (ArisTaskRecoveryLive).
+ArisChildLedger.sweep(home: FileManager.default.homeDirectoryForCurrentUser.path)
+queue.async { ArisTaskRecoveryLive.run(home: FileManager.default.homeDirectoryForCurrentUser.path) }
+// Core 2's record and trust (ArisCore2Trust): its audit writer and why-lines; with `arisCore2` on, the record pruned.
+queue.async { ArisCore2Trust.start(home: FileManager.default.homeDirectoryForCurrentUser.path, audit: { ArisAgentRunner.writeAudit($0, key: $1) }) }
 
 // Scheduled jobs (ArisScheduler): what the last launch left is settled, then they're checked every 30 s.
 ArisScheduler.shared.start()
@@ -1568,6 +1738,9 @@ ArisSkills.live.watch()
 atexit { ArisAgentRunner.flushAudit() }
 ArisProcessEnd.catchTermination(on: queue) {
     ArisAgentRunner.flushAudit()
+    // Every brain and what it started ends with the agent; the tasks' journals stay open for the next start.
+    ArisTaskTrail.shuttingDown = true
+    ArisChildLedger.shared.stopAll()
     // The external services' programs end with the agent.
     ArisMCPHub.shared.disconnectAll()
     exit(0)

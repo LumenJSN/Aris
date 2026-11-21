@@ -132,23 +132,36 @@ extension ArisDropZones {
             // The notch stays open on the composer for what to do with them (BUG-24a).
             interaction.arisDropHold = true
             Task { @MainActor in
-                let urls = await fileURLs(providers)
-                Logger(subsystem: "com.lumenjsn.aris", category: "drop").notice("aris drop: \(providers.count, privacy: .public) providers, \(urls.count, privacy: .public) files")
+                let (urls, texts) = await gathered(providers)
+                Logger(subsystem: "com.lumenjsn.aris", category: "drop").notice("aris drop: \(providers.count, privacy: .public) providers, \(urls.count, privacy: .public) files, \(texts.count, privacy: .public) texts")
                 // They wait for the next request, with the chips for what Aris can do with them (ArisDropModel).
                 ArisDropModel.shared.dropped(urls)
+                // Text and links go into the composer, to be asked about (they used to vanish).
+                let draft = ArisComposerDraft.shared
+                draft.text = ArisDropCopy.draft(draft.text, adding: texts)
+                if urls.isEmpty && texts.isEmpty { ArisDropModel.shared.refused() }
             }
         }
     }
 
-    private static func fileURLs(_ providers: [NSItemProvider]) async -> [URL] {
-        var urls: [URL] = []
+    /// The files dropped, and the text and links: a picture or other data without a file is kept as one in the
+    /// shelf's own folder (Application Support), so it can go with the request like any file.
+    private static func gathered(_ providers: [NSItemProvider]) async -> (files: [URL], texts: [String]) {
+        var urls: [URL] = [], texts: [String] = []
         // The shelf's own loader: loadObject(ofClass: URL.self) came back empty for Finder-style file drags.
         // SwiftUI hands the drag over as a generic item, so fall back to it like ShelfDropService does.
         for provider in providers {
             var url = await provider.extractFileURL()
             if url == nil { url = await provider.extractItem() }
-            if let url, url.isFileURL { urls.append(url) }
+            if let url, url.isFileURL { urls.append(url); continue }
+            if let web = await provider.extractURL(), !web.isFileURL { texts.append(web.absoluteString); continue }
+            if let text = await provider.extractText() { texts.append(text); continue }
+            if let (data, name) = await provider.loadData().map({ ($0, provider.suggestedName) }),
+               let file = ArisShelfTempFiles().data(data, named: name) {
+                ArisShelfTempFiles.markScratch(file)
+                urls.append(file)
+            }
         }
-        return urls
+        return (urls, texts)
     }
 }

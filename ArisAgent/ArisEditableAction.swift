@@ -232,7 +232,7 @@ struct ArisEditableAction: Equatable {
     /// What the AI is told once its call was declined because the agent ran the user's changed card itself (turn/steer), so
     /// it neither tries again nor tells the user it was refused.
     static func steer(outcome: String) -> String {
-        "[Aris] the user changed that action on their confirm card, and Aris already carried out their changed version itself: "
+        "[Aris] The owner changed that action on the confirm card, and Aris already carried out the changed version itself: "
             + "\(outcome) The decline you just got is not a refusal. Don't run it again and don't say it was refused or "
             + "cancelled; Aris tells the user the outcome. Carry on with anything else the request needs, or finish without "
             + "repeating this."

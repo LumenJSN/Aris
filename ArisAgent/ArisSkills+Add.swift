@@ -162,12 +162,8 @@ extension ArisSkills {
         switch deps.downloader.fetch(ArisSkillLink.tarballURL(source), maxBytes: ArisSkillLink.maxDownload, hosts: ArisSkillLink.hosts, progress: { _ in }) {
         case .failure(let why): return fail(id, why.message, staging: staging)
         case .success(let data):
-            let entries: [ArisArchiveEntry]
-            switch ArisSkillArchive.gunzip(data).flatMap(ArisSkillArchive.untar) {
-            case .failure(let problem): return fail(id, problem.message, staging: staging)
-            case .success(let all): entries = all
-            }
-            switch ArisSkillLink.locate(entries, path: source.path) {
+            // Read for the skill's folder only: the limits are the folder's, not the whole repository's.
+            switch ArisSkillLink.extract(data, path: source.path) {
             case .failure(let why): return fail(id, why.message, staging: staging)
             case .success(let files):
                 guard case .success = ArisSkillArchive.write(files, to: staging) else { return fail(id, "받은 파일을 저장하지 못했어요.", staging: staging) }

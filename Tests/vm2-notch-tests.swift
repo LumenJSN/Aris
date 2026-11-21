@@ -473,7 +473,7 @@ private func vm2UpgradeSmallTests() {
     let allowed = asking.answered(delivered: true, allowed: true)
     check(allowed.steps.map(\.label) == ["웹에서 찾는 중", "Mac에서 작업 중"] && allowed.steps.map(\.done) == [true, false] && asking.answered().steps == allowed.steps,
           "vm2u bug 9: after a yes the step that waited on the card runs on, not yet ticked (vm3 bug C); what had finished keeps its check")
-    check(vm2Source("Aris/private/Aris/ArisController.swift").contains("session = session.answered(delivered: delivered == .ok, allowed: allow)"),
+    check(vm2Source("Aris/private/Aris/ArisController.swift").contains("setSession(session.answered(delivered: delivered == .ok, allowed: allow))"),
           "vm2u bug 9: wiring: the turn tells the session whether he said yes")
 
     // After Undo, the card above lists what is there now.

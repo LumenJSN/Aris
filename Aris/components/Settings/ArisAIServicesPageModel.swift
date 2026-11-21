@@ -20,12 +20,16 @@ enum ArisAIMenuKind: Hashable, Sendable {
     case connectionMore(String)
     /// A sheet's own dropdown (the connection's model, a library filter): its items come from the sheet.
     case sheet(String)
+    /// 짧은 명령 빨리 알아듣기: which model does the quick understanding.
+    case router
 }
 
 /// A field on the page that is typed into.
 enum ArisAIField: Hashable, Sendable {
     /// The model name of an API brain whose list couldn't be had (its id).
     case model(String)
+    /// A decision model's model id, and its address (an account id, a resource or a server), by provider id.
+    case decisionModel(String), decisionAddress(String)
 }
 
 /// What a control on the page asks for.
@@ -38,6 +42,8 @@ enum ArisAIAction: Equatable, Sendable {
     case recheckBrains
     case download(String), cancelDownload, cancelAsk, retryDownload
     case openJev, cancelJev, saveJev(String), clearJev
+    /// Another decision model's key, by provider id.
+    case openDecisionKey(String), cancelDecisionKey, saveDecisionKey(id: String, key: String), clearDecisionKey(String)
     /// 미리 듣기: the chosen voice says a line (again: stops).
     case preview
     /// A voice's sample in the menu or a sheet (its id; `url`: where the sample is).
@@ -104,6 +110,16 @@ enum ArisAIJevLine: Equatable, Sendable {
     case editing(error: String?)
 }
 
+/// 짧은 명령 빨리 알아듣기's dropdown and the one line under it: who understands, what it costs, what it sees.
+struct ArisAIRouterLine: Equatable, Sendable {
+    var face = ArisAISelectFace(label: "자동")
+    var line = ""
+    /// The TypeSafe key's line is shown (자동 or Jev chosen, or a key saved).
+    var jevKey = false
+    /// The decision model chosen, when it is not Jev: its key and what is typed for it.
+    var decision: ArisAIDecisionLine?
+}
+
 struct ArisAISavedKey: Equatable, Sendable {
     let holder: String
     let name: String
@@ -127,6 +143,7 @@ struct ArisAIPage: Equatable, Sendable {
     var speak: ArisAICard
     var voiceLine: String?
     var savedKeys: [ArisAISavedKey]
+    var router = ArisAIRouterLine()
 }
 
 struct ArisAIMenuItem: Equatable, Identifiable, Sendable {
@@ -242,13 +259,6 @@ enum ArisAIServicesBuilder {
 
     static func modelLabel(_ id: String) -> String { knownModels[id]?.label ?? id }
 
-    /// What a subscription answers with: Aris picks the model by how big the request is (ArisBrain.model(tier:)).
-    static let subscriptionModels: [String: (label: String, desc: String)] = [
-        "claude": ("Sonnet", "빠른 답은 Haiku, 큰 일은 Sonnet이 해요"),
-        "codex": ("Sol", "빠른 답은 Luna, 큰 일은 Sol이 해요"),
-        "antigravity": ("Gemini Flash", "빠른 답은 가볍게, 큰 일은 깊이 생각해요"),
-    ]
-
     /// The two Whisper models and every line the page says about each (whole sentences: each has its English).
     struct WhisperWords: Equatable, Sendable {
         let id: String
@@ -283,7 +293,7 @@ enum ArisAIServicesBuilder {
 
     static func page(_ state: ArisAIServicesState) -> ArisAIPage {
         ArisAIPage(think: thinkCard(state), thinkLine: thinkFallback(state), login: login(state), jev: jev(state), hear: hearCard(state), speak: speakCard(state),
-                   voiceLine: voiceFallback(state), savedKeys: savedKeys(state))
+                   voiceLine: voiceFallback(state), savedKeys: savedKeys(state), router: router(state))
     }
 
     /// The card's first row: the job, who does it and whether it stays on this Mac (or what it's missing), and the
@@ -293,7 +303,9 @@ enum ArisAIServicesBuilder {
         let lack = ArisAICatalogue.lack(provider, in: state)
         let symbol = job == .think ? "brain" : job == .hear ? "mic" : "speaker.wave.2"
         let name = provider.group == .connection ? ["내 연결", provider.name].joined(separator: " · ") : provider.name
-        let place = provider.local || isLocalAddress(provider, state) ? stays : leaves(job)
+        var place = provider.local || isLocalAddress(provider, state) ? stays : leaves(job)
+        // 자동 leaves this Mac only when a cloud recogniser has its key.
+        if provider.group == .auto, autoHears(state).isEmpty { place = stays }
         return ArisAIRow(icon: symbol, title: job.title, desc: lack == nil ? "\(name) · \(place)" : name, warn: lack?.word,
                          control: .select(.provider(job), ArisAISelectFace(label: provider.name)))
     }
@@ -307,7 +319,8 @@ enum ArisAIServicesBuilder {
     /// What the 생각 card says when no AI is chosen, and when none can answer.
     static let noBrainChosen = "고른 AI가 없어요"
     static let chooseBrain = "AI 고르기"
-    static let noBrainHow = "아직 답할 수 있는 AI가 없어요. 위에서 Claude, ChatGPT, Gemini나 API 키로 쓰는 AI를 하나 골라 주세요."
+    // The menu is at the row's right, beside the line (fourth VM run: "Choose … above" pointed the wrong way).
+    static let noBrainHow = "아직 답할 수 있는 AI가 없어요. 오른쪽 메뉴에서 Claude, ChatGPT, Gemini나 API 키로 쓰는 AI를 하나 골라 주세요."
     static let noBrainAnswers = "아직 답할 수 있는 AI가 없어요"
 
     private static func thinkCard(_ state: ArisAIServicesState) -> ArisAICard {
@@ -324,9 +337,8 @@ enum ArisAIServicesBuilder {
     }
 
     private static func thinkModelRow(_ provider: ArisAIProvider, _ state: ArisAIServicesState) -> ArisAIRow? {
-        if let fixed = subscriptionModels[provider.id] {
-            return ArisAIRow(title: "모델", desc: fixed.desc, control: .fixed(fixed.label))
-        }
+        // Claude, Codex and Antigravity choose their models per role under the card (모델 고르기, ArisModelChoiceSection):
+        // the card itself names none. An API brain's model is chosen here.
         guard let id = ArisAIStore.apiID(provider.id), let preset = state.preset(id), ArisAICatalogue.lack(provider, in: state) != .key else { return nil }
         let chosen = state.profile(id)?.strong ?? preset.strong
         switch state.models[id] {
@@ -400,12 +412,34 @@ enum ArisAIServicesBuilder {
             rows.append(ArisAIRow(title: "모델", desc: "\(shown.trait) · \(shown.size)", control: .select(.model(.hear), face)))
             need = whisperNeed(model.id, state)
         case "scribe":
-            rows.append(ArisAIRow(title: "모델", control: .fixed("Scribe v2 Realtime")))
+            rows.append(ArisAIRow(title: "모델", control: .fixed("Scribe v3 Live")))
             if state.elevenKey == nil { need = keyNeed("elevenlabs", state) }
+        case "soniox":
+            rows.append(ArisAIRow(title: "모델", control: .fixed("stt-rt-v6")))
+            if state.hearKeys["soniox"] == nil { need = keyNeed("soniox", state) }
+        case "openai-stt":
+            rows.append(ArisAIRow(title: "모델", control: .fixed("gpt-transcribe")))
+            if state.hearKeys["openai-stt"] == nil { need = keyNeed("openai-stt", state) }
+        case "auto":
+            let names = autoHears(state)
+            rows.append(ArisAIRow(title: "듣는 순서", desc: names.isEmpty ? autoNoCloud : "", control: .fixed((names + [autoMac(state)]).joined(separator: " → "))))
         default: break
         }
         return ArisAICard(job: .hear, rows: rows, need: need)
     }
+
+    /// 자동 with no cloud key: how to get a better recogniser, in one plain line.
+    static let autoNoCloud = "지금은 이 Mac에서만 들어요. 위 메뉴에서 ElevenLabs Scribe, Soniox나 OpenAI를 한 번 골라 API 키를 넣으면 자동이 그것부터 써요."
+
+    /// The cloud recognisers 자동 tries, in its order: those with a key.
+    static func autoHears(_ state: ArisAIServicesState) -> [String] {
+        ArisHearEngine.cloud.compactMap { engine in
+            ArisAICatalogue.hear.first { $0.id == engine.rawValue }.flatMap { ArisAICatalogue.lack($0, in: state) == nil ? $0.name : nil }
+        }
+    }
+
+    /// What this Mac listens with when no cloud recogniser answers.
+    private static func autoMac(_ state: ArisAIServicesState) -> String { state.whisperInstalled.isEmpty ? "Apple" : "Whisper" }
 
     /// Whisper's model: the question before a download, the bar while it comes in, or that one is needed.
     private static func whisperNeed(_ chosen: String, _ state: ArisAIServicesState) -> ArisAINeed? {
@@ -453,6 +487,113 @@ enum ArisAIServicesBuilder {
         return ArisAILoginLine(brain: provider.id, title: "\(provider.name) 로그인", desc: "로그인이 풀렸을 때 눌러요. 터미널에서 \(command) 명령을 열어 줘요.")
     }
 
+    // MARK: 짧은 명령 빨리 알아듣기
+
+    /// Who understands the quick commands, as the page says it.
+    enum RouterPick: Equatable, Sendable {
+        case rules, jev
+        case api(ArisAIPreset, ArisAIProfile)
+        /// Another decision model, and the model id asked.
+        case decision(ArisDecisionProvider, model: String)
+        /// The profile chosen has no key now (or is gone): the keyword rules, and why.
+        case missing(String)
+        /// The decision model chosen has its key but not its address or model: the keyword rules.
+        case unset(String)
+    }
+
+    /// The API profiles that can do the quick understanding: a keyed provider with its key, or a server on this Mac.
+    static func routerProfiles(_ state: ArisAIServicesState) -> [(preset: ArisAIPreset, profile: ArisAIProfile)] {
+        state.presets.compactMap { preset in
+            guard let profile = state.profile(preset.id), preset.needsKey ? profile.hasKey : preset.local else { return nil }
+            return (preset, profile)
+        }
+    }
+
+    /// What one month (100 turns a day) costs on `profile`, when its price is known.
+    static func routerMonthly(_ profile: ArisAIProfile) -> Double? {
+        profile.routerPrice.map { ArisRouterModels.monthly(input: $0.input, output: $0.output) }
+    }
+
+    /// The pick as aris-agent and routeNow make it (ArisRouterModels.route; 자동's API profile: ArisAPIRouterCall.cheapest).
+    static func routerPick(_ state: ArisAIServicesState) -> RouterPick {
+        let choice = ArisRouterModels.choice(state.choices.router)
+        switch ArisRouterModels.route(choice, jevKey: state.jevKey != nil, ready: { decisionReady($0, state) }) {
+        case .rules: return decisionLack(choice, state) ?? .rules
+        case .jev: return .jev
+        case .decision(let id):
+            guard let provider = ArisDecisionProviders.provider(id),
+                  let model = ArisDecisionProviders.model(provider, setup: state.decisionSetup[id] ?? .init()) else { return .rules }
+            return .decision(provider, model: model)
+        case .api(nil):
+            // A profile whose price isn't known comes after every priced one and is still picked (ArisAPIRouterCall.cheapest).
+            let keyed = routerProfiles(state).filter { $0.preset.needsKey && !$0.preset.custom }
+            guard let cheapest = keyed.min(by: { (routerMonthly($0.profile) ?? .infinity, $0.preset.id) < (routerMonthly($1.profile) ?? .infinity, $1.preset.id) }) else { return .rules }
+            return .api(cheapest.preset, cheapest.profile)
+        case .api(let id?):
+            if let found = routerProfiles(state).first(where: { $0.preset.id == id }) { return .api(found.preset, found.profile) }
+            return .missing(state.preset(id).map(ArisAICatalogue.apiName) ?? id)
+        }
+    }
+
+    static let routerSees = "요청한 말만 보내요"
+    /// 자동's rule as the menu says it, which is what happens (tenth VM run, item 7): Jev, else the cheapest connected API
+    /// whose price is known, else any other connected API, else the keyword rules.
+    static let routerAutoLine = "Jev 키가 있으면 Jev, 없으면 키가 있는 판단 모델, 그다음 연결된 API (요금을 아는 것 중 가장 싼 것 먼저), 그것도 없으면 키워드 규칙"
+
+    private static func routerCost(_ preset: ArisAIPreset, _ profile: ArisAIProfile) -> String {
+        if preset.local { return "무료 · 이 Mac에서 판단해요" }
+        return routerMonthly(profile).map { "한 달 약 \(ArisRouterModels.dollars($0))" } ?? "그 서비스 요금으로"
+    }
+
+    private static func router(_ state: ArisAIServicesState) -> ArisAIRouterLine {
+        let choice = ArisRouterModels.choice(state.choices.router)
+        var face = ArisAISelectFace(label: "자동")
+        switch choice {
+        case .auto: break
+        case .jev: face = ArisAISelectFace(label: "Jev", tail: state.jevKey == nil ? ArisAILack.key.word : nil)
+        case .api(let id):
+            let name = state.preset(id).map(ArisAICatalogue.apiName) ?? id
+            face = ArisAISelectFace(label: name, tail: routerProfiles(state).contains { $0.preset.id == id } ? nil : ArisAILack.key.word)
+        case .decision(let id): face = ArisAISelectFace(label: decisionName(id), tail: decisionTail(id, state))
+        case .rules: face = ArisAISelectFace(label: rulesTitle)
+        }
+        let line: String
+        switch routerPick(state) {
+        case .rules: line = "키워드 규칙으로 알아들어요 · 무료 · 말이 Mac 밖으로 나가지 않아요"
+        case .jev: line = "Jev (TypeSafe) · 한 달 약 \(ArisRouterModels.dollars(ArisRouterModels.jevMonthly)) · \(routerSees)"
+        case .api(let preset, let profile):
+            line = [ArisAICatalogue.apiName(preset) + " " + (profile.router ?? profile.quick), routerCost(preset, profile), routerSees].joined(separator: " · ")
+        case .decision(let provider, let model): line = decisionLine(provider, model: model)
+        case .missing(let name): line = "\(name) 키가 없어서 키워드 규칙으로 알아들어요"
+        case .unset(let name): line = "\(name) 설정이 덜 돼서 키워드 규칙으로 알아들어요"
+        }
+        return ArisAIRouterLine(face: face, line: line, jevKey: choice == .auto || choice == .jev || state.jevKey != nil, decision: decisionFields(choice, state))
+    }
+
+    private static func routerMenu(_ state: ArisAIServicesState) -> ArisAIMenu {
+        let chosen = ArisRouterModels.stored(ArisRouterModels.choice(state.choices.router))
+        var entries: [ArisAIMenu.Entry] = [
+            .item(ArisAIMenuItem(id: "auto", title: "자동", subtitle: routerAutoLine, checked: chosen == "auto")),
+            .separator,
+            .group(decisionGroup),
+            .item(ArisAIMenuItem(id: "jev", title: "Jev", subtitle: "TypeSafe · 한 달 약 \(ArisRouterModels.dollars(ArisRouterModels.jevMonthly))",
+                                 tail: state.jevKey == nil ? ArisAILack.key.word : nil, checked: chosen == "jev")),
+        ]
+        entries += decisionItems(state, chosen: chosen)
+        let profiles = routerProfiles(state)
+        if !profiles.isEmpty {
+            entries.append(.separator)
+            entries.append(.group("연결된 API"))
+            entries += profiles.map { preset, profile in
+                .item(ArisAIMenuItem(id: "api:" + preset.id, title: ArisAICatalogue.apiName(preset), subtitle: routerCost(preset, profile),
+                                     code: profile.router ?? profile.quick, checked: chosen == "api:" + preset.id))
+            }
+        }
+        entries.append(.separator)
+        entries.append(.item(ArisAIMenuItem(id: "rules", title: rulesTitle, subtitle: rulesSubtitle, checked: chosen == "rules")))
+        return ArisAIMenu(entries: entries)
+    }
+
     private static func jev(_ state: ArisAIServicesState) -> ArisAIJevLine {
         if let masked = state.jevKey, !state.ui.jevOpen { return .on(masked: masked) }
         return state.ui.jevOpen ? .editing(error: state.ui.jevError) : .off
@@ -462,6 +603,10 @@ enum ArisAIServicesBuilder {
     private static func savedKeys(_ state: ArisAIServicesState) -> [ArisAISavedKey] {
         var keys: [ArisAISavedKey] = []
         if let masked = state.elevenKey { keys.append(ArisAISavedKey(holder: "elevenlabs", name: "ElevenLabs", masked: masked)) }
+        for holder in ["soniox", "openai-stt"] {
+            guard let masked = state.hearKeys[holder] else { continue }
+            keys.append(ArisAISavedKey(holder: holder, name: holder == "openai-stt" ? "OpenAI · 듣기" : ArisAICatalogue.keyName(holder, in: state), masked: masked))
+        }
         for preset in state.presets where preset.needsKey && !preset.custom && state.profile(preset.id)?.hasKey == true {
             keys.append(ArisAISavedKey(holder: preset.id, name: ArisAICatalogue.apiName(preset), masked: nil))
         }
@@ -481,7 +626,7 @@ enum ArisAIServicesBuilder {
     }
 
     /// Who answers when the chosen AI can't (aris-agent's own rule, ArisBrain.fallback: Gemini for ChatGPT, ChatGPT for
-    /// the others), named only when it is set up here.
+    /// the others), named only with 다른 AI로 넘기기 on and only when it is set up here.
     private static func thinkFallback(_ state: ArisAIServicesState) -> String? {
         let now = state.choices.think
         // No AI chosen: the card itself says so.
@@ -493,14 +638,14 @@ enum ArisAIServicesBuilder {
             return "쓸 수 있게 될 때까지 \(ArisParticle.attach(answering.name, .euroRo)) 생각해요"
         }
         let other = now == "codex" ? "antigravity" : "codex"
-        guard state.brainReady[other] == true else { return nil }
+        guard state.fallbackOn, state.brainReady[other] == true else { return nil }
         return other == "codex" ? "안 되면 ChatGPT로 생각해요" : "안 되면 Gemini로 생각해요"
     }
 
     /// What listens and speaks when the cloud can't: Whisper once a model is on this Mac (else Apple's recognition),
     /// and a macOS voice.
     private static func voiceFallback(_ state: ArisAIServicesState) -> String? {
-        let hearOff = state.choices.hear == "scribe", speakOff = state.choices.speak == "eleven"
+        let hearOff = ArisHearEngine(rawValue: state.choices.hear)?.isCloud == true, speakOff = state.choices.speak == "eleven"
         let whisper = !state.whisperInstalled.isEmpty
         switch (hearOff, speakOff) {
         case (true, true): return whisper ? "안 되면 이 Mac의 Whisper로 듣고 macOS 목소리로 말해요" : "안 되면 이 Mac의 Apple 받아쓰기로 듣고 macOS 목소리로 말해요"
@@ -519,10 +664,11 @@ enum ArisAIServicesBuilder {
         case .model(let job): return modelMenu(job, state).filtered(by: query)
         case .voice: return voiceMenu(state, query: query)
         case .both:
-            return ArisAIMenu(entries: ArisAICatalogue.both.map { company in
+            return ArisAIMenu(entries: ArisAICatalogue.both.filter { $0.hear != nil }.map { company in
                 .item(ArisAIMenuItem(id: company.id, title: company.name, subtitle: "듣기와 말하기를 둘 다 이 회사로",
                                      tail: company.hear == nil ? ArisAILack.soon.word : nil, disabled: company.hear == nil))
             })
+        case .router: return routerMenu(state)
         case .connectionMore(let id):
             return ArisAIMenu(entries: [.item(ArisAIMenuItem(id: "edit:" + id, title: "고치기", action: true)),
                                         .item(ArisAIMenuItem(id: "remove:" + id, title: "지우기", action: true))])
@@ -540,12 +686,14 @@ enum ArisAIServicesBuilder {
     private static func dots(_ first: String, _ second: String) -> String { [first, second].joined(separator: " · ") }
 
     private static func providerMenu(_ job: ArisAIJob, _ state: ArisAIServicesState) -> ArisAIMenu {
-        let all = ArisAICatalogue.providers(job, in: state)
+        // An engine Aris has not built ("준비 중": Groq, Deepgram, Fish Audio…) is not offered: a greyed row nobody can
+        // pick only reads as broken in a public build (eleventh VM run). The catalogue keeps them for when they are built.
+        let all = ArisAICatalogue.providers(job, in: state).filter(\.built)
         // 생각 with no AI chosen: nothing is ticked.
         let chosen = ArisAICatalogue.current(job, in: state).id
         let groups: [(ArisAIProvider.Group, String)] = job == .think
             ? [(.subscription, dots("구독", leaves(job))), (.apiKey, dots("API 키", leaves(job))), (.onMac, dots("이 Mac에서", stays)), (.connection, "내 연결")]
-            : [(.onMac, dots("이 Mac에서", stays)), (.cloud, dots("클라우드", leaves(job)))]
+            : [(.auto, "추천"), (.onMac, dots("이 Mac에서", stays)), (.cloud, dots("클라우드", leaves(job)))]
         var entries: [ArisAIMenu.Entry] = []
         for (group, title) in groups {
             let members = all.filter { $0.group == group }
@@ -645,6 +793,9 @@ enum ArisAIServicesBuilder {
             if state.choices.speak != "eleven" { return .systemVoice(id) }
             guard let voice = state.voices["eleven"]?.voices.first(where: { $0.id == id }) else { return nil }
             return .elevenVoice(id: voice.id, name: voice.name)
+        case .router:
+            guard menu(.router, state).items.contains(where: { $0.id == id }) else { return nil }
+            return .router(id)
         case .both, .connectionMore, .sheet: return nil
         }
     }

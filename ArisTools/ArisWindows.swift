@@ -13,7 +13,9 @@ import Foundation
 
 func requireAccessibility() {
     ArisOrigin.refuseUnlessStillAllowed()
-    guard AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary) else {
+    // Never macOS's own alert from here: it came up again at every call while the switch was off. The app asks
+    // once (ArisPermissions) and the fix names the pane.
+    guard AXIsProcessTrusted() else {
         fail("\(ArisFix.Pane.accessibility.title(english: true)) permission needed: System Settings → Privacy & Security → \(ArisFix.Pane.accessibility.title(english: true)) → allow Aris, then try again", fix: .pane(.accessibility))
     }
 }
@@ -108,6 +110,8 @@ func listWindows(_ args: [String]) {
 /// `tile <app>[,<app>…] [--grid RxC]`: the apps' windows in a grid on the main screen.
 func tile(_ args: [String]) {
     requireAccessibility()
+    // The turn's turn at the keys and pointer, in a moment with no input from the user (ArisDesktopHold).
+    desktopHold()
     var words = args
     let named = option("--grid", in: &words)
     let names = words.joined(separator: " ").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
@@ -144,7 +148,8 @@ func tile(_ args: [String]) {
 /// AppleScript that may fail (an app without `make new document`): false instead of quitting.
 func tryAppleScript(_ script: String) -> Bool {
     // With AppleScript's time limit, like every other script: an app that hangs counts as one that can't.
-    ArisBoundedRun.capture("/usr/bin/osascript", ["-e", script], limit: ArisBoundedRun.appleScriptLimit)?.status == 0
+    ArisBoundedRun.capture("/usr/bin/osascript", ["-e", script], limit: ArisBoundedRun.appleScriptLimit,
+                           atLimit: automationWait("/usr/bin/osascript", ["-e", script]))?.status == 0
 }
 
 /// Opens the app if needed and brings it to the front; the running app once it's up.
@@ -172,14 +177,16 @@ func newWindows(_ args: [String]) {
     let count = min(9, max(1, Int(option("--count", in: &words) ?? "1") ?? 1))
     let name = words.joined(separator: " ")
     guard !name.isEmpty, !name.contains("/") else { fail("usage: new <app> [--count N]") }
+    // The new windows come up in front: only in the turn's turn at the keys and pointer, with no input from the user then.
+    desktopHold()
     let app = activate(name)
     let before = standardWindows(of: app).count
     for _ in 0..<count {
         if !tryAppleScript("tell application \(ArisActions.quoted(app.localizedName ?? name)) to make new document") {
             requireAccessibility()
-            app.activate()
-            // ⌘N by the key that types "n" on the layout in use (audit desk-10).
-            press(ArisKeyChord.parse("cmd+n", layout: ArisKeyLayout.current) ?? ArisKeyChord(key: 45, command: true, shift: false, option: false, control: false))
+            // ⌘N by Aris's own engine (the key that types "n" on the layout in use, to the app's process).
+            let sent = engineKeys(["cmd+n"], times: 1, bundle: app.bundleIdentifier)
+            if !sent.ok { fail(sent.line) }
         }
         usleep(500_000)
     }
@@ -189,32 +196,6 @@ func newWindows(_ args: [String]) {
 }
 
 // MARK: - keys, typing
-
-func press(_ chord: ArisKeyChord) {
-    let source = CGEventSource(stateID: .hidSystemState)
-    for down in [true, false] {
-        let event = CGEvent(keyboardEventSource: source, virtualKey: chord.key, keyDown: down)
-        event?.flags = chord.flags
-        event?.post(tap: .cghidEventTap)
-        usleep(20_000)
-    }
-}
-
-/// Brings `name` to the front for keys or typing, or stops: it must be exactly that app (not one whose name merely
-/// contains it), not a terminal, and really in front, so nothing lands anywhere else.
-@discardableResult
-func typingTarget(_ name: String) -> NSRunningApplication {
-    // The name is resolved once (an alias, another spacing), and that same answer says whether the app found is the one.
-    let resolved = appFileName(for: name)
-    let app = activate(name)
-    let file = app.bundleURL?.deletingPathExtension().lastPathComponent
-    guard ArisAppNames.isExactly(name, resolved: resolved, localizedName: app.localizedName, fileName: file) else { fail("no app is named exactly \(name)") }
-    guard ArisActions.isTypingSafe(bundleID: app.bundleIdentifier) else { fail("won't type into \(app.localizedName ?? name)") }
-    guard ArisFrontNow.keysGo(focused: ArisFrontLive.focusedPid(), target: app.processIdentifier) else {
-        fail("\(app.localizedName ?? name) didn't come to the front")
-    }
-    return app
-}
 
 /// The app in front now, asked at this moment (ArisFrontLive): NSWorkspace's answer is kept up by notifications this
 /// process never gets, so it stays what it was at the first look (a "still in front?" check before each key would
@@ -239,24 +220,43 @@ func axFrame(_ element: AXUIElement) -> CGRect? {
     return CGRect(origin: origin, size: dimensions)
 }
 
-/// `keys <chord> [--app X] [--times N]`.
+/// `keys <chord> [--app X] [--times N]`: by Aris's own engine in the agent (ArisEngineKeys): into the app's focused
+/// window in the background, or with a brief turn in front in a gap in the user's input; never into whatever is in front.
 func keys(_ args: [String]) {
     requireAccessibility()
     var words = args
     let app = option("--app", in: &words)
     let times = min(20, max(1, Int(option("--times", in: &words) ?? "1") ?? 1))
-    guard let written = words.first, let chord = ArisKeyChord.parse(written, layout: ArisKeyLayout.current) else { fail("usage: keys cmd+shift+t [--app X] [--times N]") }
-    guard let target = app.map({ typingTarget($0) }) ?? keyboardApp() else { fail("no app has the keyboard to send keys to") }
-    let shown = target.localizedName ?? app ?? "the app in front"
-    for _ in 0..<times {
-        // Each press only while that app is still in front, so no key lands in another one.
-        guard ArisFrontNow.keysGo(focused: ArisFrontLive.focusedPid(), target: target.processIdentifier) else {
-            fail(ArisTypeReadback.keysLine(written, times: times, app: shown, stayedInFront: false).line)
-        }
-        press(chord)
-        usleep(80_000)
+    guard let written = words.first, ArisKeyChord.parse(written) != nil else { fail("usage: keys cmd+shift+t [--app X] [--times N]") }
+    let target: NSRunningApplication
+    if let app {
+        target = keysTarget(app)
+    } else {
+        guard let front = keyboardApp() else { fail("no app has the keyboard to send keys to") }
+        target = front
     }
-    print(ArisTypeReadback.keysLine(written, times: times, app: shown, stayedInFront: true).line)
+    guard let bundle = target.bundleIdentifier else { fail("\(target.localizedName ?? "that app") has no bundle id, so no keys were sent") }
+    let sent = engineKeys([written], times: times, bundle: bundle)
+    if sent.ok { print(sent.line) } else { fail(sent.line) }
+}
+
+/// The app `name` names exactly, running (opened behind the front app when it isn't), never a terminal: the app keys
+/// go to. Nothing is brought forward here.
+func keysTarget(_ name: String) -> NSRunningApplication {
+    let resolved = appFileName(for: name)
+    var app = runningApp(named: name)
+    if app == nil {
+        run("/usr/bin/open", ["-g", "-a", resolved ?? name])
+        for _ in 0..<50 where app?.isFinishedLaunching != true {
+            usleep(200_000)
+            app = runningApp(named: name)
+        }
+    }
+    guard let app, app.isFinishedLaunching else { fail("\(name) didn't open") }
+    let file = app.bundleURL?.deletingPathExtension().lastPathComponent
+    guard ArisAppNames.isExactly(name, resolved: resolved, localizedName: app.localizedName, fileName: file) else { fail("no app is named exactly \(name)") }
+    guard ArisActions.isTypingSafe(bundleID: app.bundleIdentifier) else { fail("won't type into \(app.localizedName ?? name)") }
+    return app
 }
 
 /// `type '<text>' [--app X] [--title <window>] [--at end|start]`: the text typed into the field with the keyboard focus in that app's window, by the agent's

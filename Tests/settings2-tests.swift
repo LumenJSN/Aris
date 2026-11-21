@@ -28,7 +28,8 @@ private func s2LayoutTests() {
 /// How many sentences a line has: its full stops, question marks and 요-endings before a space count once each.
 private func s2Sentences(_ text: String) -> Int {
     // A decimal point isn't a full stop ("0.3초").
-    let plain = text.replacingOccurrences(of: #"(?<=[0-9])\.(?=[0-9])"#, with: "", options: .regularExpression)
+    // Nor is the dot in a path (~/.config/aris).
+    let plain = text.replacingOccurrences(of: #"(?<=[0-9])\.(?=[0-9])|(?<=/)\.(?=[A-Za-z])"#, with: "", options: .regularExpression)
     let marks = plain.replacingOccurrences(of: "…", with: "").components(separatedBy: CharacterSet(charactersIn: ".?!")).dropLast()
     return max(1, marks.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count)
 }
@@ -43,7 +44,8 @@ private func s2CopyTests() {
     full.memories = []
     full.memoriesLoaded = true
     // The rows another branch owns (quiet time, the day-end offer) and the AI 서비스 page keep their own lines.
-    let others: Set<String> = ["aris.mute", "aris.quietHours", ArisDayEndSetting.id]
+    // Option A brought two rows from pages this check skipped (AI 서비스, 팀원) with their longer lines as they were.
+    let others: Set<String> = ["aris.mute", "aris.quietHours", ArisDayEndSetting.id, "ai.computerEngine", ArisTerminalSetting.id]
     var long: [String] = []
     for snapshot in [ArisSettingsSnapshot(), full] {
         for page in ArisSettingsPage.allCases where page != .ai {
@@ -63,18 +65,17 @@ private func s2CopyTests() {
     let polish = ArisSettingsBuilder.sections(.dictation, full).first { $0.id == "dictation.polish" }?.note ?? ""
     check(polish.contains("Anthropic"), "5-B: 다듬기 still says where the words go when Claude tidies them")
     let standing = ArisSettingsBuilder.sections(.control, full).first { $0.id == "control.standing" }?.note ?? ""
-    check(standing.contains("메일 보내기") && standing.contains("영구 삭제") && standing.contains("돈이 드는 일은 하지 않아요"), "5-B: 묻지 않고 하는 일 keeps what is always asked and that no money is spent")
+    check(standing.contains("메일 보내기") && standing.contains("영구 삭제") && standing.contains("결제는 할 때마다 카드로 물어봐요"), "5-B: 묻지 않고 하는 일 keeps what is always asked, and that every payment is asked on its own card")
 }
 
 private func s2SidebarTests() {
-    check(ArisSettingsPage.allCases.count == 14 && ArisSettingsGroup.allCases.map(\.rawValue) == ["아리스", "도구", "화면 · 앱"],
-          "6-B: 14 pages in three groups named in Korean")
-    check(ArisSettingsGroup.allCases.flatMap(\.pages) == ArisSettingsPage.allCases, "6-B: the sidebar lists every page once, in the pages' order")
-    // The measured 44-pt items (settings 1:1, 2026-11-13) make the list taller than the window: it scrolls and fades.
-    check(ArisSidebarMetrics.height() > ArisSidebarMetrics.windowSize.height && ArisSidebarMetrics.fade == 44,
-          "6-B: at the measured item height the list is taller than the window (\(ArisSidebarMetrics.height()) of \(ArisSidebarMetrics.windowSize.height)), so it scrolls with a fade")
-    check(ArisSettingsPage.named("calendar") == .todo && ArisSettingsPage.named("look") == .general && ArisSettingsPage.named("todo") == .todo
-          && ArisSettingsPage.named("nope") == nil, "6-B: a link that names a page that was merged opens the page that took its rows")
+    // Option A (settings-ia) replaced 6-B's 14 pages in three groups: four pages, no group names.
+    check(ArisSettingsPage.allCases.count == 4, "option A: four pages")
+    // The measured 44-pt items stay; with four pages and the open one's parts the list fits the window (no fade needed).
+    check(ArisSidebarMetrics.tallest <= ArisSidebarMetrics.windowSize.height && ArisSidebarMetrics.fade == 44,
+          "option A: the list with the most parts open fits the window (\(ArisSidebarMetrics.tallest) of \(ArisSidebarMetrics.windowSize.height)); the fade stays for a shorter one")
+    check(ArisSettingsPage.named("calendar") == .todo && ArisSettingsPage.named("look") == .look && ArisSettingsPage.named("todo") == .todo
+          && ArisSettingsPage.named("nope") == nil, "option A: a link that names a page that was merged opens the page that took its rows")
 
     // Every way into a page lands on a row that page draws: the search, the fix buttons, the status line, the guide.
     var full = ArisSettingsSnapshot()
@@ -83,29 +84,31 @@ private func s2SidebarTests() {
     full.heightMode = "custom"
     full.more.flatHeightMode = "custom"
     full.more.peek = true
-    full.permissions = [.init(id: "ax", title: "a", desc: "a", granted: false), .init(id: "screen", title: "s", desc: "s", granted: true), .init(id: "mic", title: "m", desc: "m", granted: true)]
+    full.updates = true
+    full.duplexAudio = true
+    full.savedKeys = 1
+    full.permissions = [.init(id: "ax", title: "a", desc: "a", granted: false), .init(id: "screen", title: "s", desc: "s", granted: true), .init(id: "mic", title: "m", desc: "m", granted: true),
+                        .init(id: "speech", title: "v", desc: "v", granted: true), .init(id: "input", title: "i", desc: "i", granted: false)]
     full.memoriesLoaded = true
     full.memories = [ArisMemoryItem(id: "m1", kind: "fact", subject: "", text: "커피는 아이스", source: "said", said: 0, used: nil)]
+    full.savedSteps = []
+    // Option A: a page's own rows, and on 할 수 있는 일 the 팀원 sheet's own tags.
     func tags(_ page: ArisSettingsPage) -> Set<String> {
-        switch page {
-        case .team: Set(ArisSettingsIndex.teamAnchors)
-        case .skills: Set(ArisSettingsIndex.skillsAnchors)
-        default: ArisSettingsLayout.tags(ArisSettingsBuilder.sections(page, full))
-        }
+        ArisSettingsLayout.tags(ArisSettingsBuilder.sections(page, full)).union(page == .able ? ArisSettingsIndex.teamAnchors + ArisSettingsIndex.skillsAnchors : [])
     }
     let lost = ArisSettingsIndex.entries.filter { !tags($0.page).contains($0.id) }.map(\.id)
     check(lost.isEmpty, "6-B: every search result opens the page that draws its row" + (lost.isEmpty ? "" : " (\(lost))"))
     let fixes = ArisFix.Row.allCases.filter { row in ArisSettingsPage.named(row.page).map { !tags($0).contains(row.anchor) } ?? true }
     check(fixes.isEmpty, "6-B: every fix button that opens Settings lands on a row of its page" + (fixes.isEmpty ? "" : " (\(fixes))"))
-    check(tags(.control).contains(ArisSettingsCaption.permissionsAnchor) && tags(.ai).contains(ArisSettingsCaption.brainAnchor)
+    check(tags(.app).contains(ArisSettingsCaption.permissionsAnchor) && tags(.ai).contains(ArisSettingsCaption.brainAnchor)
           && tags(ArisSettingsCaption.talkKey.page).contains(ArisSettingsCaption.talkKey.anchor),
           "6-B: the status line's and the guide's links (permissions, the answering AI, the talk key) land on their rows")
-    let link = s2Rows(.features, full).first { $0.id == "features.calendar" }
-    check(link?.control == .link(.go(.todo, anchor: "calendar.intro"), value: nil) && tags(.todo).contains("calendar.intro"),
-          "6-B: 음악 · 선반's calendar link opens 할 일 · 캘린더 on the calendar's card")
-    check(Set(["look.theme", "look.accent", "look.reduceMotion"]).isSubset(of: tags(.general)) && Set(["look.settingsIcon", "look.alwaysTabs"]).isSubset(of: tags(.notch)),
-          "6-B: what the 모양 page held is in 일반 (the window's look) and 노치 (the notch's icon and tabs)")
-    check(Set(["todo.access", "calendar.access", "calendar.allDay"]).isSubset(of: tags(.todo)), "6-B: 할 일 and 캘린더 are one page")
+    check(!s2Rows(.features, full).contains { $0.id == "features.calendar" } && tags(.todo).contains("calendar.intro"),
+          "option A: no calendar link among the music rows (D11); 캘린더 is its own part")
+    check(Set(["look.theme", "look.accent", "look.reduceMotion", "look.alwaysTabs", "notch.theme"]).isSubset(of: tags(.look)),
+          "option A: how Aris looks (the window and the notch) is on 모양 (D10)")
+    check(Set(["calendar.allDay", "todo.default"]).isSubset(of: tags(.able)) && Set(["todo.access", "calendar.access"]).isSubset(of: tags(.app)),
+          "option A: 할 일 and 캘린더 are parts of 할 수 있는 일; their permissions are in 앱 › 권한")
 }
 
 private func s2FoldTests() {
@@ -113,7 +116,8 @@ private func s2FoldTests() {
     let folded = notch.filter { $0.fold != nil }
     check(folded.map(\.id) == ["notch.advanced", "notch.gestureDetail", "notch.window"] && folded.allSatisfy { !$0.rows.isEmpty && !$0.fold!.desc.isEmpty },
           "7-A: the notch page's motion, gesture and window groups are one collapsed line each, saying what is inside")
-    check(notch.filter { $0.fold == nil }.map(\.id) == ["notch.top", "notch.side", "notch.sideLeft", "notch.sideRight"], "7-A: what is used often stays open")
+    check(notch.filter { $0.fold == nil }.map(\.id) == ["notch.top", "notch.side", "notch.sideLeft", "notch.sideRight", "features.music", "features.shelf", "look.all"],
+          "7-A: what is used often stays open")
     check(ArisSettingsLayout.fold(holding: "notch.lockScreen", in: notch) == "notch.window" && ArisSettingsLayout.fold(holding: "notch.sensitivity", in: notch) == "notch.gestureDetail"
           && ArisSettingsLayout.fold(holding: "notch.advanced", in: notch) == "notch.advanced" && ArisSettingsLayout.fold(holding: "notch.hover", in: notch) == nil,
           "7-A: a search that lands on a folded row, or on the group itself, knows which fold to open; an open row needs none")
@@ -156,7 +160,7 @@ private func s2FixesTests() {
     var more = ArisSettingsSnapshot()
     more.heightMode = "custom"
     more.more.flatHeightMode = "custom"
-    let sliders = (s2Rows(.notch, more) + s2Rows(.features, more)).filter { if case .slider = $0.control { true } else { false } }
+    let sliders = s2Rows(.look, more).filter { if case .slider = $0.control { true } else { false } }
     check(sliders.count == 5 && sliders.allSatisfy { !($0.desc ?? "").contains(where: \.isNumber) || $0.id == "notch.flatCustomHeight" },
           "item 10: the five sliders' lines no longer carry the value (it is beside the bar)")
     check(ArisSliderStep.nudge(0.3, up: true, in: 0...1, step: 0.1) == 0.4 && ArisSliderStep.nudge(0, up: false, in: 0...1, step: 0.1) == 0,
@@ -179,9 +183,12 @@ private func s2FixesTests() {
     check(all.map(\.id) == ["control.folders"] && all[0].control == .said("허용됨"), "item 11: the folders' row is allowed once all three are")
     var granted = ArisSettingsSnapshot()
     granted.permissions = [.init(id: "ax", title: "a", desc: "a.", granted: true)]
+    // vmfix3: Reminders and Calendar count among what is missing (their rows are in the same list).
+    granted.reminders = .granted
+    granted.calendarAccess = .granted
     var missing = granted
     missing.permissions = [.init(id: "ax", title: "a", desc: "a.", granted: false)]
-    let note = { (s: ArisSettingsSnapshot) in ArisSettingsBuilder.sections(.control, s).first { $0.id == "control.permissions" }?.note }
+    let note = { (s: ArisSettingsSnapshot) in ArisSettingsBuilder.sections(.app, s).first { $0.id == "control.permissions" }?.note }
     check(note(granted) == nil && note(missing)?.contains("시스템 설정") == true, "item 11: how to allow is said only while something is missing")
 
     // 12: the toast.
@@ -202,10 +209,10 @@ private func s2FixesTests() {
     s.memories = [ArisMemoryItem(id: "m1", kind: "fact", subject: "", text: "커피는 아이스", source: "said", said: 0, used: nil)]
     check((ArisMemorySettingsRows.sections(s).first { $0.id == "memory.list" }?.rows.first?.id) == "memory.search", "item 14: the search comes with the first memory")
     var control = ArisSettingsSnapshot()
-    check((ArisSettingsBuilder.sections(.control, control).last?.rows.first?.control) == .loading, "item 14: the standing permissions say they are loading")
+    check((ArisSettingsBuilder.sections(part: "able.control", control).last?.rows.first?.control) == .loading, "item 14: the standing permissions say they are loading")
     control.standingLoaded = true
     control.standing = []
-    check((ArisSettingsBuilder.sections(.control, control).last?.rows.first?.control) == .empty, "item 14: and then that there are none yet")
+    check((ArisSettingsBuilder.sections(part: "able.control", control).last?.rows.first?.control) == .empty, "item 14: and then that there are none yet")
     var calendar = ArisSettingsSnapshot()
     calendar.calendarAccess = .granted
     check((ArisSettingsBuilder.sections(.todo, calendar).first { $0.id == "calendar.include" }?.rows.first?.control) == .empty, "item 14: no calendars is an empty state in the card")
@@ -217,11 +224,11 @@ private func s2FixesTests() {
     check(ArisSettingsIndex.matches("다크").map(\.entry) == ArisSettingsIndex.search("다크"), "item 15: the results are the ones the search always gave")
 
     // 17, 20.
-    check(!ArisSettingsGroup.allCases.map(\.rawValue).contains { $0.unicodeScalars.contains { ("A"..."Z").contains($0) } }, "item 17: no English group name in the Korean sidebar")
+    check(!ArisSettingsParts.all.map(\.title).contains { $0.unicodeScalars.contains { ("A"..."Z").contains($0) } && $0 != "AI · 모델" }, "item 17: no English part name in the Korean sidebar (AI is a name)")
     check(!ArisSettingsBuilder.sections(.control, ArisSettingsSnapshot()).flatMap(\.rows).contains { $0.id == "control.bot" }
           && ArisSettingsIndex.entry("control.bot") == nil, "item 20: no row for a feature that doesn't exist")
-    check(ArisSettingsIndex.showsNew(.skills, seen: []) && !ArisSettingsIndex.showsNew(.skills, seen: ["skills"]) && !ArisSettingsIndex.showsNew(.aris, seen: []),
-          "item 20: 새 stays on a new page until it has been opened once")
+    // Option A: the four pages are none of them new; the mark stays for a page added later.
+    check(ArisSettingsPage.allCases.allSatisfy { !ArisSettingsIndex.showsNew($0, seen: []) }, "item 20: no page carries 새 (none is new since option A)")
     // 19.
     check(ArisSkillsOff.shown(enabled: false, chatEmpty: true) && !ArisSkillsOff.shown(enabled: true, chatEmpty: true) && !ArisSkillsOff.shown(enabled: false, chatEmpty: false),
           "item 19: 스킬 is the one card with one button only while it is off and nothing was said")
@@ -292,7 +299,7 @@ private func s2DictationKeyTests() {
     // The rows: the same recorder as every other key, on both pages.
     var s = ArisSettingsSnapshot()
     s.dictationCaps = ["오른쪽 ⌘"]
-    let rows = [s2Rows(.dictation, s).first { $0.id == "dictation.key" }, s2Rows(.keys, s).first { $0.id == "keys.dictation" }]
+    let rows = [s2Rows(.keys, s).first { $0.id == "keys.dictation" }]
     check(rows.allSatisfy { $0?.control == .shortcut(name: Key.recorderName, caps: ["오른쪽 ⌘"]) }, "item 18: the dictation key's rows record a new key like the others and show the one in use")
     check(!ArisSettingsPage.allCases.flatMap { s2Rows($0, s) }.contains { if case .caps = $0.control { true } else { false } }, "item 18: no key in Settings is fixed any more")
     check(s2Rows(.keys, s).first { $0.id == "keys.dictation" }?.desc == "누르고 있는 동안 받아 적어요.", "item 18: and no row says a key can't be changed")

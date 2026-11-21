@@ -6,9 +6,12 @@
 //  pill's body (ArisDictationPillShell) hanging under the closed notch. Collapsed: the mark, the bold title, the rest
 //  dimmed and cut, and at the right when it came or a deadline's 24h / 3h chip. Under the pointer it grows into the
 //  card: the mark, the title and the ✕, the whole text under it, the buttons at the bottom right. It arrives from the
-//  36 × 8 bar, grows and folds on CSS ease, and leaves fading and shrinking to 0.8 (`exit`); with Reduce Motion it
-//  only fades. No dot blinks or pulses. Plain values in, callbacks out: ArisNoticeCenter feeds it (ArisNoticePillHost),
-//  the render harness draws it.
+//  36 × 8 bar on CSS ease and leaves fading and shrinking to 0.8 (`exit`). Between line and card it morphs on a spring
+//  (ArisNoticePillMorphing): the mark, and the title when both show the same words, stay where they are, drawn once;
+//  the line's rest fades out first, then the card's text and buttons fade in, rising 3 and sharpening from a 2-point
+//  blur, inside the growing outline. With Reduce Motion the size changes at once and only the content crossfades. No
+//  dot blinks or pulses. Plain values in, callbacks out: ArisNoticeCenter feeds it (ArisNoticePillHost, which also
+//  waits out the hover intent), the render harness draws it, at any instant of the morph.
 //
 
 import AppKit
@@ -39,18 +42,23 @@ struct ArisNoticePillView<Face: View>: View {
     /// Aris's star and Claude Code's ghost, from the owner (the star's seat in the notch; baked sprites in renders).
     @ViewBuilder let face: (ArisNoticeMark) -> Face
 
+    /// A fixed instant of the morph, 0 the line to 1 the card (offscreen renders); nil: the pointer decides.
+    var morph: Double?
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var arrived: Bool
 
     /// `still`: drawn already arrived (offscreen renders).
     init(notice: ArisNotice, english: Bool, hovered: Bool, now: Date? = nil, blending: NSVisualEffectView.BlendingMode? = .behindWindow,
-         handlers: ArisNoticeHandlers = ArisNoticeHandlers(), still: Bool = false, @ViewBuilder face: @escaping (ArisNoticeMark) -> Face) {
+         handlers: ArisNoticeHandlers = ArisNoticeHandlers(), still: Bool = false, morph: Double? = nil,
+         @ViewBuilder face: @escaping (ArisNoticeMark) -> Face) {
         self.notice = notice
         self.english = english
         self.hovered = hovered
         self.now = now
         self.blending = blending
         self.handlers = handlers
+        self.morph = morph
         self.face = face
         _arrived = State(initialValue: still)
     }
@@ -66,18 +74,27 @@ struct ArisNoticePillView<Face: View>: View {
         return .asymmetric(insertion: .identity, removal: out.animation(ease(L.exit)))
     }
 
+    /// Line ↔ card: grow on a 0.34 s spring of bounce 0.08, fold on a 0.22 s one of none; nil with Reduce Motion (the
+    /// size changes at once, the content crossfades). A spring retargets from where it is when the pointer turns back.
+    static func morphAnimation(expanding: Bool, reduceMotion: Bool) -> Animation? {
+        guard !reduceMotion else { return nil }
+        return expanding ? .spring(duration: L.expand, bounce: L.expandBounce) : .spring(duration: L.collapse, bounce: L.collapseBounce)
+    }
+
     private var phase: ArisNoticePillPhase { .of(arrived: arrived, hovered: hovered) }
 
     /// Wide enough that what must be read is never cut (ArisNoticePillFit).
     private var collapsedWidth: CGFloat { ArisNoticePillFit.width(notice, now: now ?? Date(), english: english) }
 
+    /// Where the morph is headed: the card, or the line.
+    private var progress: Double { morph ?? (phase == .expanded ? 1 : 0) }
+
     var body: some View {
         let phase = phase
-        let size = phase.size(width: collapsedWidth)
-        content(phase)
-            .opacity(phase.contentShown ? 1 : 0)
-            .animation(.easeOut(duration: L.contentFade).delay(reduceMotion ? 0 : L.contentDelay), value: phase.contentShown)
-            .frame(width: size.width, height: size.height, alignment: .top)
+        let shared = ArisNoticePillFit.sharesTitle(notice, now: now ?? Date(), english: english)
+        ArisNoticePillMorphing(arrival: arrived ? 1 : 0, progress: progress, collapsedWidth: collapsedWidth) { morph in
+            layers(morph, sharedTitle: shared, shown: phase.contentShown)
+        }
             .clipShape(ArisDictationPillShape())
             .background {
                 GeometryReader { proxy in
@@ -89,7 +106,7 @@ struct ArisNoticePillView<Face: View>: View {
             .contentShape(ArisDictationPillShape())
             .onTapGesture { handlers.tap(notice.id) }
             .onHover { inside in handlers.hover(inside ? notice.id : nil) }
-            .animation(reduceMotion ? nil : Self.ease(hovered ? L.expand : L.collapse), value: hovered)
+            .animation(Self.morphAnimation(expanding: phase == .expanded, reduceMotion: reduceMotion), value: phase == .expanded)
             .onAppear(perform: arrive)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text(verbatim: notice.title + ". " + notice.body))
@@ -101,32 +118,73 @@ struct ArisNoticePillView<Face: View>: View {
         withAnimation(Self.ease(L.arrive)) { arrived = true }
     }
 
-    @ViewBuilder
-    private func content(_ phase: ArisNoticePillPhase) -> some View {
-        if phase == .expanded {
-            card.transition(.opacity)
-        } else {
-            row.transition(.opacity)
+    // MARK: - The layers
+
+    /// Three layers in one outline, never two whole layouts at once: what stays (the mark, a shared title), the line's
+    /// rest (gone by .4 of the morph) and the card's text and buttons (from .45). Each layer keeps its own layout, so
+    /// nothing in it moves; the staying parts are drawn once, where both layouts put them, and hidden in the layers.
+    /// `shown`: the content fades in as the size lands on arriving (inside the morph, so the arrival keeps its own curve).
+    private func layers(_ morph: ArisNoticePillMorph, sharedTitle: Bool, shown: Bool) -> some View {
+        let fade = reduceMotion ? Animation.easeOut(duration: L.reducedFade) : nil
+        return Group {
+            row(sharedTitle: sharedTitle)
+                .opacity(morph.lineOpacity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(morph.cardLive)
+            card(sharedTitle: sharedTitle)
+                .blur(radius: reduceMotion ? 0 : morph.cardBlur)
+                .offset(y: reduceMotion ? 0 : morph.cardRise)
+                .opacity(morph.cardOpacity)
+                .allowsHitTesting(morph.cardLive)
+                .accessibilityHidden(!morph.cardLive)
+                .layoutValue(key: ArisNoticePillCardKey.self, value: true)
+            header(sharedTitle: sharedTitle)
+                .padding(.top, morph.headerTop)
+                .padding(.leading, L.leading)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
+        // Reduce Motion: the progress jumps; only the layers' opacity follows, in 150 ms.
+        .animation(fade, value: reduceMotion ? progress : 0)
+        .opacity(shown ? 1 : 0)
+        .animation(.easeOut(duration: L.contentFade).delay(reduceMotion ? 0 : L.contentDelay), value: shown)
+    }
+
+    /// What stays across the morph: the mark, and the title when the line and the card show the same words.
+    private func header(sharedTitle: Bool) -> some View {
+        HStack(spacing: L.gap) {
+            mark
+            if sharedTitle {
+                Text(verbatim: notice.title).font(.system(size: L.textSize, weight: .semibold)).foregroundStyle(Look.title)
+                    .lineLimit(1).fixedSize()
+            }
+        }
+        .frame(height: L.markSize)
     }
 
     // MARK: - One line
 
     /// The mark, the bold part, the rest, the time or chip. What gives way when the line is too long: a preview first,
-    /// then the bold part; a deadline's time left (the tinted rest) and the chip never (ArisNoticePillFit).
-    private var row: some View {
+    /// then the bold part; a deadline's time left (the tinted rest) and the chip never (ArisNoticePillFit). The mark (and
+    /// a shared bold part) keep their room here but are drawn by the header.
+    private func row(sharedTitle: Bool) -> some View {
         let line = ArisNoticePillRules.line(notice)
         let tint = markTint
+        let whole = ArisNoticePillFit.readWhole(notice)
         return HStack(spacing: L.gap) {
-            mark
+            markRoom
             HStack(spacing: ArisNoticePillFit.textGap) {
                 Text(verbatim: line.bold).fontWeight(.semibold).foregroundStyle(Look.title)
                     .lineLimit(1).truncationMode(.tail)
-                    .layoutPriority(line.restTinted ? 0 : 1)
+                    .opacity(sharedTitle ? 0 : 1)
+                    .layoutPriority(whole ? 0 : 1)
                 if !line.rest.isEmpty {
                     if line.restTinted {
                         Text(verbatim: line.rest).fontWeight(.medium).foregroundStyle(tint ?? Look.body)
                             .lineLimit(1).fixedSize().layoutPriority(2)
+                    } else if whole {
+                        // A line read whole (the reopen card's): the rest keeps its width, the bold part gives way first.
+                        Text(verbatim: line.rest).foregroundStyle(Look.body).lineLimit(1).fixedSize().layoutPriority(2)
                     } else {
                         Text(verbatim: line.rest).foregroundStyle(Look.body).lineLimit(1).truncationMode(.tail)
                     }
@@ -160,16 +218,20 @@ struct ArisNoticePillView<Face: View>: View {
                 .padding(.horizontal, L.chipPadding).frame(height: L.chipHeight)
                 .background(Capsule().fill(tint.opacity(L.chipFill)))
                 .fixedSize()
+        case .progress(let fraction):
+            ArisNoticeProgressBar(fraction: fraction)
         }
     }
 
     // MARK: - The card
 
-    private var card: some View {
+    /// The card as laid out at its whole height; the mark (and a shared title) keep their room but are the header's.
+    private func card(sharedTitle: Bool) -> some View {
         VStack(alignment: .leading, spacing: L.cardSpacing) {
             HStack(spacing: L.gap) {
-                mark
+                markRoom
                 Text(verbatim: notice.title).font(.system(size: L.textSize, weight: .semibold)).foregroundStyle(Look.title).lineLimit(1)
+                    .opacity(sharedTitle ? 0 : 1)
                 Spacer(minLength: 4)
                 ArisNoticePillClose(label: ArisNoticeWords.close(english: english)) { handlers.close(notice.id) }
             }
@@ -210,6 +272,9 @@ struct ArisNoticePillView<Face: View>: View {
         return nil
     }
 
+    /// The mark's room in a layer whose mark the header draws (an empty box: the star has one seat).
+    private var markRoom: some View { Color.clear.frame(width: L.markSize, height: L.markSize) }
+
     @ViewBuilder
     private var mark: some View {
         switch notice.mark {
@@ -219,6 +284,24 @@ struct ArisNoticePillView<Face: View>: View {
             let tint = Look.dueTint(alert)
             ArisNoticeSymbolMark(symbol: "calendar", tint: tint, glyph: tint, fill: Look.calendarFill, scale: 0.48)
         }
+    }
+}
+
+/// An update's quiet progress bar: the part done in the time's white on a fainter track. It only grows; nothing on
+/// it blinks or pulses.
+struct ArisNoticeProgressBar: View {
+    let fraction: Double
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Capsule().fill(.white.opacity(ArisNoticePillLayout.progressTrack))
+            Capsule().fill(ArisNoticePillLook.time)
+                .frame(width: ArisNoticePillLayout.progressWidth * CGFloat(min(1, max(0, fraction))))
+        }
+        .frame(width: ArisNoticePillLayout.progressWidth, height: ArisNoticePillLayout.progressHeight)
+        .animation(.linear(duration: 0.2), value: fraction)
+        .accessibilityElement()
+        .accessibilityValue(Text(verbatim: "\(Int((fraction * 100).rounded()))%"))
     }
 }
 
@@ -259,7 +342,7 @@ struct ArisNoticePillButton: View {
                 .brightness(hovering ? 0.06 : 0)
                 .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ArisNoticePillPressStyle())
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
     }
@@ -277,7 +360,7 @@ struct ArisNoticePillClose: View {
                 .background(Circle().fill(ArisNoticePillLook.secondaryFill))
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ArisNoticePillPressStyle())
         .accessibilityLabel(Text(verbatim: label))
     }
 }

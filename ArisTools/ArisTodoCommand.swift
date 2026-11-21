@@ -13,25 +13,15 @@ import Foundation
 func todoRequest(_ body: [String: Any]) -> [String: Any] { askTodos(body) }
 
 private func askTodos(_ body: [String: Any]) -> [String: Any] {
-    guard let token = ClaudeHookToken.load(), let url = URL(string: "http://127.0.0.1:23350/aris/todos") else {
-        fail("the notch app isn't set up for to-dos (no hook token)")
-    }
-    var request = URLRequest(url: url, timeoutInterval: 20)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
-    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-    let done = DispatchSemaphore(value: 0)
-    nonisolated(unsafe) var reply: [String: Any]?
-    URLSession.shared.dataTask(with: request) { data, response, _ in
-        if (response as? HTTPURLResponse)?.statusCode == 200, let data {
-            reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        }
-        done.signal()
-    }.resume()
-    _ = done.wait(timeout: .now() + 21)
-    guard let reply else { fail("the notch app didn't answer (is Aris running?)") }
+    guard ClaudeHookToken.load() != nil else { fail("the notch app isn't set up for to-dos (no hook token)") }
+    guard let reply = todosReply(body) else { fail("the notch app didn't answer (is Aris running?)") }
     return reply
+}
+
+/// The app's answer to a to-do request; nil when it didn't answer (or there is no token). From a turn the user is in
+/// front of, the request says so (`ask`): the app may then ask for Reminders once, after its line of why.
+func todosReply(_ body: [String: Any]) -> [String: Any]? {
+    appRouteReply(path: "/aris/todos", body: body, lineKey: "message")
 }
 
 /// "--due x --list y --note z" and what comes before the first flag.

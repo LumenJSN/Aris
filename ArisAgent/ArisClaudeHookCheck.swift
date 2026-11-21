@@ -4,7 +4,7 @@
 //
 //  Whether this Mac's Claude Code tells Aris when a session starts and stops (audit team-4). A launched Claude Code
 //  job ends on its session's Stop hook, and the hooks are added to ~/.claude/settings.json outside the app
-//  (install-claude-hooks.py): on a Mac that never ran it, the job would wait a day for a Stop that can't come. The
+//  (install-claude-hooks.py's http hooks, or the app's command hooks running aris-claude-hook.sh): on a Mac that never ran it, the job would wait a day for a Stop that can't come. The
 //  agent looks when it opens the window and says so with the launch, so the app can tell the user the window is open and
 //  that it can't see when it ends. Read only: nothing in Claude Code's settings is ever changed here.
 //
@@ -31,7 +31,7 @@ enum ArisClaudeHookCheck {
               object["disableAllHooks"] as? Bool != true, let hooks = object["hooks"] as? [String: Any] else { return false }
         return needed.allSatisfy { event in
             (hooks[event] as? [[String: Any]] ?? []).contains { group in
-                (group["hooks"] as? [[String: Any]] ?? []).contains { $0["url"] as? String == ArisUninstallCleanup.hookURL }
+                (group["hooks"] as? [[String: Any]] ?? []).contains(where: ArisUninstallCleanup.isClaudeHook)
             }
         }
     }

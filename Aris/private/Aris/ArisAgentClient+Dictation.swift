@@ -16,8 +16,9 @@ extension ArisAgentClient {
     private static let dictionaryURL = URL(string: "http://127.0.0.1:23351/dictionary")!
 
     /// Dictated words typed where the cursor is; `learn`: the agent watches the field for a minute for the user's fix.
-    static func insertDictation(_ text: String, learn: Bool) async -> ArisInsertOutcome {
-        guard let (status, data) = await dictationSend(dictationInsertURL, ["text": text, "learn": learn], timeout: 6) else {
+    /// `timeout`: how long to wait for the helper (dictation waits as long as the helper may: ArisDictationWait).
+    static func insertDictation(_ text: String, learn: Bool, timeout: TimeInterval = 6) async -> ArisInsertOutcome {
+        guard let (status, data) = await dictationSend(dictationInsertURL, ["text": text, "learn": learn], timeout: timeout) else {
             return .failed("aris-agent didn't answer")
         }
         return ArisInsertOutcome.read(status: status, reply: (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:])
@@ -53,7 +54,7 @@ extension ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(body))
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               let status = (response as? HTTPURLResponse)?.statusCode else { return nil }
         return (status, data)
     }

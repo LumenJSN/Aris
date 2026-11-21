@@ -201,6 +201,8 @@ final class ArisFixModel: ObservableObject {
         }
         ArisSettingsNav.shared.go(ArisSettingsPage.named(row.page) ?? .ai, anchor: row.anchor)
         ArisStepAside.showSettings()
+        // A refused key: the page alone has no field for a saved key, so the sheet that replaces it opens on it.
+        if row == .key { ArisAIServicesLive.shared.replaceThinkingKey() }
     }
 
     private func copy(_ text: String) {
@@ -309,7 +311,7 @@ final class ArisFixModel: ObservableObject {
         case .agentScreen: return await ArisAgentClient.agentHasScreenAccess()
         // Read from macOS at each look, with a new store once access is on (ArisRemindersAccess).
         case .reminders: return ArisReminders.shared.accessNow()
-        case .calendars: return EKEventStore.authorizationStatus(for: .event) == .fullAccess
+        case .calendars: return ArisEventGrants.shared.allowed(.events)
         case .helper: return await ArisAgentClient.probe() == .answered
         case .brain:
             guard await ArisBrainSetup.shared.refresh() else { return nil }

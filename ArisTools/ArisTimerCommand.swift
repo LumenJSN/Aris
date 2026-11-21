@@ -3,7 +3,8 @@
 //  aris-tools
 //
 //  `aris-tools timer 25`, `timer 25 --focus`, `timer pomodoro`, `timer stop`: the notch's own timer (the ring in
-//  the closed notch), not a reminder. Writes aris/timer.json and nudges the app (com.lumenjsn.aris.timer).
+//  the closed notch), not a reminder. Writes aris/timer.json and nudges the app (com.lumenjsn.aris.timer); it is told
+//  as set only once the app took the file (ArisAppAck).
 //
 
 import Foundation
@@ -31,6 +32,8 @@ func timer(_ args: [String]) {
     do { try postTimer(entry) } catch {
         fail("couldn't set the timer: \(error.localizedDescription)")
     }
+    // Only a request the app took is told as done (it removes the file once read: ArisAppAck).
+    guard ArisAppAck.taken(timerFile) else { fail(ArisAppAck.notTakenLine("the timer")) }
     // Logged, so "방금 한 거 되돌려" takes the latest change (QA BUG-18): a timer set is stopped again; a stop is final.
     let stopping = entry["action"] as? String == "stop"
     logActivity(stopping ? "타이머 끔" : "타이머: \(words.first ?? "")", undo: stopping ? nil : .stopTimer)

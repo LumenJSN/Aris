@@ -5,7 +5,8 @@
 //  Learned shortcuts (the Atticus idea): when the AI handles a request with
 //  nothing but simple, repeatable actions (next track, set the volume, open an
 //  app, run a Shortcut, place a window), those commands are saved under the
-//  request. Next time the same words run them directly: no AI, no wait.
+//  request once the same words have been handled the same way twice (one-off phrasing and words that point at
+//  the moment are never kept). After that the same words run them directly: no AI, no wait.
 //  Anything that reads, searches, remembers or failed is never saved, and only
 //  commands of a few exact shapes are ever replayed.
 //
@@ -63,6 +64,43 @@ enum ArisShortcuts {
         let korean = ["수 있어", "수 있나", "수 있니", "수 있을까", "수 있냐", "뭐", "무엇", "어떻게", "왜", "언제", "누구", "어디", "몇 ", "인가", "일까"]
         if korean.contains(where: key.contains) { return true }
         return key.range(of: #"^(what|how|why|when|who|where|which|do you|are you|is there|is it|does)\b"#, options: .regularExpression) != nil
+    }
+
+    /// Words that point at what is on screen or just happened ("이거 열어", "open that"): the same words could mean
+    /// another thing next time, so they are never saved or replayed. Narrower than the saved steps' moment words
+    /// (ArisSavedSteps.momentWords): "다음 곡" and "next track" are what shortcuts are for.
+    static let pointingWords: Set<String> = ["this", "that", "it", "here", "there", "these", "those", "them"]
+    /// Korean ones, matched at the start of a word (이거를, 방금).
+    static let pointingStarts = ["이거", "이걸", "이것", "이건", "이게", "저거", "저걸", "저것", "저건", "그거", "그걸", "그것", "그건", "여기", "거기", "저기", "방금", "아까"]
+
+    static func pointsAtTheMoment(_ key: String) -> Bool {
+        let tokens = key.lowercased().components(separatedBy: CharacterSet.letters.union(.decimalDigits).inverted).filter { !$0.isEmpty }
+        return tokens.contains { token in pointingWords.contains(token) || pointingStarts.contains { token.hasPrefix($0) } }
+    }
+
+    /// A key a shortcut may be kept or replayed under: not a question, not words that point at the moment.
+    static func mayKeep(_ key: String) -> Bool { !key.isEmpty && !isQuestion(key) && !pointsAtTheMoment(key) }
+
+    /// Requests seen once, waiting for a second time (in memory only, at most this many).
+    static let sightingsLimit = 50
+
+    /// One-off phrasing is never saved: a request becomes a shortcut the second time the same words are handled with
+    /// the same commands. `seen`: the requests handled once so far and their commands. Returns whether to save now, and
+    /// what is seen after this turn.
+    static func sighted(_ commands: [String], as key: String, seen: [String: [String]]) -> (save: Bool, seen: [String: [String]]) {
+        var updated = seen
+        if seen[key] == commands {
+            updated.removeValue(forKey: key)
+            return (true, updated)
+        }
+        updated[key] = commands
+        if updated.count > sightingsLimit, let drop = updated.keys.first(where: { $0 != key }) { updated.removeValue(forKey: drop) }
+        return (false, updated)
+    }
+
+    /// The reply kept with a shortcut: its first line, short (said again each time it runs).
+    static func keptReply(_ reply: String) -> String {
+        String((reply.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init) ?? reply).prefix(200))
     }
 
     /// Worth saving: at least one action, every one replayable, nothing else used, it worked, and no outside text came

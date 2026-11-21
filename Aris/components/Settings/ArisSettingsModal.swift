@@ -18,7 +18,9 @@ final class ArisSettingsOverlay: ObservableObject {
     static let shared = ArisSettingsOverlay()
 
     enum Sheet: String, Identifiable {
-        case export, diagnostics, wipe, uninstall, languages, restart, removeMate, memoryImport, featureDetail, wakeRecord
+        case export, diagnostics, wipe, uninstall, languages, restart, removeMate, memoryImport, featureDetail, wakeRecord, voiceEnrol
+        /// 할 수 있는 일's 팀원 and 스킬, which draw themselves as whole pages, in a large sheet (option A).
+        case team, skills
         var id: Self { self }
     }
 
@@ -98,6 +100,16 @@ struct ArisSettingsModalHost<Sheet: View>: View {
                 ArisFeaturePanel(close: { overlay.sheet = nil }) { content(sheet) }
                     .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .offset(y: 10)).combined(with: .opacity),
                                             removal: .scale(scale: 0.96).combined(with: .offset(y: 10)).combined(with: .opacity)))
+            } else if let sheet = overlay.sheet, sheet == .team || sheet == .skills {
+                // 팀원 and 스킬 keep their whole-page room: the sheet's own frame (r20, the modal fill and line, its
+                // shadow), as wide as the page column and nearly as tall as the window, with 닫기 above the page.
+                palette.backdrop.ignoresSafeArea()
+                    .onTapGesture { overlay.sheet = nil }
+                    .transition(.opacity)
+                ArisPageSheet(title: sheet == .team ? "팀원" : "스킬", close: { overlay.sheet = nil }) { content(sheet) }
+                    .transition(.scale(scale: 0.96).combined(with: .offset(y: 10)).combined(with: .opacity))
+                    .onExitCommand { overlay.sheet = nil }
+                    .background(Button("") { overlay.sheet = nil }.keyboardShortcut(.cancelAction).opacity(0).accessibilityHidden(true))
             } else if let sheet = overlay.sheet {
                 palette.backdrop.ignoresSafeArea()
                     .onTapGesture { overlay.sheet = nil }
@@ -128,6 +140,50 @@ struct ArisSettingsModalHost<Sheet: View>: View {
         // exits faster than entrances).
         .animation(overlay.sheet == .featureDetail ? .timingCurve(0, 0, 0.2, 1, duration: ArisFeatureLook.enter) : .easeOut(duration: overlay.sheet == nil ? 0.2 : 0.3), value: overlay.sheet)
         .animation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.18), value: overlay.toast)
+    }
+}
+
+/// A page in a sheet (팀원, 스킬): the page's 22 / 600 title and 닫기, then the page scrolling under it, in the sheet's
+/// own frame. As wide as the page column (800) less the window's margins, 40 short of the window's height top and bottom.
+private struct ArisPageSheet<Content: View>: View {
+    @Environment(\.arisPalette) private var palette
+    @Environment(\.arisWords) private var w
+    @Environment(\.arisSettingsStill) private var still
+    let title: String
+    let close: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    private var page: some View {
+        content().padding(.horizontal, ArisSettingsMetrics.columnTrailing).padding(.bottom, ArisSettingsMetrics.columnTrailing)
+    }
+
+    var body: some View {
+        GeometryReader { box in
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 12) {
+                    Text(w.frame(title)).font(.system(size: ArisSettingsMetrics.pageTitleSize, weight: .semibold))
+                        .tracking(ArisSettingsMetrics.pageTitleTracking).foregroundStyle(palette.title)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 0)
+                    ArisSettingsButton(title: "닫기", small: true, action: close)
+                }
+                .padding(.horizontal, ArisSettingsMetrics.columnTrailing).padding(.top, ArisSettingsMetrics.columnTrailing).padding(.bottom, ArisSettingsMetrics.titleGap)
+                if still {
+                    // Offscreen (a scroll view draws nothing there): the page from its top, cut at the sheet's end.
+                    Color.clear.overlay(alignment: .top) { page.fixedSize(horizontal: false, vertical: true) }.clipped()
+                } else {
+                    ScrollView { page }.scrollIndicators(.never)
+                }
+            }
+            .frame(width: min(ArisSettingsMetrics.columnMaxWidth, box.size.width - 2 * ArisSettingsMetrics.columnLeading),
+                   height: max(0, box.size.height - 2 * ArisSettingsMetrics.columnTop))
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.modal))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(palette.modalBorder, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .compositingGroup()
+            .shadow(color: .black.opacity(palette.dark ? 0.82 : 0.25), radius: palette.dark ? 32 : 25, y: palette.dark ? 24 : 25)
+            .frame(width: box.size.width, height: box.size.height)
+        }
     }
 }
 
@@ -295,7 +351,7 @@ struct ArisSheetListRow<Lead: View>: View {
                     Text(w(title)).font(.system(size: 13)).foregroundStyle(palette.title)
                     if let tag { ArisChip(text: tag) }
                 }
-                if let sub { Text(w(sub)).font(.system(size: 11.5)).foregroundStyle(palette.faint) }
+                if let sub { Text(w(sub)).font(.system(size: 11.5)).foregroundStyle(palette.faint).fixedSize(horizontal: false, vertical: true) }
                 if let path { Text(w(path)).font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.faint).lineLimit(1).truncationMode(.middle) }
             }
             Spacer(minLength: 0)

@@ -20,14 +20,15 @@ enum ArisActionGrant {
         switch tool {
         case "event": return eventBody(rest).flatMap(key(event:))
         case "todo": return todoBody(rest).flatMap(key(todo:))
+        case "remind": return remindBody(rest).flatMap(key(todo:))
         default: return nil
         }
     }
 
     /// The key of POST /aris/events' body; nil for a read (find) or a body that isn't one.
     static func key(event body: [String: Any]) -> String? {
-        guard let op = body["op"] as? String, ["add", "delete", "change"].contains(op) else { return nil }
-        return line("event", op, body, fields: ["id", "title", "start", "to", "rename"])
+        guard let op = body["op"] as? String, ["add", "delete", "change", "remove-uid"].contains(op) else { return nil }
+        return line("event", op, body, fields: ["id", "title", "start", "to", "rename", "uid"])
     }
 
     /// The key of POST /aris/todos' body; nil for a read (list).
@@ -42,6 +43,21 @@ enum ArisActionGrant {
     /// An undo's to-do write (by its Reminders id): the agent's own /undo vouches for it with a scope grant.
     static func isUndoKey(_ key: String) -> Bool {
         key.hasPrefix("todo|reopen|id=") || key.hasPrefix("todo|remove|id=") || key.hasPrefix("todo|set-due|id=")
+    }
+
+    /// An undo write a grant may be bound to exactly (ArisActionGrants.mintUndo(exactly:)): a to-do's, or the removal
+    /// of an event an add made, by Calendar's uid. The event's is never a scope key: only its own exact grant takes it.
+    static func isBoundUndoKey(_ key: String) -> Bool {
+        isUndoKey(key) || key.hasPrefix(eventUndoLead)
+    }
+
+    private static let eventUndoLead = "event|remove-uid|uid="
+
+    /// The exact key of the undo that removes the event Calendar knows by `uid` (POST /aris/events remove-uid); nil for
+    /// an id that isn't a plain one Calendar gives.
+    static func eventUndoKey(uid: String) -> String? {
+        guard uid.range(of: #"^[A-Za-z0-9._:@\-]{1,200}$"#, options: .regularExpression) != nil else { return nil }
+        return key(event: ["op": "remove-uid", "uid": uid])
     }
 
     private static func line(_ tool: String, _ op: String, _ body: [String: Any], fields: [String]) -> String {
@@ -72,6 +88,18 @@ enum ArisActionGrant {
         _ = option("--calendar", in: &words)
         let title = words.joined(separator: " ")
         return title.isEmpty ? nil : ["op": "add", "title": title, "start": start]
+    }
+
+    /// `remind <text> [--at "YYYY-MM-DD HH:MM"]`: a to-do added through the app (POST /aris/todos, jv-prompts), with
+    /// the time as given as its due; nil without text.
+    static func remindBody(_ args: [String]) -> [String: Any]? {
+        var words = args
+        let at = option("--at", in: &words)
+        let text = words.joined(separator: " ")
+        guard !text.isEmpty else { return nil }
+        var body: [String: Any] = ["op": "add", "text": text]
+        if let at { body["due"] = at }
+        return body
     }
 
     /// `todo add|done|remove|edit <words> [--due x] [--list y] [--note z] [--title t]`; nil for the list.

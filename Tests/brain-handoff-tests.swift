@@ -113,11 +113,11 @@ private func brainHandoffCarryOverTests() {
 private func brainHandoffMissingTests() {
     let off = ["claude": false, "codex": true, "antigravity": false, "api": false]
     let line = H.missingLine(.brain(.claude), ready: off, api: nil, korean: true, english: false)
-    check(line == "Claude Code가 이 Mac에 없거나 로그인돼 있지 않아요. 설정 › AI 서비스에서 연결해 주세요.",
+    check(line == "Claude Code가 이 Mac에 없거나 로그인돼 있지 않아요. 설정 › Aris와 말하기 › AI · 모델 › 답하는 AI에서 연결해 주세요.",
           "missing: Claude Code not installed or logged in → said as exactly that, with where to connect it")
     check(line?.contains("팀원") == false, "missing: never \"no such teammate\"")
     check(H.missingLine(.brain(.claude), ready: off, api: nil, korean: false, english: false)
-            == "Claude Code isn't on this Mac or isn't logged in. Connect it in 설정 › AI 서비스.",
+            == "Claude Code isn't on this Mac or isn't logged in. Connect it in 설정 › Aris와 말하기 › AI · 모델 › 답하는 AI.",
           "missing: English for an English request (the path as the window names it)")
     check(H.missingLine(.brain(.codex), ready: off, api: nil, korean: true, english: false) == nil
           && H.missingLine(.brain(.claude), ready: nil, api: nil, korean: true, english: false) == nil,
@@ -125,10 +125,10 @@ private func brainHandoffMissingTests() {
     check(H.missingLine(.brain(.antigravity), ready: off, api: nil, korean: true, english: false)?.hasPrefix("Antigravity가 이 Mac에") == true,
           "missing: Antigravity likewise")
     check(H.missingLine(.api(service: "deepseek"), ready: off, api: H.APIState(active: "openai", connected: ["openai"]), korean: true, english: false)
-            == "DeepSeek API 키가 아직 없어요. 설정 › AI 서비스에서 키를 넣어 주세요.",
+            == "DeepSeek API 키가 아직 없어요. 설정 › Aris와 말하기 › AI · 모델 › 답하는 AI에서 키를 넣어 주세요.",
           "missing: an API service without a key")
     check(H.missingLine(.api(service: "deepseek"), ready: ["api": true], api: H.APIState(active: "openai", connected: ["openai", "deepseek"]), korean: true, english: false)
-            == "지금 답하는 API 모델이 DeepSeek가 아니에요. 설정 › AI 서비스에서 바꾸면 맡길 수 있어요.",
+            == "지금 답하는 API 모델이 DeepSeek가 아니에요. 설정 › Aris와 말하기 › AI · 모델 › 답하는 AI에서 바꾸면 맡길 수 있어요.",
           "missing: an API service connected but not the one that answers")
     check(H.missingLine(.api(service: "deepseek"), ready: ["api": true], api: H.APIState(active: "deepseek", connected: ["deepseek"]), korean: true, english: false) == nil,
           "missing: the API service that answers, ready → handed over")
@@ -198,7 +198,7 @@ private func brainHandoffDispatchTests() {
     check(ArisHandOutPlan.plan(specs ?? [], turn: untrusted).first?.brain == .codex,
           "dispatch: an untrusted turn's model-named brain is ignored (the gated brain, as before)")
     check(ArisJobSpec(title: "t", prompt: "p", assignee: .clone, cwd: nil, appHint: nil, brain: .claude).brain == .claude
-          && handSource("Aris/private/Aris/ArisController+Local.swift").contains("brain: brain)"),
+          && handSource("Aris/private/Aris/Routing/ArisTurnFunnel.swift").contains("brain: brain)"),
           "dispatch: the files given keep the brain")
 }
 
@@ -207,12 +207,14 @@ private func brainHandoffDispatchTests() {
 private func brainHandoffWiringTests() {
     let controller = handSource("Aris/private/Aris/ArisController.swift")
     let handOver = handSource("Aris/private/Aris/ArisController+BrainHandOff.swift")
-    check(controller.contains("let handOff = shots ? nil : await brainHandOff(") && controller.contains("let named = handOff == nil ? ArisBrain.pick(from: heard) : nil"),
+    let funnel = handSource("Aris/private/Aris/Routing/ArisController+Funnel.swift"), request = handSource("Aris/private/Aris/Routing/ArisTurnRequest.swift")
+    let handlers = handSource("Aris/private/Aris/Routing/ArisTurnFunnel.swift"), runs = handSource("Aris/private/Aris/Routing/ArisController+TurnRuns.swift")
+    check(funnel.contains("let handOff = shots ? nil : await brainHandOff(") && request.contains("let named = handOff == nil ? ArisBrain.pick(from: heard) : nil"),
           "wiring: the hand-off is read before an AI is picked for the turn")
-    check(controller.contains("} else if let handing {") && controller.contains("reply = await handOver(handing,")
-          && (controller.range(of: "} else if let handing {")?.lowerBound ?? controller.endIndex) < (controller.range(of: "} else if let job = called?.asking(whole) {")?.lowerBound ?? controller.startIndex),
+    check(runs.contains("case .handOff(let handing):") && runs.contains("return await handOver(handing,")
+          && handlers.contains("if let handOff = heard.handOff, !(called != nil && handOff.task != nil) { return .handOff(handOff) }\n        return called.map { .teammate($0.asking(heard.whole)) }"),
           "wiring: handed over before a teammate's direct call (whose task-less hand-off now carries over too)")
-    check(controller.contains("programs: turnPrograms") && controller.contains("turnPrograms = handOff == nil && !shots ? await programsLine(unmarked) : nil"),
+    check(controller.contains("programs: turnPrograms") && funnel.contains("turnPrograms = handOff == nil && !shots ? await programsLine(made.unmarked) : nil"),
           "wiring: the apps named go into the turn's context")
     check(handOver.contains("missingForHandOff") && handOver.contains("ArisAgentClient.teamBrainsSaid()") && handOver.contains("ArisHandOutPlan.keepsInTurn")
           && handOver.contains("ArisJobRouting.withoutUnreadyTeammates") && handOver.contains("dispatch([plan]"),

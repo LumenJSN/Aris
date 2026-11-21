@@ -21,7 +21,7 @@ enum ArisAgentStatus {
         "keys": "키 누르는 중", "type": "입력하는 중", "show": "결과 정리 중", "timer": "타이머 맞추는 중",
         "messages": "메시지 읽는 중", "mail": "메일 보는 중", "notes": "메모 찾는 중", "files": "파일 찾는 중",
         "obsidian": "Obsidian 찾는 중", "maps": "지도 여는 중", "stock": "주가 가져오는 중", "currency": ArisCurrencyRoute.status, "desktop": "앱 다루는 중",
-        "aside": ArisAside.workingStatus, "convert": "파일 변환하는 중", "merge": "파일 합치는 중", "split": "PDF 나누는 중", "compress": "용량 줄이는 중",
+        "aside": ArisAside.handingStatus, "convert": "파일 변환하는 중", "merge": "파일 합치는 중", "split": "PDF 나누는 중", "compress": "용량 줄이는 중",
         "devin": "Devin 세션 읽는 중",
     ]
 

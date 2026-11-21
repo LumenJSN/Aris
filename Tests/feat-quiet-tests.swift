@@ -194,7 +194,7 @@ private func quietSettingsTests() {
     let mute = rows.first { $0.id == "aris.mute" }, hours = rows.first { $0.id == "aris.quietHours" }
     check(mute?.control == .toggle(.muted, false) && mute?.title == ArisQuietCopy.muteTitle(english: false), "settings: 음소거 is one switch on the Aris page")
     // Since feat-2 the row also offers 직접 고르기 (ArisQuietSpan.custom), after the same four choices.
-    check(hours?.control == .choice(.quietHours, ArisQuietHours.choices.map { ArisSettingOption(id: $0, title: ArisQuietCopy.hoursLabel($0, english: false)) }
+    check(hours?.control == .menu(.quietHours, ArisQuietHours.choices.map { ArisSettingOption(id: $0, title: ArisQuietCopy.hoursLabel($0, english: false)) }
                                     + [ArisSettingOption(id: ArisQuietSpan.custom, title: ArisQuietHoursCopy.customLabel)], selected: "23-7"),
           "settings: 밤에는 조용히 is one row that shows the hours, 23–7시 picked")
     var changed = ArisSettingsSnapshot()
@@ -202,10 +202,10 @@ private func quietSettingsTests() {
     changed.quietHours = "garbage"
     let again = ArisSettingsBuilder.sections(.aris, changed).flatMap(\.rows)
     check(again.first { $0.id == "aris.mute" }?.control == .toggle(.muted, true), "settings: the switch shows a muted Aris")
-    if case .choice(_, _, let selected, _, _)? = again.first(where: { $0.id == "aris.quietHours" })?.control {
+    if case .menu(_, _, let selected)? = again.first(where: { $0.id == "aris.quietHours" })?.control {
         check(selected == "23-7", "settings: an unreadable stored night shows as the standard hours")
     } else {
-        check(false, "settings: the hours row is a choice")
+        check(false, "settings: the hours row is a dropdown (it fits the smallest window in English)")
     }
     check(ArisSettingsIndex.entry("aris.mute")?.page == .aris && ArisSettingsIndex.entry("aris.quietHours")?.page == .aris
           && ArisSettingsIndex.search("음소거").first?.id == "aris.mute" && ArisSettingsIndex.search("mute").contains { $0.id == "aris.mute" }
@@ -239,12 +239,12 @@ private func quietWiringTests() {
     check(!direct.isEmpty && ungated.isEmpty, "wiring: no line speaks without going through speak() or the gate (\(ungated))")
 
     let tasks = quietSource("Aris/private/Aris/ArisController+Tasks.swift")
-    check(tasks.contains("let result = await ArisQuietGate.unprompted(title, reading: shown ?? text) { await work() }"),
+    check(tasks.contains("let result = reply ? await work() : await ArisQuietGate.unprompted(title, reading: shown ?? text) { await work() }"),
           "wiring: what Aris says when it speaks up on its own is marked as its own initiative")
     check(quietSource("Aris/private/Aris/ArisQuietGate.swift").contains("if silent, !text.isEmpty, !Task.isCancelled { try? await Task.sleep(for: ArisNotch.readingTime(for: text)) }"),
           "wiring: news kept to text holds the notch for its reading time, so the next one does not replace it at once")
-    check(tasks.contains("if ArisQuietGate.maySound(.aris) { pauseMusic() }"), "wiring: music is not paused for news that stays silent")
-    check(tasks.contains("if quiet || !ArisQuietGate.maySpeak(heard: session.heard) { return await clickAnswer(ask, waiter: waiter) }"),
+    check(tasks.contains("if ArisQuietGate.maySound(reply ? .user : .aris) { pauseMusic() }"), "wiring: music is not paused for news that stays silent")
+    check(tasks.contains("if quiet || !ArisQuietGate.maySpeak(heard: session.heard) { return await clickAnswer(ask, key: key, waiter: waiter) }"),
           "wiring: a card that may not be read aloud waits for a click or Y/N, and no microphone opens")
     check(tasks.contains("ClaudeSounds.play(.approval, starter: ArisQuietGate.starter(heard: session.heard))"),
           "wiring: a card's ping follows who started the card")

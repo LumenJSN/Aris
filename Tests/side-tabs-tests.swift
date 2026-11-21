@@ -53,7 +53,7 @@ private func sideTabSettingsTests() {
     let row = { (id: String) in rows.first { $0.id == id } }
     check(row("notch.tab.clipboard")?.control == .toggle(.sideTab("clipboard"), false) && row("notch.tab.calendar")?.control == .toggle(.sideTab("calendar"), false)
           && row("notch.tab.usage")?.control == .toggle(.sideTab("usage"), true), "side tab settings: a tab turned off reads as off, the others on")
-    let key = { (s: ArisSettingsSnapshot) in ArisSettingsBuilder.sections(.notch, s).flatMap(\.rows).first { $0.id == "notch.clipKey" }?.desc ?? "" }
+    let key = { (s: ArisSettingsSnapshot) in ArisSettingsBuilder.sections(.keys, s).flatMap(\.rows).first { $0.id == "keys.clipboard" }?.desc ?? "" }
     check(key(fresh) != key(some) && key(some).contains("꺼져"), "side tab settings: the clipboard shortcut's row says so while its tab is off")
     check(ArisSettingsIndex.search("클립보드").contains { $0.id == "notch.tab.clipboard" } && ArisSettingsIndex.search("사용량").contains { $0.id == "notch.tab.usage" },
           "side tab settings: a search finds a tab's switch")

@@ -140,9 +140,13 @@ protocol ArisBrainDriver: AnyObject {
     /// A card of this turn waits for the owner up to `seconds`: lines that let the process wait as long (the API brain's
     /// helper, whose whole turn had five minutes while a job's card waits ten).
     func cardWaits(_ seconds: TimeInterval) -> [Data]
+    /// The longest a single tool call of this brain may run without a line (a job's quiet limit is longer: ArisTurnLimits).
+    var longestSilentCall: TimeInterval { get }
 }
 
 extension ArisBrainDriver {
+    /// A brain that streams as it works, or whose calls Aris bounds within a job's least quiet limit.
+    var longestSilentCall: TimeInterval { 0 }
     func asideStarted() -> [Data] { [] }
     func cardWaits(_ seconds: TimeInterval) -> [Data] { [] }
     var takesImages: Bool { false }
@@ -249,7 +253,7 @@ enum ArisLoggedArguments {
 final class ArisClaudeDriver: ArisBrainDriver {
     /// stream-json kinds Claude Code writes that often carry nothing for Aris (a system line, a rate-limit notice, a
     /// non-text delta, a user tool result).
-    static let quietKinds: Set<String> = ["system", "assistant", "user", "stream_event", "rate_limit_event", "result"]
+    static let quietKinds: Set<String> = ["system", "assistant", "user", "stream_event", "rate_limit_event", "result", "control_response"]
     var quietKinds: Set<String> { Self.quietKinds }
     private let model: String
     private let tools: String
@@ -262,6 +266,33 @@ final class ArisClaudeDriver: ArisBrainDriver {
 
     /// The sealed process's init line showed exactly its tools and no MCP server (checked before any answer).
     private var initSeen = false
+
+    /// The effort this process thinks at now: its `--effort` until a turn asks for another (ArisThinking.claudeEffort).
+    private var effortNow: String?
+    /// The `--effort` the process starts at: its most common turn's, as the user's choices stand (ArisModelChoice), kept
+    /// as it was when the command line was made.
+    private var launchEffort: String {
+        ArisThinking.claudeEffort(model: model, tier: .quick, task: task, choices: ArisModelChoiceBox.shared.current)
+    }
+    private var launchedEffort: String?
+
+    private func startedEffort() -> String {
+        let effort = launchEffort
+        launchedEffort = effort
+        return effort
+    }
+    private var effortRequests = 0
+
+    /// This process's init showed only extra built-in tools (ArisClaudeInit): the runner learns them (ArisClaudeToolDrift,
+    /// denied by name from the next process on), stops this one and asks the turn again once. Read once (takeRelaunch).
+    private var relaunchExtra: [String]?
+    func takeRelaunch() -> [String]? {
+        defer { relaunchExtra = nil }
+        return relaunchExtra
+    }
+
+    /// The extra tools learned this launch (ArisClaudeToolDrift), denied by name, never one this Claude is given.
+    var driftDenied: [String] { ArisClaudeToolDrift.shared.denied.filter { !toolList.contains($0) } }
 
     /// The open Claude's private folder for its turn gate's mark (ArisTurnGate); nil for the sealed one.
     private let turnFolder: URL?
@@ -277,7 +308,12 @@ final class ArisClaudeDriver: ArisBrainDriver {
         self.handsFree = handsFree
         self.scopes = scopes
         turnFolder = sealed || handsFree ? nil : ArisTurnGate.makeFolder()
+        hands = ArisAppBundle.ownProgram.flatMap { ArisHandsFace.applies(sealed: sealed || handsFree, scopes: scopes) ? $0.path : nil }
     }
+
+    /// The MCP face's server program (aris-agent) when this Claude has it (ArisHandsFace: the switch, the open Claude,
+    /// no teammate's scopes); nil for today's launch, byte for byte.
+    let hands: String?
 
     deinit {
         if let turnFolder { try? FileManager.default.removeItem(at: turnFolder) }
@@ -335,6 +371,12 @@ final class ArisClaudeDriver: ArisBrainDriver {
     /// The web calls (by tool-use id) whose results need the judge's yes: every one of the sealed Claude, a job's, and
     /// the open Claude's after a read.
     private var judgedWeb: [String: ArisReadCall] = [:]
+    /// Whether the trust gate let exactly this call of the MCP face run in this turn (tool-use id, function, arguments as
+    /// the model gave them): the helper's record of POST /mind-call's decisions (ArisFaceDecisions); none set: never.
+    var faceAllowed: (_ id: String, _ function: String, _ arguments: [String: Any]) -> Bool = { _, _, _ in false }
+    /// The face's web calls among `judgedWeb`: Core 2 never asks the read judge, so their results need the trust gate's
+    /// decision for that call instead (its function and the arguments as the model gave them).
+    private var faceWeb: [String: (function: String, arguments: [String: Any])] = [:]
 
     func markScreenSeen() {
         seen = max(seen, .screenSeen)
@@ -359,6 +401,8 @@ final class ArisClaudeDriver: ArisBrainDriver {
         if rest.first == "skill" { return false }
         // A routine's AI-worded steps mark the thread themselves when they come back (ArisRoutineRoutes).
         if rest.first == "routine" { return false }
+        // A task's list or status: the agent marks this thread itself when a status names steps a tainted task wrote.
+        if rest.first == "task" { return false }
         // Aside: the agent marks this thread itself, before Aside runs.
         if rest.first == "aside" { return false }
         // A session's list or a prompt sent: the agent answers in fixed words (its folders and states are Aris's own hooks').
@@ -388,8 +432,16 @@ final class ArisClaudeDriver: ArisBrainDriver {
                     // A screen turn's writes are handed to the agent's gate (ArisHandOff); a hands-free turn's never are.
                     .merging(handsFree ? [ArisSealedTools.handsFreeKey: "1"] : [ArisHandOff.sealedKey: "1"]) { $1 }
             : [ArisTurnGate.stateKey: turnFolder?.path ?? "none"].merging(task ? [ArisReadGate.carefulKey: "1"] : [:]) { $1 })
-            .merging(["BASH_MAX_TIMEOUT_MS": "1800000", "BASH_DEFAULT_TIMEOUT_MS": "1800000"]) { $1 }
+            .merging(["BASH_MAX_TIMEOUT_MS": Self.bashLimitMilliseconds, "BASH_DEFAULT_TIMEOUT_MS": Self.bashLimitMilliseconds]) { $1 }
+            .merging(hands == nil ? [:] : ArisHandsFace.environment) { $1 }
     }
+
+    /// How long one of its commands may run (Claude Code says nothing while it does): 30 minutes, by default too.
+    static let bashLimit: TimeInterval = 1_800
+    static var bashLimitMilliseconds: String { String(Int(bashLimit * 1_000)) }
+
+    /// A Bash call may run its whole limit without a line: a job is never ended inside one.
+    var longestSilentCall: TimeInterval { Self.bashLimit }
 
     func reset() {
         // A new conversation: what the old one read is gone with it, so the web and sending open again (the folder is
@@ -397,11 +449,17 @@ final class ArisClaudeDriver: ArisBrainDriver {
         ArisTurnGate.clear(turnFolder)
         markFailed = false
         initSeen = false
+        effortNow = nil
+        relaunchExtra = nil
         seen = .none
         appsRead = []
         inTurn = false
         classified = []
         judgedWeb = [:]
+        faceWeb = [:]
+        interrupting = false
+        questionMessage = nil
+        rewindRequest = nil
     }
 
     /// A turn is under way (between ask and its result): anything it can't read then is outside text (fail closed).
@@ -425,7 +483,7 @@ final class ArisClaudeDriver: ArisBrainDriver {
                                  "undo", "remember", "forget", "memory", "event", "todo add", "todo edit", "todo remove", "todo done", "remind", "note"]
 
     /// Refused even if a rule above would allow them.
-    private static let neverAllowed = [
+    static let neverAllowed = [
         "Bash(rm:*)", "Bash(sudo:*)", "Bash(su:*)", "Bash(diskutil:*)", "Bash(dd:*)", "Bash(mkfs:*)",
         "Bash(shutdown:*)", "Bash(reboot:*)", "Bash(halt:*)", "Bash(launchctl:*)", "Bash(csrutil:*)",
         "Bash(chmod -R:*)", "Bash(chown:*)", "Bash(defaults delete:*)", "Bash(tccutil:*)",
@@ -441,6 +499,8 @@ final class ArisClaudeDriver: ArisBrainDriver {
         // program: a note or a typed message may name it (re-review 1).
         "Bash(peekaboo:*)", "Bash(*/peekaboo:*)", "Bash(*/computer-runtime/*)",
         "Read(~/.peekaboo/**)", "Read(~/Library/Application Support/Aris/computer-runtime/**)",
+        // The app's clipboard history: everything the user copied, passwords too (audit 17).
+        "Read(~/\(ArisProtectedPlaces.clipboardHistory)*)", "Read(~/Library/Application Support/Aris/clipboard.json*)",
     ] + ArisLocalReadPolicy.storeFolders.map { "Read(~/\($0)/**)" } + schedulerFiles
 
     /// The scheduled work and what it produced (model-written prompts and results), the activity log that can bring
@@ -448,7 +508,9 @@ final class ArisClaudeDriver: ArisBrainDriver {
     /// words; memories are read through `aris-tools memory`): this brain (no gate) neither reads nor writes them;
     /// aris-tools and the agent do that.
     private static let schedulerFiles = ["~/.config/aris/aris", "~/.config/boring-notch/aris"].flatMap { folder in
-        ["schedules.json", "routines.json", "inbox.jsonl", "activity.jsonl", "teammates.json", "teammates/**", "teammate-jobs/**", "knowhow.md", "work/**", "memory.sqlite*", "memory.md"].flatMap { file in
+        ["schedules.json", "routines.json", "inbox.jsonl", "activity.jsonl", "teammates.json", "teammates/**", "teammate-jobs/**", "knowhow.md", "work/**", "memory.sqlite*", "memory.md",
+         // Background tasks' journals and the running brains' list: the helper trusts them when it starts (ArisTaskSeal).
+         "tasks/**", "children.json"].flatMap { file in
             ["Read", "Edit", "Write"].map { "\($0)(\(folder)/\(file))" }
         }
     }
@@ -463,7 +525,24 @@ final class ArisClaudeDriver: ArisBrainDriver {
 
     func launch() -> (URL, [String])? {
         guard let claude = Self.installed(["~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]) else { return nil }
+        // A kept job's session: a new id for each process, or the one a helper that started again reopens.
+        if keepsSession { session = resumeSession ?? UUID().uuidString.lowercased() }
         return (claude, arguments)
+    }
+
+    /// The open Claude's job keeps its session on disk (claude --session-id, then --resume), so a helper that started
+    /// again can reopen it (ArisTaskRecovery). Every other Claude keeps none (`--no-session-persistence`: no transcript,
+    /// with the images in it, under ~/.claude/projects); the sealed one also works in a folder that goes with it.
+    /// Never a hands-free job's (`forgetsSession`, set before its process starts): words anyone near the Mac said.
+    var keepsSession: Bool { task && !sealed && !forgetsSession }
+    var forgetsSession = false
+    /// This process's session id (a kept job's), and the one to reopen at the next start.
+    private(set) var session: String?
+    var resumeSession: String?
+
+    private var sessionArguments: [String] {
+        guard keepsSession, let session else { return ["--no-session-persistence"] }
+        return resumeSession == session ? ["--resume", session] : ["--session-id", session]
     }
 
     /// The command line after the program.
@@ -471,18 +550,17 @@ final class ArisClaudeDriver: ArisBrainDriver {
         sealed ? sealedArguments : openArguments
     }
 
-    /// What every Claude shares. `--no-session-persistence`: Claude Code keeps no session transcript (with the images
-    /// in it) under ~/.claude/projects.
-    private func common(settings: String = #"{"disableAllHooks":true}"#) -> [String] {
+    /// What every Claude shares; its session flags are `sessionArguments`.
+    private func common(settings: String = #"{"disableAllHooks":true}"#, mcp: String = #"{"mcpServers":{}}"#) -> [String] {
         ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-         "--include-partial-messages", "--no-session-persistence",
+         "--include-partial-messages"] + sessionArguments + [
          // Sonnet at medium for a normal turn, Opus at high for one that looks things up (ArisThinking).
-         "--model", model, "--effort", ArisThinking.claudeEffort(model: model),
+         "--model", model, "--effort", startedEffort(),
          "--permission-mode", "dontAsk", "--permission-prompts", "none",
          "--setting-sources", "", "--settings", settings,
          // No MCP servers or claude.ai connectors: their tool lists made every request seconds slower (and the
          // sealed Claude must have none).
-         "--strict-mcp-config", "--mcp-config", #"{"mcpServers":{}}"#]
+         "--strict-mcp-config", "--mcp-config", mcp]
     }
 
     /// Bash, allowed exactly for the sealed aris-tools list, and the web (no Read or MCP server). Three layers, each
@@ -493,7 +571,7 @@ final class ArisClaudeDriver: ArisBrainDriver {
     private var sealedArguments: [String] {
         common(settings: ArisSealedTools.hookSettings(tools: tools)) + ["--tools", toolList.joined(separator: ","), "--allowedTools"]
             + ArisSealedTools.allowRules(tools: tools, memory: !handsFree, messages: true, handOff: !handsFree) + ["WebSearch", "WebFetch"]
-            + ["--disallowedTools"] + ArisSealedTools.deniedShapes + Self.neverAllowed
+            + ["--disallowedTools"] + driftDenied + ArisSealedTools.deniedShapes + Self.neverAllowed
             + (handsFree ? Self.handsFreeRefused + ["memory"] : Self.sealedRefused).map { "Bash(\(tools) \($0):*)" } + scopeDenied
             + ["--system-prompt", ArisAgentPrompt.sealed(tools: tools, handsFree: handsFree, task: task)]
     }
@@ -514,12 +592,20 @@ final class ArisClaudeDriver: ArisBrainDriver {
                                                    : "Claude가 허용되지 않은 도구를 가져서 멈췄어요.")]
         switch (object["type"] as? String, object["subtype"] as? String) {
         case ("system", "init"):
-            let listed = object["tools"] as? [String] ?? []
-            // A teammate's Claude is given fewer tools (ArisTeammateScope.claudeTools): it must list exactly those.
-            let expected = Set(toolList)
-            guard Set(listed) == expected, listed.count == expected.count, let servers = object["mcp_servers"] as? [Any], servers.isEmpty else { return refused }
-            initSeen = true
-            return []
+            // A teammate's Claude is given fewer tools (ArisTeammateScope.claudeTools): it must list exactly those. Only
+            // extra built-in tools (a Claude Code update): still stopped, but denied by name in the next process, which
+            // the runner asks the turn again on (ArisClaudeInit).
+            switch ArisClaudeInit.verdict(listed: object["tools"] as? [String], servers: object["mcp_servers"] as? [Any], expected: hands == nil ? Set(toolList) : [],
+                                          mcp: hands == nil ? nil : ArisHandsFace.clientNames) {
+            case .ok:
+                initSeen = true
+                return []
+            case .refused:
+                return refused
+            case .relaunch(let extra):
+                relaunchExtra = extra
+                return refused
+            }
         case ("assistant", _):
             let content = (object["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
             // Outside text an earlier block of this same message brings in (its mark may not be written yet).
@@ -527,9 +613,18 @@ final class ArisClaudeDriver: ArisBrainDriver {
             for block in content {
                 let type = block["type"] as? String ?? ""
                 if type == "tool_use" {
-                    let input = block["input"] as? [String: Any] ?? [:]
-                    let command = input["command"] as? String
-                    let call = ArisAgentStream.ToolCall(name: block["name"] as? String ?? "", command: command)
+                    toolsSinceQuestion = true
+                    var input = block["input"] as? [String: Any] ?? [:]
+                    var command = input["command"] as? String
+                    var name = block["name"] as? String ?? ""
+                    // A call of the MCP face is read as the built-in call it stands for (ArisHandsFace) by the taint marking
+                    // and the web-result check below. It is no Bash call: the trust gate decided it before it ran
+                    // (ArisMindRemote), so the turn gate's after-a-read check and the R5 web-fetch line don't apply to it.
+                    let face = hands != nil && name.hasPrefix(ArisMCPServerWire.toolPrefix)
+                    // The call as the model gave it, for the trust gate's record of it (the web-result check below).
+                    let given = (function: ArisMCPServerWire.function(clientName: name) ?? "", arguments: input)
+                    if face { (name, command, input) = ArisHandsFace.asShell(name, input: input, tools: tools) }
+                    let call = ArisAgentStream.ToolCall(name: name, command: command)
                     // The hook resolved the address already; here only its shape counts (no lookup on this queue).
                     let shapeOnly: (String) -> [String]? = { _ in ["93.184.216.34"] }
                     if sealed {
@@ -539,7 +634,7 @@ final class ArisClaudeDriver: ArisBrainDriver {
                         guard (web && fetchOK) || (call.name == "Bash" && command.map { ArisSealedTools.permits(command: $0, tools: tools, memory: !handsFree,
                                                                                                                   messages: true, handOff: !handsFree) } == true)
                         else { return refused }
-                    } else if turnMarked, case .deny = ArisTurnGate.verdict(tool: call.name, command: command, tools: tools, tainted: true,
+                    } else if !face, turnMarked, case .deny = ArisTurnGate.verdict(tool: call.name, command: command, tools: tools, tainted: true,
                                                                             input: input, resolve: shapeOnly) {
                         // The backstop (I2): after a read, a command (or an address) the turn gate refuses stops the
                         // process, whatever the hook did.
@@ -547,12 +642,14 @@ final class ArisClaudeDriver: ArisBrainDriver {
                     }
                     if let id = block["id"] as? String {
                         classified.insert(id)
-                        // I3: a web call the hook had to judge; its result must find the judge's yes.
+                        // I3: a web call the hook had to judge; its result must find the judge's yes (a face call's: the
+                        // trust gate's own decision for it, which Core 2 asks in place of the read judge).
                         if let web = ArisReadGate.call(webTool: call.name, input: input), sealed || task || turnMarked || broughtInHere {
                             judgedWeb[id] = web
+                            if face { faceWeb[id] = given }
                         }
                         // R5: so must a page the open Claude fetched with aris-tools after a read (or in a job).
-                        if !sealed, call.name == "Bash", let command, task || turnMarked || broughtInHere,
+                        if !sealed, !face, call.name == "Bash", let command, task || turnMarked || broughtInHere,
                            case .judge(let read, _) = ArisTurnGate.verdict(tool: "Bash", command: command, tools: tools, tainted: turnMarked || broughtInHere,
                                                                            careful: task, resolve: shapeOnly),
                            read.tool == "web fetch" || read.arguments.contains("web fetch") {
@@ -572,18 +669,29 @@ final class ArisClaudeDriver: ArisBrainDriver {
         case ("user", _):
             let content = (object["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
             for block in content where block["type"] as? String == "tool_result" {
+                toolsSinceQuestion = true
+                // A note written before this result goes out with the next model step: the turn took it.
+                steerQueued = false
                 let id = block["tool_use_id"] as? String ?? ""
                 if !classified.contains(id) { seen = .outsideText }
                 // The backstop (I3): a web result the judge never allowed stops the process before the model reads it.
-                // A refused call comes back as an error and ran nothing.
-                if let web = judgedWeb.removeValue(forKey: id), block["is_error"] as? Bool != true, !webAllowed(web) {
+                // A refused call comes back as an error and ran nothing. A face call's result passes on the trust gate's
+                // "run" (or the owner's yes on its card) for that very call this turn; with none it stops as before.
+                let faceCall = faceWeb.removeValue(forKey: id)
+                if let web = judgedWeb.removeValue(forKey: id), block["is_error"] as? Bool != true, !webAllowed(web),
+                   !(faceCall.map { faceAllowed(id, $0.function, $0.arguments) } ?? false) {
                     return [.abort(Self.uncheckedWebStop)]
                 }
             }
             return nil
         case ("result", _):
             inTurn = false
-            if object["is_error"] as? Bool == true || object["subtype"] as? String != "success" { seen = .outsideText }
+            // A turn Aris interrupted ends with error_during_execution (checked live on 2.1.327): that alone brings
+            // nothing in, so the taint stays as it was, unless a tool was called or a tool's result came in since the
+            // question (the drain's lines included). Every other failed turn is outside text, as before.
+            let cutOff = interrupting && object["subtype"] as? String == "error_during_execution" && !toolsSinceQuestion
+            if object["is_error"] as? Bool == true || object["subtype"] as? String != "success", !cutOff { seen = .outsideText }
+            interrupting = false
             return initSeen ? nil : refused
         case ("stream_event", _):
             return initSeen ? nil : refused
@@ -617,8 +725,15 @@ final class ArisClaudeDriver: ArisBrainDriver {
 
     /// Every call first asks the turn gate (ArisTurnGate): after a read, no web and nothing outbound.
     private var openArguments: [String] {
-        common(settings: ArisTurnGate.hookSettings(tools: tools)) + ["--tools", toolList.joined(separator: ","),
-                  "--allowedTools"] + allowed + ["--disallowedTools"] + Self.neverAllowed
+        // `arisCore2` (ArisHandsFace): model-only, no built-in tool at all, Aris's one server with its tools allowed by name,
+        // no hook (nothing built in for it to see), and the prompt the API brains get for the same functions (ArisHandsPrompt).
+        if let hands {
+            return common(mcp: ArisHandsFace.config(agent: hands, tools: tools)) + ["--tools", "", "--allowedTools"] + ArisHandsFace.clientNames
+                + ["--disallowedTools"] + driftDenied + Self.neverAllowed
+                + ["--system-prompt", ArisHandsPrompt.system(task: task)]
+        }
+        return common(settings: ArisTurnGate.hookSettings(tools: tools)) + ["--tools", toolList.joined(separator: ","),
+                  "--allowedTools"] + allowed + ["--disallowedTools"] + driftDenied + Self.neverAllowed
             + Self.openRefused.map { "Bash(\(tools) \($0):*)" } + scopeDenied
             + ["--system-prompt", ArisAgentPrompt.system(tools: tools, task: task, reads: true)]
     }
@@ -633,13 +748,89 @@ final class ArisClaudeDriver: ArisBrainDriver {
     }
 
     func ask(_ prompt: String, tier: ArisTier) -> [Data] {
-        inTurn = true
-        return [ArisAgentStream.userMessage(prompt)]
+        ask(prompt, images: [], tier: tier)
     }
 
     func ask(_ prompt: String, images: [ArisTurnImage], tier: ArisTier) -> [Data] {
         inTurn = true
-        return [ArisAgentStream.userMessage(prompt, images: sealed ? images : [])]
+        interrupting = false
+        let uuid = UUID().uuidString.lowercased()
+        lastMessage = uuid
+        return effortLines(tier) + [ArisAgentStream.userMessage(prompt, images: sealed ? images : [], uuid: uuid)]
+    }
+
+    // MARK: - A task's added instruction (ArisTaskSteer)
+
+    /// A note written during the turn and not yet followed by a tool's result: Claude Code reads it after this turn's
+    /// result, as its next turn (ArisSteerableDriver).
+    private var steerQueued = false
+
+    func steerLines(_ note: String) -> [Data]? {
+        guard inTurn else { return nil }
+        steerQueued = true
+        return [ArisAgentStream.userMessage(note, images: [], uuid: UUID().uuidString.lowercased())]
+    }
+
+    func takeLateSteer() -> ArisSteerLate {
+        defer { steerQueued = false }
+        return steerQueued ? .queuedByBrain : .none
+    }
+
+    // MARK: - A stopped turn (ArisTurnDrain)
+
+    /// The message ids of the last question written and of the question the runner's turn began with, whether a tool was
+    /// called or a tool's result came in since that question, and whether its turn is being interrupted (on the runner's
+    /// queue).
+    private var lastMessage: String?
+    private var questionMessage: String?
+    private var toolsSinceQuestion = false
+    private var interrupting = false
+    private var rewindCount = 0
+    private var rewindRequest: String?
+
+    /// The runner's turn began with the question just written (not a follow-up within the turn).
+    func questionStarted() {
+        questionMessage = lastMessage
+        toolsSinceQuestion = false
+    }
+
+    /// The turn under way is being interrupted: its result says error_during_execution, which is no sign of outside text.
+    func noteInterrupt() {
+        interrupting = true
+    }
+
+    /// The lines that take the stopped turn out of the conversation (Claude Code's `rewind_conversation` control request,
+    /// to the turn's question: it and everything after it go), so the words that follow are not read twice. Only for a
+    /// turn that called no tool: what a tool did stays in the conversation, so it is never done again unknowingly. Nil
+    /// when there is nothing to take out.
+    func rewindLines() -> [Data]? {
+        guard !toolsSinceQuestion, let target = questionMessage else { return nil }
+        rewindCount += 1
+        let id = "aris-rewind-\(rewindCount)"
+        rewindRequest = id
+        questionMessage = nil
+        return [Self.line(["type": "control_request", "request_id": id, "request": ["subtype": "rewind_conversation", "target_message_uuid": target]])]
+    }
+
+    /// Whether `line` answers the rewind asked for (either way), and whether it rewound.
+    func rewindAnswer(_ line: String) -> (answered: Bool, rewound: Bool) {
+        guard let id = rewindRequest, line.contains(id), let data = line.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], object["type"] as? String == "control_response",
+              let response = object["response"] as? [String: Any], response["request_id"] as? String == id else { return (false, false) }
+        rewindRequest = nil
+        return (true, response["subtype"] as? String == "success" && (response["response"] as? [String: Any])?["rewound"] as? Bool == true)
+    }
+
+    /// The effort this turn's tier thinks at (ArisThinking), when the process is at another one: Claude Code's
+    /// `apply_flag_settings` control request, written just before the question (checked live on 2.1.327: answered
+    /// "success", and the turn's first token comes as fast as a process started at that effort). None when it's the same.
+    func effortLines(_ tier: ArisTier) -> [Data] {
+        let wanted = ArisThinking.claudeEffort(model: model, tier: tier, task: task, choices: ArisModelChoiceBox.shared.current)
+        guard wanted != (effortNow ?? launchedEffort ?? launchEffort) else { return [] }
+        effortNow = wanted
+        effortRequests += 1
+        return [Self.line(["type": "control_request", "request_id": "aris-effort-\(effortRequests)",
+                           "request": ["subtype": "apply_flag_settings", "settings": ["effortLevel": wanted]]])]
     }
 
     func read(_ line: String) -> [ArisBrainEvent] {

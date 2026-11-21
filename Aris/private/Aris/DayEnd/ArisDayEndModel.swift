@@ -82,10 +82,11 @@ final class ArisDayEndModel: ObservableObject {
     /// `reply` is the list's own sentence: drawn as the plain line above it (ArisWidgetLine), as a card's line is.
     func isLine(_ reply: String) -> Bool { card != nil && !said.isEmpty && reply == said }
 
-    /// Puts a summary up: the evening's offer is used up with it. 목록 is as he left it today.
-    func show(_ made: Made) {
+    /// Puts a summary up: the evening's offer is used up with it. 목록 is as he left it today. `line`: what stands
+    /// above the list in place of its one sentence (the day in review's sentences, ArisDayEndRecap).
+    func show(_ made: Made, line: String? = nil) {
         card = made.summary
-        said = made.summary.sentence
+        said = line ?? made.summary.sentence
         facts = made.facts
         madeAt = made.at
         open = kept(now: made.at).open
@@ -189,7 +190,8 @@ final class ArisDayEndModel: ObservableObject {
         }
         // Past midnight the day being wrapped up began yesterday: the whole record is asked for and cut to the day here.
         async let activity = ArisAgentClient.activity(today: Calendar.current.isDate(span.today, inSameDayAs: now))
-        async let schedules = ArisAgentClient.dayEndSchedules(span, now: now)
+        let recap = ArisRecapSwitch.isOn()
+        async let schedules = ArisAgentClient.dayEndSchedules(span, now: now, record: recap)
         // The to-dos ticked off today, by the user or by Aris: Reminders knows both.
         let ticked = await ArisReminders.shared.completed(from: span.today, to: max(now, span.tomorrow)) ?? []
         facts.todos += ticked.map { ArisDayEndFacts.Todo(id: $0.item.id, title: $0.item.title, due: $0.item.due, hasTime: $0.item.hasTime, completed: $0.at) }
@@ -204,6 +206,11 @@ final class ArisDayEndModel: ObservableObject {
         let read = await schedules
         facts.schedules = read?.tomorrow ?? []
         facts.routines = read?.today ?? []
+        if recap {
+            // The day in review: the record's counts and the coding sessions (their state, never their words).
+            facts.record = read?.record
+            facts.sessions = ArisFleetStore.shared.fleet.sessions
+        }
         let aris = ArisController.shared
         let waiting = ArisCardDesk.shared.waiting.cards
         facts.cards = waiting.map { ArisDayEndFacts.Card(id: $0.id, title: $0.title, action: $0.action) }
@@ -254,6 +261,8 @@ final class ArisDayEndModel: ObservableObject {
         let aris = ArisController.shared
         return ArisDayEndOffer.isDue(enabled: Defaults[.arisDayEndOffer], lastShown: lastShown, now: Date(), idle: Self.idleSeconds())
             && !aris.screenAway && aris.session.phase == .idle && aris.training == nil && !ArisSideDemo.shared.isOn
+            // The day in review asks the one interruption policy too: not over a voice, not in a call (ArisRecapOffer).
+            && (!ArisRecapSwitch.isOn() || aris.interruption(ArisRecapOffer.want(hasNews: true)).comesUp)
     }
 
     /// The chip hangs under the closed notch for a few seconds (longer while the pointer is on it), then steps back.

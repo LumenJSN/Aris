@@ -49,7 +49,7 @@ func mcpRequest(_ args: [String], environment: [String: String]) -> Result<[Stri
         } else {
             return .failure(ArisMCPUsage(text: usage))
         }
-        return .success(body)
+        return .success(mindPassed(body, environment: environment))
     default:
         return .failure(ArisMCPUsage(text: usage))
     }

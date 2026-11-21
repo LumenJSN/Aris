@@ -110,6 +110,13 @@ extension ArisAgentClient {
         return body["removed"] as? Bool == true
     }
 
+    /// A taught procedure's new name (ArisTaughtRoute); nil when the agent didn't answer.
+    static func renameSavedSteps(key: String, name: String) async -> (renamed: Bool, taken: Bool)? {
+        guard let data = await memoryCall(["op": "savedStepsRename", "key": key, "name": name]),
+              let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return (body["renamed"] as? Bool == true, body["taken"] as? Bool == true)
+    }
+
     // MARK: 다른 AI에서 가져오기 (ArisImportRoute)
 
     /// The request to copy into the other AI, in the UI's language; nil when the agent didn't answer.
@@ -146,7 +153,7 @@ extension ArisAgentClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(body))
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return data
     }

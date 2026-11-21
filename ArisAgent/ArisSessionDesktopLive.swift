@@ -99,7 +99,7 @@ enum ArisSessionDesktopLive {
             return .failure(.hostNotProven("Claude"))
         }
         let before = shown(in: address(window))
-        guard let turn = ArisNativeForeground.borrow(pid: pid, window: window) else { return .failure(.notInFront) }
+        guard case .success(let turn) = ArisNativeForeground.take(pid: pid, window: window, clock: ArisNativeOwnerClock(), job: false) else { return .failure(.notInFront) }
         func putBack() {
             if let before, before != local, let back = link(before) {
                 NSWorkspace.shared.open(back)
@@ -146,6 +146,11 @@ enum ArisSessionDesktopLive {
         reach.submit = {
             guard ready() else { return .focusMoved }
             ArisNativeInput.press(36, route: .front)
+            return nil
+        }
+        reach.escape = {
+            guard ready() else { return .focusMoved }
+            ArisNativeInput.press(53, route: .front)
             return nil
         }
         reach.finish = putBack

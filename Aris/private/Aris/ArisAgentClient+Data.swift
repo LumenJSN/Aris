@@ -56,28 +56,30 @@ extension ArisAgentClient {
     }
 
     /// The agent's uninstall, step by step in order (it stops after the app if the app couldn't go to the Trash, and
-    /// stops itself after replying). Nil when it couldn't be reached, refused, or didn't answer within 3 minutes.
-    static func uninstall(confirm: String, keepData: Bool) async -> [(step: String, ok: Bool, note: String?)]? {
+    /// stops itself after replying); or that it refused, or couldn't be reached or didn't answer within 3 minutes.
+    static func uninstall(confirm: String, keepData: Bool) async -> ArisUninstallReply {
         // The agent does every step before it answers (a large ~/.config/aris takes a while to remove).
-        guard let reply = await sendData(["op": "uninstall", "confirm": confirm, "keepData": keepData], timeout: 180),
-              let steps = reply["steps"] as? [[String: Any]] else { return nil }
-        return steps.compactMap { row in
-            guard let step = row["step"] as? String, let ok = row["ok"] as? Bool else { return nil }
-            return (step, ok, row["note"] as? String)
-        }
+        let (status, body) = await sendDataStatus(["op": "uninstall", "confirm": confirm, "keepData": keepData], timeout: 180)
+        return ArisUninstallReply.from(status: status, body: body)
     }
 
     /// The reply's JSON object on 200; nil when the agent is off, refused (403) or rejected the request (400).
     private static func sendData(_ body: [String: Any], timeout: TimeInterval = 15) async -> [String: Any]? {
-        guard let token = ClaudeHookToken.load() else { return nil }
+        let (status, object) = await sendDataStatus(body, timeout: timeout)
+        return status == 200 ? object ?? [:] : nil
+    }
+
+    /// The reply's status and JSON object; a nil status when the agent couldn't be reached or didn't answer.
+    private static func sendDataStatus(_ body: [String: Any], timeout: TimeInterval) async -> (status: Int?, object: [String: Any]?) {
+        guard let token = ClaudeHookToken.load() else { return (nil, nil) }
         var request = URLRequest(url: dataURL, timeoutInterval: timeout)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: ClaudeHookToken.header)
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(body))
-        // URLSession.shared: its sockets live in this process, which is what ArisPeer's socket check reads.
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        // ArisNoStore.session: its sockets live in this process, which is what ArisPeer's socket check reads.
+        guard let (data, response) = try? await ArisNoStore.session.data(for: request),
+              let status = (response as? HTTPURLResponse)?.statusCode else { return (nil, nil) }
+        return (status, (try? JSONSerialization.jsonObject(with: data)) as? [String: Any])
     }
 }

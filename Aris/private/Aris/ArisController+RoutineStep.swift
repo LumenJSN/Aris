@@ -29,7 +29,7 @@ extension ArisAgentClient {
         var body = outcome.json
         body["id"] = step.id
         request.httpBody = try? JSONSerialization.data(withJSONObject: identified(body))
-        let status = ((try? await URLSession.shared.data(for: request))?.1 as? HTTPURLResponse)?.statusCode
+        let status = ((try? await ArisNoStore.session.data(for: request))?.1 as? HTTPURLResponse)?.statusCode
         if status != 200 { stepLog.error("routine step: the agent didn't take the answer (\(status ?? 0, privacy: .public))") }
     }
 }
@@ -44,7 +44,7 @@ extension ArisController {
         if await teammateRemoval(words) != nil { return .notLocal }
         if await teammateCalled(words) != nil { return .notLocal }
         guard session.phase == .thinking, !Task.isCancelled else { return .notLocal }
-        let korean = ArisSpeech.language(of: words) == "ko-KR"
+        let korean = Self.replyKorean
         let outcome = await doRoutineAct(intent, korean: korean)
         switch outcome {
         case .notLocal: stepLog.notice("routine step: not the app's own")

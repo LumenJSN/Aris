@@ -43,6 +43,12 @@ private func fixTurnSource(_ path: String) -> String {
 }
 
 /// The text of one function, from its declaration to the next one at the same depth.
+/// answer() and its funnel: the request, the handlers, the host and what each claim does (Routing/).
+private func fixTurnFunnelSource() -> String {
+    ["ArisTurnRequest.swift", "ArisTurnFunnel.swift", "ArisController+Funnel.swift", "ArisController+TurnRuns.swift"]
+        .map { fixTurnSource("Aris/private/Aris/Routing/" + $0) }.joined(separator: "\n")
+}
+
 private func fixTurnFunction(_ name: String, in source: String) -> String {
     guard let start = source.range(of: "func " + name) else { return "" }
     let rest = source[start.upperBound...]
@@ -161,7 +167,7 @@ private func trueLocalReplyTests() {
                   "turn-1: a to-do that was not saved (\(outcome)) is never told as added: \(said)")
         }
     }
-    check(ArisLocalReply.todoAdded(.noAccess, korean: true).contains("설정 › 할 일 · 캘린더 › 미리 알림 접근")
+    check(ArisLocalReply.todoAdded(.noAccess, korean: true).contains("설정 › 앱 › 권한 › 미리 알림 접근")
             && ArisLocalReply.todoAdded(.noAccess, korean: false).contains("Settings"),
           "turn-1: with Reminders off the reply says where to turn it on")
     check(ArisLocalReply.todoAdded(.failed(why: "저장하지 못했어요. 디스크가 가득 찼어요."), korean: true).contains("디스크가 가득 찼어요"),
@@ -185,7 +191,7 @@ private func trueLocalReplyTests() {
         check(change?.applies == false && change?.reply == none && change?.logged == nil,
               "turn-1: \(intent) with no timer running changes nothing, logs nothing and says so")
     }
-    check(plan(.addTime(300), running: true)?.reply == "5분 늘렸어요." && plan(.addTime(300), running: true)?.applies == true,
+    check(plan(.addTime(300), running: true)?.reply == "타이머를 5분 늘렸어요." && plan(.addTime(300), running: true)?.applies == true,
           "turn-1: time is added to a running timer, and said")
     check(plan(.pauseTimer, running: true)?.applies == true && plan(.pauseTimer, running: true)?.reply == "타이머 잠깐 멈췄어요.",
           "turn-1: a running timer is paused, and said")
@@ -205,15 +211,15 @@ private func trueLocalReplyTests() {
           "turn-1: the same in English")
 
     // The wiring: each local branch says what its act returned.
-    let controller = fixTurnSource("Aris/private/Aris/ArisController.swift")
+    let controller = fixTurnFunnelSource()
     let local = fixTurnSource("Aris/private/Aris/ArisController+Local.swift")
-    check(controller.contains("reply = ArisLocalReply.todoAdded(await addTodo(item), korean: korean)")
+    check(controller.contains("let reply = ArisLocalReply.todoAdded(await addTodo(item), korean: korean)")
             && !controller.contains("reply = intent.acknowledgement(korean: korean) ?? \"\""),
           "turn-1: the to-do branch says the outcome, never the acknowledgement alone")
     check(controller.contains("read == nil ? ArisLocalReply.todosUnread(korean: korean)"), "turn-1: the list branch tells an unreadable list apart")
     check(local.contains("ArisTimerChange.plan(intent, running: timer.isRunning") && local.contains("guard change.applies else { return change.reply }"),
           "turn-1: a timer request is checked against the timer before anything is done")
-    check(local.contains("if case .saved(let title, let id) = outcome") && local.contains("if let logged = change.logged"),
+    check(local.contains("if case .saved(let title, let id) = outcome") && local.contains("if recorded, let logged = change.logged"),
           "turn-1: only a change that happened is logged for undo")
     check(fixTurnSource("Aris/private/Aris/ArisController+Undo.swift").contains("guard let items = read else { return await undoSay(ArisLocalReply.undoUnknown(korean: korean)) }"),
           "turn-1: undo tells an agent that did not answer apart from an empty list")
@@ -286,19 +292,18 @@ private func stoppedTurnTests() {
 
     // The wiring: nothing in a turn acts or writes the notch after a wait without checking it was not stopped.
     let controller = fixTurnSource("Aris/private/Aris/ArisController.swift")
-    let answer = fixTurnFunction("answer(_ said: String", in: controller)
-    let routed = answer.range(of: "let called = ").map { String(answer[$0.lowerBound...].prefix(800)) } ?? ""
-    check(routed.contains("guard !Task.isCancelled else { return }") && (answer.range(of: "guard !Task.isCancelled else { return }")?.lowerBound ?? answer.endIndex)
-            < (answer.range(of: "if let yes = madeAnswer {")?.lowerBound ?? answer.startIndex),
+    let answer = fixTurnFunnelSource()
+    let walk = fixTurnFunction("claim(_ request: ArisTurnRequest", in: fixTurnSource("Aris/private/Aris/Routing/ArisTurnFunnel.swift"))
+    check(walk.contains("if handler.needs == .read, Task.isCancelled { return nil }") && walk.contains("guard claim.runsWhenStopped || !Task.isCancelled else { return nil }")
+            && (walk.range(of: "request.reading = .make(heard, routed: routed)")?.lowerBound ?? walk.endIndex) < (walk.range(of: "Task.isCancelled { return nil }")?.lowerBound ?? walk.startIndex),
           "turn-2: after the router and the teammate lookup, a stopped turn ends before any branch acts")
-    check((answer.range(of: "finishing = await ArisTodoModel.shared.finishable(item)")?.lowerBound ?? answer.endIndex)
-            < (answer.range(of: "guard !Task.isCancelled else { return }")?.lowerBound ?? answer.startIndex) && answer.contains("} else if let found = finishing {"),
-          "turn-2: the to-do lookup is done before that check, so a turn stopped during it cannot fall through to a hand-off")
+    check(answer.contains("return await host.finishable(item).map { .finishTodo($0) }"),
+          "turn-2: the to-do lookup is the claim itself, so a turn stopped during it is checked before anything is done")
     for wait in ["let read = await ArisTodoModel.shared.summary(korean: korean)", "let done = await performMedia(media)",
-                 "let now = await ArisNowPlaying.shared.currentPlayback()", "reply = await performControl(control, korean: korean)",
-                 "reply = ArisLocalReply.todoAdded(await addTodo(item), korean: korean)"] {
+                 "let now = await ArisNowPlaying.shared.currentPlayback()", "let reply = await performControl(control, korean: korean)",
+                 "let reply = ArisLocalReply.todoAdded(await addTodo(item), korean: korean)"] {
         let after = answer.range(of: wait).map { String(answer[$0.upperBound...].prefix(120)) } ?? ""
-        check(after.contains("guard !Task.isCancelled else { return }"), "turn-2: after \"\(wait.prefix(40))…\" the turn checks it was not stopped before it speaks")
+        check(after.contains("guard !Task.isCancelled else { return nil }"), "turn-2: after \"\(wait.prefix(40))…\" the turn checks it was not stopped before it speaks")
     }
     check(fixTurnSource("Aris/private/Aris/ArisController+Arrange.swift").contains("guard !Task.isCancelled else { return \"\" }")
             && fixTurnSource("Aris/private/Aris/ArisController+Undo.swift").contains("guard !Task.isCancelled else { return \"\" }"),
@@ -323,8 +328,8 @@ private func filesAreNotCommandsTests() {
         check(own == "이거 설명해 줘" && ArisIntent.parse(own) == .ask("이거 설명해 줘"),
               "files-1: a file's name is not a command (\(ArisPendingFiles.shown(whole)))")
     }
-    check(ArisIntent.parse(named[0]) == .timer(seconds: 300, focus: false),
-          "files-1: (why it matters) read whole, a file named \"timer 5 min.png\" would set a timer")
+    check(ArisIntent.parse(named[0]) == .ask(named[0]),
+          "files-1: (and read whole, a file named \"timer 5 min.png\" is no whole timer command either: audit intent-3)")
     let texts = ["주간 회의 브리핑 자료입니다.", "We should focus on retention. Two weeks left.", "오늘 할 일 목록을 정리했다. 뭐가 남았는지 보자.",
                  "Run the build in the background and wait.", "신중하게 검토해 주세요. carefully.", "아까 복사한 링크: https://github.com/a/b 스킬 추가"]
     for text in texts {
@@ -338,14 +343,15 @@ private func filesAreNotCommandsTests() {
     check(!ArisDeixis.refersToScreen(turn("이거 설명해 줘", files: ["/tmp/a.png"])), "files-1: (unchanged) with files, \"이거\" is the files, not the screen")
 
     // The wiring: the turn reads commands from the user's words and sends the whole request only to the AI or a job.
-    let answer = fixTurnFunction("answer(_ said: String", in: fixTurnSource("Aris/private/Aris/ArisController.swift"))
+    let answer = fixTurnFunnelSource()
     check(answer.contains("let whole = named?.request ?? heard") && answer.contains("let unmarked = ArisPendingFiles.words(of: whole)"),
           "files-1: the turn's own words are the user's alone")
-    check(answer.contains("let text = shots ? (gesture?.markedRequest(heard) ?? whole) : whole") && answer.contains("called?.asking(whole)"),
+    check(answer.contains("let text = shots ? (gesture?.markedRequest(heard) ?? whole) : whole") && answer.contains("$0.asking(heard.whole)"),
           "files-1: the AI and a teammate's job still get the files")
-    for reads in ["ArisGestureTurn.intent(unmarked: unmarked", "await route(unmarked)", "ArisIntent.guarded(intent, said: unmarked)", "ArisRouter.asksForCare(unmarked)",
-                  "ArisHandoff.isHandoff(unmarked)", "ArisDeixis.refersToClipboard(unmarked)", "ArisSkillIntent.link(in: unmarked)", "teammateRemoval(unmarked)",
-                  "ArisTeamMaking.parse(unmarked)", "teammateCalled(unmarked)", "ArisSpeech.language(of: unmarked)"] {
+    for reads in ["ArisGestureTurn.intent(unmarked: unmarked", "await host.routed(heard.unmarked)", "ArisIntent.guarded(intent, said: heard.unmarked)",
+                  "ArisRouter.asksForCare(heard.unmarked)", "ArisHandoff.isHandoff(heard.unmarked)", "ArisDeixis.refersToClipboard(heard.unmarked)",
+                  "ArisSkillIntent.link(in: heard.unmarked)", "teammateRemoval(heard.unmarked)", "ArisTeamMaking.parse(heard.unmarked)",
+                  "teammateCalled(heard.unmarked)"] {
         check(answer.contains(reads), "files-1: \(reads) reads the user's own words")
     }
     check(!answer.contains("isHandoff(text)") && !answer.contains("refersToClipboard(text)"), "files-1: no command matcher reads the files' text")
@@ -366,7 +372,7 @@ private func resumedConversationTests() {
     let cleared = resume.range(of: "lastTurnAt = nil")?.lowerBound ?? resume.endIndex
     // The row no longer starts listening (vside-tests.swift, side 2): the turn is put back in the notch, and the clock
     // is cleared before that, so the next thing said or typed does not wipe the history and the marks as stale.
-    let shows = resume.range(of: "session = .parked(heard: shown.heard, reply: shown.reply)")?.lowerBound ?? resume.startIndex
+    let shows = resume.range(of: "setSession(.parked(heard: shown.heard, reply: shown.reply))")?.lowerBound ?? resume.startIndex
     check(set < cleared && cleared < shows,
           "resume-1: the old conversation's clock is cleared before the turn is shown again, so its history and marks are not wiped as stale")
 }
@@ -387,7 +393,7 @@ private func chosenBrainTests() {
     check(ArisBrainChoice.answering(.codex, ready: [.claude: false, .codex: false, .antigravity: false, .api: false]) == .codex,
           "brain-1: with nothing set up the chosen brain is asked, and its failure says where to fix it")
     let look = fixTurnSource("Aris/private/Aris/ArisController+Look.swift")
-    check(!look.contains("brain: .codex") && look.contains("rewriteSelection(text, look: look, tier: tier, brain: brain)")
+    check(!look.contains("brain: .codex") && look.contains("rewriteSelection(text, look: look, tier: tier, brain: brain, mode: .draft)")
             && look.contains("ArisBrainChoice.answering(brain, ready: ArisBrainSetup.shared.ready)"),
           "brain-1: rewriting a selection asks the turn's own brain, never Codex by name")
 }

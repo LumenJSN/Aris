@@ -37,7 +37,7 @@ private func themesBackingTests() {
 
     var on = ArisSettingsSnapshot()
     on.textBacking = true
-    let top = { (s: ArisSettingsSnapshot) in ArisSettingsBuilder.sections(.notch, s).first { $0.id == "notch.top" }?.rows ?? [] }
+    let top = { (s: ArisSettingsSnapshot) in ArisSettingsBuilder.sections(.look, s).first { $0.id == "look.all" }?.rows ?? [] }
     let row = top(ArisSettingsSnapshot()).first { $0.id == ArisNotchLookSetting.backingID }
     check(row?.control == .toggle(.textBacking, false) && top(on).first { $0.id == ArisNotchLookSetting.backingID }?.control == .toggle(.textBacking, true),
           "text backing: its switch is a row of the 위 노치 card in Settings › 노치, showing what is stored")
@@ -82,7 +82,7 @@ private func themesRestStarTests() {
 
     var off = ArisSettingsSnapshot()
     off.restStar = false
-    let top = { (s: ArisSettingsSnapshot) in ArisSettingsBuilder.sections(.notch, s).first { $0.id == "notch.top" }?.rows ?? [] }
+    let top = { (s: ArisSettingsSnapshot) in ArisSettingsBuilder.sections(.look, s).first { $0.id == "look.all" }?.rows ?? [] }
     check(top(ArisSettingsSnapshot()).first { $0.id == ArisNotchLookSetting.restStarID }?.control == .toggle(.restStar, true)
           && top(off).first { $0.id == ArisNotchLookSetting.restStarID }?.control == .toggle(.restStar, false),
           "rest star: its switch is a row of the 위 노치 card, on unless turned off")
@@ -126,9 +126,10 @@ private func themesThemeTests() {
     check(solidGlass == .floor && solidVoice == .aris, "theme: 검정 after 밝은 아래 draws the solid floor and turns the light-bottom surface off")
     check(cleared, "theme: 기본 removes both preferences, as a fresh install has them")
 
-    let top = { (s: ArisSettingsSnapshot) in ArisSettingsBuilder.sections(.notch, s).first { $0.id == "notch.top" }?.rows ?? [] }
-    check(top(ArisSettingsSnapshot()).suffix(3).map(\.id) == [ArisNotchLookSetting.themeID, ArisNotchLookSetting.backingID, ArisNotchLookSetting.restStarID],
-          "theme: the three look rows close the 위 노치 card, in one card with its other rows")
+    let top = { (s: ArisSettingsSnapshot) in ArisSettingsBuilder.sections(.look, s).first { $0.id == "look.all" }?.rows ?? [] }
+    // Option A: the notch's three look rows open 모양 › 창 · 테마, with the window's own look after them (D10).
+    check(top(ArisSettingsSnapshot()).prefix(3).map(\.id) == [ArisNotchLookSetting.themeID, ArisNotchLookSetting.backingID, ArisNotchLookSetting.restStarID],
+          "theme: the three look rows open 창 · 테마, before the window's look")
     check(ArisSettingsSnapshot().notchTheme == "standard", "theme: 기본 on a fresh install")
     let row = top(ArisSettingsSnapshot()).first { $0.id == ArisNotchLookSetting.themeID }
     check(row?.desc == "고른 모양은 다음에 노치가 열릴 때 바뀌어요.", "theme: the row says when a new theme shows, in one sentence")
@@ -160,13 +161,13 @@ private func themesNoFrostedTests() {
 private func themesPlainPickerTests() {
     var picked = ArisSettingsSnapshot()
     picked.notchTheme = ArisNotchTheme.solid.rawValue
-    let row = ArisSettingsBuilder.sections(.notch, picked).first { $0.id == "notch.top" }?.rows.first { $0.id == ArisNotchLookSetting.themeID }
+    let row = ArisSettingsBuilder.sections(.look, picked).first { $0.id == "look.all" }?.rows.first { $0.id == ArisNotchLookSetting.themeID }
     let options = ArisNotchTheme.allCases.map { ArisSettingOption(id: $0.rawValue, title: $0.title) }
     check(row?.control == .menu(.notchTheme, options, selected: "solid"),
           "theme: the row is the settings' own menu of the four names, showing the one picked; nothing drawn by hand")
     var none = ArisSettingsSnapshot()
     none.notchTheme = ""
-    let unpicked = ArisSettingsBuilder.sections(.notch, none).first { $0.id == "notch.top" }?.rows.first { $0.id == ArisNotchLookSetting.themeID }
+    let unpicked = ArisSettingsBuilder.sections(.look, none).first { $0.id == "look.all" }?.rows.first { $0.id == ArisNotchLookSetting.themeID }
     check(unpicked?.control == .menu(.notchTheme, options, selected: ""), "theme: with a hand-set look the menu shows none picked")
     check(themesSource("Aris/components/Settings/ArisNotchThemeRow.swift").isEmpty, "theme: the previews' view is gone")
 }

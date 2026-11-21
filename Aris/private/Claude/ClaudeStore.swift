@@ -41,6 +41,8 @@ final class ClaudeStore: ObservableObject {
 
     /// The bundle ids of the apps running now (set by the app; nil in the tests: no session is dropped for its terminal).
     var runningApps: (() -> Set<String>)?
+    /// Whether a process still runs (set by the app; nil in the tests: no session is dropped for its process).
+    var processAlive: ((Int32) -> Bool)?
 
     private var resolvers: [UUID: (ClaudeDecision) -> Void] = [:]
     /// What lets a card's held hook request go when the card is dropped without the user's answer (ClaudeStore.take).
@@ -96,6 +98,11 @@ final class ClaudeStore: ObservableObject {
         approvals.first.map { Self.isAris($0.cwd) } ?? false
     }
 
+    /// Who needs the user and why: the cards waiting in the notch, then sessions waiting in their terminal (ClaudeAttention).
+    var attention: [ClaudeAttention.Need] {
+        ClaudeAttention.needs(approvals: approvals, sessions: sessions, isAris: Self.isAris)
+    }
+
     /// Any Claude session open, even one resting and waiting for the next prompt.
     var hasSessions: Bool {
         !sessions.isEmpty || !approvals.isEmpty
@@ -127,13 +134,13 @@ final class ClaudeStore: ObservableObject {
 
     func apply(_ event: ClaudeHookEvent, now: Date = Date()) {
         onEvent?(event, now)
+        dropAnsweredElsewhere(after: event)
         if event.name == "SessionEnd" {
             sessions = sessions.filter { $0.key != event.sessionId }
             if focusedSessionId == event.sessionId { focusedSessionId = nil }
             happyReset[event.sessionId]?.cancel()
             return
         }
-        dropAnsweredElsewhere(after: event)
         guard let state = event.claudeState, !Self.isAris(event.cwd) else { return }
 
         let previous = sessions[event.sessionId]
@@ -146,6 +153,7 @@ final class ClaudeStore: ObservableObject {
             edit: event.edit ?? previous?.edit,
             lastMessage: Self.message(after: event, from: previous?.lastMessage),
             terminal: event.terminal ?? previous?.terminal,
+            pid: event.pid ?? previous?.pid,
             contextPercent: event.name == "SessionStart" ? nil : previous?.contextPercent,
             agent: event.agent,
             lastHook: ClaudeSessionsRoute.hookName(event)
@@ -174,13 +182,16 @@ final class ClaudeStore: ObservableObject {
     /// Drops the sessions that are over and rests the ones long silent (ClaudeSessionSweep: Codex never says it ended,
     /// and a force-closed terminal says nothing either).
     func sweep(now: Date = Date()) {
-        let look = ClaudeSessionSweep.swept(sessions, now: now, runningApps: runningApps?(), terminalSeen: terminalSeen)
+        let look = ClaudeSessionSweep.swept(sessions, now: now, runningApps: runningApps?(), terminalSeen: terminalSeen,
+                                            alive: processAlive)
         terminalSeen = look.terminalSeen
         guard look.sessions != sessions else { return }
         let gone = Set(sessions.keys).subtracting(look.sessions.keys)
         gone.forEach { happyReset[$0]?.cancel() }
         if let focused = focusedSessionId, gone.contains(focused) { focusedSessionId = nil }
         sessions = look.sessions
+        // A session that is over asks nothing any more: its cards go with it (and the tab's badge with them).
+        approvals.filter { gone.contains($0.sessionId) }.forEach { cancelApproval($0.id) }
     }
 
     /// The sweep runs once a minute while any session is listed, and stops with the last one.
@@ -317,6 +328,9 @@ final class ClaudeStore: ObservableObject {
             flows = flows.merging([approval.id: QuestionFlow(questions: questions)]) { _, new in new }
         }
         approvals = approvals + [approval]
+        // The session that asks comes to the front of the tab: its column and its Open terminal are the ones beside the
+        // card (a session picked earlier kept the column, and Open terminal went to the wrong terminal).
+        focusedSessionId = nil
         ClaudeSounds.play(.approval)
         resolvers = resolvers.merging([approval.id: resolve]) { _, new in new }
         if let onDrop { drops = drops.merging([approval.id: onDrop]) { _, new in new } }
@@ -387,7 +401,12 @@ final class ClaudeStore: ObservableObject {
     /// The card is dropped without the user's answer: the client went away (timed out, or the session quit), it was
     /// answered in the terminal, or its time passed. No decision is sent; a held hook request is let go (`onDrop`),
     /// so Claude Code is never left waiting for a card that is gone.
-    func cancelApproval(_ id: UUID) {
+    func cancelApproval(_ id: UUID, clientGone: Bool = false) {
+        // Its agent stopped waiting (interrupted, or killed): the session asks nothing now, so it isn't left "needs you".
+        if clientGone, let approval = approvals.first(where: { $0.id == id }), let session = sessions[approval.sessionId],
+           session.state == .notification, !approvals.contains(where: { $0.id != id && $0.sessionId == approval.sessionId }) {
+            sessions = sessions.merging([session.id: session.with(state: .idle)]) { _, new in new }
+        }
         let drop = drops[id]
         resolvers = resolvers.filter { $0.key != id }
         drops = drops.filter { $0.key != id }
@@ -396,13 +415,15 @@ final class ClaudeStore: ObservableObject {
         drop?()
     }
 
-    /// A terminal answer leaves the hook request open, so the card is cleared by what happens next:
-    /// the same call finishing, or the turn ending (which covers a terminal "No").
+    /// A terminal answer leaves the hook request open, so the card is cleared by what happens next: the same call
+    /// finishing, the turn ending (which covers a terminal "No"), the session back at its prompt (a new prompt, or
+    /// Claude's "waiting for your input" a minute after a "No" that ended the turn without a Stop), or the session ending.
     private func dropAnsweredElsewhere(after event: ClaudeHookEvent) {
         let answered: (ClaudeApproval) -> Bool
         switch event.name {
         case "PostToolUse", "PostToolUseFailure": answered = { $0.isFinished(by: event) }
-        case "Stop", "StopFailure": answered = { $0.sessionId == event.sessionId }
+        case "Stop", "StopFailure", "UserPromptSubmit", "SessionEnd": answered = { $0.sessionId == event.sessionId }
+        case "Notification" where event.notificationType == "idle_prompt": answered = { $0.sessionId == event.sessionId }
         default: return
         }
         approvals.filter(answered).forEach { cancelApproval($0.id) }

@@ -120,6 +120,19 @@ enum ArisDropCopy {
         }
     }
 
+    /// Something was dropped on Aris that has no file, text, link or picture in it: refused, out loud.
+    static func unreadable(english: Bool) -> String {
+        english ? "Aris couldn't read what was dropped. Drop a file, text, a link or a picture." : "끌어온 걸 읽지 못했어요. 파일, 글, 링크, 사진을 놓아 주세요."
+    }
+
+    /// Text and links dropped on Aris go into the composer after what is already typed, one per line.
+    static func draft(_ current: String, adding texts: [String]) -> String {
+        let added = texts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !added.isEmpty else { return current }
+        let kept = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ([kept].filter { !$0.isEmpty } + added).joined(separator: "\n")
+    }
+
     /// More were dropped than Aris takes at once.
     static func cut(dropped: Int, kept: Int, english: Bool) -> String {
         english ? "Took \(kept) of the \(dropped) files: \(kept) at a time is the most." : "\(dropped)개 중 \(kept)개만 받았어요. 한 번에 \(kept)개까지예요."

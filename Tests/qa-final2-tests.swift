@@ -30,10 +30,11 @@ private func finalSource(_ path: String) -> String {
 // MARK: - BUG-25c
 
 private func qaFinal2MadeCardTests() {
-    let controller = finalSource("Aris/private/Aris/ArisController.swift")
-    let made = controller.range(of: "let madeAnswer = ")?.lowerBound, routed = controller.range(of: "let routed = await route(unmarked)")?.lowerBound
-    check(made != nil && routed != nil && made! < routed! && controller.contains("if named == nil, madeAnswer == nil,")
-          && controller.contains("if let yes = madeAnswer {"), "BUG-25c: a yes or no to the new-teammate card never reaches the router")
+    let request = finalSource("Aris/private/Aris/Routing/ArisTurnRequest.swift"), funnel = finalSource("Aris/private/Aris/Routing/ArisTurnFunnel.swift")
+    let made = funnel.range(of: "ArisMadeCardHandler(), ArisDoneHandler(),")?.lowerBound, routed = funnel.range(of: "ArisSkillLinkHandler(), ArisTeammateRemovalHandler()")?.lowerBound
+    check(made != nil && routed != nil && made! < routed! && request.contains("guard named == nil, madeAnswer == nil, handOff == nil, fx == nil,")
+          && funnel.contains("request.heard?.madeAnswer.map { .madeCard(yes: $0) }") && funnel.contains("var needs: ArisTurnRequest.Stage { .heard }"),
+          "BUG-25c: a yes or no to the new-teammate card never reaches the router")
     check(ArisTeamMadeAnswer.reply("응", cardUp: true) == true && ArisTeamMadeAnswer.reply("응", cardUp: false) == nil,
           "BUG-25c: \"응\" answers the card only while it's up")
 }
@@ -99,7 +100,7 @@ private func qaFinalRecurringTests() {
     check(ArisIntent.parse("할 일 뭐 있어") == .listTodos, "BUG-45: the to-do list still reads locally")
     check(!ArisHandoff.isHandoff("매일 아침 8시에 날씨 알려 줘, 해 둬") && ArisHandoff.isHandoff("조사해서 정리해 놔"),
           "schedule: a recurring request stays in the turn (its 예약 추가 card), never a background hand-off")
-    check(finalSource("Aris/private/Aris/ArisController.swift").contains("!ArisIntent.isRecurring(unmarked), needsSecondGuess("),
+    check(finalSource("Aris/private/Aris/Routing/ArisTurnRequest.swift").contains("fx == nil, !ArisIntent.isRecurring(unmarked) else { return false }"),
           "BUG-45: the router doesn't second-guess a schedule")
 }
 
@@ -121,7 +122,8 @@ private func qaFinalConversationTests() {
     let controller = finalSource("Aris/private/Aris/ArisController.swift")
     check(controller.contains("conversation = conversation.spoke(at: Self.uptime)") && controller.contains("settleConversation(reachedAI: turnReachedAI, heard: turnHeard)")
           && finalSource("Aris/private/Aris/ArisController+Stats.swift").contains("turnHeard = true"), "BUG-49: every heard turn and the end of speech reach the clock")
-    check(finalSource("Aris/private/Aris/ArisController+Wake.swift").contains("if let lastTurnAt, ContinuousClock.now - lastTurnAt > Self.conversationLasts { endConversation() }"),
+    check(finalSource("Aris/private/Aris/ArisController+Wake.swift").contains("endConversationIfLongAgo()")
+          && finalSource("Aris/private/Aris/ArisController+Continuity.swift").contains("Defaults[.arisConversationMinutes]"),
           "BUG-49: 대화 이어가기 holds for a voice-started turn too")
 }
 
@@ -280,8 +282,10 @@ func runQAFinal2CardReplyTests() {
           "BUG-43: a reply already in his terms stays")
     check(ArisCardWait.replyAfterCards("폴더를 만들었어요.", unanswered: false, declined: false, korean: true) == "폴더를 만들었어요.", "BUG-43: no card, no change")
     let controller = (try? String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../Aris/private/Aris/ArisController.swift").standardized, encoding: .utf8)) ?? ""
-    check(controller.contains("if !allow { if cardUnanswered { cardUnansweredThisTurn = true } else { cardDeclinedThisTurn = true } }")
-          && controller.contains("guard !cardUnansweredThisTurn, !cardDeclinedThisTurn else { break }")
+    let state = (try? String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../Aris/private/Aris/Routing/ArisBrainTurnState.swift").standardized, encoding: .utf8)) ?? ""
+    check(state.contains("if !allow { if unanswered { cardUnanswered = true } else { cardDeclined = true } }")
+          && controller.contains("state.answered(allow: allow, unanswered: cardUnanswered, stopped: ask.stopped, waiting: waiting)")
+          && controller.contains("guard !state.holdsAnswer else { break }") && state.contains("var holdsAnswer: Bool { cardUnanswered || cardDeclined }")
           && controller.contains("let answer = ArisCardWait.replyAfterCards(written,"), "BUG-39/43: every turn's reply after a card goes through it, nothing said before")
     check(ArisAgentPrompt.busyLine(korean: true).contains("카드에 먼저 답해 주세요") && !ArisAgentPrompt.busyLine(korean: true).contains("Aris is still"),
           "a question while a card waits: said in Korean, the card first")
@@ -345,7 +349,7 @@ func runQAFinal2SafetyTests() {
           "BUG-33 (reopened): the agent waits for a card at least the app's limit")
     let tasks = source("Aris/private/Aris/ArisController+Tasks.swift")
     check(tasks.contains("guard await ArisAgentClient.stillWaits(ask.id) == false else { return false }") && tasks.contains("if waiterGone {\n            answer = nil")
-          && source("Aris/private/Aris/ArisController.swift").contains("askUser(ask, handsFree: turnHandsFree, waiter: true)"),
+          && source("Aris/private/Aris/ArisController.swift").contains("askUser(ask, handsFree: turnHandsFree, waiter: true, ownerContent: ownerContent, after: said)"),
           "BUG-33 (reopened): a card whose waiter is gone closes at once, never left up dead")
     check(source("ArisAgent/ArisAgentPrompt.swift").contains("run `\\(tools) desktop wait <id>`"), "BUG-33 (reopened): the brain is told to collect a call still under way")
     // BUG-33 reopened (b): a claim of success with nothing done is replaced.

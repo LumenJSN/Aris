@@ -136,18 +136,60 @@ enum ArisSkillStore {
         lock.withLock { read(file) }
     }
 
-    private static func read(_ file: URL) -> ArisSkillState {
-        guard let data = FileManager.default.contents(atPath: file.path), data.count <= 4 * 1_048_576 else { return ArisSkillState() }
+    static let sizeLimit = 4 * 1_048_576
+
+    /// The state, with what can't be read kept aside (ArisPrivateFile.setAside, skills.json.bad, the user told once) rather
+    /// than lost at the next write: a record that doesn't decode is left out of the list; a file that isn't the
+    /// state at all is kept whole. `writable`: false when what couldn't be read also couldn't be kept aside, so the
+    /// file must not be written over.
+    static func salvage(_ data: Data, file: URL) -> (state: ArisSkillState, writable: Bool) {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
-        return (try? decoder.decode(ArisSkillState.self, from: data)) ?? ArisSkillState()
+        if data.count <= sizeLimit, let state = try? decoder.decode(ArisSkillState.self, from: data) { return (state, true) }
+        var state = ArisSkillState()
+        var bad: [Any] = []
+        if data.count <= sizeLimit, let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            state.enabled = object["enabled"] as? Bool ?? false
+            state.reviewBrain = object["reviewBrain"] as? String
+            state.deferred = object["deferred"] as? Bool ?? false
+            for entry in object["skills"] as? [Any] ?? [] {
+                if JSONSerialization.isValidJSONObject(entry), let one = try? JSONSerialization.data(withJSONObject: entry),
+                   let record = try? decoder.decode(ArisSkillRecord.self, from: one) {
+                    state.skills.append(record)
+                } else {
+                    bad.append(entry)
+                }
+            }
+            if object["skills"] != nil, !(object["skills"] is [Any]) { bad.append(["skills": object["skills"] ?? NSNull()]) }
+        } else {
+            bad.append(["unreadable store": String(decoding: data.prefix(sizeLimit), as: UTF8.self)])
+        }
+        guard !bad.isEmpty else { return (state, true) }
+        guard let kept = ArisPrivateFile.setAside(bad, beside: file) else { return (state, false) }
+        if kept > 0 { ArisPrivateFile.reportSetAside(kept, what: "스킬", file: file) }
+        return (state, true)
     }
 
-    /// Reads, changes and writes under one lock; returns what was written.
+    private static func read(_ file: URL) -> ArisSkillState {
+        readForChange(file).state
+    }
+
+    private static func readForChange(_ file: URL) -> (state: ArisSkillState, writable: Bool) {
+        guard let data = FileManager.default.contents(atPath: file.path), !data.isEmpty else { return (ArisSkillState(), true) }
+        return salvage(data, file: file)
+    }
+
+    /// Reads, changes and writes under one lock; returns what was written (a file that can't be read and couldn't be
+    /// kept aside is left as it is).
     @discardableResult
     static func update(_ file: URL, _ change: (ArisSkillState) -> ArisSkillState) -> ArisSkillState {
         lock.withLock {
-            let next = change(read(file))
+            let current = readForChange(file)
+            let next = change(current.state)
+            guard current.writable else {
+                FileHandle.standardError.write(Data("aris-agent: \(file.lastPathComponent) can't be read and couldn't be kept aside: left as it is\n".utf8))
+                return next
+            }
             write(next, to: file)
             return next
         }

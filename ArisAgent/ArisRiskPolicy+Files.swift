@@ -151,7 +151,9 @@ extension ArisRiskPolicy {
         guard !isInside(path, work) else { return false }
         let lowered = path.lowercased()
         let places = ["/.ssh", "/.gnupg", "/keychains", "/.codex", "/.claude", "/.aws", "/.netrc", "/.config/gh", "/.docker", "/.kube",
-                      "/.npmrc", "/.pypirc", "/.git-credentials", "/.peekaboo", "/computer-runtime"]
+                      "/.npmrc", "/.pypirc", "/.git-credentials", "/.peekaboo", "/computer-runtime",
+                      // The app's clipboard history and its corrupt copies, in its container or not (audit 17).
+                      "/application support/aris/clipboard.json"]
         let file = (lowered as NSString).lastPathComponent
         // ~/.config/boring-notch is the old name of Aris's folder, kept as a link to it.
         let inArisFolder = lowered.contains("/.config/aris") || lowered.contains("/.config/boring-notch")
@@ -160,5 +162,36 @@ extension ArisRiskPolicy {
         let launchFile = inArisFolder && (lowered.hasSuffix("/aris/launch") || lowered.contains("/aris/launch/"))
         return places.contains(where: lowered.contains) || namesSecret(file) || arisKey || launchFile
             || ArisLocalReadPolicy.storeFragments.contains(where: lowered.contains)
+    }
+}
+
+// MARK: - Whole places and whole folders (ArisBroadTarget on the old path)
+
+extension ArisRiskPolicy {
+    /// What a path is right now (ArisTrustGate.livePathKind); the tests hand in their own.
+    nonisolated(unsafe) static var pathKind: (String) -> ArisPathKind = ArisTrustGate.livePathKind
+
+    /// The broad-target guard's refusal for `aris-tools trash|move|rename …`, in its own words; nil when it has none.
+    /// The eleventh VM run, R6b: "Move to Trash /Users/admin/Documents" went up as an ordinary card on this path (the
+    /// guard was the trust gate's only), and only the tool refused after the yes. Home's own folders, home, a volume
+    /// and what holds them are refused; so is a folder the owner's words (`request`) don't name as a folder. The
+    /// twelfth VM run, D1/D2: `trash /Users/aris/Documents` (a home the model made up; this Mac's is /Users/admin) got
+    /// a card, because a path with nothing there was left to the tool. Nothing there, or a made-up home, is refused
+    /// now ("그런 경로는 없어요"), and an everyday folder counts by its name ("Documents", any /Users/<name>/Documents).
+    static func broadTargetRefusal(_ arguments: [String], request: String, home: String) -> String? {
+        guard let tool = arguments.first, tool == "trash" || ArisBroadTarget.movingCommands.contains(tool) else { return nil }
+        let paths = ArisBroadTarget.guarded(capability: "", effect: .changeReversible, argv: arguments.filter { $0 != "--" }, paths: [])
+        // A bare everyday folder's name ("Documents") is home's, whatever folder aris-tools would read it from.
+        if let name = paths.lazy.filter({ !$0.contains("/") }).compactMap(ArisBroadTarget.everydayName).first {
+            return ArisBroadTarget.broadPlace("~/" + name)
+        }
+        let targets = paths.map { raw -> ArisPathTarget in
+            let expanded = raw == "~" ? home : raw.hasPrefix("~/") ? home + raw.dropFirst(1) : raw
+            // A relative path is aris-tools' own, from Aris's folder (where the AI's commands run).
+            let full = expanded.hasPrefix("/") ? expanded : workFolder(home: home) + "/" + expanded
+            return ArisPathTarget(path: full, kind: pathKind(full))
+        }
+        if case .refuse(let why) = ArisBroadTarget.judge(targets, said: request, home: home) { return why }
+        return nil
     }
 }

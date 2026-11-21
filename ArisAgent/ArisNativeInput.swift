@@ -24,13 +24,15 @@ enum ArisNativeInput {
     nonisolated(unsafe) private static var learnedForeground: Set<String> = []
 
     /// Whether keys posted to the app's process reach it while another app is in front: not for a Chromium or Electron
-    /// shell, Warp, or an app a background type was seen to miss.
-    static func takesBackgroundKeys(bundle: String?, bundleURL: URL?) -> Bool {
+    /// shell, Warp, or an app a background type was seen to miss (this run, or remembered: ArisNativeInputMemory).
+    static func takesBackgroundKeys(bundle: String?, bundleURL: URL?, memory: ArisNativeInputMemory = .shared) -> Bool {
         if let bundle, foregroundOnly.contains(bundle) || lock.withLock({ learnedForeground.contains(bundle) }) { return false }
+        if memory.failed(bundle).contains(.background) { return false }
         return !ArisAX.isWebShell(bundleURL: bundleURL)
     }
 
-    /// A background type was read back and hadn't arrived: that app goes in front from now on (this agent run).
+    /// A background type was read back and hadn't arrived (ArisNativeLadder: the field exactly as it was, its focus in
+    /// the right window): that app gets the next rung from now on (kept on disk by the ladder's memory too).
     static func learnForeground(_ bundle: String?) {
         guard let bundle else { return }
         _ = lock.withLock { learnedForeground.insert(bundle) }
@@ -45,22 +47,43 @@ enum ArisNativeInput {
         "kp_enter": 76, "keypadenter": 76,
     ]
 
-    /// A chord as the controller writes it ("cmd+a", "return", "shift+tab"): its key and flags; nil for one it doesn't know.
-    static func chord(_ text: String) -> (key: CGKeyCode, flags: CGEventFlags)? {
+    /// A chord as the controller writes it ("cmd+a", "return", "shift+tab"): its key and flags, on the keyboard layout
+    /// selected now (ArisKeyboardLive, read on the main thread: off it the US places were used for every layout);
+    /// nil for one it doesn't know.
+    static func chord(_ text: String) -> (key: CGKeyCode, flags: CGEventFlags, character: Bool)? { chord(text, keyboard: ArisKeyboardLive.state()) }
+
+    /// The same on a given keyboard (nil: the US places). A character's key is the one that types it there: with ⌘ or ⌃
+    /// the key an app's shortcut goes by (ArisKeyMap.commandKey), alone the stroke that types it, its ⇧ or ⌥ added. Pure.
+    static func chord(_ text: String, keyboard: ArisKeyboardState?) -> (key: CGKeyCode, flags: CGEventFlags, character: Bool)? {
         let parts = text.lowercased().split(separator: "+").map(String.init).map { ["meta", "super"].contains($0) ? "cmd" : $0 }
         guard let last = parts.last else { return nil }
         let normal = parts.joined(separator: "+")
-        if let parsed = ArisKeyChord.parse(normal, layout: { command in Thread.isMainThread ? ArisKeyLayout.current(command: command) : [:] }) {
-            return (parsed.key, parsed.flags)
+        let modifiers = Set(parts.dropLast())
+        let shortcut = !modifiers.isDisjoint(with: ["cmd", "command", "ctrl", "control"])
+        // A name the original text spelled with a capital is still that character ("A" pressed alone is ⇧a).
+        let original = String(text.split(separator: "+").last ?? "")
+        let character = last.count == 1 && extraKeys[last] == nil && !["return", "enter", "tab", "space", "delete", "escape", "esc", "left", "right", "down", "up"].contains(last)
+        let layout: (Bool) -> [String: CGKeyCode] = { command in
+            guard let keyboard, character else { return [:] }
+            if command || shortcut { return keyboard.map.commandKey(for: last).map { [last: $0] } ?? [:] }
+            return keyboard.map.stroke(for: original).map { [last: $0.key] } ?? [:]
+        }
+        if let parsed = ArisKeyChord.parse(normal, layout: layout) {
+            var flags = parsed.flags
+            // A character typed with ⇧ or ⌥ on this layout ("!", "@", "é"…), pressed with no ⌘ or ⌃: those go too.
+            if character, !shortcut, let stroke = keyboard?.map.stroke(for: original) {
+                if stroke.shift { flags.insert(.maskShift) }
+                if stroke.option { flags.insert(.maskAlternate) }
+            }
+            return (parsed.key, flags, character)
         }
         guard let key = extraKeys[last] else { return nil }
         var flags: CGEventFlags = []
-        let modifiers = Set(parts.dropLast())
         if modifiers.contains("cmd") || modifiers.contains("command") { flags.insert(.maskCommand) }
         if modifiers.contains("shift") { flags.insert(.maskShift) }
         if !modifiers.isDisjoint(with: ["opt", "option", "alt"]) { flags.insert(.maskAlternate) }
         if !modifiers.isDisjoint(with: ["ctrl", "control"]) { flags.insert(.maskControl) }
-        return (key, flags)
+        return (key, flags, false)
     }
 
     /// Where an event goes: the app's process (background), or the system's input stream (the app is in front).
@@ -126,9 +149,12 @@ enum ArisNativeInput {
     }
 
     /// Types `literal` (Peekaboo's escapes) as Unicode key events in chunks.
-    static func type(_ literal: String, route: Route) {
+    static func type(_ literal: String, route: Route) { send(pieces(literal), route: route) }
+
+    /// The pieces as Unicode key events (text) and key presses (the escapes' keys).
+    static func send(_ pieces: [Piece], route: Route) {
         let source = CGEventSource(stateID: .privateState)
-        for piece in pieces(literal) {
+        for piece in pieces {
             switch piece {
             case .key(let key): press(key, route: route)
             case .text(let text):
@@ -239,7 +265,33 @@ struct ArisNativeForeground {
     /// The target window is on another display than the one the user works on (their pointer's and their front window's).
     let otherDisplay: Bool
 
+    /// When it came forward: input after this is the user's during the turn in front.
+    var raisedAt = Date()
+
+    /// Why the front wasn't taken.
+    enum Refusal: Error, Equatable {
+        /// The user kept typing or clicking (or a dictation was going in) for the whole wait (ArisNativeFocusGap).
+        case busy(waited: TimeInterval)
+        /// It didn't come forward within a second.
+        case failed
+    }
+
+    /// Brings `pid` forward as `borrow` does, only in a gap in the user's input (ArisNativeFocusGap): the step waits for
+    /// one first, for at most the conversation's or the job's limit.
+    static func take(pid: Int32, window: AXUIElement?, clock: ArisNativeOwnerClock, job: Bool) -> Result<ArisNativeForeground, Refusal> {
+        let started = Date()
+        guard clock.awaitGap(job: job) else { return .failure(.busy(waited: Date().timeIntervalSince(started))) }
+        guard let turn = borrow(pid: pid, window: window) else { return .failure(.failed) }
+        return .success(turn)
+    }
+
+    /// The user's input came while it was in front: the keys must not go (the caller gives the front back).
+    func inputSinceRaise(_ clock: ArisNativeOwnerClock) -> Bool {
+        ArisNativeFocusGap.inputDuringRaise(sinceInput: clock.sinceInput(), raisedFor: Date().timeIntervalSince(raisedAt))
+    }
+
     /// Brings `pid` (and its window `window`, when given) forward; nil when it couldn't be brought forward within a second.
+    /// No gap rule of its own: every engine step comes through `take`.
     static func borrow(pid: Int32, window: AXUIElement?) -> ArisNativeForeground? {
         let previous = ArisFrontLive.frontPid()
         let previousWindow = previous.flatMap { ArisAX.element(ArisAX.app($0), kAXFocusedWindowAttribute as String) }

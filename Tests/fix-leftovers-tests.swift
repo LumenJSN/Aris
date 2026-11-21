@@ -629,7 +629,7 @@ private func settingsCopyPageTests() {
     check(elsewhere.sections(voice) == voice, "settings in English: a page still in Korean is drawn exactly as written")
 
     // The frame: every page's name and line, the groups, the status lines.
-    let frame = ArisSettingsPage.allCases.flatMap { [$0.title, $0.subtitle] } + ArisSettingsGroup.allCases.map(\.rawValue)
+    let frame = ArisSettingsPage.allCases.flatMap { [$0.title, $0.subtitle] } + ArisSettingsParts.all.map(\.title)
         + [ArisSettingsCaption.greeting(agentDown: true, missingPermissions: 0, english: false), ArisSettingsCaption.greeting(agentDown: false, missingPermissions: 0, noAI: true, english: false),
            ArisSettingsCaption.greeting(agentDown: false, missingPermissions: 1, english: false), ArisSettingsCaption.greeting(agentDown: false, missingPermissions: 4, english: false),
            ArisSettingsCaption.greeting(agentDown: false, missingPermissions: 0, english: false)]
@@ -640,7 +640,7 @@ private func settingsCopyPageTests() {
           "settings in English: the status line is translated where it is drawn, so what it opens is still read from the Korean")
 
     // What a change says in the notch preview.
-    let sample = english.row(ArisSettingsBuilder.sections(.general, ArisSettingsSnapshot())[0].rows[0])
+    let sample = english.row(ArisSettingsBuilder.sections(part: "app.general", ArisSettingsSnapshot())[0].rows[0])
     check(sample.title == "Open at login" && english(ArisSettingsCaption.changed(sample.title, on: true)) == "Turned on Open at login"
           && english(ArisSettingsCaption.changed(sample.title, on: false)) == "Turned off Open at login" && english(ArisSettingsCaption.changed("App language", on: nil)) == "Changed App language",
           "settings in English: the line after a change is English, whichever particle the Korean took")
@@ -650,7 +650,7 @@ private func settingsCopyPageTests() {
     check(ArisSettingsIndex.search("restart", alias: alias).first?.id == "general.restart" && ArisSettingsIndex.search("restart").isEmpty
           && ArisSettingsIndex.search("다시 시작", alias: alias).first?.id == "general.restart",
           "search: in the English window a setting is found by its English name, and still by its Korean one")
-    check(ArisSettingsIndex.search("about", alias: alias).contains { $0.page == .about }, "search: and by its page's English name")
+    check(ArisSettingsIndex.search("about", alias: { ArisSettingsIndex.english($0, english) }).contains { $0.page == .about }, "search: and by its page's English name (정보, About, still finds its rows)")
 
     // The words the pages' own views and models hold: each has its English, and none is drawn past the wording.
     let files = ["Aris/components/Settings/ArisSettingsControls.swift", "Aris/components/Settings/ArisSettingsModal.swift", "Aris/components/Settings/ArisSettingsDropdown.swift",

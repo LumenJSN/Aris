@@ -63,7 +63,7 @@ extension ArisSetupWords {
         anyReady ? say("이제 답할 수 있어요", "An AI can answer now", english) : say("아직 답할 AI가 없어요", "No AI can answer yet", english)
     }
     static func brainKeyLead(anyReady: Bool, english: Bool = english) -> String {
-        anyReady ? say("나중에 설정 › AI 서비스에서 바꿀 수 있어요.", "You can change it later in Settings › AI services.", english)
+        anyReady ? say("나중에 \(ArisSettingsPath.aiPage(english: false))에서 바꿀 수 있어요.", "You can change it later in \(ArisSettingsPath.aiPage(english: true)).", english)
             : say("키를 붙여 넣으면 바로 쓸 수 있어요.", "Paste a key and it works right away.", english)
     }
     /// Over the lines of AIs that are set up in Terminal.

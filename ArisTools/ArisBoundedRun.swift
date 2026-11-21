@@ -25,15 +25,46 @@ enum ArisBoundedRun {
         var timedOut: Bool { status == ArisBoundedRun.timedOutStatus }
     }
 
-    /// The limit a program gets when the caller names none: AppleScript always has one; anything else runs to its end
-    /// (a shortcut may rightly take minutes).
+    /// How long a shortcut may run: minutes of work are fine, but one waiting on a prompt nobody sees can't hang the turn
+    /// forever (the brain's own command limit is two minutes, so this is said first).
+    static let shortcutLimit: TimeInterval = 110
+    /// How long one Spotlight search (`find`) may take; what it found by then is kept.
+    static let spotlightLimit: TimeInterval = 20
+
+    /// The limit a program gets when the caller names none: AppleScript, a shortcut and a Spotlight search each have
+    /// one; anything else runs to its end.
     static func defaultLimit(for program: String) -> TimeInterval? {
-        (program as NSString).lastPathComponent == "osascript" ? appleScriptLimit : nil
+        switch (program as NSString).lastPathComponent {
+        case "osascript": appleScriptLimit
+        case "shortcuts": shortcutLimit
+        case "mdfind": spotlightLimit
+        default: nil
+        }
+    }
+
+    /// What is said when a shortcut was stopped at its limit. It may have done part of its work, so it is never called
+    /// done or not done, and never to be run again unasked.
+    static func shortcutStoppedLine(_ name: String, limit: TimeInterval = shortcutLimit) -> String {
+        "The shortcut \"\(name)\" was still running after \(Int(limit)) seconds (it may be waiting on a prompt), so it was stopped. " +
+            "Whatever it did before that stays done and isn't known: don't run it again, and tell the user to check."
+    }
+
+    /// The note under a search Spotlight hadn't finished in time: the matches are the ones found by then.
+    static func spotlightStoppedNote(limit: TimeInterval = spotlightLimit) -> String {
+        "(Spotlight was still searching after \(Int(limit)) seconds: these are the matches it found by then, there may be more.)"
     }
 
     /// Runs `program` and waits at most `limit` seconds (nil: until it ends). Past the limit the child is ended and the
     /// status is `timedOutStatus`. Nil when it couldn't be started at all.
+    /// `atLimit`: asked once, when the limit is reached with the child still running, with the seconds waited: how much
+    /// longer the same child may go on (a script macOS is still asking the owner about: ArisPermissionWait), or nil to
+    /// stop it now. The child is never started again.
     static func capture(_ program: String, _ arguments: [String], limit: TimeInterval?) -> Result? {
+        ArisOrigin.refuseUnlessStillAllowed()
+        return capture(program, arguments, limit: limit, atLimit: nil)
+    }
+
+    static func capture(_ program: String, _ arguments: [String], limit: TimeInterval?, atLimit: ((TimeInterval) -> TimeInterval?)?) -> Result? {
         // A script sent to an app, a capture: looked at again when this command has been waiting (ArisOrigin+Recheck).
         ArisOrigin.refuseUnlessStillAllowed()
         // ArisExactProcess, not Process: Foundation decomposes Korean in arguments (audit nfd-argv-1).
@@ -54,8 +85,13 @@ enum ArisBoundedRun {
             }
         }
         if let limit {
-            let deadline = Date().addingTimeInterval(limit)
+            let started = Date()
+            var deadline = started.addingTimeInterval(limit)
             while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+            if process.isRunning, let more = atLimit?(Date().timeIntervalSince(started)), more > 0 {
+                deadline = Date().addingTimeInterval(more)
+                while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+            }
             if process.isRunning {
                 process.terminate()
                 Thread.sleep(forTimeInterval: 0.2)

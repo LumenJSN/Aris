@@ -4,13 +4,14 @@
 //
 //  "아리스" said at the start of a phrase wakes Aris without the hotkey. Only the
 //  start counts, so the name in passing ("오늘 아리스 봤어?") or inside a longer word
-//  ("아리스토텔레스") doesn't. The spellings are how the recognizers write it.
+//  ("아리스토텔레스") doesn't. The spellings are how the recognizers write it: the name chosen in Settings (ArisWakeName,
+//  "아리스" until then) and the spellings learned from the user's own training recordings.
 //
 
 import Foundation
 
 enum ArisWakeWord {
-    private static let name = #"^\s*(?:(?:헤이|hey|야)[\s,]*)?(?:아리스|아리쓰|aris)(?:야|아)?(?=$|[\s,.!?~])"#
+    private static var name: String { #"^\s*(?:(?:헤이|hey|야)[\s,]*)?(?:"# + ArisWakeName.current.pattern + #")(?:야|아)?(?=$|[\s,.!?~])"# }
 
     static func heard(_ phrase: String) -> Bool {
         phrase.range(of: name, options: [.regularExpression, .caseInsensitive]) != nil
@@ -35,13 +36,15 @@ enum ArisWakeWord {
     // what every other turn strips.
     private static let filler = #"(?:(?:어|아|음|응|엄|으|에|오|저기|저|그|uh|um|uhm|hmm|hm|ah|oh|eh|er)[\s,.~…]+){0,2}"#
     private static let callEnd = #"(?:야|아)?(?=$|[\s,.!?~。、…])"#
-    private static let call = #"^\s*"# + filler + #"(?:(?:헤이|hey|야)[\s,]*)?(?:아리스|아리쓰|aris)"# + callEnd
-    /// Near spellings, which count only with a fairly close voice print (ArisWakeDoubt.nearAllowed).
+    private static var call: String { #"^\s*"# + filler + #"(?:(?:헤이|hey|야)[\s,]*)?(?:"# + ArisWakeName.current.pattern + ")" + callEnd }
+    /// Near spellings of "아리스", which count only with a fairly close voice print (ArisWakeDoubt.nearAllowed). A name
+    /// the user chose has none: its learned spellings are in `call`.
     private static let near = #"^\s*"# + filler + #"(?:(?:헤이|hey|야)[\s,]*)?(?:아리사|arisa|알리스|어리스|애리스|에리스|아리수|아리즈|아이리스|앨리스|엘리스|iris|alice|ares|arris|aries|ariss|アリス)"# + callEnd
 
     private static func callRange(_ text: String, nearAllowed: Bool) -> Range<String.Index>? {
         let options: String.CompareOptions = [.regularExpression, .caseInsensitive]
-        return text.range(of: call, options: options) ?? (nearAllowed ? text.range(of: near, options: options) : nil)
+        let nearCounts = nearAllowed && ArisWakeName.current.isDefault
+        return text.range(of: call, options: options) ?? (nearCounts ? text.range(of: near, options: options) : nil)
     }
 
     /// The wake check heard the name: at the start, perhaps after a filler; near spellings too when `nearAllowed`.

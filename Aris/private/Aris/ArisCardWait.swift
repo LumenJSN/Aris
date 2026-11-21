@@ -9,6 +9,13 @@
 
 import Foundation
 
+extension ArisCardWait {
+    /// Whether a card comes up while Aris still finishes what it was saying (eighth VM run, item 3: after a failed
+    /// replay step the go-on card waited about ten seconds behind the sentence that said so). Every card does, but a
+    /// dictated message's countdown: that one starts by saying its own line, and its clock runs from then.
+    static func upWhileSpeaking(countdown: Bool) -> Bool { !countdown }
+}
+
 /// Where a card's answer came from, for its one log line and the ledger (QA BUG-20b live). Pure.
 enum ArisCardAnswer {
     enum Source: String {
@@ -182,6 +189,12 @@ enum ArisCardWait {
     /// Said before what the turn did do, when its card got no answer.
     static func unansweredPartLine(korean: Bool) -> String {
         korean ? "확인이 없어서 그 부분은 하지 않았어요." : "There was no answer on the card, so I left that part undone."
+    }
+
+    /// The log's words for how a card ended: a card nobody answered is never logged as a no (VM run 2026-11-19, D7: the
+    /// record said "unanswered" and the app's log "you said no").
+    static func answerLog(allow: Bool, unanswered: Bool) -> String {
+        allow ? "you said yes to" : unanswered ? "nobody answered" : "you said no to"
     }
 
     /// What Aris says when a hands-free card was left unanswered.

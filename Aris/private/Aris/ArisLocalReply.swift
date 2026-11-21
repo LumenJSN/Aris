@@ -12,7 +12,8 @@ import Foundation
 
 /// How adding a to-do ended.
 enum ArisTodoAdded: Equatable {
-    case saved(title: String)
+    /// `due`: when it is due, as it was stored ("내일 오전 9시에 우유 사기" keeps tomorrow 9:00); `hasTime`: with a time of day.
+    case saved(title: String, due: Date? = nil, hasTime: Bool = false)
     /// Aris may not use Reminders (never asked from a turn: the guide and Settings ask).
     case noAccess
     /// The side panels' demo is showing: nothing real is written while it is.
@@ -24,18 +25,33 @@ enum ArisTodoAdded: Equatable {
 }
 
 enum ArisLocalReply {
+    /// The sentence and the place in it are one language, the reply's (which is the UI's: the window names its rows
+    /// the same way). Third VM run: on an English Mac a Korean request got "미리 알림 접근이 꺼져 있어요. Settings › App ›
+    /// Permissions › Reminders access에서 켜 주세요.", the path in the window's language inside a Korean sentence.
     static func noRemindersAccess(korean: Bool) -> String {
-        // The place is named as the settings window names it on this Mac (ArisSettingsPath), whatever the reply's language.
-        let place = ArisSettingsPath.path(.todo, "미리 알림 접근")
+        let place = ArisSettingsPath.path(.todo, "미리 알림 접근", english: !korean)
         if korean { return "미리 알림 접근이 꺼져 있어요. \(place)에서 켜 주세요." }
-        // On a Korean Mac the window's own names are Korean: the English sentence still says it is Settings.
-        return "Aris can't use Reminders yet. Turn it on in " + (place.hasPrefix("Settings") ? place : "Settings (\(place))") + "."
+        return "Aris can't use Reminders yet. Turn it on in \(place)."
+    }
+
+    /// When a saved to-do is due, as it is said after it: "내일 오전 9시", "tomorrow at 9 AM"; a day alone without a time.
+    static func dueWords(_ due: Date, hasTime: Bool, korean: Bool, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let day = ArisRecapWords.day(due, today: calendar.startOfDay(for: now), english: !korean, calendar: calendar)
+        guard hasTime else { return day }
+        let time = ArisRecapWords.time(due, english: !korean, calendar: calendar)
+        if korean { return day + " " + time }
+        return (["today", "tomorrow"].contains(day) ? day : "on " + day) + " at " + time
     }
 
     /// "할 일에 넣었어요: 우유 사기" only for an item that was saved; otherwise why it wasn't.
-    static func todoAdded(_ outcome: ArisTodoAdded, korean: Bool) -> String {
+    /// A saved one says when it is due, as it was stored (third VM run: "할 일에 넣었어요: 우유 사기" for one stored for
+    /// tomorrow 9:00).
+    static func todoAdded(_ outcome: ArisTodoAdded, korean: Bool, now: Date = Date(), calendar: Calendar = .current) -> String {
         switch outcome {
-        case .saved(let title): return ArisIntent.addTodo(title).acknowledgement(korean: korean) ?? ""
+        case .saved(let title, let due, let hasTime):
+            let said = ArisIntent.addTodo(title).acknowledgement(korean: korean) ?? ""
+            guard let due else { return said }
+            return said + " (" + dueWords(due, hasTime: hasTime, korean: korean, now: now, calendar: calendar) + ")"
         case .noAccess: return (korean ? "할 일에 넣지 못했어요. " : "I couldn't add it. ") + noRemindersAccess(korean: korean)
         case .demo: return korean ? "지금은 데모 화면이라 할 일에 넣지 않았어요." : "The demo is showing, so I didn't add it."
         case .noTitle: return korean ? "넣을 할 일을 못 알아들었어요. 다시 말해 주세요." : "I didn't catch what to add. Please say it again."

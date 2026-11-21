@@ -70,6 +70,8 @@ final class ArisDesktopLock {
         var busy: Int
         var used: Date
         var paused: Bool
+        /// A dictation's insertion (acquireUrgent): nobody goes before it, it waits for nobody's idle hold.
+        var urgent = false
     }
 
     private struct Ticket {
@@ -82,6 +84,21 @@ final class ArisDesktopLock {
     private var holds: [Hold] = []
     private var line: [Ticket] = []
     private var nextTicket = 0
+    /// Dictations waiting to go in: no new call starts meanwhile.
+    private var urgentWaiting = 0
+    /// The keys each piece of the agent's own held work may send (allowKeys), dropped with its hold.
+    private var heldKeys: [String: Set<String>] = [:]
+
+    /// How long a dictation's insertion waits for a computer-use step that is under way right now (its keys may be
+    /// going to the front app); a turn only keeping the keys between its steps never holds it up.
+    static let dictationWait: TimeInterval = 1.5
+
+    /// A dictation is waiting or going in: a step about to take the front waits (ArisNativeFocusGap).
+    var urgent: Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        return urgentWaiting > 0 || holds.contains { $0.urgent }
+    }
 
     init(waitLimit: TimeInterval = 90, idleHold: TimeInterval = 45, poll: TimeInterval = 0.1) {
         self.waitLimit = waitLimit
@@ -119,8 +136,9 @@ final class ArisDesktopLock {
             condition.unlock()
             return .refused(.paused)
         }
-        // Its own hold covers it: the same app, or its own global hold.
-        if let index = holds.firstIndex(where: { $0.id == owner.id && ($0.scope == scope || $0.scope == .global) }) {
+        // Its own hold covers it: the same app, or its own global hold (unless a dictation is going in: it waits).
+        if urgentWaiting == 0, !holds.contains(where: { $0.urgent && $0.id != owner.id }),
+           let index = holds.firstIndex(where: { $0.id == owner.id && ($0.scope == scope || $0.scope == .global) }) {
             holds[index].busy += 1
             holds[index].used = Date()
             condition.unlock()
@@ -133,7 +151,8 @@ final class ArisDesktopLock {
         while true {
             dropStaleHolds()
             if holds.contains(where: { $0.paused && $0.id != owner.id }) { return leave(ticket, .paused) }
-            let free = !holds.contains { Self.clash($0.scope, $0.id, scope, owner.id) }
+            // A dictation waiting or going in goes first (acquireUrgent).
+            let free = urgentWaiting == 0 && !holds.contains { Self.clash($0.scope, $0.id, scope, owner.id) }
             let ahead = line.prefix { $0.number != ticket.number }
             if free, !ahead.contains(where: { Self.clash($0.scope, $0.id, scope, owner.id) }) {
                 line.removeAll { $0.number == ticket.number }
@@ -155,6 +174,31 @@ final class ArisDesktopLock {
         }
     }
 
+    /// A dictation's insertion (/insert, /paste): it never waits behind a turn that only keeps the keys between its
+    /// steps, nor behind a paused one, and behind a step under way for at most `wait`; it then goes in whatever holds.
+    /// Meanwhile no new call starts, and a step about to take the front waits for it (`urgent`). Always acquired;
+    /// `release(id)` when it is in.
+    @discardableResult
+    func acquireUrgent(_ id: String, wait: TimeInterval = dictationWait) -> Outcome {
+        let deadline = Date().addingTimeInterval(wait)
+        condition.lock()
+        urgentWaiting += 1
+        while holds.contains(where: { $0.id != id && $0.busy > 0 && !$0.paused && !$0.urgent }), Date() < deadline {
+            _ = condition.wait(until: min(deadline, Date().addingTimeInterval(poll)))
+        }
+        urgentWaiting -= 1
+        holds.append(Hold(id: id, scope: .global, live: { true }, busy: 1, used: Date(), paused: false, urgent: true))
+        condition.broadcast()
+        condition.unlock()
+        return .acquired
+    }
+
+    /// The same as `take`, for a dictation: never refused (nil), at most a moment's wait.
+    func takeUrgent(_ id: String) -> Refusal? {
+        acquireUrgent(id)
+        return nil
+    }
+
     /// One call of `id` ended (worked or not): the turn keeps the lock, unused from now. `scope`: the call's own.
     func done(_ id: String, scope: Scope = .global) {
         condition.lock()
@@ -173,6 +217,7 @@ final class ArisDesktopLock {
     func release(_ id: String) {
         condition.lock()
         holds.removeAll { $0.id == id }
+        heldKeys[id] = nil
         condition.broadcast()
         condition.unlock()
     }
@@ -266,6 +311,20 @@ extension ArisDesktopLock {
 
     /// A fresh owner id for one such piece of work.
     static func oneOff(_ kind: String) -> String { "\(kind):\(UUID().uuidString)" }
+
+    /// The keys the agent's own held work may send through /desktop-keys (ArisDesktopKeysPolicy), by its id. A window
+    /// arrangement opens new windows with ⌘N; a learned shortcut, only the keys its own commands press.
+    func allowKeys(_ id: String, _ keys: Set<String>) {
+        condition.lock()
+        heldKeys[id] = Set(keys.map { $0.lowercased() })
+        condition.unlock()
+    }
+
+    func allowedKeys(_ id: String) -> Set<String> {
+        condition.lock()
+        defer { condition.unlock() }
+        return heldKeys[id] ?? (id.hasPrefix("arrange:") ? ["cmd+n"] : [])
+    }
 
     /// The environment key the agent's own work passes its owner id to `aris-tools window` in, so the command knows
     /// the keys and pointer are held for it (ArisDesktopHoldPlan.heldKey in aris-tools: the same name).

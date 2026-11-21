@@ -3,9 +3,9 @@
 //  Aris
 //
 //  When you pause, Smart Turn (ArisTurnDetector) listens to how the turn so far sounds: finished, unsure or
-//  mid-thought, which sets how long a pause ends the turn (ArisTalkKey). Each pause is scored once, ~0.3 s in;
-//  talking again throws the score away. An end that wasn't certain gets a grace moment of listening first.
-//  Every decision goes to endpoint-log.jsonl for tuning.
+//  mid-thought, which sets how long a pause ends the turn (ArisEndpointPolicy). Each pause is scored once, 0.2 s in
+//  (the silence the model was trained to be run after: pipecat's VAD stop; it takes ~4 ms); talking again throws the
+//  score away, and the end is looked at again as soon as the score is in. Every decision goes to endpoint-log.jsonl.
 //
 
 import Foundation
@@ -14,8 +14,9 @@ import os
 private let log = Logger(subsystem: "com.lumenjsn.aris", category: "turn")
 
 extension ArisController {
-    /// How far into a pause the turn is scored: long enough to be a pause, well before the shortest end (0.5 s).
-    static let scoreAfterQuiet: Duration = .milliseconds(300)
+    /// How far into a pause the turn is scored: long enough to be a pause (Smart Turn is run after 0.2 s of silence
+    /// upstream), before the earliest plausible end (0.25 s).
+    static let scoreAfterQuiet: Duration = .milliseconds(200)
 
     /// The score for the current pause, if it's been scored (and you haven't talked since).
     var currentPauseScore: Float? {
@@ -34,40 +35,19 @@ extension ArisController {
             await MainActor.run {
                 self.scoringPause = false
                 if let score { self.pauseScore = (voiceAt, score) }
+                self.endpointLook()
             }
         }
     }
 
-    func logEndpoint(score: Float?, sinceVoice: Duration?, sinceWords: Duration?, complete: Bool, hanging: Bool, said: String) {
+    func logEndpoint(score: Float?, sinceVoice: Duration?, sinceWords: Duration?, complete: Bool, hanging: Bool, said: String,
+                     endCase: String? = nil, decision: String? = nil) {
         let ms = { (gap: Duration?) in gap.map { Int($0 / .milliseconds(1)) } ?? -1 }
         var line: [String: Any] = ["quietMs": ms(sinceVoice), "noNewWordsMs": ms(sinceWords), "finished": complete,
                                    "hanging": hanging, "characters": said.count, "followUp": followingUp]
         if let score { line["smartTurn"] = Double(score) }
+        if let endCase { line["case"] = endCase }
+        if let decision { line["decision"] = decision }
         ArisTuningLog.append(line, to: "endpoint-log.jsonl")
-    }
-}
-
-extension ArisController {
-    /// The grace moment after a hands-free end: Aris keeps listening (the notch still shows it) while Whisper reads
-    /// the turn so far. True when you started talking again: the turn goes on and nothing was asked yet.
-    func heldUpByGrace(confident: Bool) async -> Bool {
-        preparedWhisper?.task.cancel()
-        preparedWhisper = nil
-        guard let listener = listener as? ArisListener else { return false }
-        // A turn longer than one of Whisper's windows is read once, when it ends (ArisLongTurn).
-        if scribe == nil, ArisLongTurn.readsDuringGrace(seconds: listener.recordedSeconds) {
-            let recording = listener.recordedSamples
-            preparedWhisper = (lastVoiceAt, Task { await self.whisperTranscript(recording) })
-        }
-        let grace = ArisTalkKey.grace(confident: confident)
-        guard grace > .zero else { return false }
-        graceVoiceFrames = 0
-        try? await Task.sleep(for: grace)
-        guard !Task.isCancelled, session.phase == .listening, ArisTalkKey.resumedTalking(voiceFrames: graceVoiceFrames) else { return false }
-        preparedWhisper?.task.cancel()
-        preparedWhisper = nil
-        log.notice("kept talking: listening on")
-        ArisTuningLog.append(["graceResumed": true, "followUp": followingUp], to: "endpoint-log.jsonl")
-        return true
     }
 }

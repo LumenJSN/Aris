@@ -166,7 +166,7 @@ private struct SessionColumn: View {
             }
             if let session {
                 Button { TerminalFocus.focus(session, cwd: session.cwd) } label: {
-                    Label("Open terminal", systemImage: "arrow.up.forward.app")
+                    Label(ArisUIWords.text("터미널 열기", "Open terminal"), systemImage: "arrow.up.forward.app")
                         .font(.system(size: 10.5))
                         .foregroundStyle(.gray)
                 }
@@ -243,14 +243,23 @@ private struct ActivityPanel: View {
             }
         } else {
             VStack(alignment: .leading, spacing: 4) {
-                Text(session.state == .idle || session.state == .happy ? "Waiting for the next prompt" : "Working…")
+                Text(headline)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.white)
-                Text(session.lastMessage ?? "File changes show up here as a diff.")
+                Text(session.lastMessage ?? ArisUIWords.text("파일 변경이 여기에 diff로 보여요.", "File changes show up here as a diff."))
                     .font(.system(size: 11))
                     .foregroundStyle(.gray)
                     .lineLimit(3)
             }
+        }
+    }
+
+    /// What the session is doing; one asking in its own terminal says so (its chip's dot is the waiting colour).
+    private var headline: String {
+        switch session.state {
+        case .idle, .happy: return ArisUIWords.text("다음 프롬프트를 기다려요", "Waiting for the next prompt")
+        case .notification: return ArisUIWords.text("터미널에서 답을 기다려요", "Waiting for you in its terminal")
+        default: return ArisUIWords.text("작업 중…", "Working…")
         }
     }
 }
@@ -280,10 +289,10 @@ private struct DiffRow: View {
 private struct EmptyHint: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("No Claude Code sessions")
+            Text(ArisUIWords.text("Claude Code 세션이 없어요", "No Claude Code sessions"))
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.white)
-            Text("Start `claude` in a terminal and it shows up here.")
+            Text(LocalizedStringKey(ArisUIWords.text("터미널에서 `claude`를 시작하면 여기에 보여요.", "Start `claude` in a terminal and it shows up here.")))
                 .font(.caption)
                 .foregroundStyle(.gray)
         }
@@ -307,8 +316,9 @@ private struct ApprovalCard: View {
         }
     }
 
+    /// The tool, what it would do (scrolling when long) and the buttons, always in the notch (ClaudeCardFit).
     private var toolCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        ClaudeCardFit(spacing: 8) {
             HStack {
                 Text(approval.toolName)
                     .font(.system(size: 13, weight: .semibold))
@@ -321,40 +331,51 @@ private struct ApprovalCard: View {
                     Text("+\(pending - 1)").font(.caption).foregroundStyle(Color(ClaudeAccent.approval))
                 }
             }
-            if let edit = approval.edit {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(edit.file)
-                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.gray)
-                        .padding(.bottom, 3)
-                    ForEach(Array((edit.removed.map { ("-", $0) } + edit.added.map { ("+", $0) }).prefix(10).enumerated()), id: \.offset) { _, row in
-                        DiffRow(sign: row.0, text: row.1)
-                    }
-                }
-            } else if !approval.summary.isEmpty {
-                Text(approval.summary)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .lineLimit(8)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
-            }
-            HStack(spacing: 8) {
-                Button { onDecide(.deny) } label: { KeyHintLabel("Deny", key: "N") }
-                    .buttonStyle(.notch(.secondary))
-                if approval.canAlwaysAllow, let rules = approval.alwaysRules {
-                    Button("Always allow") { onDecide(.allowAlways(rules: rules)) }
-                        .buttonStyle(.notch(.secondary))
-                }
-                Button { onDecide(.allow) } label: { KeyHintLabel("Allow", key: "Y") }
-                    .buttonStyle(.notch(.primary))
-                Spacer(minLength: 0)
-                Button("Terminal") { onDecide(.passthrough) }
-                    .buttonStyle(.notch(.quiet))
-            }
+        } content: {
+            toolDetail
+        } footer: {
+            toolButtons
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var toolDetail: some View {
+        if let edit = approval.edit {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(edit.file)
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.gray)
+                    .padding(.bottom, 3)
+                ForEach(Array((edit.removed.map { ("-", $0) } + edit.added.map { ("+", $0) }).prefix(10).enumerated()), id: \.offset) { _, row in
+                    DiffRow(sign: row.0, text: row.1)
+                }
+            }
+        } else if !approval.summary.isEmpty {
+            // All of what it would run (it was cut at eight lines); a long one scrolls with the card.
+            Text(approval.summary)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.85))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
+        }
+    }
+
+    private var toolButtons: some View {
+        HStack(spacing: 8) {
+            Button { onDecide(.deny) } label: { KeyHintLabel(ArisUIWords.text("거부", "Deny"), key: "N") }
+                .buttonStyle(.notch(.secondary))
+            if approval.canAlwaysAllow, let rules = approval.alwaysRules {
+                Button(ArisUIWords.text("항상 허용", "Always allow")) { onDecide(.allowAlways(rules: rules)) }
+                    .buttonStyle(.notch(.secondary))
+            }
+            Button { onDecide(.allow) } label: { KeyHintLabel(ArisUIWords.text("허용", "Allow"), key: "Y") }
+                .buttonStyle(.notch(.primary))
+            Spacer(minLength: 0)
+            Button(ArisUIWords.text("터미널", "Terminal")) { onDecide(.passthrough) }
+                .buttonStyle(.notch(.quiet))
+        }
     }
 }

@@ -121,8 +121,9 @@ struct ArisDataSheet: View {
 
     private var uninstallTitle: (title: String, subtitle: String) {
         if model.uninstallFinished { return ("Aris를 제거했어요", "휴지통을 비우면 끝나요. 그동안 고마웠어요.") }
-        if model.uninstallDone != nil { return ("제거하는 중", "잠시만 기다려 주세요.") }
-        return ("Aris 제거", "Aris가 이 Mac에 만든 것을 모두 찾아 지워요. 끝나면 앱이 닫혀요.")
+        if model.uninstallCountdown != nil { return ("곧 제거해요", "몇 초 뒤에 시작해요. 그 전에는 취소할 수 있어요.") }
+        if model.uninstallDone != nil || model.uninstallRunning { return ("제거하는 중", "잠시만 기다려 주세요.") }
+        return ("Aris 제거", "Aris가 이 Mac에 만든 것을 모두 찾아 지워요. 끝나면 닫기를 눌러 앱을 닫아 주세요.")
     }
 
     private var uninstallList: some View {
@@ -131,27 +132,37 @@ struct ArisDataSheet: View {
         return VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                 let kept = row.id == "data" && !model.removeRecords
-                ArisSheetListRow(lead: { uninstallLead(row.id, index: index, kept: kept) }, title: row.title, path: row.path,
-                                 dimmed: kept, tag: row.id == "data" && !started ? "끄면 기록을 남겨요" : nil)
+                // A real path is one line cut in its middle; a description wraps whole (it was cut mid-word).
+                let isPath = row.path.hasPrefix("/") || row.path.hasPrefix("~")
+                // A row Aris can't remove says so from the start (its line says what to do: ArisUninstallReply.notRemovable).
+                let byHand = ArisUninstallReply.notRemovable.contains(row.id)
+                ArisSheetListRow(lead: { uninstallLead(row.id, index: index, kept: kept) }, title: row.title,
+                                 sub: isPath ? nil : row.path, path: isPath ? row.path : nil,
+                                 dimmed: kept, tag: byHand ? ArisUninstallReply.sandboxTag : row.id == "data" && !started ? "끄면 기록을 남겨요" : nil)
             }
         }
     }
 
     private var uninstall: some View {
-        let started = model.uninstallDone != nil
+        let started = model.uninstallDone != nil || model.uninstallRunning
+        let counting = model.uninstallCountdown != nil
         let finished = model.uninstallFinished
         let heading = uninstallTitle
         // No × while the agent works through the list.
-        let onClose: (() -> Void)? = started && !finished ? nil : { model.close() }
+        let onClose: (() -> Void)? = started && !finished ? nil : { model.cancelUninstall(); model.close() }
         return ArisSheetFrame(title: heading.title, subtitle: heading.subtitle, onClose: onClose) {
             uninstallList.padding(.top, 10)
-            if !started { ArisTypeToConfirm(word: ArisTypedConfirm.uninstallWord, typed: $model.uninstallTyped) { Task { await model.uninstall() } } }
+            if !started && !counting { ArisTypeToConfirm(word: ArisTypedConfirm.uninstallWord, typed: $model.uninstallTyped) { Task { await model.uninstall() } } }
             if let error = model.uninstallError {
-                Text(w(error)).font(.system(size: 12)).foregroundStyle(palette.red).padding(.top, 8).fixedSize(horizontal: false, vertical: true)
+                // Line by line: each is whole, so each finds its English (ArisUninstallReply.leftLines).
+                Text(error.components(separatedBy: "\n").map { w($0) }.joined(separator: "\n")).font(.system(size: 12)).foregroundStyle(palette.red).padding(.top, 8).fixedSize(horizontal: false, vertical: true)
             }
         } footer: {
             if finished {
                 ArisPillButton(title: "닫기") { model.actions.quit() }
+            } else if counting {
+                // Before the countdown ends nothing has been touched: 취소 stops it.
+                ArisPillButton(title: "취소", kind: .ghost) { model.cancelUninstall() }
             } else if !started {
                 ArisPillButton(title: "취소", kind: .ghost, action: close)
                 ArisPillButton(title: "제거하고 닫기", kind: .solidRed, enabled: model.canUninstall) { Task { await model.uninstall() } }
@@ -161,17 +172,14 @@ struct ArisDataSheet: View {
 
     @ViewBuilder
     private func uninstallLead(_ id: String, index: Int, kept: Bool) -> some View {
-        if let done = model.uninstallDone {
-            if kept { Text("–").font(.system(size: 13)).foregroundStyle(palette.faint) }
-            else if index < done && model.failedRows.contains(id) {
-                ArisLineIcon("exclamationmark.circle.fill", size: 17).foregroundStyle(palette.red)
-            }
-            else if index < done { ArisLandingCheck() }
-            else { Color.clear.frame(width: 16, height: 16) }
-        } else if id == "data" {
-            ArisCheckBox(isOn: $model.removeRecords)
-        } else {
-            ArisCheckBox(isOn: .constant(true), enabled: false)
+        switch ArisUninstallReply.mark(id, index: index, done: model.uninstallDone, kept: kept, failed: model.failedRows) {
+        case .choice: ArisCheckBox(isOn: $model.removeRecords)
+        case .willRemove: ArisCheckBox(isOn: .constant(true), enabled: false)
+        case .byHand: ArisLineIcon("info.circle", size: 17).foregroundStyle(palette.faint)
+        case .kept: Text("–").font(.system(size: 13)).foregroundStyle(palette.faint)
+        case .failed: ArisLineIcon("exclamationmark.circle.fill", size: 17).foregroundStyle(palette.red)
+        case .removed: ArisLandingCheck()
+        case .pending: Color.clear.frame(width: 16, height: 16)
         }
     }
 }

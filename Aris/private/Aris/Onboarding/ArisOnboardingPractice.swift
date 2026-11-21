@@ -15,6 +15,10 @@ import Foundation
 enum ArisOnboardingPractice {
     enum Part: Equatable { case wholeDay, morning, afternoon, evening }
 
+    /// What the practice does (its timer, set, rung or turned off) never goes in the record of what Aris did: the day in
+    /// review and its wrap-up count only real work (VM run 2026-11-19, D5).
+    static let recordsChanges = false
+
     enum Question: Equatable {
         /// A request about Aris's own timer, as the intent the app carries out.
         case timer(ArisIntent)

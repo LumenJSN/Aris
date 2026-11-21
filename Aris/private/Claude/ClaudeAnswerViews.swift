@@ -17,35 +17,42 @@ struct QuestionCard: View {
     private var store: ClaudeStore { .shared }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // The step chips and the footer stay put; the question and its options scroll when the notch has no more room.
+        ClaudeCardFit {
             if flow.questions.count > 1 {
                 StepChips(flow: flow) { index in store.updateFlow(id) { $0.moving(to: index) } }
             }
-            // Every question is laid out (only the current one shown) so the card keeps the tallest
-            // one's height: the notch doesn't jump, or slide out from under the pointer, while stepping.
-            ZStack(alignment: .topLeading) {
-                ForEach(Array(flow.questions.enumerated()), id: \.offset) { index, question in
-                    let shown = index == flow.current
-                    VStack(alignment: .leading, spacing: 8) {
-                        QuestionBody(question: question, picked: flow.picked[question.question] ?? [], hovered: $hovered) { label in
-                            store.pick(label, in: id)
-                        }
-                        if shown {
-                            OtherField(text: flow.typed[question.question] ?? "",
-                                       onChange: { text in store.updateFlow(id) { $0.typing(text) } },
-                                       onReturn: returnPressed)
-                        } else {
-                            // Same height, but no live field: leaving a question drops its text focus,
-                            // so number keys pick again.
-                            OtherField(text: "", onChange: { _ in }, onReturn: {}).hidden()
-                        }
-                    }
-                    .opacity(shown ? 1 : 0)
-                    .allowsHitTesting(shown)
-                    .accessibilityHidden(!shown)
-                }
-            }
+        } content: {
+            questions
+        } footer: {
             footer
+        }
+    }
+
+    /// Every question is laid out (only the current one shown) so the card keeps the tallest one's height: the notch
+    /// doesn't jump, or slide out from under the pointer, while stepping.
+    private var questions: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(Array(flow.questions.enumerated()), id: \.offset) { index, question in
+                let shown = index == flow.current
+                VStack(alignment: .leading, spacing: 8) {
+                    QuestionBody(question: question, picked: flow.picked[question.question] ?? [], hovered: $hovered) { label in
+                        store.pick(label, in: id)
+                    }
+                    if shown {
+                        OtherField(text: flow.typed[question.question] ?? "",
+                                   onChange: { text in store.updateFlow(id) { $0.typing(text) } },
+                                   onReturn: returnPressed)
+                    } else {
+                        // Same height, but no live field: leaving a question drops its text focus,
+                        // so number keys pick again.
+                        OtherField(text: "", onChange: { _ in }, onReturn: {}).hidden()
+                    }
+                }
+                .opacity(shown ? 1 : 0)
+                .allowsHitTesting(shown)
+                .accessibilityHidden(!shown)
+            }
         }
     }
 
@@ -59,10 +66,10 @@ struct QuestionCard: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 8)
-            Button { store.decide(id, .passthrough) } label: { KeyHintLabel("Terminal", key: "esc") }
+            Button { store.decide(id, .passthrough) } label: { KeyHintLabel(ArisUIWords.text("터미널", "Terminal"), key: "esc") }
                 .buttonStyle(.notch(.quiet))
             if !flow.answersOnTap {
-                Button { store.submit(id) } label: { KeyHintLabel("Submit", key: "↩") }
+                Button { store.submit(id) } label: { KeyHintLabel(ArisUIWords.text("보내기", "Submit"), key: "↩") }
                     .buttonStyle(.notch(.primary))
                     .disabled(!flow.isComplete)
             }
@@ -120,10 +127,10 @@ private struct QuestionBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
+                // All of it: the user reads what they answers (it was cut at three lines). A long one scrolls with the card.
                 Text(question.question)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
-                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
                 if question.multiSelect {
                     Text("pick any").font(.system(size: 10.5)).foregroundStyle(.gray)
@@ -140,21 +147,30 @@ private struct QuestionBody: View {
 
     @ViewBuilder
     private var options: some View {
-        let numbered = Array(question.options.prefix(9).enumerated())
         if detailed {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(numbered, id: \.element.label) { index, option in
-                    OptionRow(number: index + 1, option: option, selected: picked.contains(option.label),
-                              hovered: $hovered) { onPick(option.label) }
-                }
-            }
+            rows
         } else {
-            HStack(spacing: 8) {
-                ForEach(numbered, id: \.element.label) { index, option in
-                    OptionPill(number: index + 1, label: option.label, selected: picked.contains(option.label)) {
-                        onPick(option.label)
+            // Pills in a row while they fit across the card; long labels get the rows instead of being cut.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(numbered, id: \.element.label) { index, option in
+                        OptionPill(number: index + 1, label: option.label, selected: picked.contains(option.label)) {
+                            onPick(option.label)
+                        }
                     }
                 }
+                rows
+            }
+        }
+    }
+
+    private var numbered: [(offset: Int, element: ClaudeOption)] { Array(question.options.prefix(9).enumerated()) }
+
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(numbered, id: \.element.label) { index, option in
+                OptionRow(number: index + 1, option: option, selected: picked.contains(option.label),
+                          hovered: $hovered) { onPick(option.label) }
             }
         }
     }
@@ -208,7 +224,8 @@ private struct OptionRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(option.label).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(.white)
                     if !option.detail.isEmpty {
-                        Text(option.detail).font(.system(size: 11)).foregroundStyle(.gray).lineLimit(2)
+                        Text(option.detail).font(.system(size: 11)).foregroundStyle(.gray)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)
@@ -235,7 +252,7 @@ private struct PreviewBox: View {
         Text(text)
             .font(.system(size: 10, design: .monospaced))
             .foregroundStyle(.white.opacity(0.85))
-            .lineLimit(14)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(8)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
@@ -269,17 +286,19 @@ struct PlanCard: View {
     let onDecide: (ClaudeDecision) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Plan ready for review")
+        // The whole plan, scrolling when it is longer than the notch; the button always shows.
+        ClaudeCardFit(spacing: 8) {
+            Text(ArisUIWords.text("계획을 검토해 주세요", "Plan ready for review"))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.white)
-            Text(plan.isEmpty ? "Claude wants to leave plan mode." : plan)
+        } content: {
+            Text(plan.isEmpty ? ArisUIWords.text("Claude가 계획 모드를 끝내려고 해요.", "Claude wants to leave plan mode.") : plan)
                 .font(.system(size: 11))
                 .foregroundStyle(.white.opacity(0.8))
-                .lineLimit(14)
                 .fixedSize(horizontal: false, vertical: true)
+        } footer: {
             // Claude Code only takes a plan approval from its own dialog, so the card leads there.
-            Button { onDecide(.passthrough) } label: { KeyHintLabel("Approve in terminal", key: "Y") }
+            Button { onDecide(.passthrough) } label: { KeyHintLabel(ArisUIWords.text("터미널에서 승인", "Approve in terminal"), key: "Y") }
                 .buttonStyle(.notch(.primary))
         }
     }

@@ -4,7 +4,8 @@
 //
 //  `board "<markdown>" [--screen here|left|right|main]` puts a table, notes or a plan on the Aris board, a
 //  window the notch app shows on that screen without taking the keyboard or mouse; `board --close` takes it
-//  down. The text goes through aris/board.json (the sandboxed app can read there), then a nudge to the app.
+//  down. The text goes through aris/board.json (the sandboxed app can read there), then a nudge to the app, which
+//  removes the file once read: only then is it told as shown (ArisAppAck).
 //
 
 import Foundation
@@ -29,5 +30,7 @@ func board(_ args: [String]) {
         fail("couldn't write the board: \(error.localizedDescription)")
     }
     DistributedNotificationCenter.default().postNotificationName(.init("com.lumenjsn.aris.board"), object: nil, userInfo: nil, deliverImmediately: true)
+    // Only once the app took it (it removes the file once read: ArisAppAck).
+    guard ArisAppAck.taken(boardFile) else { fail(ArisAppAck.notTakenLine(close ? "the board's closing" : "the board")) }
     print(close ? "board closed" : "on the board (\(screen) screen)")
 }

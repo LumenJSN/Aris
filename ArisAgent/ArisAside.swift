@@ -255,6 +255,9 @@ enum ArisAside {
     static let cardPreview = 600
 
     static let workingStatus = "Aside가 브라우저에서 하는 중"
+    /// The notch's line while the call is still finding Aside (before it is known to be there and running): never that
+    /// it works (twelfth VM run, A4: a job blocked on a missing Aside read as "Aside가 브라우저에서 하는 중").
+    static let handingStatus = "Aside에 넘기는 중"
 
     /// The notch's line while Aside works: what it was asked, so a hidden task can't run unseen (M5).
     static func runningStatus(_ brief: String, english: Bool = false) -> String {

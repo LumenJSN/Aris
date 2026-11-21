@@ -19,12 +19,13 @@ extension ArisNotchRoot {
     var turnHolds: Bool { aris.holdsNotch }
     /// The display the current (or last) turn happened on: where the pointer was when it started.
     @MainActor static var turnDisplay: String?
-    var approvalsPending: Bool { !claude.approvals.isEmpty }
+    /// Read live (the root redraws on a change of approvals through claudeFeed; this is also asked from callbacks).
+    var approvalsPending: Bool { !ClaudeStore.shared.approvals.isEmpty }
 
     var mayCloseAutomatically: Bool {
         ArisNotchDecisions.automaticCloseAllowed(open: isOpen, hovering: hovering, popover: vm.isPopoverActive,
                                                  sharing: sharing.preventNotchClose, approvalsPending: approvalsPending, turnHolds: turnHolds,
-                                                 dropHold: vm.dropInteraction.arisDropHold)
+                                                 dropHold: vm.dropInteraction.arisDropHold, typing: ArisComposerDraft.shared.holdsNotch)
     }
 
     /// The pointer is on this notch's display.
@@ -298,7 +299,7 @@ extension ArisNotchRoot {
             // A hand-off ("작업할게요", "맡았어요"): the line was said, the notch goes now and the jobs' pill under it says
             // how the work goes (the owner, 2026-11-16: it stayed open).
             let handedOff = controller.handedOff
-            try? await Task.sleep(for: ArisNotch.endWait(handedOff: handedOff, dictation: controller.endedDictation, reply: controller.session.reply))
+            try? await Task.sleep(for: ArisNotch.endWait(handedOff: handedOff, dictation: controller.endedDictation, reply: controller.session.reply, undo: controller.answeredUndo))
             await ArisWidgetModel.shared.holdWhileShown()
             // The receipt under the answer keeps its five seconds (ArisReceiptModel).
             await ArisReceiptModel.shared.holdWhileShown()
@@ -377,8 +378,8 @@ struct ArisNotchBehaviour: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .animation(.smooth, value: root.claude.approvals)
-            .onReceive(root.claude.$approvals) { approvals in
+            .animation(.smooth, value: root.claudeFeed.current.approvals)
+            .onReceive(ClaudeStore.shared.$approvals) { approvals in
                 let first = approvals.first.map { "\($0.id)" }
                 DispatchQueue.main.async { root.approvalsChanged(first) }
             }

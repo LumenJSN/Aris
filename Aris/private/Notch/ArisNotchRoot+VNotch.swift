@@ -60,7 +60,7 @@ extension ArisNotchRoot {
 
     /// The star rests in the band: Aris's choice of rest (ArisVNotchRest), or something only the closed notch tells.
     var starMayRest: Bool {
-        ArisVNotchRest(stored: UserDefaults.standard.string(forKey: ArisVNotchRest.preferenceKey), starShown: restStarShown).starRests(muted: muted, agentDown: agentLink.link.dozes,
+        ArisVNotchRest(stored: prefs.current.closedRest, starShown: restStarShown).starRests(muted: muted, agentDown: agentLink.link.dozes,
                                          modelNote: speechModels.state.earText != nil || speechModels.loadTrouble != nil,
                                          filesWaiting: !givenFiles.files.isEmpty)
     }

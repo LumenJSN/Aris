@@ -204,8 +204,8 @@ private func teamHandOutTests() {
                ArisJobSpec(title: "c", prompt: "p3", assignee: .teammate("mate-a"), cwd: nil, appHint: nil)]
     let many = ArisHandOutPlan.plan(two, turn: clean, brains: ["mate-a": .claude])
     check(many.map(\.spec.assignee) == [.helper(1), .helper(2), .teammate("mate-a")] && many.allSatisfy(\.provenance.untrusted)
-          && many[0].brain == .codex && many[2].brain == .claude,
-          "hand-out: parallel work no teammate matches goes to numbered helpers; a teammate's job keeps its brain")
+          && many[0].brain == .claude && many[2].brain == .claude,
+          "hand-out: parallel work no teammate matches goes to numbered helpers on the turn's brain (untrusted); a teammate's job keeps its brain")
     let unclean = ArisHandOutPlan.plan(two, turn: ArisHandOutPlan.Turn(words: "x", brain: .claude, turnId: nil, untrustedTurn: true), brains: ["mate-a": .api])
     check(unclean.map(\.spec.assignee) == [.helper(1), .helper(2), .teammate("mate-a")] && unclean.allSatisfy { $0.provenance.untrusted && $0.cleanContext }
           && unclean[2].brain == .api, "hand-out: after the screen or outside text, the same helpers, every job untrusted")

@@ -129,7 +129,12 @@ func filesRead(_ args: [String]) {
         fail("그 폴더는 찾을 수 없어요: 홈 폴더나 iCloud Drive 안의 일반 폴더만 돼요 (Library, 숨김 폴더, 키·설정 폴더는 안 돼요).")
     }
     let limit = ArisLocalStore.limit(rest, fallback: ArisFindQuery.defaultLimit, maximum: ArisFindQuery.maximum)
-    let matched = spotlight(["-onlyin", folder, query], maxLines: 2000)
+    var matched = spotlight(["-onlyin", folder, query], maxLines: 2000)
+    // Nothing from Spotlight: the folder's own items by name (an unindexed folder is never told as empty).
+    if matched.isEmpty, kind == nil {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []
+        matched = ArisFindQuery.directMatches(words, names: names).map { folder + "/" + $0 }
+    }
     let paths = matched.filter { ArisFiles.listable($0, home: home) }
     // Matches left out for their names are said, so a file that is there is never told as missing (audit tools-3).
     let note = ArisFiles.heldBackNote(ArisFiles.heldBack(matched, home: home), korean: true)

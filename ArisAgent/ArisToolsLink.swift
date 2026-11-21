@@ -46,6 +46,8 @@ enum ArisToolsLink {
                        repair: (_ target: String, _ path: String) -> Bool = { ArisSafeFiles.replaceLink(target: $0, at: $1) },
                        note: (String) -> Void = { FileHandle.standardError.write(Data(("aris-agent: " + $0 + "\n").utf8)) },
                        enforcing: Bool = ArisRollout.enforcing) -> Bool {
+        // An uninstall under way removes the link: it is never put back (ArisUninstallQuiet).
+        guard !ArisUninstallQuiet.linkIsFrozen else { return true }
         let found = kind(link)
         let pointed = target(link)
         guard step(app: app, kind: found, target: pointed, own: own) == .repair else { return true }

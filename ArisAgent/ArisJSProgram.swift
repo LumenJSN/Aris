@@ -239,6 +239,71 @@ enum ArisJSTokens {
         scalar.properties.generalCategory == .format || scalar.properties.isDefaultIgnorableCodePoint || hangulFillers.contains(scalar.value)
     }
 
+    /// Whether one character (a grapheme cluster) carries a hidden scalar that isn't part of what it shows. An emoji's
+    /// own joiners and selectors show nothing by themselves yet are the picture (a red heart, a family, Scotland's flag), so they pass:
+    /// a zero-width joiner between two emoji, one variation selector right after a character that shows (one per
+    /// character, so nothing can be smuggled in a run of them), and the short tag run of a subdivision flag. Every
+    /// other hidden scalar (a bidi control, a zero-width space or joiner outside an emoji, a soft hyphen, a tag
+    /// anywhere else) still counts (audit item 9: emoji in an MCP write were refused as hidden characters).
+    static func hidesSomething(_ character: Character) -> Bool {
+        let scalars = Array(character.unicodeScalars)
+        return scalars.indices.contains { isHidden(scalars[$0]) && !partOfShownCharacter(scalars, $0) }
+    }
+
+    /// Text with any hidden scalar that isn't part of a shown character (hidesSomething).
+    static func hidesSomething(_ text: String) -> Bool { text.contains(where: hidesSomething) }
+
+    /// The scalars of `character` without the hidden ones that aren't part of what it shows.
+    static func shownScalars(_ character: Character) -> [Unicode.Scalar] {
+        let scalars = Array(character.unicodeScalars)
+        return scalars.indices.filter { !isHidden(scalars[$0]) || partOfShownCharacter(scalars, $0) }.map { scalars[$0] }
+    }
+
+    private static let zeroWidthJoiner: UInt32 = 0x200D
+    private static let cancelTag: UInt32 = 0xE007F
+    private static let blackFlag: UInt32 = 0x1F3F4
+    /// The longest subdivision code a flag's tags spell ("gbsct", "usca"): ISO 3166-2 codes are at most six.
+    private static let maxFlagTags = 6
+
+    private static func isVariationSelector(_ value: UInt32) -> Bool {
+        (0xFE00...0xFE0F).contains(value) || (0xE0100...0xE01EF).contains(value)
+    }
+
+    private static func isEmojiScalar(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.properties.isEmoji && !isHidden(scalar)
+    }
+
+    private static func partOfShownCharacter(_ scalars: [Unicode.Scalar], _ index: Int) -> Bool {
+        let value = scalars[index].value
+        if isVariationSelector(value) {
+            // One selector, right after a scalar that shows and that the selector belongs to: the text/emoji ones
+            // after an emoji, the ideographic ones after an ideograph, the others after a non-ASCII character. A
+            // selector after a plain letter shows nothing and could carry a hidden byte, so it still counts.
+            guard index > 0, !isHidden(scalars[index - 1]) else { return false }
+            let base = scalars[index - 1]
+            switch value {
+            case 0xFE0E, 0xFE0F: return base.properties.isEmoji
+            case 0xE0100...0xE01EF: return base.properties.isIdeographic
+            default: return !base.isASCII
+            }
+        }
+        if value == zeroWidthJoiner {
+            // Between two emoji (the one before may carry its selector or skin tone).
+            guard index > 0, index + 1 < scalars.count, isEmojiScalar(scalars[index + 1]) else { return false }
+            var before = index - 1
+            if isVariationSelector(scalars[before].value), before > 0 { before -= 1 }
+            return isEmojiScalar(scalars[before])
+        }
+        if (0xE0020...0xE007F).contains(value) {
+            // A subdivision flag: the black flag, two to six tag letters or digits, the cancel tag, and nothing else.
+            guard scalars.first?.value == blackFlag, scalars.last?.value == cancelTag else { return false }
+            let tags = scalars.dropFirst().dropLast()
+            guard (2...maxFlagTags).contains(tags.count) else { return false }
+            return tags.allSatisfy { (0xE0061...0xE007A).contains($0.value) || (0xE0030...0xE0039).contains($0.value) }
+        }
+        return false
+    }
+
     static func read(_ code: String) -> [Token]? {
         var tokens: [Token] = []
         var characters = Array(code)[...]
@@ -288,8 +353,9 @@ enum ArisJSTokens {
                 }
             default:
                 // Invisible characters (format and default-ignorable ones: bidi controls, zero-width marks, soft hyphens,
-                // Hangul fillers, variation selectors, tags) could make what's shown differ from what's typed.
-                guard !character.unicodeScalars.contains(where: ArisJSTokens.isHidden) else { return nil }
+                // Hangul fillers, tags) could make what's shown differ from what's typed. An emoji's own joiners and
+                // selectors are part of what it shows (hidesSomething).
+                guard !ArisJSTokens.hidesSomething(character) else { return nil }
                 text.append(character)
             }
         }

@@ -134,13 +134,20 @@ enum ArisSessionAgents {
         let pid: Int32
         let background: Bool
         let cwd: String
+        /// When it started (seconds since 1970), its name (Claude Code's own, may be model-written) and its status
+        /// ("busy", "idle", "waiting"): what the fleet takes from the list.
+        var started: Double? = nil
+        var name: String? = nil
+        var status: String? = nil
     }
 
     static func parse(_ data: Data) -> [Entry]? {
         guard let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return nil }
         return list.compactMap { item in
             guard let id = item["sessionId"] as? String, !id.isEmpty, let pid = (item["pid"] as? NSNumber)?.int32Value, pid > 1 else { return nil }
-            return Entry(sessionId: id, pid: pid, background: (item["kind"] as? String) == "background", cwd: item["cwd"] as? String ?? "")
+            return Entry(sessionId: id, pid: pid, background: (item["kind"] as? String) == "background", cwd: item["cwd"] as? String ?? "",
+                         started: (item["startedAt"] as? NSNumber).map { $0.doubleValue / 1_000 }, name: item["name"] as? String,
+                         status: item["status"] as? String)
         }
     }
 

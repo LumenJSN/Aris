@@ -4,7 +4,7 @@
 //
 //  The API keys in the macOS Keychain (generic passwords, service com.lumenjsn.aris.keys, one account per key name),
 //  never in a plain file. ArisKeyFile reads through `read` (set as its secureStore at launch). A key read once is kept
-//  in memory so a turn never waits on the Keychain; saving or deleting updates that copy.
+//  in memory so a turn never waits on the Keychain (a failed read is not kept); saving or deleting updates that copy.
 //
 
 import Foundation
@@ -44,9 +44,14 @@ enum ArisKeychain {
         if status != errSecSuccess && status != errSecItemNotFound {
             log.error("read \(name, privacy: .public) failed: \(status, privacy: .public)")
         }
-        cache.withLock { $0[name] = .some(key) }
+        // A read that failed (the Keychain locked, an interrupted query) is not "no key": only a found key and a
+        // clear "not there" are kept, so the next read asks again (it was cached as no key for the whole run).
+        if cachesRead(status: status) { cache.withLock { $0[name] = .some(key) } }
         return key
     }
+
+    /// Whether a read's answer may be kept in memory: a key found, or none saved.
+    static func cachesRead(status: OSStatus) -> Bool { status == errSecSuccess || status == errSecItemNotFound }
 
     /// Saves (or replaces) the key under `name`.
     static func save(_ key: String, as name: String) -> Result<Void, Failure> {
