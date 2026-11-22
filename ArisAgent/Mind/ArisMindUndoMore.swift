@@ -74,6 +74,20 @@ enum ArisMindItemUndo {
         return .itemCreated(kind: expected.kind, id: id)
     }
 
+    /// Takes back the activity log's entries a call wrote (`aris-tools undo --id … --confirmed` each, newest first):
+    /// only ids that are UUIDs, at most 20; the first that fails stops it, with what aris-tools said.
+    static func undoLogged(_ ids: [String], run: ([String]) -> (status: Int32, output: String)) throws {
+        let entries = ids.prefix(20).compactMap(UUID.init(uuidString:))
+        guard !entries.isEmpty, entries.count == min(ids.count, 20) else { throw ArisUndoError(message: "that change isn't in the activity log any more") }
+        for entry in entries.reversed() {
+            let done = run(["undo", "--id", entry.uuidString, "--confirmed"])
+            guard done.status == 0 else {
+                let said = done.output.trimmingCharacters(in: .whitespacesAndNewlines)
+                throw ArisUndoError(message: said.isEmpty ? "it couldn't be taken back" : String(said.prefix(200)))
+            }
+        }
+    }
+
     /// The app's key for the write that takes a to-do back (aris-tools' undo removes it by its Reminders id).
     static func todoUndoKey(_ id: String) -> String { "todo|remove|id=" + id }
 

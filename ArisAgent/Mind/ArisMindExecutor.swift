@@ -294,6 +294,9 @@ struct ArisMindUndoHooks: @unchecked Sendable {
                 undoTools($0, kind == "reminder" ? ArisMindItemUndo.todoUndoKey(id) : nil)
             }
         }
+        // A rename, a trash or a move kept in the activity log (thirteenth VM run, item 1): its lines, newest first.
+        ArisUndoHands.live.undoLogged = { ids in try ArisMindItemUndo.undoLogged(ids) { undoTools($0, nil) } }
+        ArisRecord.loggedUndone = { ArisRecord.loggedUndone(ArisActivityBridge.objects(ArisActivityBridge.defaultLog)) }
     }
 
     /// aris-tools as Aris itself for an undo (never a brain's turn-gate folder, which would hand it back to a route): a

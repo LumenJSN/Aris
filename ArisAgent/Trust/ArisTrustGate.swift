@@ -28,6 +28,9 @@ final class ArisTrustGate: @unchecked Sendable {
         /// A model's typing whose decision read its field's selection as empty: its run is bound to that (ArisApps.TypeOver
         /// `empty`), so whatever is selected by the time it types stops it. Nil for every other call.
         var typingMark: String? = nil
+        /// An undo's plan as decided (thirteenth VM run, item 1): the kind their words named and the entries it takes, which
+        /// its run keeps to after their yes on the card that named them. Nil for every other call.
+        var undo: ArisUndoPlanned? = nil
     }
 
     static let keptSessions = 64
@@ -207,6 +210,8 @@ final class ArisTrustGate: @unchecked Sendable {
         // page (decision 2): its host and element, read now.
         var facts = ArisCallFacts(capability: capability, arguments: keys, cwd: cwd, registeredPayment: payment,
                                   browser: browserPage(session: session, capability: capability, effect: decided, arguments: arguments, said: said))
+        // An act aris-tools' words name (a calendar event deleted): its card says what it is (thirteenth VM run, item 4).
+        facts.actionTitle = ArisToolWords.title(argv)
         // Rated a send by the outbound rule: its card shows all it sends, whole.
         if decided != effect, let outbound { facts.sends = outbound.shown }
         // A replace of a field's whole text: what it would erase, read now for its card (presentation only).
@@ -315,14 +320,24 @@ final class ArisTrustGate: @unchecked Sendable {
             decision = .refuse(reason: Self.shellDeleteRefusal)
         }
         // An undo reaches what its provenance lets it (ArisUndoScope): the owner's words any entry, anything else its own.
+        var undoPlanned: ArisUndoPlanned?
         if ArisRecord.capabilities.contains(where: { $0.id == capability }) {
-            let caller = ArisUndoCaller(session: session, task: task, provenance: verdict.provenance, speaker: verdict.speaker)
+            // The kind of change their words of this turn name ("이름 바꾼 거"), from their words only, never the model's.
+            let caller = ArisUndoCaller(session: session, task: task, provenance: verdict.provenance, speaker: verdict.speaker,
+                                        named: ArisUndoKind.named(in: said))
+            let plan = undoPlan(arguments, caller: caller)
             // The speaker is read again after the undo's own plan, so no path through it drops the voice check (F1).
-            decision = ArisTrustPolicy.voiceChecked(undoDecision(arguments, caller: caller, base: decision), effect: rated, speaker: verdict.speaker)
+            decision = ArisTrustPolicy.voiceChecked(Self.undoDecision(plan, base: decision), effect: rated, speaker: verdict.speaker)
+            undoPlanned = ArisUndoPlanned(named: caller.named, ids: plan.ids)
+            // A card that asks names exactly what it takes back (and, when his kind isn't there, says so first).
+            if decision.waitsForOwner {
+                lock.withLock { described[session, default: [:]][call] = ArisAskDescription(title: "되돌리기", line: plan.line, spoken: plan.line + " 되돌릴까요?") }
+            }
         }
         // Every path the call names, where it lands (links followed): a link into a protected place is that place.
         if let rule = Self.linkedPathRule(facts.values(.path), effect: rated, home: home) { decision = .refuse(reason: rule.korean) }
-        let outcome = Outcome(decision: decision, verdict: verdict, facts: facts, effect: rated, typingMark: typingMark)
+        var outcome = Outcome(decision: decision, verdict: verdict, facts: facts, effect: rated, typingMark: typingMark)
+        outcome.undo = undoPlanned
         if case .refuse = decision { record(session: session, task: task, call: call, outcome: outcome, answer: nil, result: nil, ok: false, undo: nil) }
         return outcome
     }
@@ -547,9 +562,12 @@ final class ArisTrustGate: @unchecked Sendable {
                                signIn: ArisBrowserActs.namesSignIn(label), signInAsked: ArisBrowserActs.asksForSignIn(said))
     }
 
-    private func undoDecision(_ arguments: [String: Any], caller: ArisUndoCaller, base: ArisDecision) -> ArisDecision {
+    private func undoPlan(_ arguments: [String: Any], caller: ArisUndoCaller) -> ArisUndoScope.Verdict {
+        ArisRecord.plan(id: arguments["id"] as? String, count: (arguments["count"] as? NSNumber)?.intValue, caller: caller, home: home, now: now())
+    }
+
+    private static func undoDecision(_ plan: ArisUndoScope.Verdict, base: ArisDecision) -> ArisDecision {
         if case .refuse = base { return base }
-        let plan = ArisRecord.plan(id: arguments["id"] as? String, count: (arguments["count"] as? NSNumber)?.intValue, caller: caller, home: home, now: now())
         return plan.decision
     }
 

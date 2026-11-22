@@ -57,6 +57,15 @@ enum ArisCountdownCopy {
     static var doing: String { String(localized: "countdown.doing", defaultValue: "Doing it…", bundle: bundle, locale: locale, comment: "Action countdown card, let go") }
     static var notDone: String { String(localized: "countdown.notdone", defaultValue: "Not done", bundle: bundle, locale: locale, comment: "Action countdown card, stopped") }
 
+    /// An action's countdown button: the action's own verb, from its title ("글 바꾸기 · TextEdit" → 바꾸기, "일정 지우기"
+    /// → 지우기; in English the gate's verb, Change, Delete), never the message card's 보내기 (thirteenth VM run, item 4);
+    /// `go` when the title has no verb of the gate's.
+    static func goWord(title: String, english: Bool) -> String {
+        let head = title.components(separatedBy: " · ").first ?? title
+        guard let verb = head.split(separator: " ").last.map(String.init), ArisCardEnglish.gateVerb(verb) != nil else { return go }
+        return english ? ArisCardEnglish.gateVerb(verb) ?? go : verb
+    }
+
     /// The hint under the card: by voice while Aris listens for "취소", by a press when it can't.
     static func hint(listening: Bool, action: Bool) -> String { listening ? hint : action ? goPressHint : pressHint }
 

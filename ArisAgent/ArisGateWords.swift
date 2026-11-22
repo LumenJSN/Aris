@@ -80,7 +80,7 @@ enum ArisGateWords {
     /// Lines that begin with fixed words and go on with a value.
     static let leads: [(korean: String, english: String)] = [
         ("캘린더 일정이 지워져요: ", "A calendar event will be removed: "), ("예약을 다시 살려요 (혼자 실행돼요): ", "A schedule comes back (it runs on its own): "),
-        ("기록에서 찾지 못한 일 ", "Not found in the record "), ("입력하는 글:", "Text to type:"), ("단계:", "Steps:"),
+        ("기록에서 찾지 못한 일 ", "Not found in the record "), ("입력하는 글:", "Text to type:"), ("단계:", "Steps:"), ("지워지는 글:", "Text that is erased:"),
     ]
 
     /// A title in English: each part between " · " by the table; "명령 실행 (rm)" and "Finder 제어" by their shape.

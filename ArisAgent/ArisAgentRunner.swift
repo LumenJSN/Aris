@@ -2215,6 +2215,8 @@ final class ArisAgentRunner {
         guard !isTask else {
             // A task's process ends with it, and so does anything still added for it.
             if let taskJob { ArisSteerDesk.shared.drop(job: taskJob) }
+            // Its tracker, asks and cards go with it: no later job starts from what this one read (thirteenth VM run, item 3).
+            if ArisCore2.isOn() { ArisMindJudge.shared.end(session: ArisMindRoute.session(self)) }
             stopProcess()
             Self.registry.withLock {
                 _ = Self.runners.removeValue(forKey: key)

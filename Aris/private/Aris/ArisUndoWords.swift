@@ -370,7 +370,7 @@ enum ArisUndoWords {
         "예약": "예약", "예약 취소": "예약", "옮김": "옮긴 것", "이름 바꿈": "이름 바꾼 것", "새 폴더": "새 폴더", "휴지통으로": "휴지통에 넣은 것",
         "집 위치": "집 위치", "변환": "변환", "합침": "합친 것", "나눔": "나눈 것", "압축": "압축", "창 배치": "창 배치", "타이머": "타이머",
         "메시지 보냄": "메시지", "미리 알림 추가": "미리 알림", "메모 저장": "메모", "기억함": "기억", "기억 지움": "기억 지운 것",
-        "기본 캘린더": "기본 캘린더", "메일 답장 초안": "메일 답장 초안",
+        "기본 캘린더": "기본 캘린더", "메일 답장 초안": "메일 답장 초안", "입력": "입력한 글", "글 바꿈": "바꾼 글", "글 지움": "지운 글",
     ]
 
     /// The same in English, by the kind as ArisActivityWords says it. A kind not here is named by its own words.
@@ -380,7 +380,8 @@ enum ArisUndoWords {
         "Renamed": "rename", "New folder": "new folder", "To the Trash": "move to the Trash", "Home": "home location", "Converted": "conversion",
         "Merged": "merge", "Split": "split", "Made smaller": "compression", "Windows arranged": "window arrangement", "Timer": "timer",
         "Message sent": "message", "Reminder added": "reminder", "Note saved": "note", "Remembered": "memory", "Memories cleared": "memory clearing",
-        "Default calendar": "default calendar", "Mail reply drafted": "mail reply draft",
+        "Default calendar": "default calendar", "Mail reply drafted": "mail reply draft", "Typed": "typing", "Text replaced": "text replacement",
+        "Text erased": "erasing",
     ]
 
     /// 을 after a final consonant, 를 after a vowel (Hangul); 를 otherwise.

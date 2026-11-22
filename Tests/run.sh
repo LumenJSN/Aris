@@ -269,6 +269,7 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/vmfix11-tests.swift" \
   "$DIR/vmfix12-tests.swift" \
   "$DIR/rel12-tests.swift" "$SRC/../Aris/ArisTypeHere.swift" "$SRC/../Aris/ArisTodoListName.swift" "$SRC/../Aris/Team/ArisJobContextView.swift" \
+  "$DIR/fix131-tests.swift" "$DIR/../ArisAgent/ArisDesktopErase.swift" "$DIR/../ArisAgent/ArisDesktopEngine+Erase.swift" "$DIR/../ArisAgent/ArisDesktopSession+Erase.swift" "$DIR/../ArisAgent/ArisDesktopUndoLog.swift" "$DIR/../ArisAgent/ArisProtectedPlaceAsk.swift" "$SRC/../Aris/Notice/ArisParkedNotice.swift" \
   "$DIR/rel11-tests.swift" "$DIR/../ArisAgent/ArisPaymentHandOff.swift" "$DIR/../ArisAgent/ArisCardGroup.swift" "$DIR/../ArisAgent/ArisVolumeScope.swift" \
   "$DIR/voiceyes-tests.swift" "$SRC/../Aris/ArisCardOwner.swift" "$SRC/../Aris/ArisCardHearing.swift" \
   "$DIR/cardintent-tests.swift" "$SRC/../Aris/ArisCardIntentWait.swift" "$SRC/../Aris/ArisCardJudge.swift" \
@@ -278,6 +279,7 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/mind10b-tests.swift" "$DIR/../ArisAgent/Mind/ArisMindSession+DirectFirst.swift" \
   "$DIR/exp11-tests.swift" \
   "$DIR/exp12-tests.swift" "$DIR/../ArisAgent/Teach/ArisTeachLastValues.swift" \
+  "$DIR/exp131-tests.swift" \
   "$DIR/decision-tests.swift" "$DIR"/../Shared/Core/Decide/*.swift "$SRC/../Aris/ArisDecider.swift" "$SRC/../Aris/ArisRouter+Decide.swift" "$SRC/../Aris/ArisRouterModels+Chat.swift" "$DIR/../Aris/components/Settings/ArisAIDecisionModels.swift" \
   "$DIR/stt-tests.swift" "$DIR"/../Shared/Core/Hearing/Recognise/*.swift \
   "$DIR/safe10-tests.swift" "$DIR/../Shared/ArisNoStore.swift" "$DIR/../ArisAgent/ArisHelperCaches.swift" "$DIR/../Aris/components/Settings/ArisSavedKeyRows.swift" \

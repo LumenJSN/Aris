@@ -860,6 +860,11 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
         // The user's own words of a clean turn teach memory once it's answered (ArisMemoryLearning); nothing else ever does.
         let clean = ArisMemoryLearning.mayLearn(fromApp: fromApp, task: false, untrusted: untrusted, outsideConversation: sawOutside, screenSeen: sawScreen,
                                                 handsFree: handsFree, images: !images.isEmpty, screenText: screen != nil, tainted: false)
+        // "도큐멘트 폴더 통째로 지워 줘": a protected place as a whole is refused here, in one plain sentence (ArisProtectedPlaceAsk).
+        if let line = ArisProtectedPlaceAsk.answer(request, fromApp: fromApp, handsFree: handsFree, plain: images.isEmpty && screen == nil) {
+            stream(.helperAnswers, on: connection)
+            return stream(.answer(line), on: connection)
+        }
         // "어제 그 파일 어디 저장했지 / 지난번에 … 어떻게 했지": answered here from Aris's own record of its work, by no AI, when
         // one clearly matches (ArisWorkIntent). One that rests on a turn that read outside content marks the conversation.
         if let found = ArisWorkDesk.live.localAnswer(request, fromApp: peerFailure == nil, handsFree: handsFree, plain: images.isEmpty && screen == nil) {
@@ -1327,6 +1332,8 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
                     return respond(connection, "403 Forbidden", Data("{}".utf8))
                 }
             }
+            // Text the desktop engine typed or erased in an app, by its id (ArisDesktopUndoLog).
+            if ArisDesktopUndoLog.handle(object, reply: { line, body in queue.async { respond(connection, line, body) } }) { return }
             // With `arisCore2` on, an undo of a record entry (or of the latest change, when the record's is newest).
             if ArisCore2Trust.undo(object, home: FileManager.default.homeDirectoryForCurrentUser.path, reply: { line, body in queue.async { respond(connection, line, body) } }) {
                 return
@@ -1372,7 +1379,8 @@ func handleOther(_ request: HTTPRequest, object: [String: Any], on connection: N
                     let valid = result.status == 0 && (try? JSONSerialization.jsonObject(with: Data(result.out.utf8))) != nil
                     // Rows the automatic check let run come with "checked": true (ArisAutoMarks: the "확인함" mark).
                     respond(connection, valid ? "200 OK" : "500 Internal Server Error",
-                            valid ? ArisCore2Trust.activity(ArisAutoMarks.shared.annotated(Data(result.out.utf8), log: ArisAutoMarks.logRows()),
+                            valid ? ArisCore2Trust.activity(ArisDesktopUndoLog.merged(ArisAutoMarks.shared.annotated(Data(result.out.utf8), log: ArisAutoMarks.logRows()),
+                                                                                      today: object["today"] as? Bool == true),
                                                             today: object["today"] as? Bool == true, home: FileManager.default.homeDirectoryForCurrentUser.path)
                                   : Data("{}".utf8))
                 }
@@ -1725,6 +1733,8 @@ ArisTeammateJobFile.sweep(home: FileManager.default.homeDirectoryForCurrentUser.
 ArisChildLedger.sweep(home: FileManager.default.homeDirectoryForCurrentUser.path)
 queue.async { ArisTaskRecoveryLive.run(home: FileManager.default.homeDirectoryForCurrentUser.path) }
 // Core 2's record and trust (ArisCore2Trust): its audit writer and why-lines; with `arisCore2` on, the record pruned.
+// The desktop engine's text undo (ArisDesktopUndoLog) keeps its entries in the helper's own folder.
+ArisDesktopUndoLog.folder = ArisPrivateFile.folder(home: FileManager.default.homeDirectoryForCurrentUser.path)
 queue.async { ArisCore2Trust.start(home: FileManager.default.homeDirectoryForCurrentUser.path, audit: { ArisAgentRunner.writeAudit($0, key: $1) }) }
 
 // Scheduled jobs (ArisScheduler): what the last launch left is settled, then they're checked every 30 s.

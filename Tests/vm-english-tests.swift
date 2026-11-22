@@ -118,7 +118,9 @@ let vmEnglishOnPurpose: [String: Set<String>] = [
                           // kind's English from ArisActivityWords), and the two kinds whose line ends with its time
                           "할 일 추가", "할 일 완료", "할 일 지움", "내일로 넘김", "일정 추가", "일정 삭제", "일정 변경", "예약", "예약 취소", "옮김", "이름 바꿈", "새 폴더", "휴지통으로", "집 위치",
                           "변환", "합침", "나눔", "압축", "창 배치", "타이머", "메시지 보냄", "미리 알림 추가", "메모 저장", "기억함", "기억 지움", "기본 캘린더", "메일 답장 초안",
-                          "할 일", "일정", "옮긴 것", "이름 바꾼 것", "휴지통에 넣은 것", "합친 것", "나눈 것", "메시지", "미리 알림", "메모", "기억", "기억 지운 것"],
+                          "할 일", "일정", "옮긴 것", "이름 바꾼 것", "휴지통에 넣은 것", "합친 것", "나눈 것", "메시지", "미리 알림", "메모", "기억", "기억 지운 것",
+                          // the desktop engine's text changes (jv-fix131)
+                          "입력", "글 바꿈", "글 지움", "입력한 글", "바꾼 글", "지운 글"],
     // folders matched in what the user says, and the Korean card beside its English one
     "ArisSaveAnswer.swift": ["바탕화면", "데스크탑", "데스크톱", "문서 폴더", "문서", "다운로드", "파일로 저장", "저장할 것: 방금 답\\(warning)\\n위치: \\(shown(path))\\n새 파일로 만들어요 (같은 이름의 파일이 있으면 저장하지 않아요)\\n\\(shownPart)\\n\\(head)", "내용 (전체 \\(count)자 중 앞부분):", "내용 (전체 \\(count)자):", "메모 만들기", "저장할 것: 방금 답\\(warning)", "위치: 메모 앱 (새 메모)", "제목: "],
     // words matched in a spoken yes, and the Korean hint beside its English

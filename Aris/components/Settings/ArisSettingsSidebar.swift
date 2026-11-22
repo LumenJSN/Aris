@@ -252,7 +252,10 @@ struct ArisSettingsSidebar: View {
                 Text("Aris").font(.system(size: 15, weight: .bold)).tracking(-0.3).foregroundStyle(palette.title)
                 Text(w.frame(status)).font(.system(size: 11)).foregroundStyle(palette.desc)
                     // Two lines: "Aris's helper isn't answering" used to end "isn't answe…" (second upgrade run, item 6).
-                    .lineLimit(ArisSettingsCaption.prerequisite(status) == nil ? 2 : 3).fixedSize(horizontal: false, vertical: true)
+                    // Three for a missing permission's long name ("Screen & System Audio Recording permission needed" was cut
+                    // at two: thirteenth VM run).
+                    .lineLimit(ArisSettingsCaption.prerequisite(status) == nil && !ArisSettingsCaption.asksForPermissions(status) ? 2 : 3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityElement(children: .combine)

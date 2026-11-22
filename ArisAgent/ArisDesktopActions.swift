@@ -66,6 +66,8 @@ extension ArisDesktopSession {
 
     func held(_ look: ArisDesktopObservation, field: ArisDesktopElement?) -> ArisDesktopResult? {
         if let refused = settingsHeld(look) { return refused }
+        // What a replace erases must be what its card showed (ArisDesktopErase).
+        if let refused = eraseHeld(look, field: field) { return refused }
         // The field the basis was made with, found again when the call names none (a batch's keys after its own text
         // step: the window may carry a new name by then, and is still held by that field).
         let current = field ?? basis.field.flatMap { ArisDesktopVerify.find($0, in: look) }
@@ -375,11 +377,14 @@ extension ArisDesktopSession {
         let clipboard = copies ? engine.apps.clipboardChanges() : nil
         var evidence = ArisPressEvidence(editedBefore: saves ? engine.apps.documentEdited(pid: target.pid, frame: window.frame) : nil)
         if let refused = pasteHeld() { return refused }
-        var envelope = run(ArisPeekabooCommands.press(request.keys, snapshot: fresh.peekaboo))
+        // An erase of everything selects it first, on the card that showed what goes (ArisDesktopErase).
+        let keys = erasingKeys(request.keys)
+        let erasedField = basis.erase?.replaces == true ? fresh.focusedElement : nil
+        var envelope = run(ArisPeekabooCommands.press(keys, snapshot: fresh.peekaboo))
         // The keys can't reach the window in the background (its keyboard focus is in another one): the user's card, then
         // forward, the keys, and the front app put back.
         if envelope?.focusElsewhere == true {
-            switch forward(keys: request.keys, in: fresh, window: window) {
+            switch forward(keys: keys, in: fresh, window: window) {
             case .failure(let refused): return refused
             case .success(let sent): envelope = sent
             }
@@ -398,9 +403,13 @@ extension ArisDesktopSession {
             _ = Self.settles({ self.engine.apps.documentEdited(pid: self.target.pid, frame: window.frame) != true })
             evidence.editedAfter = engine.apps.documentEdited(pid: target.pid, frame: window.frame)
         }
-        var result = readBack(after.map { ArisDesktopVerify.pressed(request.keys, dispatched: sent, before: fresh, after: $0, evidence: evidence) } ?? .notSeen("the window is gone"),
+        var result = readBack(after.map { ArisDesktopVerify.pressed(keys, dispatched: sent, before: fresh, after: $0, evidence: evidence) } ?? .notSeen("the window is gone"),
                               envelope: envelope, after: after, before: before)
         result.keysSent = sent
+        // An erase that worked keeps its undo: the field's text as it was goes to the undo store.
+        if result.ok, let erasedField, let after, let line = keepUndo(field: erasedField, before: erasedField.rawCapped ? nil : erasedField.rawValue, after: after, typing: false) {
+            result = ArisDesktopResult(ok: true, text: result.text + "\n" + line, keysSent: sent)
+        }
         // A paste the user's card showed, into a message field that gives no value (KakaoTalk's): once the window shows the
         // text, it is kept as text Aris typed there is, so its send can go to the card that says it (audit desk-4).
         if let pasted = basis.paste, result.ok, let after, let field = after.composer(for: nil), field.rawValue == nil, !field.rawCapped, windowShows(pasted, in: after) {

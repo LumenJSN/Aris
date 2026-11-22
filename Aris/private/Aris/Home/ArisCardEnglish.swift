@@ -112,6 +112,9 @@ enum ArisCardEnglish {
             if files { return place(row) }
             if desktop, index == 0 { return windowLine(row) ?? row }
             if let more = capture(#"^…\((\d+)줄 더\)$"#, in: row) ?? capture(#"^\(\+(\d+)줄 더\)$"#, in: row) { return "…(\(more) more lines)" }
+            // Several same-kind steps on one card (aris-agent's ArisCardGroup.header; thirteenth VM run, K1: "Add to-do" over
+            // "3개를 한 번에 물어봐요:" in an English UI).
+            if let count = capture(#"^(\d+)개를 한 번에 물어봐요:$"#, in: row) { return "\(count) items, asked about together:" }
             // The Claude Code card's note when only the tool's new version keeps the launch from going ahead on its own.
             if let version = capture(#"^Claude Code가 업데이트돼서 \(버전 (.+)\) 확인할게요$"#, in: row) {
                 return "Claude Code was updated (version \(version == "확인 불가" ? "unknown" : version)), so I'm asking"

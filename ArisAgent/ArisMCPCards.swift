@@ -52,6 +52,7 @@ final class ArisMCPCards {
         var shown = ArisConfirmation(id: id, title: card.title, detail: card.detail, countdown: card.countdown, spoken: card.spoken, full: card.full,
                                      fields: fields, allow: card.allow, desktop: card.desktop)
         shown.stopped = card.stopped
+        shown.action = card.countdown && card.action
         shown.fleetGrant = card.fleetGrant
         return shown
     }

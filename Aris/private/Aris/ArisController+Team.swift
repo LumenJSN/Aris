@@ -332,6 +332,8 @@ extension ArisController {
         // INTERRUPTION POLICY HOOK: when this is said is notify's to decide (jv-world's ArisInterruption: never over the user's
         // voice or into a call, at a pause); nothing here decides the timing.
         await notify(card, saying: said, parking: report.shown) {
+            // Its result was put in front of him: it has been seen, and leaves the done chip (thirteenth VM run, item 7).
+            self.seenDone = ArisDoneFold.seeing(job.id, in: self.seenDone)
             // An untrusted job's answer in the context is outside text: the conversation dispatches nothing after it.
             self.outsideConversation = true
             self.history = ArisContext.remembering(ArisContext.Turn(heard: job.title, reply: report.shown), after: self.history)
@@ -354,6 +356,9 @@ extension ArisController {
         let said = said ?? ArisJobFailure.said(title: job.title, reason: reason, korean: korean)
         let spoken = ArisSpeakable.speakable(said)
         let card = ArisNoticeRoute.jobFailed(title: job.title, shown: ArisJobFailure.shown(reason: reason, korean: korean))
-        await notify(card, saying: spoken.isEmpty ? said : spoken, parking: said)
+        await notify(card, saying: spoken.isEmpty ? said : spoken, parking: said) {
+            // Why it didn't finish was put in front of him: seen, so no "N not done" stays in the notch all session (item 7).
+            self.seenDone = ArisDoneFold.seeing(job.id, in: self.seenDone)
+        }
     }
 }

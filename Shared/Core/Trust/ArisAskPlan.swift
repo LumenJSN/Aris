@@ -476,6 +476,7 @@ struct ArisAskPlan: Sendable {
     /// shell rule's, untouched.
     static func verb(_ item: ArisAskItem) -> String {
         if item.facts.erases != nil { return replaceText }
+        if let own = item.facts.actionTitle { return own }
         return item.facts.scriptTitle ? scriptRun : verb(item.effect, capability: item.facts.capability)
     }
     static let scriptRun = "스크립트 실행"

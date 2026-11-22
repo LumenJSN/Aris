@@ -28,10 +28,10 @@ enum ArisTeachTurn {
     static func takes(_ object: [String: Any], request: String, fromApp: Bool, handsFree: Bool, plain: Bool, on connection: NWConnection) -> Bool {
         guard ArisTeachSwitch.isOn() else { return false }
         let words = ArisMemoryText.ownWords(request).trimmingCharacters(in: .whitespacesAndNewlines)
-        // Aris's own words follow the UI's language, whatever language he spoke in (third VM run, D4): the app says it
-        // with every request ("lang"); the user's names and values stay as they wrote them.
+        // Aris's own words follow the request's language, the UI's when it shows none (the app says it with every request,
+        // "lang"): thirteenth VM run, item 7, in place of third VM run D4's UI language; his names and values stay as written.
         ArisSkillLanguage.heard(object["lang"])
-        let english = ArisSkillLanguage.english
+        let english = ArisSkillLanguage.english(for: words)
         let desk = ArisTeachDesk.shared
         if let name = desk.recording {
             // While Aris watches, no turn acts in an app: the owner's words end or drop the lesson, anything else waits.

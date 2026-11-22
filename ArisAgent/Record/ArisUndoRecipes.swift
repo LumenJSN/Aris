@@ -21,6 +21,8 @@ struct ArisUndoHands: @unchecked Sendable {
     var setSetting: ((_ name: String, _ value: String) throws -> Void)?
     var setText: ((_ app: String, _ element: String, _ value: String) throws -> Void)?
     var moveWindow: ((_ app: String, _ window: Int, _ frame: [Double]) throws -> Void)?
+    /// A change aris-tools kept in the activity log (its entries' ids, the record's `logged`): taken back there.
+    var undoLogged: ((_ ids: [String]) throws -> Void)?
 
     /// The helper's own: the capabilities that make items, settings, text and window moves register here.
     nonisolated(unsafe) static var live = ArisUndoHands()

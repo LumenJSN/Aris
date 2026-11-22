@@ -507,7 +507,8 @@ enum ArisDesktopCard {
     /// other app.
     static func card(_ request: ArisDesktopRequest, target: ArisDesktopTarget, element: ArisDesktopElement?, window: String? = nil, host: String? = nil,
                      composer: String? = nil, send: Bool = false, blindField: Bool = false, blindSend: String? = nil, searchFocus: String? = nil,
-                     paste: String? = nil, unnamedDocument: Bool = false, remember: Bool, wiped: Bool, mayRaise: Bool = false, english: Bool = false) -> ArisMCPCard {
+                     paste: String? = nil, unnamedDocument: Bool = false, remember: Bool, wiped: Bool, mayRaise: Bool = false,
+                     erase: ArisDesktopErase? = nil, english: Bool = false) -> ArisMCPCard {
         // One line in the card's language.
         let say = { (korean: String, inEnglish: String) in english ? inEnglish : korean }
         let empty = say("(비어 있음)", "(empty)")
@@ -595,13 +596,22 @@ enum ArisDesktopCard {
                 lines.append(say("칸에 있는 글:\n", "In the field:\n") + shown(composer))
             }
         }
+        // A replace says first what goes, whole (ArisDesktopErase): its own warning stands in for the press's.
+        let replace = erase?.replaces == true ? erase : nil
+        if let replace {
+            lines.removeAll { $0.hasPrefix("⚠️") }
+            lines.insert(contentsOf: replace.cardLines(typing: request.verb.takesText, english: english), at: 0)
+        }
         lines += closing(target: target, remember: remember, wiped: wiped, english: english)
         let detail = lines.joined(separator: "\n")
         let short = detail.count > 600 ? String(detail.prefix(600)) + "…" : detail
         let quits = request.verb == .app && request.operation == "quit"
         let name = shown(target.name)
         let title: String
-        if english {
+        if replace != nil {
+            title = english ? "\(ArisDesktopErase.verb(typing: request.verb.takesText, english: true)) in \(name)"
+                : "\(name)에서 \(ArisDesktopErase.verb(typing: request.verb.takesText, english: false))"
+        } else if english {
             title = send ? "Send in \(name)" : quits ? "Quit \(name)" : paste != nil ? "Paste in \(name)" : "\(verbLabel(request.verb, english: true)) in \(name)"
         } else {
             title = send ? "\(name)에서 보내기" : quits ? "\(name) 종료하기" : paste != nil ? "\(name)에서 붙여넣기" : "\(name)에서 \(verbLabel(request.verb))"

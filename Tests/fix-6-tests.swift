@@ -343,7 +343,8 @@ private func fix6SayTagTests() {
 
 private func fix6SmallerTests() {
     let sidebar = fix6Code("Aris/components/Settings/ArisSettingsSidebar.swift")
-    check(sidebar.contains(".lineLimit(ArisSettingsCaption.prerequisite(status) == nil ? 2 : 3)"),
+    // jv-fix131: three lines for a missing permission's long name too.
+    check(sidebar.contains(".lineLimit(ArisSettingsCaption.prerequisite(status) == nil && !ArisSettingsCaption.asksForPermissions(status) ? 2 : 3)"),
           "vm2 7: the sidebar's status line wraps to two lines (it read “Aris's helper isn't answe…”)")
 
     let now = Date(timeIntervalSince1970: 1_000)

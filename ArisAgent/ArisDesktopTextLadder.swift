@@ -68,6 +68,13 @@ extension ArisDesktopSession {
             case .success(let (placed, moved)): (look, field) = (placed, moved)
             }
         }
+        // A replace of everything: the select-all goes now, the field still holding what the card showed.
+        if selectsAllFirst {
+            switch selectAllFirst(field, in: look) {
+            case .failure(let refused): return refused
+            case .success(let (selected, now)): (look, field) = (selected, now)
+            }
+        }
         let before = field.rawValue
         // What the field held in full, for where the text landed (nil when it gives only part of it).
         let wholeBefore = field.rawCapped ? nil : before
@@ -95,7 +102,8 @@ extension ArisDesktopSession {
         }
         // Rung 3: the field's value, set to what it held plus the text: only with nothing dispatched at all, its raw value
         // known in full, and never in an app that sends.
-        if !dispatched, !target.sending, let before, !field.rawCapped {
+        // Never for a replace: setting the value to what it held plus the text would keep what the card said goes.
+        if !dispatched, !target.sending, basis.erase?.erasesText != true, let before, !field.rawCapped {
             let set = run(ArisPeekabooCommands.setValue(place == .start ? text + before : before + text, element: now.id, snapshot: after.peekaboo))
             guard let again = lookAfter(fresh.window) else { return report(.notSeen("the window is gone"), envelope: set, after: nil) }
             let check = ArisDesktopVerify.typed(text, field: field, after: again, before: before)
@@ -176,6 +184,8 @@ extension ArisDesktopSession {
         if let place = caretPlace, ArisDesktopCaret.isAt(place, now) != true {
             _ = run(ArisPeekabooCommands.pressForward([ArisDesktopCaret.keys(place)], window: look.window))
         }
+        // The real click put the caret somewhere: a replace of everything selects it all again.
+        if selectsAllFirst { _ = run(ArisPeekabooCommands.pressForward(["cmd+a"], window: look.window)) }
         let typed = run(ArisPeekabooCommands.type(text, window: look.window, foreground: true))
         guard let after = lookAfter(look.window) else { return report(.notSeen("the window is gone"), envelope: typed, after: nil) }
         let check = ArisDesktopVerify.typed(text, field: field, after: after, before: now.rawValue)
@@ -192,6 +202,11 @@ extension ArisDesktopSession {
     /// it is no success (nothing typed again); a field that can't be read in full says the place wasn't checked.
     private func placed(_ place: ArisDesktopCaret.Place?, _ result: ArisDesktopResult, text: String, field: ArisDesktopElement, before: String?,
                         after: ArisDesktopObservation) -> ArisDesktopResult {
+        // What was typed keeps its undo (a replace, the text it erased): "되돌려" takes this change back.
+        var result = result
+        if result.ok, let line = keepUndo(field: field, before: before, after: after, typing: true) {
+            result = ArisDesktopResult(ok: true, text: ArisDesktopCaret.withLine(line, in: result.text), keysSent: result.keysSent)
+        }
         guard let place, result.ok else { return result }
         let now = ArisDesktopVerify.find(field, in: after)
         let read = now?.rawCapped == true ? nil : now?.rawValue

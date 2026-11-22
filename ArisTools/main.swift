@@ -227,7 +227,7 @@ func arrangeWindow(_ args: [String]) {
     // The exact frame before the move, so "되돌려" puts it back (twelfth VM run: the undo guessed "center").
     let undo = ArisWindowUndo.recipe(app: app.localizedName ?? appName, before: before, after: axFrame(windowElement))
     logActivity("창 옮김: \(app.localizedName ?? "창") \(layout)", undo: undo)
-    print(report.line)
+    print(report.line + ArisWindowMoveReport.undoNote)
 }
 
 // MARK: - main

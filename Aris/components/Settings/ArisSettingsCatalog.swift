@@ -137,8 +137,8 @@ enum ArisSidebarMetrics {
     static let partTrailing = 10.0
     static let partLabelSize = 13.0
     /// How far a part's name may shrink before it is cut: "Startup · Language · Displays" fits the 220-pt sidebar at
-    /// this (it was cut to "Startup · Language · D…" at .85: eleventh VM run).
-    static let partLabelScale = 0.78
+    /// this (it was cut to "Startup · Language · D…" at .85: eleventh VM run; still "… · Dis…" at .78 in the thirteenth).
+    static let partLabelScale = 0.7
 
     /// The height the sidebar needs with `open`'s parts listed.
     static func height(open: ArisSettingsPage) -> Double {

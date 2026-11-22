@@ -91,6 +91,15 @@ enum ArisTeachIntent: Equatable, Sendable {
 
     /// What the owner's words mean here; nil when they are no command about taught procedures. `recording`: a
     /// demonstration is under way (then only stopping, cancelling and starting again are read).
+    /// Whether the words start a lesson, named or not (as `parse` reads them, with nothing stored): the app's local
+    /// actions never take such words (thirteenth VM run, item 6).
+    static func startsLesson(_ raw: String) -> Bool {
+        switch parse(raw, procedures: [], recording: false) {
+        case .start?, .startUnnamed?: return true
+        default: return false
+        }
+    }
+
     static func parse(_ raw: String, procedures: [ArisTeachProcedure], recording: Bool) -> ArisTeachIntent? {
         let text = normalised(raw)
         guard !text.isEmpty else { return nil }

@@ -106,9 +106,11 @@ private func vmfix5TeachReplaceTests() {
 /// D4 (the lesson's part): the teach turn's own words follow the UI's language the app sends, never the request's.
 private func vmfix5TeachLanguageTests() {
     let turn = vmfix5TeachSource("ArisAgent/Teach/ArisTeachTurn.swift")
-    check(turn.contains("ArisSkillLanguage.heard(object[\"lang\"])\n        let english = ArisSkillLanguage.english")
-          && !turn.contains("let english = ArisTeachCopy.isEnglish(words)"),
-          "vmfix5 D4: a lesson's card and account are in the UI's language")
+    // exp131 item 7 replaces D4's rule: the lesson's own lines follow the request's language, the UI's when it shows none.
+    check(turn.contains("ArisSkillLanguage.heard(object[\"lang\"])\n        let english = ArisSkillLanguage.english(for: words)")
+          && !turn.contains("let english = ArisTeachCopy.isEnglish(words)") && !ArisSkillLanguage.english(for: "줄 추가, 우유", ui: true)
+          && ArisSkillLanguage.english(for: "Do memo writing", ui: false) && !ArisSkillLanguage.english(for: "123", ui: false),
+          "vmfix5 D4/exp131 7: a lesson's lines follow the request's language, the UI's when it shows none")
     check(vmfix5TeachSource("Aris/private/Aris/ArisAgentClient.swift").contains("body[\"lang\"] = ArisSkillWords.language(english: ArisUIWords.english)"),
           "vmfix5 D4: every request says the UI's language")
     check(!ArisCardEnglish.isEnglish(request: "Do memo writing", uiEnglish: false) && ArisCardEnglish.isEnglish(request: "메모 쓰기 해 줘", uiEnglish: true),

@@ -16,6 +16,10 @@ enum ArisWindowMoveReport {
         let line: String
     }
 
+    /// Said after a move that worked (thirteenth VM run, W3: "방금 창 옮긴 거 되돌려 줘" ran `window center` and the reply
+    /// called that "원래 자리"): a layout is never where the window was; only `undo` puts it back there.
+    static let undoNote = " (a new layout, not where the window was before: to put it back where it was, run `undo`, which restores its exact earlier frame; never call a layout its old place)"
+
     /// `placed`, `sized`: whether the app took the new position and the new size.
     static func report(app: String, layout: String, placed: Bool, sized: Bool) -> Report {
         switch (placed, sized) {

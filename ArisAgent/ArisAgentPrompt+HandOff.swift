@@ -65,8 +65,16 @@ extension ArisAgentPrompt {
             "their names, tell the user. `trash`, `move`, `rename`, `folder new`, `convert` and `open` also take a path on an external disk " +
             "(/Volumes/<name>/…); a move to another disk copies the file and puts the original in its own disk's Trash. Give them a full " +
             "path every time (starting with / or ~/, as in ~/Desktop/report.pdf): a bare name is sent back, since Aris can't tell which " +
-            "folder is meant. When the user names a file or a folder without saying where it is, find it first (`files find`) or ask; never guess."
+            "folder is meant. When the user names a file or a folder without saying where it is, find it first (`files find`) or ask; never guess. " +
+            protectedPlacesRule
     }
+
+    /// Thirteenth VM run (D1–D5b): asked to delete Documents whole, the brain asked "휴지통으로 옮겨도 될까요?", then
+    /// suggested "폴더 자체를 휴지통으로 옮겨" (refused), and for "~/Downloads 비워 줘" said it had no way to list files.
+    static let protectedPlacesRule = "The home folder, Desktop, Documents, Downloads (and home's other everyday folders) are never deleted, moved, " +
+        "trashed or emptied as a whole: when asked, say so plainly in one sentence and offer what can be done instead (the user names or picks the " +
+        "files in it, and those go to the Trash one by one, each on a card). Never ask whether to do it anyway, never suggest a wording that would " +
+        "do it (\"move the folder itself to the Trash\" is refused too), and never say you can't list or read a folder unless `files find` really failed."
 
     /// A gated brain's own sends: a message, and what it may do with mail.
     static func gatedSends(_ tools: String, functions: Bool) -> String {

@@ -46,7 +46,8 @@ extension ArisMindTaught {
     }
 
     static func live(runner: ArisAgentRunner, credential: String, session: String, now: ArisMessageSnapshot, clean: Bool, home: String = FileManager.default.homeDirectoryForCurrentUser.path) -> Ports {
-        let english = ArisSkillLanguage.english
+        // A Korean request's run is said in Korean, whatever the UI (thirteenth VM run, item 7: "Done: “줄 추가” (2 steps).").
+        let english = ArisSkillLanguage.english(for: now.request)
         let choices = choicesFile(home: home)
         let ask = { (card: ArisTeachCopy.Card, fields: [(key: String, value: String)], allow: String?) -> Answer in
             let done = DispatchSemaphore(value: 0)

@@ -36,12 +36,26 @@ enum ArisRecord {
     static func perform(id: String, home: String, store: ArisUndoStore, hands: ArisUndoHands = .live, now: Date = Date()) throws -> Undone {
         let state = ArisRecordJournal.state(home: home)
         guard let entry = state.calls.first(where: { $0.id == id.lowercased() }) else { throw ArisUndoError(message: "no entry with that id") }
-        guard !state.isUndone(entry.id) else { throw ArisUndoError(message: "that was already undone") }
-        guard entry.ok == true, let recipe = entry.undo else { throw ArisUndoError(message: "that can't be undone") }
+        guard !state.isUndone(entry, loggedUndone: loggedUndone()) else { throw ArisUndoError(message: "that was already undone") }
+        guard entry.ok == true, ArisUndoScope.canUndo(entry) else { throw ArisUndoError(message: "that can't be undone") }
+        guard let recipe = entry.undo else {
+            // A rename, a trash or a move aris-tools kept in the activity log: taken back there, by exactly its lines.
+            guard let undoLogged = hands.undoLogged else { throw ArisUndoError(message: "undoing that isn't available in this helper yet") }
+            try undoLogged(entry.logged ?? [])
+            let line = undoneLine(entry)
+            write(.undone(entry.id, at: now, result: line), home: home)
+            return Undone(id: entry.id, line: line)
+        }
         let line = try ArisUndoRecipes.perform(recipe, home: home, store: store, hands: hands)
         write(.undone(entry.id, at: now, result: journalLine(line, entry: entry, recipe: recipe)), home: home)
         return Undone(id: entry.id, line: line)
     }
+
+    /// What was taken back, from the record itself (never the model's guess): "되돌렸어요: 이름 바꾸기: rename-me.txt".
+    static func undoneLine(_ entry: ArisRecordEntry) -> String { "되돌렸어요: " + ArisRecordQuery.ownerSummary(entry) }
+
+    /// The activity log's undone entries, read where the helper runs (ArisMindUndoHooks.register); none until then.
+    nonisolated(unsafe) static var loggedUndone: () -> Set<String> = { [] }
 
     /// The journal's own line for an undo: text typed or replaced in an app is said in the UI's language, with the
     /// lesson whose run it was part of when this helper ran it (eighth VM run, item 6); any other undo as its recipe
@@ -56,7 +70,7 @@ enum ArisRecord {
     /// What an undo may do for this caller (ArisUndoScope): which entries, and the policy's decision.
     static func plan(id: String?, count: Int?, caller: ArisUndoCaller, home: String, now: Date = Date()) -> ArisUndoScope.Verdict {
         ArisUndoScope.decide(id: id, count: count, state: ArisRecordJournal.state(home: home), caller: caller,
-                             context: ArisTrustSettings.load(home: home, now: now).context(home: home, now: now))
+                             context: ArisTrustSettings.load(home: home, now: now).context(home: home, now: now), loggedUndone: loggedUndone())
     }
 
     /// undo(id) or undo(last n) for `caller`: done only when the plan runs (or the owner already said yes on its card);

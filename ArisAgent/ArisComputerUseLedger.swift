@@ -267,6 +267,12 @@ final class ArisComputerUseLedger {
     func selectedAll(in window: Int?) -> Bool { window.map { id in lock.withLock { selectAllWindows.contains(id) } } ?? false }
     /// The selection there is gone (typed over, deleted, or the caret moved): typing there next adds again.
     func clearSelectAll(window: Int?) { if let window { lock.withLock { _ = selectAllWindows.remove(window) } } }
+    /// Windows where a lone select-all was asked for in a turn whose words erase or replace, and not pressed: the next
+    /// type or delete there selects everything first, on the one card that shows what goes (ArisDesktopErase).
+    private var pendingSelectAllWindows: Set<Int> = []
+    func notePendingSelectAll(window: Int?) { if let window { lock.withLock { _ = pendingSelectAllWindows.insert(window) } } }
+    func pendingSelectAll(in window: Int?) -> Bool { window.map { id in lock.withLock { pendingSelectAllWindows.contains(id) } } ?? false }
+    func clearPendingSelectAll(window: Int?) { if let window { lock.withLock { _ = pendingSelectAllWindows.remove(window) } } }
     /// What Aris typed this turn, on the user's card, into a message field that gives no value (KakaoTalk's), by window, once
     /// the window showed it: what a send from that field is asked about (audit desk-4). Gone once a send was tried.
     private var blindTexts: [Int: String] = [:]

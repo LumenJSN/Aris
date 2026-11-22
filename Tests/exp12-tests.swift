@@ -137,8 +137,11 @@ private func exp12FailedHandOffTests() {
     let instead = judge.decide(session: session, task: session, calls: [exp12Call("c2", "app_open", open)], intent: "cred-1")
     check(instead.first?.verdict == .refuse(ArisMindJudge.afterHandOff(english: ArisSkillLanguage.english)),
           "exp12 2b: after the hand-off was refused, opening Amazon in Safari itself is refused (\(String(describing: instead.first?.verdict)))")
+    // exp131 item 3 (thirteenth VM run, B5/B7: four tries in one job): in a job one refused hand-off ends that line of
+    // action; the brief written again is not tried (in a conversation it still may be: below, conv-3).
     let rewritten = judge.decide(session: session, task: session, calls: [exp12Call("c3", "aside_task", ["brief": stops])], intent: "cred-1")
-    check(rewritten.first?.verdict == .waits, "exp12 2b: the brief written again to stop before paying may still go, on its card (\(String(describing: rewritten.first?.verdict)))")
+    check(rewritten.first?.verdict == .refuse(ArisMindJudge.afterHandOff(english: ArisSkillLanguage.english)),
+          "exp12 2b/exp131 3: in a job the brief written again after a refusal isn't tried (\(String(describing: rewritten.first?.verdict)))")
     // 01:48:31: it ran, and Aside wasn't installed.
     ArisMindRoute.done(judge: judge, session: session, object: ["text": exp12AsideMissing, "isError": true], id: "c3")
     let read = judge.decide(session: session, task: session, calls: [exp12Call("c4", "app_read", ["app": "Safari"])], intent: "cred-1")
@@ -156,10 +159,11 @@ private func exp12FailedHandOffTests() {
     let afterNo = judge.decide(session: "job-2", task: "job-2", calls: [exp12Call("n1", "app_open", open)], intent: "cred-2")
     check(afterNo.first?.verdict == .refuse(ArisMindJudge.afterNo(english: ArisSkillLanguage.english)) && judge.stoppedActing(session: "job-2"),
           "exp12 2c: after his no in a job nothing more acts in it (\(String(describing: afterNo.first?.verdict)))")
-    // A hand-off that went through after its words were written again doesn't stop the job.
-    judge.jobTurn(session: "job-3", intent: "cred-3", request: job)
-    _ = judge.decide(session: "job-3", task: "job-3", calls: [exp12Call("r1", "aside_task", ["brief": job])], intent: "cred-3")
-    _ = judge.decide(session: "job-3", task: "job-3", calls: [exp12Call("r2", "aside_task", ["brief": stops])], intent: "cred-3")
+    // In a conversation a hand-off that went through after its words were written again doesn't stop the turn.
+    judge.turn(session: "job-3", intent: "cred-3", words: job)
+    _ = judge.decide(session: "job-3", task: nil, calls: [exp12Call("r1", "aside_task", ["brief": job])], intent: "cred-3")
+    let again = judge.decide(session: "job-3", task: nil, calls: [exp12Call("r2", "aside_task", ["brief": stops])], intent: "cred-3")
+    check(again.first?.verdict == .waits, "exp12 2b: in a conversation the brief written again may still go, on its card (\(String(describing: again.first?.verdict)))")
     ArisMindRoute.done(judge: judge, session: "job-3", object: ["text": "Added to the cart; stopped before the payment step.", "isError": false], id: "r2")
     check(!judge.stoppedActing(session: "job-3"), "exp12 2b: a hand-off that went through clears the refusal before it")
     // The wiring: the route's job turn, the Mind's task turn, the runner's count.

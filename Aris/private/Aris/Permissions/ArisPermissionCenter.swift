@@ -29,6 +29,10 @@ final class ArisPermissionCenter {
     private var watch = ArisPaneWatch()
     private var poll: Timer?
     private var activation: NSObjectProtocol?
+    /// macOS's question for a permission while it is up: another request that needs it waits for the answer instead of
+    /// doing without (thirteenth VM run, K1: three to-dos on one card, the first waited on the Reminders prompt, the
+    /// other two were refused at once and came back on a second card after the grant).
+    private var asking: [ArisPermissionKey: Task<Void, Never>] = [:]
 
     /// The permissions read at activation: every one macOS can answer for the app without asking.
     static let watched: [ArisPermissionKey] = ArisPermission.allCases.filter { $0 != .automation && $0.ask != .onUse }.map(ArisPermissionKey.init)
@@ -76,6 +80,12 @@ final class ArisPermissionCenter {
     func require(_ feature: ArisPermissionFeature) async -> Bool {
         await refresh(model.keys(for: feature))
         while true {
+            // Another request is waiting on macOS's question for one of them: its answer, read again, decides.
+            if let question = model.keys(for: feature).lazy.compactMap({ self.asking[$0] }).first {
+                await question.value
+                await refresh(model.keys(for: feature))
+                continue
+            }
             let (next, decision) = model.require(feature, english: ArisUIWords.english)
             set(next)
             log.notice("require \(feature.rawValue, privacy: .public): \(String(describing: decision), privacy: .public)")
@@ -87,7 +97,10 @@ final class ArisPermissionCenter {
                 // under the notch waits for the turn to end (VM run 2026-11-19, A3: the line was only logged and spoken).
                 let inTurn = ArisController.shared.showPermissionWait(key, reason: reason)
                 if !inTurn { say(decision) }
-                _ = await checker.prompt(key)
+                let question = Task { _ = await self.checker.prompt(key) }
+                asking[key] = question
+                await question.value
+                asking[key] = nil
                 await refresh([key])
                 if inTurn { ArisController.shared.endPermissionWait() }
                 // Granted: on to the next permission the feature needs; refused: the next turn of the loop tells it.

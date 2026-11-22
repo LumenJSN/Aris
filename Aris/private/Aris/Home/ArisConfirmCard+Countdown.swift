@@ -91,7 +91,7 @@ extension ArisConfirmCard {
             Button { ArisController.shared.answerQuestion(true) } label: {
                 HStack(spacing: 8) {
                     ArisCountdownRing(started: countdownStarted)
-                    laneLabel(Text(question.action ? ArisCountdownCopy.go : ArisCountdownCopy.send))
+                    laneLabel(Text(question.action ? ArisCountdownCopy.goWord(title: question.title, english: countdownEnglish) : ArisCountdownCopy.send))
                 }
                 .padding(.horizontal, 18).frame(height: Self.buttonHeight)
                 .background(HeldGlass(held: held))

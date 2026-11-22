@@ -32,6 +32,19 @@ enum ArisSkillLanguage {
         saidEnglish = english
     }
 
+    /// Aris's own line in reply to `request` is in English (thirteenth VM run, item 7: "Done: “줄 추가” (2 steps)." and
+    /// "I left out what you didn't allow." to Korean requests in an English UI): the request's language, as the app's
+    /// model-free lines (ArisReplyLanguage, Shared/Core/Routing, which the helper isn't built with): Hangul in it is
+    /// Korean, Latin letters English, neither the UI's language (`ui`).
+    static func english(for request: String, ui: Bool = english) -> Bool {
+        var latin = false
+        for scalar in request.unicodeScalars {
+            if (0xAC00...0xD7A3).contains(scalar.value) || (0x3131...0x318E).contains(scalar.value) || (0x1100...0x11FF).contains(scalar.value) { return false }
+            if (0x41...0x5A).contains(scalar.value) || (0x61...0x7A).contains(scalar.value) { latin = true }
+        }
+        return latin || ui
+    }
+
     /// The app reads English.
     static var english: Bool {
         lock.lock()

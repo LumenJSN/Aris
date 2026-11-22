@@ -51,6 +51,7 @@ extension ArisController {
                 log.notice("card up: \(notice.kind.rawValue, privacy: .public)\(decision == .speak ? "" : " (quietly)", privacy: .public)")
                 if let parking, self.session.phase == .idle, self.session.question == nil {
                     self.setSession(.parked(heard: notice.title, reply: parking))
+                    self.unparkWhenGone(notice, reply: parking)
                 }
                 shown()
                 if !said.isEmpty, decision == .speak { await self.sayNews(said) }
@@ -63,6 +64,29 @@ extension ArisController {
         }
         center.withdraw(notice.id)
         return false
+    }
+
+    /// A notice that goes by itself (a timer's: its showsFor) takes its parked line with it once it is gone and the
+    /// notch isn't open on it (ArisParkedNotice; thirteenth VM run, T1: "Timer · 1 minute is up." stayed as the notch's
+    /// answer long after its pill went).
+    private func unparkWhenGone(_ notice: ArisNotice, reply: String) {
+        guard notice.showsFor != nil else { return }
+        Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(ArisParkedNotice.recheck))
+                guard let self else { return }
+                let center = ArisNoticeCenter.shared
+                let up = center.queue.shown.contains { $0.id == notice.id } || center.isWaiting(notice.id)
+                switch ArisParkedNotice.step(session: self.session, heard: notice.title, reply: reply, noticeUp: up, notchOpen: center.aside) {
+                case .wait: continue
+                case .stop: return
+                case .clear:
+                    log.notice("the timer's parked answer went with its card")
+                    self.setSession(ArisSession())
+                    return
+                }
+            }
+        }
     }
 
     /// What the interruption policy says about `want` now, from the world's snapshot and the quiet rules.

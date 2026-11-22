@@ -491,7 +491,7 @@ private func gatePasteTests() {
     check(!done.output.contains("클립보드") && !held.output.contains("계좌번호"), "gate-19: what the clipboard holds is never told to the brain")
     let actions = gateSource("ArisAgent/ArisDesktopActions.swift")
     let holdAt = actions.range(of: "if let refused = pasteHeld() { return refused }")?.lowerBound
-    let pressAt = actions.range(of: "var envelope = run(ArisPeekabooCommands.press(request.keys, snapshot: fresh.peekaboo))")?.lowerBound
+    let pressAt = actions.range(of: "var envelope = run(ArisPeekabooCommands.press(keys, snapshot: fresh.peekaboo))")?.lowerBound
     check(holdAt != nil && pressAt != nil && holdAt! < pressAt!, "gate-19: the clipboard is read again right before the keys go")
     // In another app a paste is that app's ordinary key press, as before.
     check(ArisDesktopGate.decide(paste, target: gateEditor, context: ArisDesktopContext(home: "/Users/p"), remembered: true, secureInput: false) == .run,

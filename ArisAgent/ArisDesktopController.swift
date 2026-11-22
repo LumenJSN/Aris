@@ -285,6 +285,8 @@ extension ArisDesktopEngine {
     /// document); typing over it, deleting it or moving the caret ends it, so "press cmd+down, then type" adds again.
     private func noteSelection(_ request: ArisDesktopRequest, result: ArisDesktopResult, window: Int?, menuSelectsAll: Bool, turn: ArisDesktopTurn) {
         let now = { window.flatMap { turn.ledger.latestLook(window: $0) } }
+        // A held-back select-all (ArisDesktopErase) goes with the next action there that was done.
+        if request.verb.kind == .action, result.ok { turn.ledger.clearPendingSelectAll(window: window) }
         switch request.verb {
         case .press:
             switch ArisDesktopBatch.leavesAllSelected(request.keys) {

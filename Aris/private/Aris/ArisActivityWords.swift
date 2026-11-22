@@ -89,6 +89,8 @@ enum ArisActivityWords {
         ("일정 삭제: ", "Event deleted: ", false), ("일정 변경: ", "Event changed: ", false), ("메시지 보냄: ", "Message sent: ", false),
         ("미리 알림 추가: ", "Reminder added: ", false), ("메모 저장: ", "Note saved: ", false), ("기억함: ", "Remembered: ", false),
         ("기억 지움: ", "Memories cleared: ", true), ("기본 캘린더: ", "Default calendar: ", false), ("메일 답장 초안: ", "Mail reply drafted: ", false),
+        // Text the desktop engine typed, replaced or erased in an app (aris-agent's ArisDesktopUndoLog).
+        ("입력: ", "Typed: ", false), ("글 바꿈: ", "Text replaced: ", false), ("글 지움: ", "Text erased: ", false),
     ]
 
     /// The kinds a line can start with, as the log writes them ("할 일 추가", "예약 취소"): for whoever words a kind

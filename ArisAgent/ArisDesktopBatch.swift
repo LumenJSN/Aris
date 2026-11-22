@@ -295,7 +295,7 @@ extension ArisDesktopCard {
     /// The card for a whole batch: every step, with its exact text and keys; in a sending app what the field holds and
     /// exactly what would go. `english`: the whole card in English (audit desk-11), else Korean.
     static func batch(_ steps: [ArisDesktopStep], elements: [ArisDesktopElement?], target: ArisDesktopTarget, window: String?, composer: String?, sends: String?,
-                      remember: Bool, wiped: Bool, mayRaise: Bool = false, english: Bool = false) -> ArisMCPCard {
+                      remember: Bool, wiped: Bool, mayRaise: Bool = false, erase: ArisDesktopErase? = nil, english: Bool = false) -> ArisMCPCard {
         let say = { (korean: String, inEnglish: String) in english ? inEnglish : korean }
         let empty = say("(비어 있음)", "(empty)")
         var lines: [String] = []
@@ -318,6 +318,8 @@ extension ArisDesktopCard {
             let start = shown(String(typed.prefix(60))) + (typed.count > 60 ? "…" : "")
             lines.insert(say("⚠️ 문서 내용을 모두 지우고 ‘\(start)’로 바꿔요", "⚠️ This deletes everything in the document and puts ‘\(start)’ in its place"), at: 0)
         }
+        // What it erases, read when it was decided, right under that warning.
+        if let erase, erase.replaces { lines.insert(contentsOf: erase.cardLines(typing: true, english: english).dropFirst(), at: min(1, lines.count)) }
         lines += closing(target: target, remember: remember, wiped: wiped, english: english)
         let detail = lines.joined(separator: "\n")
         let short = detail.count > 600 ? String(detail.prefix(600)) + "…" : detail
@@ -510,10 +512,15 @@ extension ArisDesktopEngine {
             putBack(held.frontBefore, target: target)
             done(outcome)
         }
+        // A replace of the whole document is its own card every time, never kept, and shows the text it erases (ArisDesktopErase).
+        let erase = ArisDesktopBatch.replacesAll(steps, labels: elements.map { $0?.label })
+            ? ArisDesktopErase(scope: .whole, seen: ArisDesktopErase.whole(of: start.focusedElement)) : nil
+        if erase?.replaces == true { asks = true; remember = false }
         guard asks else { return run(basis, nil) }
         let english = ArisDesktopCopy.isEnglish(turn.request)
         let card = ArisDesktopCard.batch(steps, elements: elements, target: target, window: basis.title, composer: basis.composer, sends: sends, remember: remember,
-                                         wiped: target.memoryKey.map(turn.ledger.wasWiped) ?? false, mayRaise: !turn.isTask && !target.sending, english: english)
+                                         wiped: target.memoryKey.map(turn.ledger.wasWiped) ?? false, mayRaise: !turn.isTask && !target.sending, erase: erase,
+                                         english: english)
         turn.operating(ArisOperatingTarget(app: target.name, pid: target.pid, window: window.id, line: Self.statusLine(.batch, app: target.name, english: english)))
         let frontBefore = apps.frontmostPid().flatMap(apps.identity)
         turn.ask(!turn.isTask && !target.sending ? card.aimed(pid: target.pid, bundle: target.bundle) : card) { answer in

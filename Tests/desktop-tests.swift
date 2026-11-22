@@ -774,10 +774,13 @@ private func runDesktopActionTests() {
     let kt = FakeDesktopTurn(brain: .antigravity, relayed: true)
     // The user asked to clear it: one press that selects everything and deletes runs only then (audit desk-3).
     kt.request = "Aris Testbench 내용 다 지워 줘"
-    keys.queue([("see", "see-before-export"), ("press", "press-return"), ("see", "see-after-press"),
+    // jv-fix131: an erase is decided on a look of the window first (what it erases goes on its card), then pressed on a
+    // fresh look of its own.
+    keys.queue([("see", "see-before-export"), ("see", "see-before-export"), ("press", "press-return"), ("see", "see-after-press"),
                 ("see", "see-before-export"), ("menu-click", "menu-click"), ("see", "see-after-export")])
     _ = keys.run(["press", "cmd+a", "delete", "--app", "Aris Testbench"], turn: kt)
-    check(keys.calls.dropFirst().first?.hasPrefix("press cmd+a delete --snapshot ps1_") == true && !keys.calls.contains { $0.hasPrefix("press") && $0.contains("--app") },
+    check(keys.calls.first { $0.hasPrefix("press") }?.hasPrefix("press cmd+a delete --snapshot ps1_") == true && keys.calls.dropFirst().first?.hasPrefix("see") == true
+          && !keys.calls.contains { $0.hasPrefix("press") && $0.contains("--app") },
           "desktop actions (macro, window pinning): several keys in one step, to a fresh exact-window snapshot, never to the app at large")
     let exported = keys.run(["menu", "click", "--app", "Aris Testbench", "--path", "File > Export > PDF…"], turn: kt)
     check(exported.status == 0 && exported.output.contains("appeared: “Last export: PDF”")

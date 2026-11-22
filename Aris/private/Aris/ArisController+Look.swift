@@ -48,7 +48,7 @@ extension ArisController {
             let pictured = await ArisTurnCapture.shared.inHand()
             guard !Task.isCancelled else { return nil }
             looked = ArisLookContext.words(context: look.context, unread: look.unread, unselected: look.unselected,
-                                           pictured: pictured, rewrite: ArisDeixis.wantsRewrite(text))
+                                           pictured: pictured, rewrite: ArisDeixis.wantsRewrite(text), typesOver: look.selected && (look.writesHere || ArisLookContext.asksToType(text)))
         }
         let screen = [looked, clipboard].compactMap { $0 }.joined(separator: "\n\n")
         return await askAndSpeak(text, tier: tier, brain: brain, screen: screen.isEmpty ? nil : screen)

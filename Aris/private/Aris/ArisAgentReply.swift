@@ -349,6 +349,13 @@ enum ArisSettingsNames {
     static func connectPlace(english: Bool) -> String {
         [settings, ablePage, connectPart].map { $0.text(english: english) }.joined(separator: " › ")
     }
+
+    /// A line that names one of these places in the other language than the UI's, with the place in the UI's words
+    /// (thirteenth VM run: a Korean request's wrong-key line in an English UI sent him to "설정 › Aris와 말하기 › AI · 모델",
+    /// names his settings window doesn't show). The rest of the line stays in the request's language.
+    static func inUILanguage(_ line: String, english: Bool) -> String {
+        [aiPlace, connectPlace].reduce(line) { said, place in said.replacingOccurrences(of: place(!english), with: place(english)) }
+    }
 }
 
 struct ArisBrainTrouble: Equatable, Sendable {

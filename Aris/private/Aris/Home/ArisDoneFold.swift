@@ -35,6 +35,10 @@ enum ArisDoneFold {
         tasks.contains { !$0.isFinished || !seen.contains($0.id) }
     }
 
+    /// A finished job whose result or failure was put in front of him (its notice card came up): seen, so it leaves the
+    /// chip as after "다 봤어요" (thirteenth VM run, item 7: "6 not done" stayed in the notch all session).
+    static func seeing(_ id: UUID, in seen: Set<UUID>) -> Set<UUID> { seen.union([id]) }
+
     /// What "다 봤어요" marks: every finished job there is now (older ids fall away with their jobs).
     static func seenAll(_ tasks: [ArisBackgroundTask]) -> Set<UUID> {
         Set(tasks.filter(\.isFinished).map(\.id))

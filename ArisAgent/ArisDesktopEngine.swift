@@ -103,6 +103,9 @@ struct ArisDesktopBasis: Equatable {
     /// it runs on the yes it already had (tenth VM pass: the resumed type met "That ref is from an older look", came
     /// back not done, and the AI typed again on a second card).
     var resumed = false
+    /// What the action erases as it was read when it was decided (and shown on the card): it is held to it
+    /// (ArisDesktopErase); nil for an action that erases nothing by its kind.
+    var erase: ArisDesktopErase? = nil
     /// The call holds the desktop lock for its app alone (ArisDesktopLockScope): an element click is then the
     /// element's own Accessibility press only, never a pointer fallback; a control with no press takes the whole Mac
     /// first and is clicked the normal way (security review 10, M3).
@@ -658,6 +661,14 @@ final class ArisDesktopEngine {
             secure: true, owner: apps.secureInputOwner(), target: target.pid, prompt: windows.promptOnScreen(), aimedAtSecret: element?.isSecure == true))
         var decision = ArisDesktopGate.decide(request, target: target, context: context, remembered: remembered, secureInput: secureHere,
                                               element: element)
+        // A lone select-all in a turn that erases or replaces goes up with what replaces it, on one card.
+        if case .refuse = decision {} else if let held = deferredSelectAll(request, target: target, turn: turn) {
+            candidate.value = .failure(.notDone)
+            return done(held)
+        }
+        // What a type or a delete would erase, read now: a replace is its own card, every time (ArisDesktopErase).
+        let erase = request.verb.kind == .action ? self.erase(request, target: target, element: element, turn: turn) : nil
+        decision = Self.asked(decision, erase: erase)
         // A replay's look whose live look ran without the read judge runs without it again (ninth VM pass: the replay's look
         // went to the judge, which a replay has no model for, and the request was handed over to a second card).
         if case .judge = decision, request.verb == .see, turn.ledger.replayLookSkipsJudge { decision = .run }
@@ -707,7 +718,7 @@ final class ArisDesktopEngine {
                         : "ran (\(request.verb.kind == .read ? "read" : "action"))", "action": what, "brain": turn.brainName])
             done(perform(request, target: target, turn: turn, basis: ArisDesktopBasis(title: snapshotTitle, settingsPane: pane,
                                                                                     window: request.ref.flatMap { turn.ledger.observation($0.snapshot)?.window },
-                                                                                    perApp: acts && scope != .global)))
+                                                                                    erase: erase, perApp: acts && scope != .global)))
         case .judge:
             turn.judgeRead(Self.readCall(request, target: target)) { [weak self] verdict in
                 DispatchQueue.global(qos: .userInitiated).async {
@@ -746,6 +757,7 @@ final class ArisDesktopEngine {
             case .success(let found): basis = found
             }
             basis.paste = context.clipboard
+            basis.erase = erase
             // A file panel saves or opens the document in front: the card names it (QA: an unrelated document was saved).
             // Keys and a look-and-click say theirs too, even with no look at it yet (audit desk-1: no window line at all).
             let aimedTitle = request.window.flatMap { id in appWindows.first { $0.id == id } }?.title
@@ -755,7 +767,7 @@ final class ArisDesktopEngine {
                                             send: basis.send, blindField: basis.blindField, blindSend: basis.blindSend, searchFocus: basis.searchFocus, paste: basis.paste,
                                             unnamedDocument: request.verb == .dialogFile && !context.namesDocument, remember: remember,
                                             wiped: target.memoryKey.map(turn.ledger.wasWiped) ?? false, mayRaise: !turn.isTask && !target.sending,
-                                            english: ArisDesktopCopy.isEnglish(turn.request))
+                                            erase: erase, english: ArisDesktopCopy.isEnglish(turn.request))
             turn.operating(operatingTarget(request, target: target, turn: turn))
             let frontBefore = apps.frontmostPid().flatMap(apps.identity)
             // While it waits, nothing else is looked at or done in this app for the turn (one action, one card).

@@ -52,6 +52,9 @@ struct ArisMCPCard: Equatable {
     var desktop: ArisCardTarget? = nil
     /// The automatic check's stopped card (ArisConfirmation.stopped).
     var stopped = false
+    /// A countdown for an action that is no message (ArisConfirmation.action: the gate's own card for a permanent
+    /// change said first): drawn with its own title and verb, never as a message to send (thirteenth VM run, item 4).
+    var action = false
     /// A `fleet.answer` allow card's one request (ArisConfirmation.fleetGrant).
     var fleetGrant: ArisFleetGrant? = nil
 

@@ -331,20 +331,25 @@ private func fixDeskNamedWindowTests() {
     // The engine: the user names 무제 with 무제 2 in front; the keys go to 무제, and their card names it.
     let rig = FixRig(windows: [front, named])
     let turn = FixTurn(said)
-    rig.queue([("see", fixDocument(title: "무제", text: "회의록 초안")), ("press", fixSent), ("see", fixDocument(title: "무제", text: ""))])
+    // jv-fix131: what an erase takes is read first (one look more), and shown on its card.
+    rig.queue([("see", fixDocument(title: "무제", text: "회의록 초안")), ("see", fixDocument(title: "무제", text: "회의록 초안")), ("press", fixSent),
+               ("see", fixDocument(title: "무제", text: ""))])
     let emptied = rig.run(["press", "cmd+a", "delete", "--app", "TextEdit"], turn: turn)
     check(emptied.status == 0 && rig.calls.first?.hasPrefix("see --window-id 9189") == true && !rig.calls.contains { $0.contains("9190") },
           "desk-1: `press cmd+a delete` is looked at and pressed in the named window only: \(rig.calls) \(emptied.output.prefix(160))")
     check(turn.cards.count == 1 && turn.cards[0].detail.contains("창: “무제”") && !turn.cards[0].detail.contains("무제 2"),
           "desk-1: the card names the window the keys go to, even with no look at it before: \(turn.cards.first?.detail ?? "")")
-    // With TextEdit's yes remembered there is no card: still the named window.
+    // With TextEdit's yes remembered: still the named window. (jv-fix131: erasing the text is a card of its own every
+    // time, never covered by the app's yes, and shows what goes.)
     let quick = FixRig(windows: [front, named])
     let again = FixTurn(said)
     again.ledger.remember(fixEditor.memoryKey ?? "", tainted: false)
-    quick.queue([("see", fixDocument(title: "무제", text: "회의록 초안")), ("press", fixSent), ("see", fixDocument(title: "무제", text: ""))])
+    quick.queue([("see", fixDocument(title: "무제", text: "회의록 초안")), ("see", fixDocument(title: "무제", text: "회의록 초안")), ("press", fixSent),
+                 ("see", fixDocument(title: "무제", text: ""))])
     let remembered = quick.run(["press", "cmd+a", "delete", "--app", "TextEdit"], turn: again)
-    check(remembered.status == 0 && again.cards.isEmpty && quick.calls.first?.hasPrefix("see --window-id 9189") == true && !quick.calls.contains { $0.contains("9190") },
-          "desk-1: with the app's yes remembered (no card) the keys still go to the named window: \(quick.calls)")
+    check(remembered.status == 0 && again.cards.count == 1 && again.cards[0].detail.contains("회의록 초안") && quick.calls.first?.hasPrefix("see --window-id 9189") == true
+          && !quick.calls.contains { $0.contains("9190") },
+          "desk-1: with the app's yes remembered the keys still go to the named window, and the erase asks with its text: \(quick.calls)")
     // Aimed elsewhere by the brain: nothing is looked at or pressed, and no card goes up.
     let refused = FixRig(windows: [front, named])
     let third = FixTurn(said)
@@ -424,9 +429,11 @@ private func fixDeskReplaceGuardTests() {
     // The user asked to empty it: it goes through, and their card says first that everything is deleted.
     let asked = FixRig()
     let fourth = FixTurn("TextEdit 무제 창 내용 다 지워 줘")
-    asked.queue([("see", fixDocument(title: "무제", text: "첫 줄")), ("press", fixSent), ("see", fixDocument(title: "무제", text: ""))])
+    asked.queue([("see", fixDocument(title: "무제", text: "첫 줄")), ("see", fixDocument(title: "무제", text: "첫 줄")), ("press", fixSent),
+                 ("see", fixDocument(title: "무제", text: ""))])
     let done = asked.run(["press", "cmd+a", "delete", "--app", "TextEdit"], turn: fourth)
-    check(done.status == 0 && fourth.cards.first?.detail.hasPrefix("⚠️ 이 창의 글을 모두 선택해서 지워요") == true && !fourth.ledger.selectedAll(in: 9189),
+    // jv-fix131: the erase card's own warning, with the text it erases under it.
+    check(done.status == 0 && fourth.cards.first?.detail.hasPrefix("⚠️ 이 창의 글을 모두 지워요\n지워지는 글:\n첫 줄") == true && !fourth.ledger.selectedAll(in: 9189),
           "desk-3: when the user asked, the card says plainly that everything is deleted, and nothing stays marked as selected")
 }
 

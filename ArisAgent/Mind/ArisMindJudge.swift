@@ -42,6 +42,8 @@ final class ArisMindJudge: @unchecked Sendable {
         var arguments: [String: Any] = [:]
         var runs = false
         var taken = false
+        /// The owner said yes to it on a card (an undo's run then takes exactly what that card named).
+        var approved = false
     }
 
     let gate: ArisTrustGate
@@ -63,6 +65,27 @@ final class ArisMindJudge: @unchecked Sendable {
     /// Aside, no answer, his no on its own card), and nothing more that acts runs in the turn, as after his no. False:
     /// the gate refused its words, and only a hand-off with its words written again may still be tried.
     private var handOffs: [String: Bool] = [:]
+    /// The intents in which a replace or a typing found its field changed after its card and changed nothing (thirteenth
+    /// VM run, item 8: the model read the field and put the replace on a new card at once): nothing more acts in them.
+    private var fieldChanged: Set<String> = []
+
+    /// Said to the model, and kept in the record, for an acting call after a replace of the turn found its field changed.
+    static func afterFieldChanged(english: Bool) -> String {
+        let rule = "Not run: the field changed after his card, so nothing was replaced, and nothing more is done for this request now. "
+            + "Tell him exactly that and ask whether to try again; never put the change on a new card in this turn."
+        return english ? rule : "하지 않았어요: 카드를 띄운 뒤 칸의 글이 바뀌어서 아무것도 바꾸지 않았어요. (" + rule + ")"
+    }
+
+    /// Whether a call's result says its field changed after it was checked, so it changed nothing (ArisApps.TypeOver).
+    static func foundFieldChanged(capability: String, result: ArisMindResult) -> Bool {
+        capability == "app.type" && result.isError
+            && [ArisApps.TypeOver.replaceRefusal, ArisApps.TypeOver.refusal].contains(where: result.text.contains)
+    }
+
+    /// Whether `session`'s turn under way had a replace find its field changed.
+    func stoppedByFieldChange(session: String) -> Bool {
+        lock.withLock { intents[session].map(fieldChanged.contains) ?? false }
+    }
 
     /// Said to the model, and kept in the record, for an acting call after a hand-off of the same turn didn't go through.
     static func afterHandOff(english: Bool) -> String {
@@ -165,7 +188,7 @@ final class ArisMindJudge: @unchecked Sendable {
         if let previous {
             gate.end(intent: previous)
             passes.end(intent: previous)
-            lock.withLock { declined.remove(previous); refusedIntents.remove(previous); handOffs[previous] = nil }
+            lock.withLock { declined.remove(previous); refusedIntents.remove(previous); handOffs[previous] = nil; fieldChanged.remove(previous) }
         }
         return gate.ownerTurn(session: session, text: words, speaker: speaker)
     }
@@ -181,7 +204,7 @@ final class ArisMindJudge: @unchecked Sendable {
         guard let previous, previous != intent else { return }
         gate.end(intent: previous)
         passes.end(intent: previous)
-        lock.withLock { declined.remove(previous); refusedIntents.remove(previous); handOffs[previous] = nil }
+        lock.withLock { declined.remove(previous); refusedIntents.remove(previous); handOffs[previous] = nil; fieldChanged.remove(previous) }
     }
 
     /// A task's own instruction: the owner's earlier words for every step.
@@ -193,7 +216,7 @@ final class ArisMindJudge: @unchecked Sendable {
         if let intent {
             gate.end(intent: intent)
             passes.end(intent: intent)
-            lock.withLock { declined.remove(intent); refusedIntents.remove(intent); handOffs[intent] = nil }
+            lock.withLock { declined.remove(intent); refusedIntents.remove(intent); handOffs[intent] = nil; fieldChanged.remove(intent) }
         }
         gate.forget(session: session)
         lock.withLock {
@@ -245,6 +268,12 @@ final class ArisMindJudge: @unchecked Sendable {
                 let resolved = ArisCore2.decidedPath(read.entry.id, read.arguments)
                 var outcome = gate.decide(session: session, task: task, call: call.id, capability: read.entry.id, effect: effect,
                                           arguments: read.arguments, argv: read.argv, stdin: read.stdin, payment: read.entry.payment(read.arguments))
+                // aris-tools words it would refuse as a usage error: refused with the usage before any card, so the one
+                // card that goes up is for words that run (thirteenth VM run, item 4: a delete needed two cards).
+                if Self.mayRun(outcome.decision), let why = ArisToolWords.usageRefusal(read.argv) {
+                    outcome = ArisTrustGate.Outcome(decision: .refuse(reason: why), verdict: outcome.verdict, facts: outcome.facts, effect: outcome.effect)
+                    gate.record(session: session, task: task, call: call.id, outcome: outcome, answer: nil, result: nil, ok: false, undo: nil)
+                }
                 if Self.mayRun(outcome.decision), let why = refusesFirst?(read) {
                     outcome = ArisTrustGate.Outcome(decision: .refuse(reason: why), verdict: outcome.verdict, facts: outcome.facts, effect: outcome.effect)
                     gate.record(session: session, task: task, call: call.id, outcome: outcome, answer: nil, result: nil, ok: false, undo: nil)
@@ -261,7 +290,15 @@ final class ArisMindJudge: @unchecked Sendable {
                                                     facts: outcome.facts, effect: outcome.effect)
                     gate.record(session: session, task: task, call: call.id, outcome: outcome, answer: nil, result: nil, ok: false, undo: nil)
                 } else if !Self.mayRun(outcome.decision), Self.handsOver(read.argv) {
-                    noteHandOff(session: session, ran: false)
+                    // In a background job one refused hand-off ends that line of action: it is not written again and
+                    // retried (thirteenth VM run, item 3: four tries in one job); in a conversation he is there to say.
+                    noteHandOff(session: session, ran: task != nil)
+                }
+                // After a replace of this turn found its field changed, he is asked first: nothing more acts (item 8).
+                if Self.mayRun(outcome.decision), outcome.effect != .observe, stoppedByFieldChange(session: session) {
+                    outcome = ArisTrustGate.Outcome(decision: .refuse(reason: Self.afterFieldChanged(english: ArisSkillLanguage.english)), verdict: outcome.verdict,
+                                                    facts: outcome.facts, effect: outcome.effect)
+                    gate.record(session: session, task: task, call: call.id, outcome: outcome, answer: nil, result: nil, ok: false, undo: nil)
                 }
                 let verdict = Self.verdict(outcome.decision, effect: effect, entry: read.entry, arguments: read.arguments)
                 let seen = gate.contentRead(session: session)
@@ -342,7 +379,7 @@ final class ArisMindJudge: @unchecked Sendable {
             // The owner's yes on this card, for exactly these calls: each one's route takes it in place of its own card.
             if answer == true { mintPasses(session: session, intent: intent, calls: run) }
         }
-        lock.withLock { for call in allowed { held[key(session, call)]?.runs = true } }
+        lock.withLock { for call in allowed { held[key(session, call)]?.runs = true; held[key(session, call)]?.approved = true } }
         return allowed
     }
 
@@ -410,6 +447,10 @@ final class ArisMindJudge: @unchecked Sendable {
                         ok: !result.isError, undo: result.undo, logged: result.logged)
             // A route's own card he said no to (the desktop engine's, a service's, a script's): the same no.
             if result.isError, Self.routeDeclines.contains(where: result.text.contains) { noteDeclined(session: session) }
+            // A replace or a typing whose field changed after its card: nothing more acts this turn, he is asked (item 8).
+            if Self.foundFieldChanged(capability: found.capability, result: result) {
+                lock.withLock { if let intent = intents[session] { fieldChanged.insert(intent) } }
+            }
             // A hand-off that failed when it ran (no Aside, no answer, his no on its own card): nothing more acts this turn.
             if result.isError, Self.handsOver(found.argv) { noteHandOff(session: session, ran: true) }
             // One that went through after its words were written again: the gate's refusal before it no longer stops the turn.
@@ -458,7 +499,9 @@ final class ArisMindJudge: @unchecked Sendable {
 
     /// The undo caller of a decided call: its session or task, its provenance and its speaker.
     func caller(session: String, task: String?, call: String) -> ArisUndoCaller {
-        ArisUndoCaller(session: session, task: task, provenance: provenance(session: session, call: call) ?? .ownStep, speaker: speaker(session: session, call: call))
+        let found = lock.withLock { held[key(session, call)] }
+        return ArisUndoCaller(session: session, task: task, provenance: provenance(session: session, call: call) ?? .ownStep,
+                              approved: found?.approved == true, speaker: speaker(session: session, call: call), named: found?.outcome.undo?.named, planned: found?.outcome.undo?.ids)
     }
 
     private func key(_ session: String, _ call: String) -> String { session + "\u{1F}" + call }

@@ -1352,7 +1352,8 @@ final class ArisController: ObservableObject {
         // The turn's work stops; the turn stays current while its failure shows.
         turn?.cancel()
         releaseListener()
-        setSession(session.failing(message))
+        // A settings place it names is in the UI's words (ArisSettingsNames.inUILanguage).
+        setSession(session.failing(ArisSettingsNames.inUILanguage(message, english: ArisUIWords.english)))
         level = 0
         runTurn(.key) {
             try? await Task.sleep(for: Self.lingerAfterFailure)

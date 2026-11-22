@@ -31,8 +31,22 @@ import Foundation
 enum ArisMindRoute {
     static let path = "/mind-call"
 
-    /// The runner's conversation, as the trust gate keys its tracker.
-    static func session(_ runner: AnyObject) -> String { "claude-" + String(UInt(bitPattern: ObjectIdentifier(runner).hashValue), radix: 16) }
+    /// The runner's conversation, as the trust gate keys its tracker: a name of its own for each runner, never used
+    /// again (thirteenth VM run, item 3: the name was the runner's address, so a later job's runner at a freed address
+    /// took an earlier job's tracker, and its brief was judged as the earlier job's content). A runner keeps its name
+    /// while it lives (the conversation's tracker spans turns); a background job's runner is a new one each time.
+    static func session(_ runner: AnyObject) -> String {
+        sessionLock.withLock {
+            if let name = sessionNames.object(forKey: runner) { return name as String }
+            let name = "claude-" + String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16))
+            sessionNames.setObject(name as NSString, forKey: runner)
+            return name
+        }
+    }
+
+    private static let sessionLock = NSLock()
+    /// Weak keys: a runner that is gone takes its name with it, and a new runner at its address gets a new one.
+    nonisolated(unsafe) private static let sessionNames = NSMapTable<AnyObject, NSString>.weakToStrongObjects()
 
     /// One call decided, asked about when it must be, and the answer for the face's server.
     /// `refusesFirst`: the call's route's own refusal before any card (ArisMindJudge.decide).
@@ -82,6 +96,11 @@ enum ArisMindRoute {
         // card showed, which the process that runs it puts in the call, so app.type sets nothing when the field holds
         // something else by then (ArisApps.TypeOver).
         if let erased = judge.erasedMark(session: session, call: id) { fields["erased"] = erased }
+        // An undo's plan as decided: the kind their words named, the entries its card named and their yes on it (item 1).
+        let undo = judge.caller(session: session, task: nil, call: id)
+        if let named = undo.named { fields["undoKind"] = named.rawValue }
+        if let planned = undo.planned { fields["undoIDs"] = planned }
+        if undo.approved { fields["approved"] = true }
         return fields
     }
 
@@ -231,7 +250,9 @@ final class ArisMindRemote: ArisTrustDeciding, @unchecked Sendable {
               let verdict = reply["verdict"] as? String else { return .refuse(Self.unreachable) }
         if let session = reply["session"] as? String, verdict != "refuse" {
             let caller = ArisUndoCaller(session: session, provenance: reply["owner"] as? Bool == true ? .ownerSaid : .ownStep,
-                                        speaker: ArisTurnSpeaker.named(reply["speaker"] as? String))
+                                        approved: reply["approved"] as? Bool == true, speaker: ArisTurnSpeaker.named(reply["speaker"] as? String),
+                                        named: (reply["undoKind"] as? String).flatMap(ArisUndoKind.init(rawValue:)),
+                                        planned: (reply["undoIDs"] as? [String]).map { Array($0.prefix(ArisUndoScope.mostAtOnce)) })
             callers.withLock { $0[call.id] = caller }
         }
         if verdict != "refuse", let pass = reply["pass"] as? String, ArisMindPasses.wellFormed(pass) { passes.withLock { $0[call.id] = pass } }

@@ -234,7 +234,8 @@ enum ArisAgentPrompt {
         player's own volume and ask whether to change the Mac's volume instead. Whenever you change it, say it was \
         the Mac's volume ("맥 전체 볼륨을 30으로 맞췄어요").
         - Apps, links, folders: `\(tools) app "Figma"`, `\(tools) link "https://…"`, `\(tools) folder ~/Downloads`.
-        - Windows: `\(tools) window left|right|full|center [app]`.\(desktopLine)\(gated || handsOff ? """
+        - Windows: `\(tools) window left|right|full|center [app]`. To put back a window Aris moved ("방금 창 옮긴 거 되돌려"), run \
+        `\(tools) undo`: never move it again, and say it is back where it was only when `undo` said so.\(desktopLine)\(gated || handsOff ? """
 
         - Several windows: `\(tools) new "Microsoft Word" --count 4` opens new windows, then \
         `\(tools) tile "Microsoft Word" --grid 2x2` arranges an app's windows (several apps: "Safari,Notes"; no --grid \

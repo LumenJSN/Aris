@@ -64,8 +64,25 @@ final class ArisMindSession: @unchecked Sendable {
 
     \(directFirstRule)
 
+    \(jobsRule)
+
     \(speechStyleRule)
     """
+
+    /// Background tasks are spoken of only as Aris's own record shows them (thirteenth VM run, item 2: "이미 결제까지
+    /// 알아서 처리하는 작업이 진행 중이에요… 그 작업도 결제 직전에서 멈추게 할게요" when no task ran): the default path has
+    /// the same rule under its context's task lines (ArisContext.taskStatesRule).
+    static let jobsRule = """
+    Background tasks: speak of one only as the context's "background tasks" lines show it (Aris's own record: working, \
+    waiting for his answer on a card, failed, done, not started yet). When none is listed, none exists: never say a task \
+    is already under way, and never promise to change, stop, hold or tell anything to a task, now or later.
+    """
+
+    /// What a background task's own turn is told about tasks (ArisMindBrainDriver): it is the only one it knows of, its
+    /// context holds its own request and nothing of another task's (item 3).
+    static let jobContext = "background task: you are one background task Aris started for the request below, and the only task you know of; "
+        + "no other task is shown to you. Never say another task is under way, waiting or stopped, and never promise to change one: "
+        + "say what you did for this request and what happened, nothing more."
 
     /// How text gets into an app (VM run 2, D4: "TextEdit에 …라고 써 줘" became a click, cmd+a, a set-value, cmd+down and
     /// a type, each on a card): one typed call, at the end of what is there, never a select-all.
@@ -106,7 +123,7 @@ final class ArisMindSession: @unchecked Sendable {
                                                  judged: ArisMindExecutor.judged(item.verdict), resolved: judge.resolved(session: session, call: item.call.id))
                                 }, isCurrent: isCurrent)
         let loop = ArisMindLoop(provider: provider, tools: Self.tools, ports: ports, budget: budget)
-        loop.english = ArisSkillLanguage.english
+        loop.english = ArisSkillLanguage.english(for: words)
         lock.withLock { if current == mine { running = loop } }
         let system = context.isEmpty ? Self.rules : Self.rules + "\n\n" + context
         let ended = loop.turn(system: system, history: before, owner: words) { piece in

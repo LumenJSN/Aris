@@ -19,6 +19,8 @@ extension ArisCardEnglish {
         "메뉴 고르기": "Choose a menu item", "대화상자 버튼 누르기": "Press a dialog button", "대화상자에 입력하기": "Type in a dialog",
         "파일 고르기": "Choose a file", "창 다루기": "Manage a window", "앱 다루기": "Manage an app", "화면 보고 누르기": "Look and click", "보기": "Look",
         "여러 단계 하기": "Do several steps", "붙여넣기": "Paste",
+        // A replace or an erase (ArisDesktopErase.verb).
+        "글 바꾸기": "Replace text", "글 지우기": "Erase text",
     ]
 
     /// ArisDesktopCard.roleWord → ArisDesktopCopy.roles (one English word per Korean word; "입력칸" is every text field).
@@ -33,7 +35,7 @@ extension ArisCardEnglish {
     /// The card's labelled rows (ArisDesktopCard.card's `say("…: ", "…: ")` pairs) that the general table doesn't have.
     static let desktopLabels: [String: String] = [
         "창": "Window", "사이트": "Site", "칸": "Field", "메뉴": "Menu", "버튼": "Button", "누를 버튼": "Button to press", "파일 이름": "File name",
-        "형식": "Format", "놓을 곳": "Drop on", "찾을 것": "Looking for", "창 다루기": "Window",
+        "형식": "Format", "놓을 곳": "Drop on", "찾을 것": "Looking for", "창 다루기": "Window", "지워지는 글": "Text that is erased",
     ]
 
     /// Lines the helper writes whole on that card.
@@ -46,6 +48,13 @@ extension ArisCardEnglish {
         "창을 찍어 AI가 위치를 찾은 뒤 그 자리를 눌러요 (안 되면 실제 마우스로)":
             "Aris takes a picture of the window, an AI finds the spot, and that spot is clicked (with the real pointer if it must)",
         "⚠️ 이 창의 글을 모두 선택해서 지워요": "⚠️ This selects all the text in this window and deletes it",
+        // A replace or an erase (ArisDesktopErase.cardLines).
+        "⚠️ 이 창의 글을 모두 지우고 그 자리에 입력해요": "⚠️ This erases all the text in this window and types in its place",
+        "⚠️ 이 창의 글을 모두 지워요": "⚠️ This erases all the text in this window",
+        "⚠️ 선택한 글을 지우고 그 자리에 입력해요": "⚠️ This erases the selected text and types in its place",
+        "⚠️ 선택한 글을 지워요": "⚠️ This erases the selected text",
+        "지워질 글을 미리 읽지 못했어요. 그 사이 글이 보이면 하지 않고 다시 물어봐요":
+            "The text that would be erased couldn't be read first. If text shows there by then, nothing is done and Aris asks again",
         "이 앱은 입력 칸의 글을 읽을 수 없어서, 입력한 뒤 창을 다시 읽어 확인해요":
             "This app's text field can't be read, so after typing Aris reads the window again to check",
     ]

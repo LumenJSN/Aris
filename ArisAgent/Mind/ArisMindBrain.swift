@@ -92,7 +92,7 @@ final class ArisMindBrain: @unchecked Sendable {
         let isCurrent = { [self] in lock.withLock { current == mine } }
         let ports = remotePorts(task: task, isCurrent: isCurrent)
         let loop = ArisMindLoop(provider: provider(tier), tools: ArisMindSession.tools, ports: ports, budget: task ? .task : .chat)
-        loop.english = english
+        loop.english = ArisSkillLanguage.english(for: words, ui: english)
         lock.withLock { if current == mine { running = loop } }
         let system = context.isEmpty ? ArisMindSession.rules : ArisMindSession.rules + "\n\n" + context
         let said = ArisLocked("")
@@ -159,7 +159,9 @@ final class ArisMindBrain: @unchecked Sendable {
             guard let id = line["id"] as? String else { return }
             if let session = line["session"] as? String {
                 let caller = ArisUndoCaller(session: session, provenance: line["owner"] as? Bool == true ? .ownerSaid : .ownStep,
-                                            speaker: ArisTurnSpeaker.named(line["speaker"] as? String))
+                                            approved: line["approved"] as? Bool == true, speaker: ArisTurnSpeaker.named(line["speaker"] as? String),
+                                            named: (line["undoKind"] as? String).flatMap(ArisUndoKind.init(rawValue:)),
+                                            planned: (line["undoIDs"] as? [String]).map { Array($0.prefix(ArisUndoScope.mostAtOnce)) })
                 callers.withLock { $0[id] = caller }
             }
             if let pass = line["pass"] as? String, ArisMindPasses.wellFormed(pass) { passes.withLock { $0[id] = pass } }

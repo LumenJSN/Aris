@@ -43,8 +43,10 @@ extension ArisMindRoute {
             let task = runner.isBackgroundTask ? session : nil
             let judge = ArisMindJudge.shared
             let card: ArisMindJudge.Card = { card, answer in
-                runner.mcpAsk(ArisMCPCard(title: card.title, detail: card.detail, full: card.full, fields: [], countdown: card.countdown, spoken: card.spoken),
-                              credential: credential) { reply in
+                var shown = ArisMCPCard(title: card.title, detail: card.detail, full: card.full, fields: [], countdown: card.countdown, spoken: card.spoken)
+                // The gate's action countdown stays an action's card on its way to the app (thirteenth VM run, item 4).
+                shown.action = card.action
+                runner.mcpAsk(shown, credential: credential) { reply in
                     switch reply {
                     case .yes: answer(true)
                     case .no: answer(false)

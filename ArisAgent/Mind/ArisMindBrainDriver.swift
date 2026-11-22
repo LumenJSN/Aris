@@ -55,7 +55,13 @@ final class ArisMindBrainDriver: ArisBrainDriver {
 
     func ask(_ prompt: String, tier: ArisTier) -> [Data] {
         inTurn = true
-        return [Self.line(["type": "ask", "text": prompt, "tier": tier.rawValue, "task": task, "context": context(), "english": ArisSkillLanguage.english])]
+        return [Self.line(["type": "ask", "text": prompt, "tier": tier.rawValue, "task": task, "context": Self.context(context(), task: task), "english": ArisSkillLanguage.english])]
+    }
+
+    /// A turn's context: the World's lines, and for a background task what it is told about tasks (ArisMindSession.jobContext).
+    static func context(_ world: String, task: Bool) -> String {
+        guard task else { return world }
+        return world.isEmpty ? ArisMindSession.jobContext : ArisMindSession.jobContext + "\n" + world
     }
 
     func read(_ line: String) -> [ArisBrainEvent] {

@@ -101,6 +101,9 @@ enum ArisIntent: Equatable {
         let phrase = phrase(of: spoken)
         // A sentence naming a routine ("퇴근 루틴 만들어 줘: 음악 꺼 줘") is the agent's, whole: never a local act on a word in it.
         if ArisRoutineWords.mentions(spoken) { if case .ask = intent { return intent } else { return .ask(spoken) } }
+        // Words that start a lesson ("지금부터 하는 거 메모 쓰기라고 해", "watch me…") are the lesson's, whole: never an
+        // app opened on a word in its name (thirteenth VM run, item 6: "메모 쓰기" opened Notes instead of starting one).
+        if ArisTeachIntent.startsLesson(spoken) { if case .ask = intent { return intent } else { return .ask(spoken) } }
         // A request that goes on after this act ("메모 앱 열고 어제 회의 내용 정리해 줘") is the AI's, whole (audit intent-1).
         if intent.isOneAct, ArisIntentScope.goesOn(phrase) { return .ask(spoken) }
         // A keyword inside a longer request, a story or a question about something else is the AI's (audit intent-3).
@@ -311,7 +314,10 @@ enum ArisIntent: Equatable {
     /// Said alone, these can only mean the last thing.
     private static let bareUndo: Set = ["되돌려", "되돌려줘", "되돌려 줘", "되돌려 주세요", "되돌려주세요",
                                         "undo", "undo that", "undo it", "undo this", "undo the last thing", "undo my last action", "undo the last one",
-                                        "undo last", "take that back", "take it back", "revert that", "revert it"]
+                                        "undo last", "take that back", "take it back", "revert that", "revert it",
+                                        // Thirteenth VM run, W3: the window's move is undone from its record, never moved again.
+                                        "undo the window move", "undo that window move", "undo moving the window", "put the window back",
+                                        "move the window back", "put the window back where it was", "move the window back where it was"]
 
     /// "방금 거 / 방금 한 거 / 방금 그거" + 취소 or 되돌려, "되돌려" alone, "undo that": the last thing Aris did. Anything
     /// that names what to cancel ("방금 보낸 메일 취소해", "방금 만든 일정 취소해") is a request to the AI, and the timer
@@ -366,10 +372,11 @@ enum ArisIntent: Equatable {
     static func isRecurring(_ text: String) -> Bool { ArisOwnData.isRecurring(text) }
 
     private static let musicNouns = ["곡", "노래", "음악", "track", "song", "music"]
-    /// 되돌려 / 되돌리기 / 실행 취소 alone ("되돌려 줘", "실행 취소해"), or after "방금 <one word> 거" ("방금 만든 거 되돌려 줘").
+    /// 되돌려 / 되돌리기 / 실행 취소 alone ("되돌려 줘", "실행 취소해"), or after "방금 <a word or two> 거" ("방금 만든 거 되돌려 줘",
+    /// "방금 창 옮긴 거 되돌려 줘": thirteenth VM run, W3, it went to the AI, which moved the window again with `window center`).
     /// Anything longer names something else to change ("이 문장 원래대로 되돌려 써 줘") and is a request to the AI: an undo
     /// runs at once, so it is never guessed from a word inside a longer request.
-    private static let undoAlone = #"^(?:방금\s*(?:\S+\s+)?[거꺼](?:를|을|는)?\s*)?(?:되돌려|되돌리기|되돌리자|실행\s*취소)(?:\s*(?:해|줘|해\s*줘|해\s*주세요|주세요|할래|하자))*[.!~ ]*$"#
+    private static let undoAlone = #"^(?:방금\s*(?:\S+\s+){0,2}[거꺼](?:를|을|는)?\s*)?(?:되돌려|되돌리기|되돌리자|실행\s*취소)(?:\s*(?:해|줘|해\s*줘|해\s*주세요|주세요|할래|하자))*[.!~ ]*$"#
 
     /// The words ask to undo the last thing, and name no song or music (QA BUG-42).
     static func saysUndo(_ text: String) -> Bool {

@@ -170,6 +170,9 @@ struct ArisCallFacts: Equatable, Sendable {
     /// Words handed to something that then works on its own (Aside, a job, a schedule, a routine, a coding session),
     /// as its card reads them back (ArisHandOffCard): a card of its own every time, never kept. Nil for anything else.
     var handOff: ArisHandOffFacts?
+    /// The card's own title for an aris-tools act its words name ("일정 지우기": ArisToolWords.title), in place of the
+    /// effect's bare verb. Presentation only: no rule reads it.
+    var actionTitle: String?
 
     init(capability: String, arguments: [ArisKeyArgument], payment: Bool = false, cwd: String? = nil, registeredPayment: Bool = false,
          browser: ArisBrowserPage? = nil) {
