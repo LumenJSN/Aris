@@ -127,7 +127,10 @@ final class ArisWakeRestLive: ObservableObject {
     private var watching = false
     private var deviceWatch: ArisWorldSubscription?
     private var displayWatch: ArisWorldSubscription?
-    private var deviceListeners: [(AudioDeviceID, AudioObjectPropertyListenerBlock)] = []
+    /// Running-somewhere on every input device, changed only by difference (ArisAudioListenerSet).
+    private let deviceListeners = ArisAudioListenerSet(hal: ArisAudioHALLive.shared, owner: "wake rest")
+    /// A microphone starting or stopping anywhere: one look per burst (a call opens and closes it in bursts).
+    private lazy var deviceNotice = ArisAudioCoalescer { [weak self] in MainActor.assumeIsolated { self?.look() } }
     private let queue = DispatchQueue(label: "com.lumenjsn.aris.wake-rest", qos: .utility)
 
     private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
@@ -208,19 +211,10 @@ final class ArisWakeRestLive: ObservableObject {
 
     /// A microphone starting or stopping anywhere is told at once (kAudioDevicePropertyDeviceIsRunningSomewhere).
     private func listenToDevices() {
-        for (device, block) in deviceListeners {
-            var where_ = Self.runningSomewhere
-            AudioObjectRemovePropertyListenerBlock(device, &where_, .main, block)
-        }
-        deviceListeners = ArisMicDevices.all().filter(\.hasInput).compactMap { device in
-            var where_ = Self.runningSomewhere
-            let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in MainActor.assumeIsolated { self?.look() } }
-            return AudioObjectAddPropertyListenerBlock(device.id, &where_, .main, block) == noErr ? (device.id, block) : nil
-        }
+        let wanted = Set(ArisMicDevices.all().filter(\.hasInput).map { ArisAudioKey(object: $0.id, selector: kAudioDevicePropertyDeviceIsRunningSomewhere) })
+        let notice = deviceNotice
+        deviceListeners.sync(wanted) { _ in { notice.poke() } }
     }
-
-    private static let runningSomewhere = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
-                                                                     mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
 
     /// Reads the facts off the main thread; when they ask for something else than the wake word is doing, the
     /// controller looks at it again.

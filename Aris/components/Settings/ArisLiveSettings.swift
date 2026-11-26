@@ -53,6 +53,8 @@ struct ArisLiveSettings: View {
     @AppStorage(ArisDuplexSwitch.key) private var duplexAudio = false
     /// Nil until the switch is touched: then 들은 말 다듬기 follows the engine (on with 자동).
     @AppStorage(ArisHearRepairSetting.key) private var hearRepairStored: Bool?
+    @AppStorage(ArisMicSetting.key) private var microphone = ArisMicSetting.thisMac.stored
+    @AppStorage(ArisMicSetting.nameKey) private var microphoneName: String?
     @Default(.claudeSounds) private var sounds
     @Default(.arisDayEndOffer) private var dayEndOffer
     /// 하루 정리를 자세히 말하기: the day in review's switch (ArisRecapSwitch), the same key `defaults write` sets.
@@ -122,6 +124,7 @@ struct ArisLiveSettings: View {
     @State private var standingLoaded = false
     @State private var launchAtLogin = ArisLoginItem.isEnabled
     @State private var screens: [ArisSettingOption] = ArisLiveSettings.readScreens()
+    @State private var microphones = ArisMicDevices.all()
     @State private var hasVoiceKey = ArisElevenLabs.loadKey() != nil
     /// The quick commands' key's state (ArisRouterKeyHealth), seen as it changes.
     @AppStorage(ArisRouterKeyHealth.preferenceKey) private var quickKeyState: String?
@@ -184,6 +187,7 @@ struct ArisLiveSettings: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             permissions = Self.readPermissions(diskAccess: agentDiskAccess, folders: folderAccess)
+            microphones = ArisMicDevices.all()
             hasVoiceKey = ArisElevenLabs.loadKey() != nil
             missing = ArisPrerequisites.current()
             Task { await calendar.loadIfAuthorized() }
@@ -255,6 +259,9 @@ struct ArisLiveSettings: View {
         s.bargeInSpeakers = bargeInSpeakers
         s.duplexAudio = duplexAudio
         s.hearRepair = ArisHearRepairSetting.isOn(stored: hearRepairStored, choice: ArisHearSetup.choice)
+        s.microphone = microphone
+        s.microphoneName = microphoneName
+        s.microphones = microphones
         s.teamCount = team.teammates.count
         s.skillCount = skills.status.skills.count
         // A key cleared while the page is open keeps its row (ArisSavedKeyRows), so the section keeps its heading.
@@ -439,6 +446,10 @@ struct ArisLiveSettings: View {
         case .bargeInSpeakers: bargeInSpeakers = on ?? bargeInSpeakers
         case .duplexAudio: duplexAudio = on ?? duplexAudio
         case .hearRepair: hearRepairStored = on ?? !ArisHearSetup.repairOn
+        case .microphone:
+            microphoneName = Self.microphoneName(choosing: text, among: microphones) ?? microphoneName
+            microphone = text
+            NotificationCenter.default.post(name: ArisMicSetting.changed, object: nil)
         case .voiceID: voiceID.setOn(on ?? !voiceID.summary.on)
         case .dictationBrainPolish: brainPolish = on ?? brainPolish
         case .dictationOn: dictationOn = on ?? dictationOn
@@ -758,6 +769,13 @@ struct ArisLiveSettings: View {
                 }
                 UserDefaults.standard.set(known, forKey: Self.folderAccessKey)
                 permissions = Self.readPermissions(diskAccess: agentDiskAccess, folders: known)
+                // macOS asked nothing (a folder it was answered for once, or no answer from the helper): its Files and
+                // Folders list opens, so the button always does something visible (fourteenth VM run: "3 file folders"
+                // Allow did nothing).
+                if off.contains(where: { known[$0] != true }),
+                   let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders") {
+                    NSWorkspace.shared.open(url)
+                }
             }
         case let folderID where folderID.hasPrefix("folder."):
             let folder = String(folderID.dropFirst("folder.".count))

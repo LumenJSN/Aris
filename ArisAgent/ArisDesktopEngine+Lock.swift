@@ -84,7 +84,12 @@ extension ArisDesktopEngine {
             }
             let owner = turn.desktopOwner
             let english = ArisDesktopCopy.isEnglish(turn.request)
-            turn.quiet(ArisDesktopPause.line(blocker, english: english))
+            // The window by its name, and in front where that is safe (seventeenth VM run: a hidden "Keystroke Receiving"
+            // prompt held every desktop step while the notch named no window).
+            let shown: ArisDesktopPause.Window?
+            if case .prompt = blocker { shown = windows.promptWindow() } else { shown = nil }
+            turn.quiet(ArisDesktopPause.line(blocker, english: english, window: shown))
+            if ArisDesktopPause.raises(blocker, task: turn.isTask, secureInput: apps.secureInput, sinceKey: apps.secondsSinceKeyDown()) { windows.raisePrompt() }
             turn.audit(["answer": "paused (a sign-in or permission window)", "action": "desktop \(request.verb.rawValue) · \(target.name)", "brain": turn.brainName])
             lock?.pause(owner, true)
             let ended = ArisDesktopPause.waitOut(blocker, policy: policy, spent: spent,

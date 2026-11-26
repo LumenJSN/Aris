@@ -87,7 +87,7 @@ enum ArisQuietOpener {
             do {
                 return try open(pick, command: command, title: ArisQuietLaunch.title(title), english: english, home: home, say: say)
             } catch let failed as NeverStarted {
-                FileHandle.standardError.write(Data("aris-agent: \(failed.terminal.title) opened a window but never ran the teammate's command\n".utf8))
+                try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(failed.terminal.title) opened a window but never ran the teammate's command\n".utf8))
                 lock.withLock { _ = unusable.insert(failed.terminal) }
             }
         }

@@ -24,6 +24,6 @@ func recall(_ arguments: [String]) {
 /// A shared command's answer as this program's: what it printed, and `fail`'s exit for a failure.
 func emit(_ output: ArisCapabilityLocal.Output) {
     if !output.stdout.isEmpty { FileHandle.standardOutput.write(Data(output.stdout.utf8)) }
-    if !output.stderr.isEmpty { FileHandle.standardError.write(Data(output.stderr.utf8)) }
+    if !output.stderr.isEmpty { try? FileHandle.standardError.write(contentsOf: Data(output.stderr.utf8)) }
     if output.status != 0 { exit(output.status) }
 }

@@ -182,12 +182,11 @@ private func fix131ReplaceAllTests() {
     en.queueData([("see", f131Look(f131Doc, selection: (0, 0))), ("see", f131Look(f131Doc, selection: (0, 0))), ("press", v2pb("press-return")),
                   ("see", f131Look("", selection: (0, 0)))])
     let held = f131Run(en, ["press", "cmd+a", "delete", "--app", "TextEdit"], turn: said)
-    // `cmd+a delete` in one press is an erase by itself: one erase card that shows the whole text (no longer "Press keys"
-    // with no text), then the new text goes into the empty document on its own card.
-    let erased = said.cards.first.map(f131Card) ?? ""
-    check(held.status == 0 && said.cards.count == 1 && erased.hasPrefix("Erase text in TextEdit") && erased.contains("Text that is erased:\n" + f131Doc)
-          && en.calls.contains { $0.hasPrefix("press cmd+a delete") },
-          "fix131 replace-all: `press cmd+a delete` is one erase card with the whole text, in English (\(said.cards.map(f131Card)), \(en.calls))")
+    // fix132 (R1e2): `cmd+a delete` in a turn whose words also give the new text is held back like a lone select-all, so
+    // the type that follows is the one replace card (it was an erase card, then the type's card: two). Erasing only, it is
+    // still one erase card with the whole text (fix132-tests).
+    check(held.status == 0 && said.cards.isEmpty && !en.calls.contains { $0.hasPrefix("press") } && held.output.contains(ArisDesktopErase.heldLead),
+          "fix131 replace-all: `press cmd+a delete` with new text to write is held for the replace card (\(said.cards.map(f131Card)), \(en.calls))")
     // As one replace: a select-all held back, then the type (the English of Q2b).
     let one = f131Rig()
     let both = f131Turn("Delete all the text in this document and write 'replaced content'", critical: true)
@@ -204,12 +203,13 @@ private func fix131ReplaceAllTests() {
     let wipe = f131Turn("이 문서 글 전부 지워 줘", critical: true)
     erase.queueData([("see", f131Look(f131Doc, selection: (0, 0)))])
     _ = f131Run(erase, ["press", "cmd+a", "--app", "TextEdit"], turn: wipe)
+    // fix132d: the select-all is pressed on its own and read back (all of it selected) before the delete goes.
     erase.queueData([("see", f131Look(f131Doc, selection: (0, 0))), ("see", f131Look(f131Doc, selection: (0, 0))), ("press", v2pb("press-return")),
-                     ("see", f131Look("", selection: (0, 0)))])
+                     ("see", f131Look(f131Doc, selection: (0, f131Doc.utf16.count))), ("press", v2pb("press-return")), ("see", f131Look("", selection: (0, 0)))])
     let gone = f131Run(erase, ["press", "delete", "--app", "TextEdit"], turn: wipe)
     let wiped = wipe.cards.first.map(f131Card) ?? ""
-    check(wipe.cards.count == 1 && wiped.hasPrefix("TextEdit에서 글 지우기") && wiped.contains("지워지는 글:\n" + f131Doc)
-          && erase.calls.contains { $0.hasPrefix("press cmd+a delete") },
+    check(wipe.cards.count == 1 && wiped.hasPrefix("TextEdit에서 글 지우기") && wiped.contains("지워지는 글:\n" + f131Doc) && gone.status == 0
+          && erase.calls.contains { $0.hasPrefix("press cmd+a --snapshot") } && erase.calls.contains { $0.hasPrefix("press delete --snapshot") },
           "fix131 replace-all: erasing everything is one erase card with the text, its keys selecting first (\(wipe.cards.map(f131Card)), \(erase.calls), \(gone.output.prefix(120)))")
     // His words don't ask to replace: a lone select-all is pressed on its card as before (nothing held back).
     let plain = f131Rig()

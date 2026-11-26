@@ -420,7 +420,8 @@ private final class Recording: @unchecked Sendable {
 
     func reset(rolling: Bool) {
         lock.withLock {
-            stored.removeAll(keepingCapacity: true)
+            // A long turn's megabytes go back; a short one's are kept for the next (ArisLongTurn.keepsCapacity).
+            stored.removeAll(keepingCapacity: ArisLongTurn.keepsCapacity(stored.capacity))
             self.rolling = rolling
         }
     }

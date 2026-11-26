@@ -97,6 +97,8 @@ enum ArisAPIRouterCall {
             // GPT-6 Luna answers without reasoning first (reasoning_effort none, on its model page); another model may
             // not take "none", so only the default gets it.
             if preset.id == "openai", model == defaults["openai"] { body["reasoning_effort"] = "none" }
+            // DeepSeek's models think unless told not to (both take it off).
+            if ArisAPIPreset.isDeepSeek(preset: preset.id, base: preset.baseURL) { body["thinking"] = ["type": "disabled"] }
             return body
         case .anthropic:
             var body: [String: Any] = [

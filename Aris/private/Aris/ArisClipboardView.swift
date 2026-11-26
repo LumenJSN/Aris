@@ -88,7 +88,7 @@ struct ArisClipboardView: View {
         HStack(spacing: 9) {
             icon(item)
             if item.isImage, let image = thumbnail(item) {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(height: 20).clipShape(RoundedRectangle(cornerRadius: 3, style: .circular))
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(height: ArisClipboardThumbnail.heightPoints).clipShape(RoundedRectangle(cornerRadius: 3, style: .circular))
                 Text(ArisUIWords.text("이미지", "Image")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.5))
             } else {
                 Text(item.title.replacingOccurrences(of: "\n", with: " ⏎ "))
@@ -130,8 +130,9 @@ struct ArisClipboardView: View {
         .frame(width: 16, height: 16)
     }
 
+    /// Read at the row's size and kept small (ArisClipboardThumbnails), never the whole image.
     private func thumbnail(_ item: ArisClipboard.Item) -> NSImage? {
-        item.contents.first { ArisClipboard.imageTypes.contains($0.type) }.flatMap { NSImage(data: $0.data) }
+        ArisClipboardThumbnails.shared.image(for: item)
     }
 
     /// Like Maccy's popup: choosing an item puts the notch away and gives the keyboard back.

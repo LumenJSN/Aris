@@ -116,6 +116,16 @@ struct ArisNotice: Equatable, Identifiable, Sendable {
         self.progress = progress.map { min(1, max(0, $0)) }
     }
 
+    /// A notice that goes by itself (showsFor) is gone this long after it was posted, however often it stepped aside
+    /// meanwhile (fourteenth VM run: a timer's "2 minutes is up" came back under the notch for 16 minutes, its clock
+    /// starting over each time a turn made it step aside).
+    static let longestUp: TimeInterval = 300
+
+    /// Whether it goes by itself and has been about longer than `longestUp` at `now`.
+    func outlived(at now: Date) -> Bool {
+        showsFor != nil && now.timeIntervalSince(posted) > Self.longestUp
+    }
+
     /// Whether it waited too long to be shown at `now`.
     func expired(at now: Date) -> Bool {
         guard let showsWithin else { return false }

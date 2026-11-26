@@ -99,6 +99,8 @@ enum ArisCardEnglish {
             // run, D2), its quotes as English writes them (M4: 「…」).
             if gate || !own, let english = gateRow(row, verbs: gate) { return quotes(english) }
             if gate || carriesGate, row.hasPrefix("「"), row.hasSuffix("」") { return quotes(row) }
+            // The gate's line on outside content opens a note's or a to-do's card too (fourteenth VM run, P11: Korean in an English UI).
+            if index == 0, row == outsideReason, let known = lines[row] { return known }
             if !own || row == "빈 메모", let known = lines[row] { return known }
             // The helper's own desktop card's rows (its window, its target with the role's word, what a yes also covers).
             if !own, !gate, let known = desktopRow(row) { return known }
@@ -212,6 +214,21 @@ enum ArisCardEnglish {
                                                      "여러 단계 하기", "화면 읽기", "결과 기다리기", "Mac 작업"]
     /// The cards whose lines are the user's own words.
     private static let ownWordsTitles: Set<String> = ["할 일에 넣기", "할 일에서 빼기", "할 일 끝내기", "할 일 고치기", "할 일 완료", "메모 만들기"]
+    /// The same cards' titles in English (ArisGateWords.titles).
+    private static let ownWordsEnglishTitles: Set<String> = ["Add to-do", "Remove to-do", "Complete to-do", "Edit to-do", "Finish to-do", "New note"]
+    /// The labels those cards write themselves (aris-agent's ArisStoredWords: a to-do's flags, a note's title).
+    private static let ownWordsLabels: Set<String> = ["제목", "메모", "기한", "목록", "Title", "Note", "Due", "List"]
+
+    /// A to-do's or a note's line that stays one line of text on its card: its words are the user's own, so a colon in them
+    /// ("서울 날씨: 지금 …") never makes a label / value row; only the card's own labels do (fifteenth VM run, K1t2).
+    static func keepsLineWhole(_ row: String, title: String) -> Bool {
+        guard ownWordsTitles.contains(title) || ownWordsEnglishTitles.contains(title) else { return false }
+        let parts = row.split(separator: ":", maxSplits: 1)
+        guard parts.count == 2 else { return false }
+        let label = parts[0].trimmingCharacters(in: .whitespaces)
+        return !ownWordsLabels.contains(label) && !label.hasPrefix("--")
+    }
+
     /// The rows whose value the agent writes (a place), never the user's words.
     private static let writtenByAgent: Set<String> = ["위치", "저장할 것", "폴더"]
 
@@ -263,6 +280,10 @@ enum ArisCardEnglish {
         "금액": "Amount", "받는 곳": "Payee",
     ]
 
+    /// The line a card opens with when it asks because fetched content is in the conversation (aris-agent's
+    /// ArisEscalation.taintedReason, word for word).
+    static let outsideReason = "이 대화에서 가져온 정보(날씨·웹 등)가 있어서 먼저 물어봐요."
+
     /// Lines the agent writes whole.
     private static let lines: [String: String] = [
         "새 폴더": "New folder", "빈 메모": "Empty note", "홈": "Home", "이 일정 하나만 지워요": "Only this one event is deleted",
@@ -273,7 +294,7 @@ enum ArisCardEnglish {
         "선반에 둔 파일": "The files on the shelf", "방금 답": "the last answer", "메모 앱 (새 메모)": "Notes (a new note)",
         "팀원 없이 Aris로 실행돼요": "Runs as Aris, with no teammate", "⚠️ 홈 폴더 밖의 폴더예요": "⚠️ This folder is outside the home folder",
         "메뉴 누르기": "Choose a menu item", "메뉴 보기": "Look at the menus", "대화상자 다루기": "Work in a dialog",
-        "외부 내용을 읽은 뒤라 한 번 더 확인할게요": "Asking once more because outside content was read", "(값 없음)": "(no values)",
+        outsideReason: "Asking first, since this chat has info I fetched (weather, web, etc.).", "(값 없음)": "(no values)",
         "다른 곳에서 읽은 내용 뒤라서 먼저 물어봐요.": "Asking first, since text from elsewhere was read.",
         "대화 모드로 들은 말이라 먼저 물어봐요.": "Asking first, since this was heard in conversation mode.",
         "맡긴 일 중에 하는 거라 먼저 물어봐요.": "Asking first, since this is part of a job handed over.",

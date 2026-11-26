@@ -40,6 +40,11 @@ enum ArisContext {
         var line: String { self == .byVoice ? "asked: by voice" : "asked: typed" }
     }
 
+    /// Under the recent turns: which one is the latest (sixteenth VM run, E7: right after a Orlando weather answer, "that
+    /// weather summary" became an earlier turn's Seoul to-do title, the one exact phrase among the three).
+    static let latestNote = "(oldest first: the last turn above is the latest. “that”, “it”, “그거”, “방금 거” mean what the latest turn was about "
+        + "and its answer, unless the user names an earlier one)"
+
     /// Turns kept for follow-up questions.
     static let recentTurns = 3
 
@@ -68,6 +73,7 @@ enum ArisContext {
         if !recent.isEmpty {
             lines.append("recent:")
             lines += recent.flatMap { ["- user: \($0.heard)", "  you: \($0.reply)"] }
+            lines.append(latestNote)
         }
         if !tasks.isEmpty {
             lines.append("background tasks:")

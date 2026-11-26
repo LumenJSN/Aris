@@ -249,12 +249,21 @@ final class ArisNoticeCenter: ObservableObject {
     }
 
     /// The front notice's own clock runs while it is seen and not under the pointer (ArisNoticePillRules.clockRuns); it
-    /// starts again from its whole showsFor each time it may run again.
+    /// starts again from its whole showsFor each time it may run again, never past its longest time about
+    /// (ArisNotice.longestUp): one that outlived it goes when it would come back.
     private func runClock() {
         clock?.cancel()
         clock = nil
-        guard let front = queue.front, let seconds = front.showsFor,
+        let now = Date()
+        let kept = queue.retiring(at: now)
+        if kept != queue {
+            log.notice("notice retired: about longer than its longest time")
+            queue = kept
+            if queue.shown.isEmpty { dropHover() }
+        }
+        guard let front = queue.front, let whole = front.showsFor,
               ArisNoticePillRules.clockRuns(front, hovered: hovered, aside: aside) else { return }
+        let seconds = max(1, min(whole, ArisNotice.longestUp - now.timeIntervalSince(front.posted)))
         clock = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled, let self, self.queue.front?.id == front.id else { return }

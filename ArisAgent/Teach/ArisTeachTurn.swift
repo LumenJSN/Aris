@@ -140,7 +140,7 @@ enum ArisTeachTurn {
                 switch answer {
                 case .yes:
                     do { stream(.answer(try yes()), on: connection) } catch {
-                        FileHandle.standardError.write(Data("aris-agent: a taught procedure couldn't be saved: \(error.localizedDescription)\n".utf8))
+                        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: a taught procedure couldn't be saved: \(error.localizedDescription)\n".utf8))
                         stream(.answer(ArisTeachCopy.saveFailed(english: english)), on: connection)
                     }
                 case .no: stream(.answer(saving ? ArisTeachCopy.notSaved(unanswered: false, english: english) : ArisTeachCopy.left(unanswered: false, english: english)), on: connection)

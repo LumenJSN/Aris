@@ -63,6 +63,10 @@ enum ArisBrainFailure {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = brain.title(english: !korean)
         if trimmed.isEmpty { return korean ? "\(brain.title)가 답하지 않았어요." : "\(name) didn't answer." }
+        // An empty account (fourteenth VM run, X2): never the limit line. The API brain's own line names the provider and
+        // is said as it is; any other brain's words for it get the same kind of line.
+        if ArisAPIFailureWords.isBalanceLine(trimmed) { return korean ? trimmed : ArisAPIFailureWords.english(trimmed) ?? trimmed }
+        if ArisAPIError.saysNoBalance(trimmed) { return ArisAPIFailureWords.line(.balance, title: brain.title(english: !korean), english: !korean) }
         if isBusy(trimmed, brain: brain) {
             return korean ? "\(brain.title)가 지금 붐벼요. 잠시 뒤에 다시 해 주세요." : "\(name) is busy right now. Please try again in a moment."
         }

@@ -236,6 +236,17 @@ var failures = 0
     }
     expect(!deafText.isEmpty && !drawn(ArisCardHearing.words(.listening, english: false), in: words(deafText.joined(separator: " ")).joined(separator: " ")),
            "a card shows no listening line that belongs to another card (\(deafText))")
+    // Fifteenth VM run, K1t2: a to-do's title with a colon is one line of text, never a label over a value; its own
+    // labels (목록) and every other card's "label: value" rows are as before.
+    let todoTitle = "서울 날씨: 지금 화씨 52도 대체로 맑음, 오늘 42~58도 흐림"
+    let todoRows = ArisConfirmCard.rows("이 대화에서 가져온 정보(날씨·웹 등)가 있어서 먼저 물어봐요.\n" + todoTitle + "\n목록: 집", title: "할 일에 넣기")
+    expect(todoRows.count == 3 && todoRows[1].label == nil && todoRows[1].value == todoTitle && todoRows[2].label == "목록" && todoRows[2].value == "집",
+           "a to-do card draws its title with a colon as one line (\(todoRows))")
+    let otherRows = ArisConfirmCard.rows("받는 사람: 엄마", title: "메시지 보내기")
+    expect(otherRows.count == 1 && otherRows[0].label == "받는 사람" && otherRows[0].value == "엄마", "another card's “label: value” row is as before (\(otherRows))")
+    let todoCard = ArisConfirmation(id: "todo-colon", title: "할 일에 넣기", detail: todoTitle + "\n목록: 집")
+    let goneTodo = missing(todoCard)
+    expect(goneTodo.isEmpty, "a to-do card with a colon in its title draws all of its text\(goneTodo.isEmpty ? "" : ": not drawn \(goneTodo)")")
     if failures > 0 {
         print("CARD TEXT: \(failures) card(s) leave built text undrawn")
         exit(1)

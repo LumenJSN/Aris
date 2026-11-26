@@ -67,6 +67,8 @@ enum ArisSettingKey: Hashable {
     case dictationBrainPolish, dictationStyle(String)
     /// 들은 말 다듬기: a fast model repairs what the recogniser misheard (ArisHeardRepair).
     case hearRepair
+    /// 마이크: which microphone Aris listens through (ArisMicSetting's stored value).
+    case microphone
     /// Dictation in the pill at the bottom of the screen (the notch stays quiet for it); its idle sliver between dictations.
     case dictationPill, dictationPillIdle
     case todoList(String), todoDefault, newListName

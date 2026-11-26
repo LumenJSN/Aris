@@ -68,7 +68,7 @@ final class ArisTaskFollow {
     /// One reply into the inbox, nudging the app. A job's second result or failure is dropped (it was reported).
     private func put(_ reply: ArisAgentReply) {
         if reply.isLast, !job.isEmpty, ArisInbox.hasEnd(job: job, file: inbox) {
-            FileHandle.standardError.write(Data("aris-agent: job \(job.prefix(8)) already reported; its second report is dropped\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: job \(job.prefix(8)) already reported; its second report is dropped\n".utf8))
             return
         }
         let entry: ArisInboxEntry

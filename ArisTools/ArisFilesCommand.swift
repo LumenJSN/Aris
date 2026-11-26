@@ -31,7 +31,12 @@ func findFiles(_ args: [String]) {
     }
     let byName = dated(named)
     let names = Set(byName.map(\.0))
-    let newest = (byName + dated(mentioned.filter { !names.contains($0) })).prefix(ArisFiles.shown)
+    var newest = (byName + dated(mentioned.filter { !names.contains($0) })).prefix(ArisFiles.shown)
+    // Nothing from Spotlight: the Desktop, Documents and Downloads by their own items (D7: a new folder isn't indexed yet).
+    if newest.isEmpty {
+        let found = ArisFindQuery.placeMatches(words, home: home) { (try? FileManager.default.contentsOfDirectory(atPath: $0)) ?? [] }
+        newest = dated(found.filter { !ArisProtectedPlaces.blocks($0, home: home) }).prefix(ArisFiles.shown)
+    }
     // Matches left out for their names are said, so a file that is there is never told as missing (audit tools-3).
     let note = (ArisFiles.heldBackNote(ArisFiles.heldBack(Array(Set(named + mentioned)), home: home), korean: false).map { "\n" + $0 } ?? "")
         + (stopped ? "\n" + ArisBoundedRun.spotlightStoppedNote() : "")

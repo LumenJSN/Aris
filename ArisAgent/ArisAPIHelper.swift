@@ -656,7 +656,7 @@ final class ArisAPIHelper: @unchecked Sendable {
         // Keychain is never asked.
         guard ArisAPIParent.isAgent(), let index = arguments.firstIndex(of: "--profile"), index + 1 < arguments.count,
               let profile = resolve(arguments[index + 1], store: ArisAPISecrets.store) else {
-            FileHandle.standardError.write(Data("aris-agent api-brain: refused (not started by Aris)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent api-brain: refused (not started by Aris)\n".utf8))
             exit(2)
         }
         let out = FileHandle.standardOutput

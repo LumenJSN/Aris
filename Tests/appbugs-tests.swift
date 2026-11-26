@@ -99,9 +99,11 @@ private func appbugsSideTests() {
     check(side.contains("moveWatch.forEach(NSEvent.removeMonitor)") && side.contains("guard ArisSideEdgeRules.moveMatters("),
           "side wiring: the move monitors come and go with the tabs, and a far move returns at once")
     let entry = appbugsSource("Aris/private/App/ArisEntry.swift")
-    check(entry.contains("case .displaysAsleep(true): ArisStallWatch.shared.stop()")
-          && appbugsSource("Aris/private/Platform/ArisStallWatch.swift").contains("func stop()"),
-          "stall watch: no beat while the displays sleep")
+    // The 1.3.1 listener hang (2026-11-25): the watch is always on now, displays asleep too (a stall that began then
+    // kept the wake-up's restart from running); it was paused while they slept before.
+    check(!entry.contains("ArisStallWatch.shared.stop()")
+          && !appbugsSource("Aris/private/Platform/ArisStallWatch.swift").contains("func stop()"),
+          "stall watch: always on, displays asleep too")
 }
 
 // MARK: - 8. Hide from screen recording, every window

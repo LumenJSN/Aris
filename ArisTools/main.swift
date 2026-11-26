@@ -56,7 +56,7 @@ let arisFolder = FileManager.default.homeDirectoryForCurrentUser.appendingPathCo
 let homeFile = arisFolder.appendingPathComponent("home.json")
 
 func fail(_ message: String) -> Never {
-    FileHandle.standardError.write(Data((message + "\n").utf8))
+    try? FileHandle.standardError.write(contentsOf: Data((message + "\n").utf8))
     exit(1)
 }
 
@@ -246,7 +246,7 @@ if arguments.first == "--version" {
 // plain line and nothing is done.
 let startFacts = ArisOrigin.facts()
 guard ArisOrigin.allows(startFacts, serving: false) else {
-    FileHandle.standardError.write(Data((ArisOrigin.refusal(startFacts) + "\n").utf8))
+    try? FileHandle.standardError.write(contentsOf: Data((ArisOrigin.refusal(startFacts) + "\n").utf8))
     exit(1)
 }
 // A command that waits before it uses a grant is looked at again then (ArisOrigin+Recheck).
@@ -262,7 +262,7 @@ func blockOutsideScopes(_ input: Data) {
     let desktop = { (command: String) in ArisDesktopShell.parse(command, tools: CommandLine.arguments[0])?.words }
     guard let refusal = ArisTeammateScope.hookRefusal(input: input, tools: CommandLine.arguments[0], scopes: teammateScopes,
                                                       words: words, desktop: desktop) else { return }
-    FileHandle.standardError.write(Data((refusal + "\n").utf8))
+    try? FileHandle.standardError.write(contentsOf: Data((refusal + "\n").utf8))
     exit(2)
 }
 // The sealed Claude's PreToolUse hook (ArisSealedTools.hookSettings): exit 2 blocks the call before it runs, which is
@@ -281,9 +281,9 @@ if arguments.first == ArisSealedTools.hookFlag {
     case .judge(let call):
         let verdict = askReadJudge(call)
         if verdict.allowed { exit(0) }
-        FileHandle.standardError.write(Data((ArisReadGate.refusal(verdict.why ?? .other) + "\n").utf8))
+        try? FileHandle.standardError.write(contentsOf: Data((ArisReadGate.refusal(verdict.why ?? .other) + "\n").utf8))
     case .block:
-        FileHandle.standardError.write(Data("Refused: in this conversation only the sealed aris-tools commands, the reads and the web run.\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("Refused: in this conversation only the sealed aris-tools commands, the reads and the web run.\n".utf8))
     }
     exit(2)
 }
@@ -295,7 +295,7 @@ if arguments.first == ArisTurnGate.hookFlag {
     let answer = arguments.count == 1 ? ArisTurnGate.run(input: input, tools: CommandLine.arguments[0], environment: ProcessInfo.processInfo.environment,
                                                          judge: { askReadJudge($0) })
         : (2, ArisTurnGate.unreadable)
-    if let reason = answer.reason { FileHandle.standardError.write(Data((reason + "\n").utf8)) }
+    if let reason = answer.reason { try? FileHandle.standardError.write(contentsOf: Data((reason + "\n").utf8)) }
     exit(answer.code)
 }
 // The sealed Claude (a turn that saw the screen) runs only the sealed list, whatever Claude Code's rules let through.

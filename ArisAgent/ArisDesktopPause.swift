@@ -7,8 +7,10 @@
 //  The notch says what to do in one line, the turn keeps the desktop lock (marked paused: nobody else's action waits
 //  behind the window, theirs are refused), the screen is asked again politely until the window is gone or the time
 //  limit, and then the step runs again from its own start, with a fresh look, through every check it had. Aris never
-//  types into the window or presses anything in it; a website's sign-in is said to be the browser agent's job. Pure
-//  apart from `wait`.
+//  types into the window or presses anything in it; a website's sign-in is said to be the browser agent's job. The
+//  line names the window when its title can be read (seventeenth VM run: macOS's "Keystroke Receiving" prompt for Aris
+//  sat hidden behind other windows while the notch said only "로그인/권한 창"), and a system prompt is brought to the
+//  front when that is safe (a turn the user is there for, not typing, no password field up). Pure apart from `wait`.
 //
 
 import Foundation
@@ -46,6 +48,31 @@ enum ArisDesktopPause {
     static func isWebSignIn(_ owner: String) -> Bool {
         let folded = owner.lowercased()
         return folded.contains("authenticationservices") || folded.contains("safariviewservice") || folded.contains("webauthn")
+    }
+
+    /// The prompt's window as it can be read (its title, and the app it asks for when its text names one in quotes).
+    struct Window: Equatable {
+        var title: String?
+        var forApp: String?
+    }
+
+    /// The app a prompt asks for: the first name in quotes in its text ("“Aris” would like to receive keystrokes…",
+    /// "“Aris”이(가) …"); nil when none, or one too long to be a name.
+    static func requester(in texts: [String]) -> String? {
+        for text in texts {
+            guard let found = text.range(of: #"[“"]([^”"\n]{1,40})[”"]"#, options: .regularExpression) else { continue }
+            let name = text[found].dropFirst().dropLast().trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty { return name }
+        }
+        return nil
+    }
+
+    /// A system prompt is brought to the front for the user: only a sign-in or permission window of the system's (a
+    /// website's is the browser's), only in a turn the user is there for (never a background job), never while a
+    /// password field is active, and never while the user is typing (keys of theirs could answer it).
+    static func raises(_ blocker: Blocker, task: Bool, secureInput: Bool, sinceKey: Double) -> Bool {
+        guard case .prompt(_, false) = blocker else { return false }
+        return !task && !secureInput && sinceKey >= 2
     }
 
     static func blocker(prompt: String?) -> Blocker? {
@@ -104,16 +131,44 @@ enum ArisDesktopPause {
 
     // MARK: - Words
 
-    /// The notch's one line while it waits (the user's language).
-    static func line(_ blocker: Blocker, english: Bool) -> String {
+    /// The notch's one line while it waits (the user's language): the window by its title (and the app it asks for) when
+    /// it can be read, else as a sign-in or permission window.
+    static func line(_ blocker: Blocker, english: Bool, window: Window? = nil) -> String {
         switch blocker {
         case .prompt(_, true):
             return english ? "That's a website's sign-in: please handle it yourself (websites are Aside's job) — I'll carry on when it's done"
                 : "웹사이트 로그인 창이에요. 직접 처리해 주세요 (웹사이트 일은 Aside가 해요) — 끝나면 이어서 할게요"
-        case .prompt, .secureInput, .secretField:
+        case .prompt:
+            if let name = window.flatMap({ Self.named($0, english: english) }) {
+                return english ? "Please answer \(name) — I'll carry on when it's done" : "\(name)을 처리해 주세요 — 끝나면 이어서 할게요"
+            }
+            return english ? "Please handle the sign-in or permission window — I'll carry on when it's done"
+                : "로그인/권한 창을 처리해 주세요 — 끝나면 이어서 할게요"
+        case .secureInput, .secretField:
             return english ? "Please handle the sign-in or permission window — I'll carry on when it's done"
                 : "로그인/권한 창을 처리해 주세요 — 끝나면 이어서 할게요"
         }
+    }
+
+    /// The prompt's window in words: macOS's "Keystroke Receiving" window for Aris / macOS “Keystroke Receiving” 창(Aris);
+    /// nil when neither its title nor the app it asks for can be read. Each is cleaned and kept short.
+    static func named(_ window: Window, english: Bool) -> String? {
+        let clean = { (text: String?) -> String? in
+            guard let text else { return nil }
+            let kept = String(String.UnicodeScalarView(text.unicodeScalars.filter {
+                !CharacterSet.controlCharacters.contains($0) && $0.properties.generalCategory != .format && !"“”\"".unicodeScalars.contains($0)
+            })).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !kept.isEmpty else { return nil }
+            return kept.count > 40 ? String(kept.prefix(40)) + "…" : kept
+        }
+        let title = clean(window.title), app = clean(window.forApp)
+        guard title != nil || app != nil else { return nil }
+        if english {
+            let what = title.map { "macOS's “\($0)” window" } ?? "macOS's permission window"
+            return what + (app.map { " for \($0)" } ?? "")
+        }
+        let what = title.map { "macOS “\($0)” 창" } ?? "macOS 권한 창"
+        return what + (app.map { "(\($0))" } ?? "")
     }
 
     /// Put before the step's own result once it ran after a pause (what the brain reads): it did the step only when the

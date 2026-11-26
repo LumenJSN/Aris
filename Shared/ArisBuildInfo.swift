@@ -54,7 +54,7 @@ enum ArisBuildInfo {
     /// when the file could not be written; the agent runs on either way.
     @discardableResult
     static func recordRunningAgent(in folder: URL, commit: String = commit,
-                                   say: (String) -> Void = { FileHandle.standardError.write(Data($0.utf8)) }) -> Bool {
+                                   say: (String) -> Void = { try? FileHandle.standardError.write(contentsOf: Data($0.utf8)) }) -> Bool {
         say("aris-agent: build \(commit)\n")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let file = folder.appendingPathComponent(runningAgentFile)

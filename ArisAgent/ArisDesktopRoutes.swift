@@ -123,7 +123,9 @@ enum ArisDesktopRoutes {
             // While an action's card of this turn waits for the user, the waiting line says so (no retry, no new look).
             ArisSlowCalls.shared.run(owner: credential, kind: "desktop", waitingOnOwner: { turn.ledger.anyCardWaits }, work: { done in
                 engine.handle(words, text: text, turn: turn) { outcome in
-                    if action { turn.ledger.noteActionEnded(ok: outcome.status == 0) }
+                    // A select-all held back pressed nothing: neither done nor not done (its replace is the next call).
+                    if action, outcome.status == 0, outcome.output.contains(ArisDesktopErase.heldLead) { turn.ledger.noteActionHeld() }
+                    else if action { turn.ledger.noteActionEnded(ok: outcome.status == 0) }
                     if outcome.status != 0 { ArisDesktopRoutes.noteNotDone(outcome, words: words, turn: turn) }
                     done(outcome)
                 }

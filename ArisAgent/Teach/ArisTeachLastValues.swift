@@ -25,7 +25,7 @@ enum ArisTeachLastValues {
         every[id.uuidString] = kept
         guard let data = try? JSONEncoder().encode(every) else { return }
         do { try ArisPrivateFile.write(data, to: file) } catch {
-            FileHandle.standardError.write(Data("aris-agent: a lesson's last values couldn't be kept: \(error.localizedDescription)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: a lesson's last values couldn't be kept: \(error.localizedDescription)\n".utf8))
         }
     }
 

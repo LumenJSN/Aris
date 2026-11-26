@@ -45,6 +45,9 @@ struct ArisAudioDevice: Equatable {
     let transport: Transport
     let hasInput: Bool
     var hasOutput = false
+    /// Core Audio's UID (the same across reconnects) and the name macOS shows, for ArisMicSetting's chosen device.
+    var uid: String?
+    var name: String?
 
     /// Core Audio's four-letter transport type, as this file sorts it.
     static func transport(code: UInt32) -> Transport {
@@ -77,7 +80,15 @@ enum ArisMicPlan: Equatable {
     /// There is no microphone at all.
     case none
 
-    /// The device to open for `use`, from the devices as they are now.
+    /// The device to open for `use` under the microphone choice (ArisMicSetting): the device it picks, by its id,
+    /// else the system rule below.
+    static func make(for use: ArisMicUse, setting: ArisMicSetting, defaultInput: UInt32?, devices: [ArisAudioDevice]) -> ArisMicPlan {
+        if let device = setting.pick(devices).device { return .open(id: device.id, transport: device.transport) }
+        return make(for: use, defaultInput: defaultInput, devices: devices)
+    }
+
+    /// The system rule ("Same as system", and any choice that is not there): the device to open for `use`, from the
+    /// devices as they are now.
     static func make(for use: ArisMicUse, defaultInput: UInt32?, devices: [ArisAudioDevice]) -> ArisMicPlan {
         let inputs = devices.filter(\.hasInput)
         guard !inputs.isEmpty else { return .none }

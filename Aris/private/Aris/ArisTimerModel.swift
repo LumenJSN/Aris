@@ -21,6 +21,8 @@ final class ArisTimerModel: ObservableObject {
         didSet { save() }
     }
     private var ending: Task<Void, Never>?
+    /// The answer to each `aris-tools timer` request (ArisAppTaken).
+    private var taken = ArisAppTaken(nudge: "com.lumenjsn.aris.timer")
 
     private static let savedKey = "arisTimer"
     private static let chimes = 3
@@ -53,8 +55,9 @@ final class ArisTimerModel: ObservableObject {
     private func takeRequest() {
         let file = URL(fileURLWithPath: ArisKeyFile.folder + "aris/timer.json")
         guard let data = try? Data(contentsOf: file),
-              let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-        try? FileManager.default.removeItem(at: file)
+              let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return log.error("timer: couldn't read timer.json") }
+        // Taken: answered to aris-tools, which removes the file (the sandbox keeps ~/.config/aris read-only for the app).
+        guard taken.take(request) else { return }
         switch request["action"] as? String {
         case "stop": cancel()
         case "pomodoro": startPomodoro()

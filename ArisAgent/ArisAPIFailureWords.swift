@@ -23,6 +23,9 @@ enum ArisAPIFailureWords {
         case limit
         /// The service itself failed (a 5xx, overloaded).
         case down
+        /// The account has no balance or credit left: topping up or another AI is the fix, not waiting (fourteenth VM
+        /// run, X2). Never the provider's own words.
+        case balance
         /// Anything else it answered that isn't an answer: said plainly, never in the service's own words (tenth VM
         /// run, item 7: "DeepSeek: Authentication Fails, Your api key: ****0000 is invalid (request_id: …)" was shown
         /// and logged as it came).
@@ -37,6 +40,7 @@ enum ArisAPIFailureWords {
         case .context: .tooLong
         case .network, .timeout: .unreachable
         case .quota, .rate: .limit
+        case .billing: .balance
         case .overloaded, .server: .down
         case .unsupported, .malformed, .noTools, nil: .other
         case .cancelled: nil
@@ -59,8 +63,20 @@ enum ArisAPIFailureWords {
         case (.limit, true): return "\(title) has reached its limit. Please try again in a little while."
         case (.down, false): return "\(title) 서버에 문제가 있어요. 잠시 뒤에 다시 해 주세요."
         case (.down, true): return "\(title) is having trouble on its side. Please try again in a little while."
+        case (.balance, false): return "\(title) 계정의 잔액(크레딧)이 다 떨어졌어요. 충전하거나 \(place)에서 다른 AI를 골라 주세요."
+        case (.balance, true): return "\(title) has no credit left on its account. Top it up, or pick another AI in \(place)."
         case (.other, false): return "\(title)가 답하지 못했어요. 다시 해 보시고, 계속되면 \(place)에서 모델을 확인해 주세요."
         case (.other, true): return "\(title) couldn't answer. Try again; if it keeps happening, check the model in \(place)."
+        }
+    }
+
+    /// Whether `text` is the balance line, in either language (said as it is: it is Aris's own line).
+    static func isBalanceLine(_ text: String) -> Bool {
+        [false, true].contains { english in
+            let template = line(.balance, title: "\u{0}", english: english)
+            guard let marker = template.range(of: "\u{0}") else { return false }
+            let head = String(template[..<marker.lowerBound]), tail = String(template[marker.upperBound...])
+            return text.hasPrefix(head) && text.hasSuffix(tail) && text.count > head.count + tail.count
         }
     }
 

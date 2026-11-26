@@ -21,6 +21,8 @@ enum ArisBrainFix {
     /// The fix for `line`, when it is a failure line the agent makes; nil for any other text. `another`: the AI that
     /// could take the same request now instead of the one named (ArisTurnFallback), nil when none can.
     static func fix(forLine line: String, another: (ArisBrain) -> ArisBrain?) -> ArisFix? {
+        // No balance left: the AI settings (top up, or pick another AI), never "try again" (X2).
+        if ArisAPIFailureWords.isBalanceLine(line) { return .settings(.brain) }
         if let trouble = ArisBrainTrouble.named(in: line) {
             // Nothing to pick from: the row where a key or an AI is added.
             return .settings(trouble.missing == .key || trouble.missing == .setup ? .key : .brain)

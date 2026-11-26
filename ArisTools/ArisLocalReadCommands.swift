@@ -134,6 +134,10 @@ func filesRead(_ args: [String]) {
     if matched.isEmpty, kind == nil {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []
         matched = ArisFindQuery.directMatches(words, names: names).map { folder + "/" + $0 }
+        // Searched in home as a whole: the Desktop, Documents and Downloads by their own items too (D7).
+        if matched.isEmpty, folder == home {
+            matched = ArisFindQuery.placeMatches(words, home: home) { (try? FileManager.default.contentsOfDirectory(atPath: $0)) ?? [] }
+        }
     }
     let paths = matched.filter { ArisFiles.listable($0, home: home) }
     // Matches left out for their names are said, so a file that is there is never told as missing (audit tools-3).

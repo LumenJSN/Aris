@@ -44,7 +44,7 @@ enum ArisVouchService {
             while true {
                 guard listener >= 0 else {
                     if !told {
-                        FileHandle.standardError.write(Data("aris-agent: can't listen on \(port) for aris-tools' questions\(ArisPeer.holderNote(ofPort: port)); aris-tools won't use Aris's permissions until it can\n".utf8))
+                        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: can't listen on \(port) for aris-tools' questions\(ArisPeer.holderNote(ofPort: port)); aris-tools won't use Aris's permissions until it can\n".utf8))
                         told = true
                     }
                     sleep(retryEvery)

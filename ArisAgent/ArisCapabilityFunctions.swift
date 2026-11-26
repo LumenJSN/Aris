@@ -83,7 +83,7 @@ extension ArisCapabilities {
                 return words.count == raw.count && !words[0].isEmpty ? words : nil
             }),
         ArisAPICatalogEntry(function: ArisAPIFunction(
-            name: "timer", description: "The notch's countdown timer (타이머, 뽀모도로, \"25분 집중\"), never a reminder.",
+            name: "timer", description: "The notch's countdown timer (타이머, 뽀모도로, \"25분 집중\"), never a reminder. It has no label: when it ends it only rings.",
             parameters: object(["minutes": integer("Minutes, 1 to 600"), "mode": choice(["countdown", "focus", "pomodoro", "stop"], "focus: a focus session; pomodoro: 25/5 repeating; stop: stops it")], required: [])),
             sealed: true, argv: { arguments in
                 switch arguments["mode"] as? String ?? "countdown" {
@@ -140,7 +140,7 @@ extension ArisCapabilities {
             }),
         ArisAPICatalogEntry(function: ArisAPIFunction(
             name: "todo_add", description: "Add one item to the user's to-do list (Apple Reminders).",
-            parameters: object(["item": string("The to-do"), "due": string("When, e.g. 내일 3시 (optional)"),
+            parameters: object(["item": string("The to-do, word for word as the user or the document has it (numbers included)"), "due": string("When, e.g. 내일 3시 (optional)"),
                                 "list": string("A Reminders list (optional)"), "note": string("Details (optional)")], required: ["item"])),
             sealed: false, argv: { arguments in
                 guard let item = text(arguments["item"]), !item.isEmpty else { return nil }

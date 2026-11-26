@@ -34,7 +34,7 @@ final class ArisShortcutStore {
             save(ArisShortcuts.saving(learned, as: key, in: load()))
             return true
         }
-        if saved { FileHandle.standardError.write(Data("aris-agent: learned a shortcut (\(commands.count) command(s))\n".utf8)) }
+        if saved { try? FileHandle.standardError.write(contentsOf: Data("aris-agent: learned a shortcut (\(commands.count) command(s))\n".utf8)) }
     }
 
     @discardableResult

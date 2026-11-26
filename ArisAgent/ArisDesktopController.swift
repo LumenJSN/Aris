@@ -265,6 +265,16 @@ extension ArisDesktopEngine {
         return replacing && turn.ledger.selectedAll(in: window) ? ArisDesktopBatch.appendLine : nil
     }
 
+    /// An action on a ref from a look taken in an earlier turn (a batch's too): nothing is done, and the brain looks
+    /// again first (sixteenth VM run, R2k: the next request's set-value on the turn before's ref). Nil: every ref is this
+    /// turn's (or not Aris's at all: that is refused as before).
+    func earlierTurnRefusal(_ request: ArisDesktopRequest, turn: ArisDesktopTurn) -> String? {
+        var refs = [request.ref, request.to].compactMap { $0 }
+        for case .ref(let ref)? in request.steps.map(\.target) { refs.append(ref) }
+        let earlier = refs.contains { turn.ledger.observation($0.snapshot) != nil && !turn.ledger.lookedThisTurn($0.snapshot) }
+        return earlier ? ArisDesktopEngine.earlierTurnLine : nil
+    }
+
     /// The engine's own refusal of this call that comes before any card, read before the call reaches it: Core 2's trust
     /// gate asks this first, so it never puts up a card for a step that would then be refused anyway (VM run 2, D4: a
     /// "지우기" card for a set-value after a select-all, whose yes was met by "selecting everything … would replace the
@@ -272,8 +282,9 @@ extension ArisDesktopEngine {
     /// facts the engine reads then: the turn's words, its ledger, the call's window. A call whose window can't be told
     /// for sure (no ref, no window id, and the app has several) is left to the engine. Nil: no such refusal.
     func refusesBeforeCard(_ words: [String], text: String?, turn: ArisDesktopTurn) -> String? {
-        guard let request = ArisDesktopEffect.request(words, text: text), request.verb.kind == .action,
-              !ArisDesktopBatch.asksToReplace(turn.request) else { return nil }
+        guard let request = ArisDesktopEffect.request(words, text: text), request.verb.kind == .action else { return nil }
+        if let line = earlierTurnRefusal(request, turn: turn) { return line }
+        guard !ArisDesktopBatch.asksToReplace(turn.request) else { return nil }
         if request.verb == .batch { return ArisDesktopBatch.replacesAll(request.steps) ? ArisDesktopBatch.appendLine : nil }
         guard case .success(let target) = resolve(request, turn: turn) else { return nil }
         if request.ref == nil, request.window == nil, windows.windows(of: target.pid).count > 1 { return nil }

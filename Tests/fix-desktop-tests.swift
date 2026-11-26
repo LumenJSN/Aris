@@ -332,8 +332,9 @@ private func fixDeskNamedWindowTests() {
     let rig = FixRig(windows: [front, named])
     let turn = FixTurn(said)
     // jv-fix131: what an erase takes is read first (one look more), and shown on its card.
+    // fix132d: the select-all goes on its own and is read back before the delete.
     rig.queue([("see", fixDocument(title: "무제", text: "회의록 초안")), ("see", fixDocument(title: "무제", text: "회의록 초안")), ("press", fixSent),
-               ("see", fixDocument(title: "무제", text: ""))])
+               ("see", fixDocument(title: "무제", text: "회의록 초안")), ("press", fixSent), ("see", fixDocument(title: "무제", text: ""))])
     let emptied = rig.run(["press", "cmd+a", "delete", "--app", "TextEdit"], turn: turn)
     check(emptied.status == 0 && rig.calls.first?.hasPrefix("see --window-id 9189") == true && !rig.calls.contains { $0.contains("9190") },
           "desk-1: `press cmd+a delete` is looked at and pressed in the named window only: \(rig.calls) \(emptied.output.prefix(160))")
@@ -345,7 +346,7 @@ private func fixDeskNamedWindowTests() {
     let again = FixTurn(said)
     again.ledger.remember(fixEditor.memoryKey ?? "", tainted: false)
     quick.queue([("see", fixDocument(title: "무제", text: "회의록 초안")), ("see", fixDocument(title: "무제", text: "회의록 초안")), ("press", fixSent),
-                 ("see", fixDocument(title: "무제", text: ""))])
+                 ("see", fixDocument(title: "무제", text: "회의록 초안")), ("press", fixSent), ("see", fixDocument(title: "무제", text: ""))])
     let remembered = quick.run(["press", "cmd+a", "delete", "--app", "TextEdit"], turn: again)
     check(remembered.status == 0 && again.cards.count == 1 && again.cards[0].detail.contains("회의록 초안") && quick.calls.first?.hasPrefix("see --window-id 9189") == true
           && !quick.calls.contains { $0.contains("9190") },
@@ -430,7 +431,7 @@ private func fixDeskReplaceGuardTests() {
     let asked = FixRig()
     let fourth = FixTurn("TextEdit 무제 창 내용 다 지워 줘")
     asked.queue([("see", fixDocument(title: "무제", text: "첫 줄")), ("see", fixDocument(title: "무제", text: "첫 줄")), ("press", fixSent),
-                 ("see", fixDocument(title: "무제", text: ""))])
+                 ("see", fixDocument(title: "무제", text: "첫 줄")), ("press", fixSent), ("see", fixDocument(title: "무제", text: ""))])
     let done = asked.run(["press", "cmd+a", "delete", "--app", "TextEdit"], turn: fourth)
     // jv-fix131: the erase card's own warning, with the text it erases under it.
     check(done.status == 0 && fourth.cards.first?.detail.hasPrefix("⚠️ 이 창의 글을 모두 지워요\n지워지는 글:\n첫 줄") == true && !fourth.ledger.selectedAll(in: 9189),

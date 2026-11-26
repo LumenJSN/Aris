@@ -81,7 +81,7 @@ final class ArisScheduler {
         let reason = ArisScheduleStore.refusal(file: store)
         defer { refusalTold = reason != nil }
         guard let reason, !refusalTold else { return }
-        FileHandle.standardError.write(Data("aris-agent: schedules can't run: \(store.path): \(reason)\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: schedules can't run: \(store.path): \(reason)\n".utf8))
         ArisInbox.append(ArisInboxEntry(id: UUID(), date: Date(), kind: .note, schedule: nil, title: "예약 작업이 멈췄어요",
                                         text: "예약 파일(schedules.json)의 권한이 맞지 않아서(\(reason)) 예약 작업을 하나도 실행하지 못하고 있어요. "
                                             + "그 파일이 내 것이고 나만 읽고 쓸 수 있게(chmod 600) 되어 있는지 확인해 주세요.",
@@ -133,7 +133,7 @@ final class ArisScheduler {
         let calendar = Calendar.current
         guard ArisScheduleStore.load(file: store).contains(where: { ArisSchedule.retimed($0, now: now, calendar: calendar) != $0 }) else { return }
         ArisScheduleStore.update(file: store) { jobs in jobs.map { ArisSchedule.retimed($0, now: now, calendar: calendar) } }
-        FileHandle.standardError.write(Data("aris-agent: the time zone is \(here) now; scheduled run times were moved to it\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: the time zone is \(here) now; scheduled run times were moved to it\n".utf8))
     }
 
     private func run(_ job: ArisScheduledJob, at now: Date) {
@@ -265,7 +265,7 @@ final class ArisScheduler {
             let note = ArisSchedule.lateNote(due: late, now: now, korean: korean, calendar: .current).map { $0 + "\n\n" } ?? ""
             ArisInbox.append(entry(.result, job: job, text: note + answer, file: file), file: inbox)
         case .failure(let message):
-            FileHandle.standardError.write(Data("aris-agent: scheduled job failed (try \(tries)): \(message)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: scheduled job failed (try \(tries)): \(message)\n".utf8))
             if let retry {
                 ArisAgentRunner.writeAudit(ArisAgentRunner.auditJSON(["answer": "failed, tried again at \(ISO8601DateFormatter().string(from: retry))",
                                                                       "question": "schedule " + job.id.uuidString]), key: "schedule")

@@ -3454,7 +3454,7 @@ let plainAsk = ArisConfirmation(id: "c1", title: "메시지 보내기", detail: 
 let taintedAsk = ArisEscalation.card(for: plainAsk, approvable: true, hardLine: nil, tainted: true)
 check(taintedAsk.detail.hasPrefix(ArisEscalation.taintedReason) && taintedAsk.detail.hasSuffix("엄마 곧 갈게")
       && taintedAsk.full?.hasSuffix("엄마 곧 갈게 (전체)") == true && taintedAsk.id == "c1" && !taintedAsk.countdown
-      && ArisEscalation.taintedReason == "외부 내용을 읽은 뒤라 한 번 더 확인할게요",
+      && ArisEscalation.taintedReason == "이 대화에서 가져온 정보(날씨·웹 등)가 있어서 먼저 물어봐요.",
       "taint: the card says why it asks again and shows exactly what would go out")
 let taintCountdownAsk = ArisConfirmation(id: "c2", title: "엄마", detail: "곧 갈게", countdown: true, spoken: "엄마한테 보낼게요")
 check(!ArisEscalation.card(for: taintCountdownAsk, approvable: true, hardLine: nil, tainted: true).countdown,
@@ -11561,6 +11561,7 @@ runQABatch3Tests()
 runQABug28Tests()
 runQABatch4Tests()
 runQAHangTestsBlocking()
+runHangTests()
 runQAMusicTestsBlocking()
 runQAWakeTests()
 runQAOverlayTests()
@@ -11729,6 +11730,14 @@ runQuickTests()
 runRel11Tests()
 runRel12Tests()
 runFix131Tests()
+runFix132Tests()
+runCard132Tests()
+runDeepseekTests()
+runFix132bTests()
+runMemfixTests()
+runFix132cTests()
+runFix132dTests()
+runAsideTests()
 MainActor.assumeIsolated { runCctabTests() }
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

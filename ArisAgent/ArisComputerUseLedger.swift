@@ -186,6 +186,7 @@ final class ArisComputerUseLedger {
             if snapshots[observation.snapshot] == nil { snapshotOrder.append(observation.snapshot) }
             snapshots[observation.snapshot] = observation
             latest[observation.window] = observation.snapshot
+            thisTurn.insert(observation.snapshot)
             lastRecorded = observation.snapshot
             if observation.target.settings { settingsPane = observation.settingsPane }
             var gone: [String] = []
@@ -198,6 +199,13 @@ final class ArisComputerUseLedger {
         }
         if !dropped.isEmpty { forget(dropped) }
     }
+
+    /// The looks taken since this turn began: an action's ref must come from one (sixteenth VM run, R2k: a set-value on
+    /// a ref from the turn before, the window never looked at again).
+    private var thisTurn: Set<String> = []
+
+    /// The look was taken in this turn.
+    func lookedThisTurn(_ id: String) -> Bool { lock.withLock { thisTurn.contains(id) } }
 
     /// A look (by Aris's id) taken in this conversation; nil for one Aris didn't take.
     func observation(_ id: String) -> ArisDesktopObservation? { lock.withLock { snapshots[id] } }
@@ -285,6 +293,19 @@ final class ArisComputerUseLedger {
     var pinnedThisTurn: String? { lock.withLock { pinnedTitle } }
     func noteActed() { lock.withLock { acted += 1 } }
 
+    /// A replace or a typing of this turn found its field changed after its card and changed nothing (fourteenth VM run,
+    /// R1c): nothing more acts this turn, and the reply says what happened. True: an action had been done before it.
+    private var fieldChange: Bool?
+    func noteFieldChanged() { lock.withLock { if fieldChange == nil { fieldChange = doneWindow != nil || acted > 0 } } }
+    var fieldChangedThisTurn: Bool { lock.withLock { fieldChange != nil } }
+    /// Nil: no field changed this turn; false: one did and nothing had been done before it (the turn changed nothing in
+    /// the app); true: one did after something else was done (ArisDesktopHonesty.fieldChanged).
+    var fieldChangeThisTurn: Bool? { lock.withLock { fieldChange } }
+
+    /// An action the engine held back (a select-all that goes with what replaces it): nothing was pressed, so it counts
+    /// neither as done nor as not done.
+    func noteActionHeld() { lock.withLock { notDone = max(0, notDone - 1) } }
+
     /// A brain's desktop action began (POST /desktop-tool): until its answer comes it counts as not done, so a reply
     /// can't claim it while its card is still up.
     func noteActionStarted() { noteNotDone() }
@@ -312,7 +333,7 @@ final class ArisComputerUseLedger {
     var windowsThisTurn: (done: (window: String, typed: Bool)?, titles: Set<String>) { lock.withLock { (done: doneWindow, titles: titles) } }
 
     /// A new turn: no window acted in yet.
-    func startTurn() { lock.withLock { doneWindow = nil; titles = []; notDone = 0; declined = 0; refusal = nil; lastWasUsersNo = false; acted = 0; pinnedTitle = nil; selectAllWindows = []; blindTexts = [:] } }
+    func startTurn() { lock.withLock { thisTurn = []; doneWindow = nil; titles = []; notDone = 0; declined = 0; refusal = nil; lastWasUsersNo = false; acted = 0; pinnedTitle = nil; selectAllWindows = []; pendingSelectAllWindows = []; blindTexts = [:]; fieldChange = nil } }
 
     /// A new conversation: nothing of the old one counts (Peekaboo's folders for it go too).
     func reset() {

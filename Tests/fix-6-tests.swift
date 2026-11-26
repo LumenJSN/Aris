@@ -183,7 +183,7 @@ private func fix6FrontWiringTests() {
     check(app.contains("ArisAgentClient.look(front: ArisUserApp.pick(front: NSWorkspace.shared.frontmostApplication?.processIdentifier")
           && app.contains("previous: ArisPanelKeys.focus.previous") && client.contains("identified(front.map { [\"front\": Int($0)] } ?? [:])"),
           "vm2 1: wiring: the app tells the helper which app he was in")
-    check(fix6Code("ArisTools/ArisScreen.swift").contains("ArisScreenTarget.window(requested:") && fix6Code("ArisTools/ArisWindows.swift").contains("let sent = engineKeys([written], times: times, bundle: bundle)"),
+    check(fix6Code("ArisTools/ArisScreen.swift").contains("ArisScreenTarget.window(requested:") && fix6Code("ArisTools/ArisWindows.swift").contains("let sent = engineKeys(call.chords, times: times, bundle: bundle)"),
           "vm2 1: wiring: the tool reads only the window named, and each key checks the app in front at that moment")
     let build = (try? String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("build-agent.sh"), encoding: .utf8)) ?? ""
     check(build.contains("\"$SRC/ArisAgent/ArisFrontNow.swift\" \"$SRC/ArisAgent/ArisFrontLive.swift\""), "vm2 1: aris-tools is built with the same source of the app in front")

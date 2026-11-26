@@ -413,7 +413,7 @@ private func hearingWiringTests() {
     check(ask.contains("let early = await takeEarlyRequest(") && ask.contains("let asked = early?.replies ?? ArisAgentClient.ask(sendingWords(text)"),
           "speculative turn: the brain's turn takes the request already sent, or sends one")
     let runner = (try? String(contentsOf: folder.appendingPathComponent("../../../ArisAgent/ArisAgentRunner.swift").standardized, encoding: .utf8)) ?? ""
-    let abandon = runner.range(of: "func abandon(owner: AnyObject) {\n        queue.async").map { String(runner[$0.lowerBound...].prefix(900)) } ?? ""
+    let abandon = runner.range(of: "func abandon(owner: AnyObject) {\n        queue.async").map { String(runner[$0.lowerBound...].prefix(1_000)) } ?? ""
     check(abandon.contains("interruptOrStop(dropTurn: true)") && !abandon.contains("stopProcess()"),
           "speculative turn: a dropped /ask interrupts the brain's turn and keeps its process (the whole question finds it warm)")
     check(ask.contains("let context = withCutOffNote(gathered)") && source("ArisController+Endpoint.swift").contains("turnHearing.earlyContext = withCutOffNote("),

@@ -20,13 +20,13 @@ enum ArisTeammateStore {
     static func load(file: URL) -> [ArisTeammate] {
         if let data = ArisPrivateFile.read(file) { return ArisTeammate.list(from: data) }
         guard isMissing(file) else {
-            FileHandle.standardError.write(Data("aris: \(file.path) isn't a private file of yours: left as it is\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris: \(file.path) isn't a private file of yours: left as it is\n".utf8))
             return [.claudeCode]
         }
         do {
             try save([.claudeCode], file: file)
         } catch {
-            FileHandle.standardError.write(Data("aris: couldn't seed \(file.lastPathComponent): \(error)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris: couldn't seed \(file.lastPathComponent): \(error)\n".utf8))
         }
         return [.claudeCode]
     }

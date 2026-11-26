@@ -63,6 +63,12 @@ final class V2Windows: ArisDesktopWindows {
         let count = lock.withLock { () -> Int in asked += 1; return asked }
         return prompt(count)
     }
+    /// The prompt's window as it reads (fix132d), and how many times it was brought forward.
+    var shownPrompt: ArisDesktopPause.Window?
+    private var raises = 0
+    var raised: Int { lock.withLock { raises } }
+    func promptWindow() -> ArisDesktopPause.Window? { shownPrompt }
+    func raisePrompt() -> Bool { lock.withLock { raises += 1 }; return true }
 }
 
 private final class V2Access: ArisDesktopAccess {

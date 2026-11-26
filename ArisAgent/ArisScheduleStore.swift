@@ -132,7 +132,7 @@ enum ArisPrivateFile {
             guard added > 0 else { return 0 }
             guard let data = try? JSONSerialization.data(withJSONObject: Array(kept.suffix(badLimit)), options: [.sortedKeys, .prettyPrinted]),
                   (try? write(data, to: bad)) != nil else { return nil }
-            FileHandle.standardError.write(Data("aris: \(added) unreadable entr\(added == 1 ? "y" : "ies") of \(file.lastPathComponent) kept in \(bad.lastPathComponent)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris: \(added) unreadable entr\(added == 1 ? "y" : "ies") of \(file.lastPathComponent) kept in \(bad.lastPathComponent)\n".utf8))
             return added
         }
     }
@@ -183,7 +183,7 @@ enum ArisScheduleStore {
         }
         var info = stat()
         guard lstat(file.path, &info) != 0, ArisPrivateFile.isRealFolder(file.deletingLastPathComponent()) else {
-            FileHandle.standardError.write(Data("aris: \(file.path) isn't a private file of yours: left as it is\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris: \(file.path) isn't a private file of yours: left as it is\n".utf8))
             throw ArisScheduleError(message: "the schedule store isn't private (check \(file.lastPathComponent)'s owner and permissions)")
         }
         return ([], [])
@@ -276,7 +276,7 @@ enum ArisScheduleStore {
             let after = change(before)
             guard after != before else { return after }
             do { try save(after, newer: stored.newer, file: file) } catch {
-                FileHandle.standardError.write(Data("aris: couldn't save schedules: \(error.localizedDescription)\n".utf8))
+                try? FileHandle.standardError.write(contentsOf: Data("aris: couldn't save schedules: \(error.localizedDescription)\n".utf8))
                 return nil
             }
             return after
@@ -397,7 +397,7 @@ enum ArisInbox {
         let encoder = ArisPrivateFile.encoder
         let lines = entries.compactMap { try? encoder.encode($0) }.map { $0 + Data([0x0A]) }
         do { try ArisPrivateFile.write(lines.reduce(Data(), +), to: file) } catch {
-            FileHandle.standardError.write(Data("aris: couldn't save the inbox: \(error.localizedDescription)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris: couldn't save the inbox: \(error.localizedDescription)\n".utf8))
         }
     }
 }

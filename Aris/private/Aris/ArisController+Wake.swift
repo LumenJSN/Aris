@@ -26,7 +26,8 @@ extension ArisController {
     private static var wakeSpeechWait: Task<Void, Never>?
     /// Checks in a row whose recognizer couldn't start (ArisWakeArm.pause backs them off).
     static var wakeListenFailures = 0
-    /// The watch on the audio devices (ArisMicWatch), kept for the app's life once the wake word was first asked for.
+    /// The watch on the audio devices (ArisWorld's .audioDevices), kept for the app's life once the wake word was
+    /// first asked for.
     private static var micWatch: ArisWorldSubscription?
 
     static var wakeModelFile: URL? {
@@ -167,10 +168,10 @@ extension ArisController {
         log.notice("\(self.conversation.isOpen ? "listening between turns" : "waiting for the wake word", privacy: .public) (\(self.hasWakeModel ? "trained" : "not trained", privacy: .public))")
     }
 
-    /// The list of audio devices or the default input changed (ArisMicWatch). A wake word that waits idle is looked at
-    /// again: paused when a headset's microphone is now the only one, opened again when the plan names another
-    /// device, started when a microphone it may use is back. A turn under way is left alone (its own microphone ends
-    /// with it); the next wait chooses again.
+    /// The list of audio devices, the default input or the microphone choice changed (ArisWorld's .audioDevices). A
+    /// wake word that waits idle is looked at again: paused when a headset's microphone is now the only one, opened
+    /// again when the plan names another device, started when a microphone it may use is back. A turn under way is
+    /// left alone (its own microphone ends with it); the next wait chooses again.
     func micDevicesChanged() {
         wakeMicMayWorkAgain("the audio devices changed")
         guard session.phase == .idle, training == nil, !recordingCalls, listener == nil, wakeListener == nil else { return }

@@ -176,6 +176,7 @@ enum ArisSettingsBuilder {
     private static func hearing(_ s: ArisSettingsSnapshot) -> [ArisSettingSection] {
         [ArisSettingSection(id: "talk.hear.rows", heading: "듣기", note: "여기 없는 언어로 말하면 소리 나는 대로 적혀요.", grouped: true, rows: [
             ArisSettingItem(id: "ai.hear", icon: .symbol("mic"), title: "듣기", control: .custom("ai.hear")),
+            microphone(s),
             ArisSettingItem(id: "voice.languages", icon: .symbol("globe"), title: "쓰는 언어",
                            desc: "말할 때 이 언어들 중에서 알아서 찾아요.",
                            control: .buttons([ArisSettingButton(title: languagesSummary(s.languages.map(\.title)), action: .addLanguage, kind: .select)])),
@@ -186,6 +187,35 @@ enum ArisSettingsBuilder {
                            desc: "이름, 앱, 용어를 한 줄에 하나씩 적어요. ‘들린 말 -> 맞는 말’처럼 적으면 그렇게 고쳐 들어요 · \(s.words)개",
                            control: button("편집", .editWords)),
         ])]
+    }
+
+    /// 마이크 (ArisMicSetting): this Mac's own (the default), the system's input, or one input device by its name; a
+    /// chosen device that is gone stays in the menu by its kept name, and the line under it says what Aris hears with.
+    static func microphone(_ s: ArisSettingsSnapshot) -> ArisSettingItem {
+        let setting = ArisMicSetting(stored: s.microphone)
+        let devices = s.microphones ?? []
+        let listed = devices.filter { $0.hasInput && $0.transport != .builtIn && $0.uid != nil }
+        var choices = options([(ArisMicSetting.thisMac.stored, "이 Mac (내장)"), (ArisMicSetting.system.stored, "시스템 설정과 같게")])
+        choices += listed.map { ArisSettingOption(id: ArisMicSetting.device(uid: $0.uid ?? "").stored, title: $0.name ?? $0.uid ?? "") }
+        if case .device = setting, !choices.contains(where: { $0.id == setting.stored }) {
+            choices.append(ArisSettingOption(id: setting.stored, title: s.microphoneName ?? "고른 마이크"))
+        }
+        return ArisSettingItem(id: "hear.mic", icon: .symbol("waveform"), title: "마이크", desc: microphoneLine(setting, devices: s.microphones),
+                               control: .menu(.microphone, choices, selected: setting.stored))
+    }
+
+    private static func microphoneLine(_ setting: ArisMicSetting, devices: [ArisAudioDevice]?) -> String {
+        let pick = devices.map(setting.pick)
+        switch setting {
+        case .system: return "시스템 설정의 입력 기기를 따라가요. 다른 마이크가 있으면 헤드폰 마이크는 쓰지 않아요."
+        case .thisMac:
+            return pick?.fallback == .noBuiltIn ? "이 Mac에 내장 마이크가 없어 시스템 설정의 입력 기기로 들어요."
+                : "에어팟을 연결해도 이 Mac의 마이크로 들어서 음악 음질이 그대로예요."
+        case .device:
+            guard pick?.fallback == .chosenGone else { return "고른 마이크로 들어요." }
+            return pick?.device == nil ? "고른 마이크가 연결되어 있지 않아 시스템 설정의 입력 기기로 들어요."
+                : "고른 마이크가 연결되어 있지 않아 이 Mac의 마이크로 들어요."
+        }
     }
 
     /// 목소리: the speaking card (`ai.speak`: the engine, its model and the one voice picker, D5), then 말하기 속도.

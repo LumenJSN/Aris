@@ -55,7 +55,7 @@ enum ArisRecordJournal {
         let existing = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false).readDataToEndOfFile()
         let chain = ArisRecordEntry.chained(in: existing, verify: verifier(month: month, key: key))
         if chain.goodBytes < existing.count {
-            FileHandle.standardError.write(Data("aris-agent: the record for \(month) had \(existing.count - chain.goodBytes) byte(s) after its last good line; cut\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: the record for \(month) had \(existing.count - chain.goodBytes) byte(s) after its last good line; cut\n".utf8))
             guard ftruncate(descriptor, off_t(chain.goodBytes)) == 0 else { return false }
         }
         let line = entry.line(sealedWith: { ArisTaskSeal.seal(ArisTaskSeal.context("record", month, String(chain.good), chain.last) + $0, key: key) })

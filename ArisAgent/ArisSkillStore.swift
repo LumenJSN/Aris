@@ -187,7 +187,7 @@ enum ArisSkillStore {
             let current = readForChange(file)
             let next = change(current.state)
             guard current.writable else {
-                FileHandle.standardError.write(Data("aris-agent: \(file.lastPathComponent) can't be read and couldn't be kept aside: left as it is\n".utf8))
+                try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(file.lastPathComponent) can't be read and couldn't be kept aside: left as it is\n".utf8))
                 return next
             }
             write(next, to: file)

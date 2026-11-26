@@ -273,12 +273,43 @@ struct ArisDesktopLiveWindows: ArisDesktopWindows {
         return ids.prefix(Int(count)).map(CGDisplayBounds)
     }
 
-    func promptOnScreen() -> String? {
-        Self.everything.compactMap { info -> String? in
+    func promptOnScreen() -> String? { Self.prompt()?.owner }
+
+    /// The first sign-in, password or permission prompt's window on screen: its owner's name, its pid, and its title as
+    /// the window server gives it (only with Screen Recording).
+    private static func prompt() -> (owner: String, pid: Int32?, title: String?)? {
+        everything.lazy.compactMap { info -> (owner: String, pid: Int32?, title: String?)? in
             guard (info[kCGWindowAlpha as String] as? Double ?? 1) > 0, let owner = info[kCGWindowOwnerName as String] as? String else { return nil }
-            let bundle = (info[kCGWindowOwnerPID as String] as? Int32).flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
-            return ArisRiskPolicy.isAuthPrompt(owner) || bundle.map(ArisRiskPolicy.isAuthPrompt) == true ? owner : nil
+            let pid = info[kCGWindowOwnerPID as String] as? Int32
+            let bundle = pid.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+            guard ArisRiskPolicy.isAuthPrompt(owner) || bundle.map(ArisRiskPolicy.isAuthPrompt) == true else { return nil }
+            return (owner, pid, info[kCGWindowName as String] as? String)
         }.first
+    }
+
+    /// Its title and the app it asks for, by Accessibility (read only): the window's title, and the first name in
+    /// quotes among its first static texts ("“Aris” would like to receive keystrokes from any application.").
+    func promptWindow() -> ArisDesktopPause.Window? {
+        guard let found = Self.prompt() else { return nil }
+        var title = found.title.flatMap { $0.isEmpty ? nil : $0 }
+        var texts: [String] = []
+        if AXIsProcessTrusted(), let pid = found.pid, let window = ArisAX.windows(pid: pid).first {
+            if title == nil { title = ArisAX.string(window, kAXTitleAttribute as String).flatMap { $0.isEmpty ? nil : $0 } }
+            var queue = [window], index = 0
+            while index < queue.count, index < 40, texts.count < 6 {
+                let next = queue[index]
+                index += 1
+                if ArisAX.role(next) == kAXStaticTextRole as String, let text = ArisAX.string(next, kAXValueAttribute as String) { texts.append(text) }
+                queue += ArisAX.children(next)
+            }
+        }
+        let window = ArisDesktopPause.Window(title: title, forApp: ArisDesktopPause.requester(in: texts))
+        return window.title == nil && window.forApp == nil ? nil : window
+    }
+
+    func raisePrompt() -> Bool {
+        guard let pid = Self.prompt()?.pid, let app = NSRunningApplication(processIdentifier: pid) else { return false }
+        return app.activate()
     }
 }
 

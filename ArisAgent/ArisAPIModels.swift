@@ -128,6 +128,7 @@ enum ArisAPISmoke {
         switch error.kind {
         case .auth: return "키가 맞지 않아요."
         case .quota: return "사용 한도나 크레딧이 부족해요."
+        case .billing: return "계정 잔액(크레딧)이 없어요. 충전해 주세요."
         case .rate, .overloaded: return "지금 요청이 많아요. 잠시 뒤에 다시 해 주세요."
         case .network, .timeout: return "서버에 닿지 못했어요."
         case .unsupported: return "이 모델을 쓸 수 없어요: \(String(error.message.prefix(120)))"

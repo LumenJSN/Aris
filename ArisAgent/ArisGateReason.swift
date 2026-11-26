@@ -2,7 +2,7 @@
 //  ArisGateReason.swift
 //  aris-agent
 //
-//  When a card opens with "Asking once more because outside content was read" (ArisEscalation.taintedReason). The
+//  When a card opens with "Asking first, since this chat has info I fetched (weather, web, etc.)." (ArisEscalation.taintedReason). The
 //  line means one thing: without the outside content in the conversation this would have run without a card. Each
 //  gate says it for an action the owner approved before (remembered, asked again), and ArisEscalation.card for one a grant
 //  or the judge could have let through (a move to the Trash, a to-do). An action that simply runs by itself in a clean

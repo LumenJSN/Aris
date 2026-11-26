@@ -110,6 +110,29 @@ enum ArisDesktopBatch {
         // is held to their words as well). Never the bare stem 지우: it is also a name.
         let korean = #"(바꿔|바꾸|바꿀|바꾼|지우고|지우기|지울|지워|삭제|비워|비우고|비울|없애|다시\s*써|새로\s*써|덮어\s*써|덮어써)"#
         let english = #"(?i)\b(replace|overwrite|clear|erase|delete|remove|empty|wipe)\b"#
+        if request.range(of: korean, options: .regularExpression) != nil || request.range(of: english, options: .regularExpression) != nil { return true }
+        // A select-all with the new text to write is a replace too ("command+A로 전체 선택한 다음 '새 글'이라고 입력해 줘",
+        // "select all and type …": fifteenth VM run, R1e); a select-all alone (to copy it) is not.
+        return selectsAllWords(request) && ArisDesktopErase.writesNewText(request)
+    }
+
+    /// The user's words ask for all of the text to go, not a part: an all-word with an erase or replace word ("전부 지우고",
+    /// "다 지워", "싹 바꿔", "delete all the text", "replace everything with …", "clear the whole document"), or a
+    /// select-all with the new text to write. A type on a bare caret replaces everything only for these.
+    static func asksToReplaceAll(_ request: String) -> Bool {
+        let verbs = #"(바꿔|바꾸|바꿀|지우고|지우기|지울|지워|삭제|비워|비우고|비울|없애|다시\s*써|새로\s*써|덮어\s*써|덮어써|교체)"#
+        let korean = #"((전부|모두|전체|싹|몽땅)\S*\s*(\S+\s+){0,4}?|(^|\s)다\s+)"# + verbs
+        let englishAll = #"(?i)\b(all\b(?!\s+(the\s+)?(occurrences|instances|matches)\b)|everything\b|whole\b|entire\b)"#
+        let englishVerb = #"(?i)\b(replace|overwrite|clear|erase|delete|remove|empty|wipe)\b"#
+        if request.range(of: korean, options: .regularExpression) != nil { return true }
+        if request.range(of: englishAll, options: .regularExpression) != nil, request.range(of: englishVerb, options: .regularExpression) != nil { return true }
+        return selectsAllWords(request) && ArisDesktopErase.writesNewText(request)
+    }
+
+    /// The user's words select everything: "전체 선택", "모두 선택", "select all", "select everything", "cmd+a".
+    static func selectsAllWords(_ request: String) -> Bool {
+        let korean = #"(전체|모두|전부)\s*선택"#
+        let english = #"(?i)(\bselect\s+(all|everything)\b|\bselect\s+the\s+(whole|entire)\b|\b(cmd|command)\s*[+-]?\s*a\b|⌘\s*a\b)"#
         return request.range(of: korean, options: .regularExpression) != nil || request.range(of: english, options: .regularExpression) != nil
     }
 
@@ -121,6 +144,9 @@ enum ArisDesktopBatch {
     static let settleLooks = 3
     static let settleWait: TimeInterval = 0.12
 
+    static let setValueOverTextLine = "Refused: a set-value that replaces text a field already holds goes as its own call, never in a batch " +
+        "(its card shows the text it erases, and it can be undone). Nothing was done. Make it one `desktop set-value <ref> --stdin` call, " +
+        "or `desktop type` to add at the caret."
     static let oneAtATimeLine = "Refused: this goes a step at a time here (System Settings, Finder, or a messaging app whose card couldn't say exactly what goes). Use single desktop calls."
     static let calendarStepLine = "Refused: in Calendar and Reminders desktop steps go one call at a time (each asks the user on a card), never as a batch. " +
         "To add, change or delete an event or a reminder, use `aris-tools event …` or `aris-tools remind …`. Nothing was done."
@@ -405,6 +431,8 @@ extension ArisDesktopEngine {
         if steps.contains(where: { $0.text != nil }), turn.ledger.selectedAll(in: windows.windows(of: target.pid).first?.id), !ArisDesktopBatch.asksToReplace(turn.request) {
             return refuse(ArisDesktopBatch.appendLine)
         }
+        // A ref from a look in an earlier turn: looked at again first, as for one call (R2k).
+        if let line = earlierTurnRefusal(request, turn: turn) { return refuse(line) }
         // Every ref from one look at this app, the newest of its window (the stale-snapshot guard, as for one call).
         var refs: [ArisDesktopRef] = []
         for case .ref(let ref)? in steps.map(\.target) { refs.append(ref) }
@@ -488,6 +516,12 @@ extension ArisDesktopEngine {
                Self.sends(step, control: element, composer: element == nil ? nil : start.composer(for: element), app: name) {
                 return refuse(ArisDesktopBatch.sendLastLine)
             }
+        }
+        // A set-value over text a field holds (or one whose field isn't found yet) goes as its own call: its card shows the
+        // text it erases, it is held to it, and it can be undone (sixteenth VM run: set-value replaced whole documents).
+        for (index, step) in steps.enumerated() where step.verb == .setValue {
+            guard let element = elements[index] else { return refuse(ArisDesktopBatch.setValueOverTextLine) }
+            if ArisDesktopEngine.setsText(element), ArisDesktopErase.whole(of: element) != .nothing { return refuse(ArisDesktopBatch.setValueOverTextLine) }
         }
         var basis = ArisDesktopBasis(title: start.title, window: start.window)
         var sends: String?

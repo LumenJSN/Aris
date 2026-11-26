@@ -44,7 +44,7 @@ enum ArisToolsLink {
     static func ensure(app: String? = ArisAppBundle.path, link: String = ArisAppBundle.toldTools, own: String = ArisAppBundle.ownTools,
                        kind: (String) -> ArisSafeFiles.Kind = ArisSafeFiles.kind, target: (String) -> String? = ArisSafeFiles.linkTarget,
                        repair: (_ target: String, _ path: String) -> Bool = { ArisSafeFiles.replaceLink(target: $0, at: $1) },
-                       note: (String) -> Void = { FileHandle.standardError.write(Data(("aris-agent: " + $0 + "\n").utf8)) },
+                       note: (String) -> Void = { try? FileHandle.standardError.write(contentsOf: Data(("aris-agent: " + $0 + "\n").utf8)) },
                        enforcing: Bool = ArisRollout.enforcing) -> Bool {
         // An uninstall under way removes the link: it is never put back (ArisUninstallQuiet).
         guard !ArisUninstallQuiet.linkIsFrozen else { return true }

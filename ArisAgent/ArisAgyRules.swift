@@ -223,8 +223,8 @@ enum ArisAgyRules {
         guard first else { return }
         switch restore(home: home, tools: tools, folder: folder) {
         case .nothing: break
-        case .restored: FileHandle.standardError.write(Data("aris-agent: took Aris's rules back out of Antigravity's own settings (they are given to Aris's agy alone now)\n".utf8))
-        case .failed(let why): FileHandle.standardError.write(Data("aris-agent: Antigravity's own settings still have Aris's rules (\(why))\n".utf8))
+        case .restored: try? FileHandle.standardError.write(contentsOf: Data("aris-agent: took Aris's rules back out of Antigravity's own settings (they are given to Aris's agy alone now)\n".utf8))
+        case .failed(let why): try? FileHandle.standardError.write(contentsOf: Data("aris-agent: Antigravity's own settings still have Aris's rules (\(why))\n".utf8))
         }
     }
 

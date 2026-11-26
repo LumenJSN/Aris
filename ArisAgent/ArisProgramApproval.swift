@@ -169,13 +169,13 @@ enum ArisProgramApproval {
             case .record:
                 waiting[brain.rawValue] = nil
                 list[brain.rawValue] = now
-                if !save(list, to: file) { FileHandle.standardError.write(Data("aris-agent: couldn't write down the \(brain.rawValue) program that was started\n".utf8)) }
+                if !save(list, to: file) { try? FileHandle.standardError.write(contentsOf: Data("aris-agent: couldn't write down the \(brain.rawValue) program that was started\n".utf8)) }
             case .ask(let reason):
                 // Until the new checks are enforced (ArisRollout) it is written down, started as before, and the list
                 // keeps what was approved.
                 guard enforcing else { return ArisRollout.wouldRefuse("starting \(brain.rawValue): its program changed (\(reason.rawValue))") }
                 waiting[brain.rawValue] = (now, reason)
-                FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue) was not started: its program changed (\(reason.rawValue)); waiting for a yes in the notch\n".utf8))
+                try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(brain.rawValue) was not started: its program changed (\(reason.rawValue)); waiting for a yes in the notch\n".utf8))
                 throw Changed(brain: brain, reason: reason)
             }
         }

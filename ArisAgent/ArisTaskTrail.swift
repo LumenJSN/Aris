@@ -35,7 +35,7 @@ final class ArisTaskTrail {
     private func write(_ record: ArisTaskRecord, evenWhileExiting: Bool = false) {
         guard !ended, evenWhileExiting || !Self.shuttingDown else { return }
         if !ArisTaskJournal.append(record, job: job, home: home) {
-            FileHandle.standardError.write(Data("aris-agent: couldn't write the journal of job \(job.prefix(8))\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: couldn't write the journal of job \(job.prefix(8))\n".utf8))
         }
     }
 

@@ -103,7 +103,7 @@ private func undoLocal(_ undo: ArisUndo) throws {
         }
         appleScript(script)
     case .stopTimer:
-        try postTimer(["action": "stop"])
+        guard try postTimer(["action": "stop"]) else { throw ArisActivity.UndoError(message: ArisAppAck.notTakenLine("stopping the timer")) }
     case .deleteEvent(let id):
         try removeEvent(uid: id)
     case .restoreWindow(let app, let from, let to):
@@ -131,7 +131,7 @@ func undo(_ args: [String]) {
             let shown = ["id": entry.id.uuidString, "summary": entry.summary, "kind": revives ? "restoreSchedule" : "deleteEvent"]
             print(String(decoding: (try? JSONSerialization.data(withJSONObject: shown)) ?? Data(), as: UTF8.self))
             let what = revives ? "this brings a removed schedule back" : "this deletes the calendar event"
-            FileHandle.standardError.write(Data("asks first: \(what): \(entry.summary)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("asks first: \(what): \(entry.summary)\n".utf8))
             exit(Int32(3))
         }
     } catch {

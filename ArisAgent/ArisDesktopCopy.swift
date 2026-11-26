@@ -89,9 +89,12 @@ enum ArisDesktopCopy {
             : "키: \(pressed)\n백그라운드로는 안 돼서 창을 앞으로 가져와 누르고, 끝나면 원래 앱으로 돌아가요")
     }
 
-    /// Text that didn't land in the background: the window comes forward and it is typed for real.
-    static func forwardTypeDetail(title: String, text: String, english: Bool) -> String {
-        windowLine(title, english: english) + "\n" + (english
+    /// Text that didn't land in the background: the window comes forward and it is typed for real. `keysFirst`: the keys
+    /// pressed before the text (the caret to the end or the start, a replace's select-all), named on the card in that
+    /// order, as forwardKeysDetail names keys (security review of ed0d3167: every key that is sent is shown).
+    static func forwardTypeDetail(title: String, text: String, english: Bool, keysFirst: [String] = []) -> String {
+        let first = keysFirst.isEmpty ? "" : (english ? "Keys first: " : "먼저 누르는 키: ") + ArisDesktopCard.shown(keysFirst.joined(separator: " ")) + "\n"
+        return windowLine(title, english: english) + "\n" + first + (english
             ? "Text to type:\n" + ArisDesktopCard.shown(text) + "\nTyping in the background didn't work, so the window is brought to the front and the text is typed for real"
             : "입력하는 글:\n" + ArisDesktopCard.shown(text) + "\n백그라운드 입력이 안 돼서 창을 앞으로 가져와 실제로 입력해요")
     }

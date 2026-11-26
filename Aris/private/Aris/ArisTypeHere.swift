@@ -60,9 +60,15 @@ enum ArisTypeHere {
         !readable ? .unreadable : selected ? .text : .empty
     }
 
-    /// What the quick path says after it typed: what actually happened (added at the caret, nothing erased).
-    static func insertedLine(korean: Bool, undoable: Bool) -> String {
-        korean ? "커서 자리에 덧붙여 썼어요(지운 글은 없어요). 보내기 전에 확인해 주세요." + (undoable ? " \"되돌려\"라고 하면 빼 드려요." : "")
-            : "Added it at the cursor (nothing was erased). Check it before you send it." + (undoable ? " Say \"undo\" to take it out." : "")
+    /// What the quick path says after it typed: what actually happened (added at the caret, nothing erased). "Check it
+    /// before you send it" only where it could be sent: a chat or mail field (`sends`; fourteenth VM run, R1d: it was said
+    /// after typing into TextEdit).
+    static func insertedLine(korean: Bool, undoable: Bool, sends: Bool = true) -> String {
+        let check = sends ? (korean ? " 보내기 전에 확인해 주세요." : " Check it before you send it.") : ""
+        return korean ? "커서 자리에 덧붙여 썼어요(지운 글은 없어요)." + check + (undoable ? " \"되돌려\"라고 하면 빼 드려요." : "")
+            : "Added it at the cursor (nothing was erased)." + check + (undoable ? " Say \"undo\" to take it out." : "")
     }
+
+    /// Whether the field the quick path typed into is one a send goes from (the look's focus kind: a chat or a mail).
+    static func sends(focusKind: String?) -> Bool { ["chat", "mail"].contains(focusKind ?? "") }
 }

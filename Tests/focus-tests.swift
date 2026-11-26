@@ -166,7 +166,8 @@ private func focusControllerTests() {
     check(controller.contains("if let look, look.writesHere, let target = look.target"), "focus app: writing in place only when the helper says the field has the keyboard")
     check(controller.contains("noActions: true"), "focus app: the field write declines every action, as the rewrite did")
     // (rel12 S3: the line says what actually happened: added at the caret, nothing erased, nothing sent.)
-    check(controller.contains("ArisTypeHere.insertedLine(korean: korean, undoable: undoable)") && ArisTypeHere.insertedLine(korean: true, undoable: false).contains("보내기 전에 확인해 주세요"),
+    check(controller.contains("ArisTypeHere.insertedLine(korean: korean, undoable: undoable, sends: ArisTypeHere.sends(focusKind: look.focusKind))")
+          && ArisTypeHere.insertedLine(korean: true, undoable: false).contains("보내기 전에 확인해 주세요"),
           "focus app: Aris says it added it and that nothing was sent (Korean first)")
     check(ArisControllerLookWords.draft.contains("nothing is sent"), "focus app: the brain is told nothing is sent")
 }

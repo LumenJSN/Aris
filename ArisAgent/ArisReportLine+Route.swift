@@ -22,7 +22,7 @@ extension ArisReportLine {
                 cleaned(ArisSealedOneShot(environment: ArisAgentRunner.environment()).ask($0, instruction: instruction(korean: korean),
                                                                                         input: input(title: title, result: result, recent: recent), timeout: timeout))
             }
-            FileHandle.standardError.write(Data("aris-agent: report line \(line == nil ? "none" : "worded") in \(Int(Date().timeIntervalSince(started) * 1000)) ms\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: report line \(line == nil ? "none" : "worded") in \(Int(Date().timeIntervalSince(started) * 1000)) ms\n".utf8))
             reply("200 OK", (try? JSONSerialization.data(withJSONObject: ["line": line.map { $0 as Any } ?? NSNull()])) ?? Data("{}".utf8))
         }
     }

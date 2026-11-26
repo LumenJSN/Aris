@@ -210,9 +210,18 @@ enum ArisDesktopGate {
             if request.verb == .type, !context.careful, !context.critical, !context.windowAmbiguous, target.known, target.appleSigned, !target.sending,
                ArisRiskPolicy.isSafeTypingApp(name: target.name, bundle: target.bundle),
                let text = request.text, ArisRiskPolicy.typesUsersWords(text, request: context.request) { return .run }
+            // Keys that only select everything or erase (what `aris-tools keys` hands here, ArisKeysRequest): after the
+            // screen or outside text, on a hands-free turn or in a job, the user's card every time, never an earlier yes for
+            // the app, as the shell gate asked for them (fourteenth VM run, R1b: they now come here, to one card).
+            if request.verb == .press, context.careful, erasesOnly(request.keys) { return .ask(remember: false) }
             if remembered, !context.handsFree { return .run }
             return .ask(remember: target.memoryKey != nil && context.taintForApp == .none && !context.handsFree)
         }
+    }
+
+    /// Keys that only select everything or erase: each a select-all or a bare delete (an allowlist, as ArisKeysRequest's).
+    static func erasesOnly(_ keys: [String]) -> Bool {
+        !keys.isEmpty && keys.allSatisfy { ArisDesktopBatch.isSelectAll($0) || ArisDesktopBatch.normalized($0) == ["delete"] }
     }
 
     // MARK: - Terminals and code runners

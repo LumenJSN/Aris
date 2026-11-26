@@ -51,7 +51,9 @@ struct ArisCharacterView: View {
 
     var body: some View {
         let look = isAris ? ArisFace.decode(arisFace) : look
-        let play = ArisSpritePlay.from(state: state, canSleep: canSleep, reduceMotion: reduced || still)
+        // Too big to bake its loops (ArisSpriteLook.animates): the rest pose, like a picker tile.
+        let resting = still || !ArisSpriteLook.animates(size)
+        let play = ArisSpritePlay.from(state: state, canSleep: canSleep, reduceMotion: reduced || resting)
         // Baked at a standard size at or above this one, scaled down by the layer.
         let sprite = ArisSpriteLook(type: look.type, colorHex: look.colorHex, shading: look.shading, size: ArisSpriteLook.bakeSize(size),
                                     scale: min(2, displayScale), dark: colorScheme == .dark)
@@ -59,7 +61,7 @@ struct ArisCharacterView: View {
             .frame(width: size, height: size)
             .overlay {
                 // Where BotAvatar puts its canvas: 1.5 times the box, the body's centre on the box's.
-                ArisSpriteView(look: sprite, play: play, pokes: pokes, lands: lands, muted: muted, bursts: !reduced && !still, follows: follows && !reduced && !still)
+                ArisSpriteView(look: sprite, play: play, pokes: pokes, lands: lands, muted: muted, bursts: !reduced && !resting, follows: follows && !reduced && !resting)
                     .frame(width: size * BOT_AVATAR_OVERSCAN, height: size * BOT_AVATAR_OVERSCAN)
                     .offset(y: -BOT_AVATAR_RISE * size)
             }

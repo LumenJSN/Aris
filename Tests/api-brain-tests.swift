@@ -250,8 +250,10 @@ private func runAPIPureTests() {
     let limited = ArisAPIError.http(status: 429, body: Data(#"{"error":{"message":"Rate limit reached"}}"#.utf8), headers: ["Retry-After": "20"], now: now)
     check(limited.kind == .rate && limited.retryAt == now.addingTimeInterval(20) && limited.isUnavailable && ArisBrainFailure.isUnavailable(limited.message),
           "api errors: 429 is a rate limit with its Retry-After, which another AI can take")
-    check(ArisAPIError.http(status: 429, body: Data(#"{"error":{"message":"You exceeded your current quota","type":"insufficient_quota"}}"#.utf8), headers: [:]).kind == .quota,
-          "api errors: a 429 about quota is out of quota")
+    // fix132 (X2): OpenAI's insufficient_quota is an empty account (no balance), not a limit to wait out.
+    check(ArisAPIError.http(status: 429, body: Data(#"{"error":{"message":"You exceeded your current quota","type":"insufficient_quota"}}"#.utf8), headers: [:]).kind == .billing
+          && ArisAPIError.http(status: 429, body: Data(#"{"error":{"message":"Quota exceeded for metric: requests per minute"}}"#.utf8), headers: [:]).kind == .quota,
+          "api errors: a 429 about an empty account is no balance; one about a quota is out of quota")
     check(ArisAPIError.http(status: 529, body: Data(#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#.utf8), headers: [:]).kind == .overloaded,
           "api errors: Anthropic's 529 is overloaded")
     check(ArisAPIError.http(status: 400, body: Data(#"{"error":{"message":"This model's maximum context length is 8192 tokens"}}"#.utf8), headers: [:]).kind == .context

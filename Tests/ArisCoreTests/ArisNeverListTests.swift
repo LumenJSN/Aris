@@ -16,7 +16,7 @@ final class ArisNeverListTests: XCTestCase {
         // Aris's own safeguards: its folder (also just reading it), app, LaunchAgent, domains, helper, cards, prompts.
         XCTAssertEqual(path("~/.config/aris/tasks-key", .observe), .ownSafeguards)
         XCTAssertEqual(path("/Users/user/.config/aris/aris/record/2026-11.jsonl", .changeReversible), .ownSafeguards)
-        XCTAssertEqual(path("/USERS/PAUL/.CONFIG/ARIS/trust.json"), .ownSafeguards)
+        XCTAssertEqual(path("/USERS/USER/.CONFIG/ARIS/trust.json"), .ownSafeguards)
         XCTAssertEqual(path("/Applications/Aris.app/Contents/MacOS/aris-agent"), .ownSafeguards)
         XCTAssertEqual(path("~/Library/LaunchAgents/com.lumenjsn.aris.agent.plist"), .ownSafeguards)
         XCTAssertNil(path("~/.config/aris/aris/work/draft.md"))

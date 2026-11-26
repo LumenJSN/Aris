@@ -134,7 +134,7 @@ struct ArisConfirmCard: View {
             // An English card: the agent's Korean details are put into English whole (a desktop card's first line is
             // what is done, the lines after it the user's own text), then cut into rows.
             let text = expanded ? question.full ?? question.detail : question.detail
-            let rows = Self.rows(english ? ArisCardEnglish.detail(text, title: question.title) : text)
+            let rows = Self.rows(english ? ArisCardEnglish.detail(text, title: question.title) : text, title: question.title)
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                 if let label = row.label {
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -254,9 +254,11 @@ struct ArisConfirmCard: View {
         }
     }
 
-    /// "받는 사람: 엄마" lines become label / value rows; anything else stays a line of text.
-    static func rows(_ detail: String) -> [(label: String?, value: String)] {
+    /// "받는 사람: 엄마" lines become label / value rows; anything else stays a line of text, and so does a to-do's or a
+    /// note's own words with a colon in them (ArisCardEnglish.keepsLineWhole).
+    static func rows(_ detail: String, title: String = "") -> [(label: String?, value: String)] {
         detail.split(separator: "\n", omittingEmptySubsequences: true).map { line in
+            if ArisCardEnglish.keepsLineWhole(String(line), title: title) { return (nil, String(line)) }
             let parts = line.split(separator: ":", maxSplits: 1)
             // An address is one value, never a "https" label over "//example.com" (eleventh VM run).
             guard parts.count == 2, parts[0].count <= 14, !parts[0].contains("/"), !parts[1].hasPrefix("//") else { return (nil, String(line)) }

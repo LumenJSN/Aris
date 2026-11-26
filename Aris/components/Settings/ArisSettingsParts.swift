@@ -40,7 +40,7 @@ enum ArisSettingsParts {
         p("talk.call", .talk, "부르기", nil,
           ["aris.wake", "aris.wakeName", "aris.voiceID", "aris.voiceEnrol", "aris.voiceForget", "aris.recordCalls", "aris.collect",
            "aris.recordClear"]),
-        p("talk.hear", .talk, "듣기", nil, ["ai.hear", "voice.languages", "hear.repair", "hear.words"]),
+        p("talk.hear", .talk, "듣기", nil, ["ai.hear", "hear.mic", "voice.languages", "hear.repair", "hear.words"]),
         p("talk.speak", .talk, "목소리", nil, ["ai.speak", "voice.speed"]),
         p("talk.chat", .talk, "대화", nil, ["aris.minutes", "aris.silence", "aris.duplex", "aris.bargeIn"]),
         p("talk.quiet", .talk, "조용히 · 알림", nil, ["aris.sounds", "aris.dayEnd", "aris.recap", "aris.mute", "aris.quietHours"]),

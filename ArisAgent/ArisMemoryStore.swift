@@ -516,7 +516,7 @@ final class ArisMemoryStore: @unchecked Sendable {
             try? manager.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         }
         guard ArisNoFollow.isDirectory(folder), Self.tighten(folder.path, to: 0o700, directory: true) else {
-            FileHandle.standardError.write(Data("aris: memory folder isn't a real folder; memory is off\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris: memory folder isn't a real folder; memory is off\n".utf8))
             return nil
         }
         if !manager.fileExists(atPath: file.path) {
@@ -524,7 +524,7 @@ final class ArisMemoryStore: @unchecked Sendable {
             if fd >= 0 { close(fd) }
         }
         guard ArisNoFollow.isFile(file), Self.tighten(file.path, to: 0o600, directory: false) else {
-            FileHandle.standardError.write(Data("aris: memory.sqlite isn't a real file; memory is off\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris: memory.sqlite isn't a real file; memory is off\n".utf8))
             return nil
         }
         // SQLite's no-follow refuses a link anywhere in the path (/var is one): the folder and the file were just checked
@@ -535,7 +535,7 @@ final class ArisMemoryStore: @unchecked Sendable {
         var handle: OpaquePointer?
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW
         guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK, let handle else {
-            FileHandle.standardError.write(Data("aris: couldn't open memory.sqlite (\(handle.map { String(cString: sqlite3_errmsg($0)) } ?? "no handle"))\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris: couldn't open memory.sqlite (\(handle.map { String(cString: sqlite3_errmsg($0)) } ?? "no handle"))\n".utf8))
             if let handle { sqlite3_close_v2(handle) }
             return nil
         }
@@ -544,7 +544,7 @@ final class ArisMemoryStore: @unchecked Sendable {
             sqlite3_exec(handle, pragma, nil, nil, nil)
         }
         guard sqlite3_exec(handle, Self.schema, nil, nil, nil) == SQLITE_OK else {
-            FileHandle.standardError.write(Data("aris: memory.sqlite schema failed: \(String(cString: sqlite3_errmsg(handle)))\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris: memory.sqlite schema failed: \(String(cString: sqlite3_errmsg(handle)))\n".utf8))
             sqlite3_close_v2(handle)
             return nil
         }
@@ -557,7 +557,7 @@ final class ArisMemoryStore: @unchecked Sendable {
         let more = Self.entitySchema + Self.reviewSchema + "CREATE INDEX IF NOT EXISTS memories_superseded ON memories(superseded_by);"
         guard sqlite3_exec(handle, more, nil, nil, nil) == SQLITE_OK,
               sqlite3_exec(handle, "PRAGMA user_version = \(Self.schemaVersion)", nil, nil, nil) == SQLITE_OK else {
-            FileHandle.standardError.write(Data("aris: memory.sqlite schema failed: \(String(cString: sqlite3_errmsg(handle)))\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris: memory.sqlite schema failed: \(String(cString: sqlite3_errmsg(handle)))\n".utf8))
             sqlite3_close_v2(handle)
             return nil
         }
@@ -589,7 +589,7 @@ final class ArisMemoryStore: @unchecked Sendable {
         defer { sqlite3_finalize(statement) }
         let status = sqlite3_step(statement)
         if status != SQLITE_DONE && status != SQLITE_ROW {
-            FileHandle.standardError.write(Data("aris: memory write failed: \(String(cString: sqlite3_errmsg(db)))\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris: memory write failed: \(String(cString: sqlite3_errmsg(db)))\n".utf8))
             return false
         }
         return true

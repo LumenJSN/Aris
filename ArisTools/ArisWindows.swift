@@ -222,12 +222,25 @@ func axFrame(_ element: AXUIElement) -> CGRect? {
 
 /// `keys <chord> [--app X] [--times N]`: by Aris's own engine in the agent (ArisEngineKeys): into the app's focused
 /// window in the background, or with a brief turn in front in a gap in the user's input; never into whatever is in front.
+/// Every chord given is sent (ArisKeysRequest); in a brain's turn, keys that only select everything or erase are the
+/// desktop engine's `desktop press`, whose one card shows the text they erase.
 func keys(_ args: [String]) {
+    let call: ArisKeysRequest.Call
+    switch ArisKeysRequest.parse(args) {
+    case .failure(let why): fail(why.line)
+    case .success(let parsed): call = parsed
+    }
+    guard call.chords.allSatisfy({ ArisKeyChord.parse($0) != nil }) else { fail(ArisKeysRequest.usage) }
+    if ArisKeysRequest.erases(call.chords), ArisKeysRequest.fitsEngine(call), case .turn = ArisDesktopHoldPlan.plan(environment: ProcessInfo.processInfo.environment, read: readCredential) {
+        switch ArisKeysRequest.desktopWords(call, keyboardApp: keyboardApp().flatMap { $0.bundleIdentifier ?? $0.localizedName }) {
+        case .failure(let why): fail(why.line)
+        case .success(let words): desktopCall(words, text: nil)
+        }
+        return
+    }
     requireAccessibility()
-    var words = args
-    let app = option("--app", in: &words)
-    let times = min(20, max(1, Int(option("--times", in: &words) ?? "1") ?? 1))
-    guard let written = words.first, ArisKeyChord.parse(written) != nil else { fail("usage: keys cmd+shift+t [--app X] [--times N]") }
+    let app = call.app
+    let times = call.times
     let target: NSRunningApplication
     if let app {
         target = keysTarget(app)
@@ -236,7 +249,7 @@ func keys(_ args: [String]) {
         target = front
     }
     guard let bundle = target.bundleIdentifier else { fail("\(target.localizedName ?? "that app") has no bundle id, so no keys were sent") }
-    let sent = engineKeys([written], times: times, bundle: bundle)
+    let sent = engineKeys(call.chords, times: times, bundle: bundle)
     if sent.ok { print(sent.line) } else { fail(sent.line) }
 }
 

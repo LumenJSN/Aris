@@ -33,6 +33,9 @@ final class ArisAPIGate {
     private(set) var screenSeenAt: Date?
     private var approved: [String: Date] = [:]
     private(set) var declinedThisTurn = false
+    /// A replace of this turn found its field changed after its card (ArisComputerUseLedger.fieldChangedThisTurn):
+    /// nothing more that asks runs in the turn, as after his no (fourteenth VM run, R1c).
+    var stopsActing: () -> Bool = { false }
     private var sentForUser: Set<[String]> = []
     private var asked = 0
     /// The user's own words for the gates (ArisMemoryText.ownWords); `attached` keeps the files note for `opensAttachment`.
@@ -127,6 +130,7 @@ final class ArisAPIGate {
         if handsFree, judgedRead == nil { risk = ArisHandsFree.risk(risk, of: action, tools: tools) }
         if handsFree, ArisCodexDriver.readsMemory(action, tools: tools) { refuse("the user's memories are never read on a hands-free turn") }
         if declinedThisTurn && (risk == .confirm || risk == .countdown) { refuse("The owner already said no to a card this turn; nothing else that asks runs after it") }
+        if risk == .confirm || risk == .countdown, stopsActing() { refuse(ArisDesktopErase.gateStopLine) }
         if !sentForUser.isEmpty, let again = ArisEditableAction.parse(action, tools: tools), sentForUser.contains(again.arguments) { refuse("The owner's changed card already did this") }
         if risk != .never { neverWhy = nil }
         let audit = ArisCodexDriver.auditLine(action, risk: risk, raw: command, why: neverWhy)

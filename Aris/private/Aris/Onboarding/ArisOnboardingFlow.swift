@@ -279,6 +279,12 @@ enum ArisOnboarding {
     /// wake word may start. Closing it early used to leave both dead (seen goes false then, later true).
     static func pastFirstRun(seen: Bool, later: Bool) -> Bool { seen || later }
 
+    /// The guide may still come up at this launch: whether it shows isn't decided yet (the key taps start first) and the
+    /// setup waits to be continued, or a replay was asked for. macOS isn't asked for Input Monitoring then: the guide's
+    /// own list asks for it (seventeenth VM run: the prompt came up at launch behind the resumed guide, stayed hidden,
+    /// and held every desktop step until it was answered).
+    static func guideDue(launchDecided: Bool, later: Bool, replay: Bool) -> Bool { !launchDecided && (later || replay) }
+
     static var pastFirstRunNow: Bool {
         pastFirstRun(seen: UserDefaults.standard.bool(forKey: seenKey), later: UserDefaults.standard.bool(forKey: laterKey))
     }

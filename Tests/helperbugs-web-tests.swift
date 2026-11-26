@@ -189,26 +189,19 @@ private func webStockWeatherTests() {
 // MARK: - 13: timer and board
 
 private func webAckTests() {
-    let folder = webFolder()
-    let file = URL(fileURLWithPath: folder + "/timer.json")
-    FileManager.default.createFile(atPath: file.path, contents: Data("{}".utf8))
-    DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { try? FileManager.default.removeItem(at: file) }
-    check(ArisAppAck.taken(file, timeout: 2), "13 ack: a file the app removed is taken")
-    FileManager.default.createFile(atPath: file.path, contents: Data("{}".utf8))
-    let started = Date()
-    check(!ArisAppAck.taken(file, timeout: 0.3) && Date().timeIntervalSince(started) < 1.5, "13 ack: a file still there after the wait is not taken")
+    // The app can't remove the file (its sandbox keeps ~/.config/aris read-only): it answers instead (fix132c-tests has
+    // the hand-over and the answer).
     check(ArisAppAck.notTakenLine("the timer").contains("may not have happened") && ArisAppAck.notTakenLine("the timer").contains("don't say it was done"),
           "13 ack: what is said then")
     let timer = webSource("ArisTools/ArisTimerCommand.swift"), board = webSource("ArisTools/ArisBoardCommand.swift")
-    check(timer.contains("guard ArisAppAck.taken(timerFile) else { fail(ArisAppAck.notTakenLine(\"the timer\")) }")
-          && timer.range(of: "ArisAppAck.taken(timerFile)")!.lowerBound < timer.range(of: "logActivity(stopping")!.lowerBound,
+    check(timer.contains("guard taken else { fail(ArisAppAck.notTakenLine(\"the timer\")) }")
+          && timer.range(of: "guard taken else")!.lowerBound < timer.range(of: "logActivity(stopping")!.lowerBound,
           "13 ack: the timer is told as set (and logged for undo) only once the app took it")
-    check(board.contains("guard ArisAppAck.taken(boardFile)") && board.range(of: "ArisAppAck.taken(boardFile)")!.lowerBound < board.range(of: "print(close ?")!.lowerBound,
+    check(board.contains("guard taken else { fail(ArisAppAck.notTakenLine(") && board.range(of: "guard taken else")!.lowerBound < board.range(of: "print(close ?")!.lowerBound,
           "13 ack: the board is told as shown only once the app took it")
-    check(webSource("Aris/private/Aris/ArisBoard.swift").contains("try? FileManager.default.removeItem(at: Self.file)")
-          && webSource("Aris/private/Aris/ArisTimerModel.swift").contains("try? FileManager.default.removeItem(at: file)"),
-          "13 ack: the app removes each request once read")
-    try? FileManager.default.removeItem(atPath: folder)
+    check(webSource("Aris/private/Aris/ArisBoard.swift").contains("guard taken.take(entry) else { return }")
+          && webSource("Aris/private/Aris/ArisTimerModel.swift").contains("guard taken.take(request) else { return }"),
+          "13 ack: the app answers each request once read")
 }
 
 // MARK: - 14: mail

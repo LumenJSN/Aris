@@ -56,7 +56,7 @@ extension ArisOrigin {
     /// Right before a grant is used: one plain line and the end of the program when it may no longer run.
     static func refuseUnlessStillAllowed() {
         guard !stillMayRun() else { return }
-        FileHandle.standardError.write(Data((refusedLine + "\n").utf8))
+        try? FileHandle.standardError.write(contentsOf: Data((refusedLine + "\n").utf8))
         exit(1)
     }
 

@@ -282,7 +282,7 @@ final class ArisAgentRunner {
               let spare = conversationSpares.swap(slot, current: current, fresh: fresh, state: { $0.spareState }) else { return nil }
         runners[slot] = spare
         current?.stop()
-        FileHandle.standardError.write(Data("aris-agent: \(lane.brain.rawValue)/\(lane.model) took its warm spare (\(fresh ? "new conversation" : "its process had ended"))\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(lane.brain.rawValue)/\(lane.model) took its warm spare (\(fresh ? "new conversation" : "its process had ended"))\n".utf8))
         keepSpare(slot, brain: lane.brain, model: lane.model)
         return spare
     }
@@ -420,6 +420,8 @@ final class ArisAgentRunner {
         }
         // Codex's cua_repl and every brain's `aris-tools desktop` share one per-app memory for the conversation.
         (driver as? ArisCodexDriver)?.computerUse = computerUse
+        // A replace that found its field changed stops what asks next in the turn on the API brain's gate too (R1c).
+        (driver as? ArisAPIDriver)?.gate.stopsActing = { [computerUse] in computerUse.fieldChangedThisTurn }
     }
 
     /// Computer use's memory for this conversation (the user's per-app yes, the snapshots Aris took), shared by Codex's
@@ -827,7 +829,7 @@ final class ArisAgentRunner {
     /// The turn went quiet past its limit, or ran past its ceiling. A conversation's brain that can stop a turn is
     /// asked to (its conversation is kept; ArisTurnDrain); one that can't, or doesn't within the grace, is stopped.
     private func timedOut(_ why: ArisSilenceClock.Why) {
-        FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue) turn timed out (\(why.rawValue))\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(brain.rawValue) turn timed out (\(why.rawValue))\n".utf8))
         endingNow = .timedOut
         finish(nil, ArisBrainFailure.slowLine(brain: brain, korean: koreanTurn))
         interruptOrStop()
@@ -845,7 +847,7 @@ final class ArisAgentRunner {
         queue.asyncAfter(deadline: .now() + ArisTurnDrain.grace) { [weak self] in
             // Only this drain's grace: a later drain on the same process has its own.
             guard let self, self.drain.isCurrent(generation), self.process === stopped else { return }
-            FileHandle.standardError.write(Data("aris-agent: \(self.brain.rawValue) didn't stop its turn; stopping the process\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(self.brain.rawValue) didn't stop its turn; stopping the process\n".utf8))
             self.stopProcess()
         }
     }
@@ -881,7 +883,7 @@ final class ArisAgentRunner {
             guard let question = asked, runningInput() != nil else {
                 return finish(nil, notStartedLine())
             }
-            FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue) ended before doing anything; asking once more\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(brain.rawValue) ended before doing anything; asking once more\n".utf8))
             driver.setRequest(question.request)
             driver.setHandsFree(handsFreeTurn)
             put(question)
@@ -941,7 +943,7 @@ final class ArisAgentRunner {
             abandoned.add(owner)
             for dropped in drain.drop(owner: owner) { dropped() }
             guard pending != nil, pendingOwner === owner else { return }
-            FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue) turn abandoned (the app dropped the stream)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(brain.rawValue) turn abandoned (the app dropped the stream)\n".utf8))
             finish(nil, "연결이 끊겨서 답을 멈췄어요.")
             // A speculative request the app dropped because the user went on talking: the conversation stays warm for the
             // whole question that follows (it waits for the drain, never meets "still answering"), and the cut-off
@@ -1212,7 +1214,7 @@ final class ArisAgentRunner {
         do {
             try ArisChildren.run(process)
         } catch {
-            FileHandle.standardError.write(Data("aris-agent: couldn't start \(brain.rawValue): \(error.localizedDescription)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: couldn't start \(brain.rawValue): \(error.localizedDescription)\n".utf8))
             if let scratch { ArisSealedScratch.remove(scratch) }
             scratch = nil
             return nil
@@ -1226,7 +1228,7 @@ final class ArisAgentRunner {
             let pid = process.processIdentifier
             guard let started = ArisTeammateJobFile.startTime(of: pid),
                   ArisTeammateJobFile.write(pid: pid, started: started, scopes: scopes, teammate: taskTeammate?.id, home: Self.home) else {
-                FileHandle.standardError.write(Data("aris-agent: couldn't write a teammate's job file; not running it\n".utf8))
+                try? FileHandle.standardError.write(contentsOf: Data("aris-agent: couldn't write a teammate's job file; not running it\n".utf8))
                 stopProcess()
                 return nil
             }
@@ -1250,7 +1252,7 @@ final class ArisAgentRunner {
 
     /// On `queue`: writing to `failed`'s stdin failed (ArisInputPump).
     private func inputFailed(_ why: String, process failed: Process?) {
-        FileHandle.standardError.write(Data("aris-agent: couldn't write to \(brain.rawValue): \(why)\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: couldn't write to \(brain.rawValue): \(why)\n".utf8))
         // A process that has just ended (a flag it doesn't know, an expired login) closes its pipe a moment before
         // its end is heard: then its end says why and what happens next (endedOnItsOwn), not this write.
         queue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -1294,7 +1296,7 @@ final class ArisAgentRunner {
                     }
                 }
                 if drain.awaitingDrop, let answer = (driver as? ArisInterruptibleDriver)?.dropAnswer(line), answer.answered {
-                    if !answer.dropped { FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue) kept the cut-off question (no rewind)\n".utf8)) }
+                    if !answer.dropped { try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(brain.rawValue) kept the cut-off question (no rewind)\n".utf8)) }
                     endDrain()
                 } else if ArisTurnDrain.ends(events) {
                     // A dropped question's turn also leaves the conversation, when it can (the grace still bounds the wait).
@@ -1313,7 +1315,7 @@ final class ArisAgentRunner {
                 events.forEach(trail.saw)
             }
             if events.isEmpty, pending != nil, let note = drift.note(line, quiet: driver.quietKinds) {
-                FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue): \(note)\n".utf8))
+                try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(brain.rawValue): \(note)\n".utf8))
             }
             eventsThisTurn += events.count
             // Anything new from the brain: a long job's "still going" lines stop (a new one starts below if it is one).
@@ -1365,7 +1367,7 @@ final class ArisAgentRunner {
                     if calls.contains(where: { $0.command.map { ArisConvertWords.isLong(command: $0, tools: Self.toolsPath) } ?? false }) { waitForLongJob() }
                 case .result(let written):
                     if pending != nil, let timing = clock?.answered(brain: brain.rawValue, model: modelLabel) {
-                        FileHandle.standardError.write(Data("aris-agent: \(timing)\n".utf8))
+                        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(timing)\n".utf8))
                     }
                     // The brain answered while a call of its own still waits on the user's card (or a slow step): the turn
                     // doesn't end on it. The card stays up to its limit, and the brain gets the call's result in the same
@@ -1511,6 +1513,7 @@ final class ArisAgentRunner {
                         answer = ArisDesktopHonesty.declineWorded(answer, done: actions.done, notDone: actions.notDone,
                                                                   declined: computerUse.latestNoIsUsers ? 1 : 0, korean: koreanRequest)
                     }
+                    answer = ArisDesktopHonesty.fieldChanged(answer, changed: computerUse.fieldChangeThisTurn, korean: koreanRequest)
                     // Aris's own data is never handed out: a jobs block still there is taken out and Aris says so; and a job's
                     // claim to have changed it stands only when Aris's own store shows the change (QA BUG-60).
                     if ownDataTurn, !isTask, answer != ArisOwnDataTurn.kept(answer, ownData: true, task: false, korean: koreanRequest) {
@@ -1577,7 +1580,7 @@ final class ArisAgentRunner {
     /// asked once more on a new process. False: the turn stops as before (asked again already, or nothing learnable).
     private func relaunches(_ extra: [String]) -> Bool {
         guard pending != nil, !askedAgain, let question = asked, ArisClaudeToolDrift.shared.learn(extra) else { return false }
-        FileHandle.standardError.write(Data("aris-agent: claude listed tools it wasn't given (\(extra.joined(separator: ", "))): denied by name, asking once more\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: claude listed tools it wasn't given (\(extra.joined(separator: ", "))): denied by name, asking once more\n".utf8))
         stopProcess()
         askedAgain = true
         guard runningInput() != nil else {
@@ -1593,7 +1596,7 @@ final class ArisAgentRunner {
     /// An error from a process nobody is asking, whose conversation never opened: logged and the process stopped.
     private func stopsUnopened(_ message: String) -> Bool {
         guard ArisBrainFailure.stopsIdleProcess(waiting: pending != nil, ready: driver.isReady) else { return false }
-        FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue) failed before any question (\(message.prefix(200))); it starts afresh next time\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(brain.rawValue) failed before any question (\(message.prefix(200))); it starts afresh next time\n".utf8))
         stopProcess()
         return true
     }
@@ -2203,7 +2206,7 @@ final class ArisAgentRunner {
         pendingOwner = nil
         ArisWorkDesk.live.finished(self, answered: answer != nil, error: error, handingOff: handingOff && handOff != nil && error != nil, taint: driver.taint)
         if let summary = ArisEventDrift.summary(count: drift.count, events: eventsThisTurn, brain: brain.rawValue) {
-            FileHandle.standardError.write(Data("aris-agent: \(summary)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(summary)\n".utf8))
         }
         guard let listener = pending else { return }
         pending = nil
@@ -2233,7 +2236,7 @@ final class ArisAgentRunner {
         let tail = stderrTail.text.trimmingCharacters(in: .whitespacesAndNewlines)
         var line = "aris-agent: \(brain.rawValue) ended on its own (status \(status))\n  argv: \(ArisLoggedArguments.line(argv))\n"
         if !tail.isEmpty { line += "  stderr: \(tail.replacingOccurrences(of: "\n", with: "\n          "))\n" }
-        FileHandle.standardError.write(Data(line.utf8))
+        try? FileHandle.standardError.write(contentsOf: Data(line.utf8))
     }
 
     private func stopProcess() {

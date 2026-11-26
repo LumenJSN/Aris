@@ -743,7 +743,7 @@ private func autoCardWordsTests() {
           "auto card: the stopped card is the approved sentence, the action's name on the first line and its own lines after, without the outside-content line")
     check(!stopped.countdown && stopped.fields.isEmpty && stopped.full == nil && stopped.allow == nil, "auto card: the stopped card is never a countdown and has nothing to edit")
     check(ArisAutoCard.stopped(for: today, id: "s2", why: .notChecked, english: false).title == "확인하지 못해서 멈췄어요.", "auto card: when nothing could be checked the card says that instead")
-    let english = ArisAutoCard.stopped(for: ArisConfirmation(id: "c8", title: "Add a to-do", detail: "Asking once more because outside content was read\nBook the restaurant"),
+    let english = ArisAutoCard.stopped(for: ArisConfirmation(id: "c8", title: "Add a to-do", detail: "Asking first, since this chat has info I fetched (weather, web, etc.).\nBook the restaurant"),
                                        id: "s3", why: .notAsked, english: true)
     check(english.title == "Stopped: you didn't ask for this." && english.detail == "Add a to-do\nBook the restaurant", "auto card: the same card in English")
     check(ArisAutoCard.title(.notChecked, english: true) == "Stopped: I couldn't check this.", "auto card: the couldn't-check sentence in English")

@@ -129,7 +129,7 @@ enum ArisEscalation {
     }
 
     /// Said first on the card when a typed action asks only because outside text came in.
-    static let taintedReason = "외부 내용을 읽은 뒤라 한 번 더 확인할게요"
+    static let taintedReason = "이 대화에서 가져온 정보(날씨·웹 등)가 있어서 먼저 물어봐요."
 
     /// What the user's answer counts toward (streaks, the proposal): only what a standing permission could ever cover (not a
     /// hard line, not an untyped action), and never a yes given after outside text. Nil: never learned.

@@ -22,6 +22,8 @@ final class ArisBoard {
     private var panel: NSPanel?
     private var presence = ArisReaderPresence()
     private var closing: Task<Void, Never>?
+    /// The answer to each `aris-tools board` request (ArisAppTaken).
+    private var taken = ArisAppTaken(nudge: "com.lumenjsn.aris.board")
     private static var file: URL { URL(fileURLWithPath: ArisKeyFile.folder + "aris/board.json") }
     /// Under the open notch, as the mockup's reader sits (its top 212 below the screen's).
     private static let topOffset: CGFloat = 212
@@ -66,8 +68,9 @@ final class ArisBoard {
               let entry = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return log.error("board: couldn't read board.json")
         }
-        // Taken: aris-tools tells the board as shown only once the file is gone (ArisAppAck).
-        try? FileManager.default.removeItem(at: Self.file)
+        // Taken: answered to aris-tools, which tells the board as shown and removes the file (the sandbox keeps
+        // ~/.config/aris read-only for the app: ArisAppTaken).
+        guard taken.take(entry) else { return }
         if entry["close"] as? Bool == true { return close() }
         guard let markdown = entry["markdown"] as? String else { return }
         show(.board(markdown), on: entry["screen"] as? String ?? "here")

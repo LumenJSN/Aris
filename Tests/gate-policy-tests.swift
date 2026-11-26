@@ -883,7 +883,7 @@ private func gateEnglishTests() {
     check(ArisGateWords.title("미리 알림 · 추가") == "Reminder · Add" && ArisGateWords.title("Gmail · send_email") == "Gmail · send_email"
           && ArisGateWords.title("메일 보내기 · Gmail") == "Send mail · Gmail" && ArisGateWords.title("Send message") == "Send message",
           "gate-24: a title's known parts are said in English; a service's or tool's name, or English already, stays")
-    check(ArisGateWords.detail(ArisEscalation.taintedReason + "\nMom hi") == "Asking once more because outside content was read\nMom hi"
+    check(ArisGateWords.detail(ArisEscalation.taintedReason + "\nMom hi") == "Asking first, since this chat has info I fetched (weather, web, etc.).\nMom hi"
           && ArisGateWords.detail("Mom hi\n" + ArisEscalation.taintedReason) == "Mom hi\n" + ArisEscalation.taintedReason
           && ArisGateWords.detail("캘린더 일정이 지워져요: 회의") == "A calendar event will be removed: 회의",
           "gate-24 (hostile): only the fixed lines a card opens with are changed: the same words further down are someone's text and stay")
@@ -896,7 +896,7 @@ private func gateEnglishTests() {
           "gate-24: the countdown's spoken line in English; the Korean one as it was")
     // Whole cards: a plain one, an editable one (its fields' own text is kept), a countdown, a proposal.
     let plain = ArisGateWords.card(ArisConfirmation(id: "c1", title: "휴지통으로 옮기기", detail: ArisEscalation.taintedReason + "\n~/Desktop/a.txt", full: ArisEscalation.taintedReason + "\n~/Desktop/a.txt"))
-    check(plain.title == "Move to Trash" && plain.detail.hasPrefix("Asking once more") && plain.detail.hasSuffix("~/Desktop/a.txt") && plain.full == plain.detail && plain.id == "c1",
+    check(plain.title == "Move to Trash" && plain.detail.hasPrefix("Asking first, since this chat has info I fetched") && plain.detail.hasSuffix("~/Desktop/a.txt") && plain.full == plain.detail && plain.id == "c1",
           "gate-24: a plain card: title and the line it opens with in English, the value as it is")
     let fields = ArisEditableAction.parse(.shell("\(t) message Mom 'on my way'"), tools: t)?.fields ?? []
     let editable = ArisGateWords.card(ArisConfirmation(id: "c2", title: "메시지 보내기", detail: "받는 사람: Mom\n내용: on my way", fields: fields))

@@ -89,7 +89,7 @@ enum ArisLoginPath {
             queue.async { [self] in
                 let answer = ArisLoginPath.ask(shell: shell(), timeout: limit)
                 if answer == nil {
-                    FileHandle.standardError.write(Data("aris-agent: the login shell's PATH couldn't be read; only the usual folders are searched\n".utf8))
+                    try? FileHandle.standardError.write(contentsOf: Data("aris-agent: the login shell's PATH couldn't be read; only the usual folders are searched\n".utf8))
                 }
                 // On disk before anyone is given the folders.
                 if let answer { keep(answer) }

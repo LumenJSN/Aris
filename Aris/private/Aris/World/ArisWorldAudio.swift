@@ -2,11 +2,12 @@
 //  ArisWorldAudio.swift
 //  Aris
 //
-//  The world's audio sources: one watch on the device list and the default input (ArisMicWatch, a burst settles into
-//  one change, published as .audioDevices), one on the default output and its data source (the headphone jack), read
-//  into the route (output kind, names), and one on every input device running somewhere, which says whether another
-//  app has a microphone open (a call, most likely; ArisWakeRestProbe.recorder, read off the main thread and steadied
-//  as ArisWakeRest.MicUse steadies it). Only device properties are read: nothing here opens a device.
+//  The world's audio sources, all through one ArisAudioWatch (listeners registered once per object and property,
+//  changed only by difference): the device list (and the default input while the microphone choice follows the
+//  system), published as .audioDevices once a burst settles; the default output and its data source (the headphone
+//  jack), read into the route (output kind, names); and every input device running somewhere, which says whether
+//  another app has a microphone open (a call, most likely; ArisWakeRestProbe.recorder, read off the main thread and
+//  steadied as ArisWakeRest.MicUse steadies it). Only device properties are read: nothing here opens a device.
 //
 
 import AppKit
@@ -16,8 +17,7 @@ import Foundation
 @MainActor
 final class ArisWorldAudio {
     private weak var world: ArisWorld?
-    private var deviceWatch: ArisMicWatch?
-    private var listeners: [(AudioObjectID, AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
+    private var watch: ArisAudioWatch?
     private var micUse = ArisWakeRest.MicUse()
     private var probing = false
     private var probeAgain = false
@@ -25,57 +25,38 @@ final class ArisWorldAudio {
 
     init(world: ArisWorld) {
         self.world = world
-        deviceWatch = ArisMicWatch { [weak self] in
-            MainActor.assumeIsolated {
-                self?.listen()
-                self?.world?.note(.audioDevices)
-                self?.readRoute()
-            }
+        let watch = ArisAudioWatch(hal: ArisAudioHALLive.shared, followsSystemInput: { ArisMicSetting.current.followsSystemInput }) { [weak self] event in
+            MainActor.assumeIsolated { self?.heard(event) }
         }
-        listen()
+        self.watch = watch
+        watch.resync()
+        // The microphone choice changed in Settings: the default input is watched or not, and the wake word chooses.
+        NotificationCenter.default.addObserver(forName: ArisMicSetting.changed, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.choiceChanged() }
+        }
         var now = world.snapshot
         now.audio = Self.route()
         world.seed(now)
         probeRecorder()
     }
 
-    // MARK: - Listening
+    private func heard(_ event: ArisAudioWatch.Event) {
+        switch event {
+        case .route: readRoute()
+        case .devices:
+            world?.note(.audioDevices)
+            readRoute()
+        case .recorder: probeRecorder()
+        }
+    }
+
+    private func choiceChanged() {
+        watch?.resync()
+        world?.note(.audioDevices)
+    }
 
     private static func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> AudioObjectPropertyAddress {
         AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
-    }
-
-    /// (Again) on the default output, its data source, and every input device's running state.
-    private func listen() {
-        for (object, address, block) in listeners {
-            var where_ = address
-            AudioObjectRemovePropertyListenerBlock(object, &where_, .main, block)
-        }
-        listeners = []
-        let route: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            MainActor.assumeIsolated {
-                self?.readRoute()
-                // Not from inside the listener being replaced: the next turn of the main queue.
-                DispatchQueue.main.async { MainActor.assumeIsolated { self?.listen() } }
-            }
-        }
-        add(AudioObjectID(kAudioObjectSystemObject), Self.address(kAudioHardwarePropertyDefaultOutputDevice), route)
-        add(AudioObjectID(kAudioObjectSystemObject), Self.address(kAudioHardwarePropertyDefaultInputDevice), route)
-        if let output = Self.defaultDevice(kAudioHardwarePropertyDefaultOutputDevice) {
-            add(output, Self.address(kAudioDevicePropertyDataSource, kAudioDevicePropertyScopeOutput)) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.readRoute() }
-            }
-        }
-        for device in ArisMicDevices.all() where device.hasInput {
-            add(device.id, Self.address(kAudioDevicePropertyDeviceIsRunningSomewhere)) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.probeRecorder() }
-            }
-        }
-    }
-
-    private func add(_ object: AudioObjectID, _ address: AudioObjectPropertyAddress, _ block: @escaping AudioObjectPropertyListenerBlock) {
-        var where_ = address
-        if AudioObjectAddPropertyListenerBlock(object, &where_, .main, block) == noErr { listeners.append((object, address, block)) }
     }
 
     // MARK: - The route

@@ -113,7 +113,7 @@ final class ArisChildLedger {
         for entry in live { ArisProcessGroup.stop(entry.pid, since: entry.started, grace: grace) }
         try? ArisPrivateFile.write(Data(), to: file)
         if !live.isEmpty {
-            FileHandle.standardError.write(Data("aris-agent: stopped \(live.count) brain process(es) an earlier helper left running\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: stopped \(live.count) brain process(es) an earlier helper left running\n".utf8))
         }
         return live.count
     }

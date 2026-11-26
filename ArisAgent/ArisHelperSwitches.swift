@@ -56,7 +56,7 @@ enum ArisSwitchEffects {
         let changed = switches.take(object[ArisSwitchSet.field], fromApp: fromApp)
         guard !changed.isEmpty else { return }
         let names = changed.map(\.rawValue).sorted().joined(separator: ", ")
-        FileHandle.standardError.write(Data("aris-agent: switches changed (\(names)): \(switches.set.environmentValue ?? "all off")\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: switches changed (\(names)): \(switches.set.environmentValue ?? "all off")\n".utf8))
         if changed.contains(.core2), switches.isOn(.core2) { core2On() }
         brainsToRetire(changed).forEach(retire)
     }

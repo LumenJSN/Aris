@@ -275,10 +275,16 @@ protocol ArisDesktopWindows {
     /// One of Aris's own windows that takes clicks (the notch, a side panel) holds the point: a real click there would
     /// press Aris itself (security review).
     func hitsAris(_ point: CGPoint) -> Bool
+    /// That prompt's window as Accessibility reads it (its title, the app it asks for): read only, nothing pressed in it.
+    func promptWindow() -> ArisDesktopPause.Window?
+    /// That prompt brought to the front for the user (its app activated; nothing pressed or typed in it).
+    @discardableResult func raisePrompt() -> Bool
 }
 
 extension ArisDesktopWindows {
     func hitsAris(_ point: CGPoint) -> Bool { false }
+    func promptWindow() -> ArisDesktopPause.Window? { nil }
+    @discardableResult func raisePrompt() -> Bool { false }
 }
 
 /// Who a real click at a point reaches, read from the window server's list (front to back). Pure.
@@ -464,6 +470,8 @@ final class ArisDesktopEngine {
     static func accessLine(english: Bool) -> String { english ? ArisDesktopCopy.accessLine : accessLine }
     static func screenLine(english: Bool) -> String { english ? ArisDesktopCopy.screenLine : screenLine }
     static func blindLine(english: Bool) -> String { english ? ArisDesktopCopy.blindLine : blindLine }
+    static let earlierTurnLine = "Not done: that ref is from a look in an earlier request, and the window may have changed since. Nothing was done. " +
+        "Look at the window again now (`desktop see --app \"<App>\"`) and act on the refs of that look."
     static let notOursLine = "That ref isn't from a look Aris took in this conversation. Look first: `desktop see --app \"<App>\"`, then use its refs."
     static let quitLine = "That app quit or restarted since that look. Look again with `desktop see`."
     static let noLine = "The owner said no (or didn't answer), so it wasn't done. Don't try it another way now. A later request in a new turn gets a new card."
@@ -555,6 +563,11 @@ final class ArisDesktopEngine {
             turn.noteDesktopAction(outcome.status == 0 ? candidate.value ?? .failure(.kind) : .failure(.notDone))
             done(outcome)
         }
+        // A replace of this turn found its field changed after its card: nothing more acts, he is asked first (R1c).
+        if asked.verb.kind == .action, turn.ledger.fieldChangedThisTurn {
+            turn.audit(["answer": "refused (the field changed after an earlier card this turn)", "action": "desktop \(asked.verb.rawValue)", "brain": turn.brainName])
+            return done(.failed(ArisDesktopErase.afterChangedLine))
+        }
         // A batch waits for its turn at the whole Mac's keys and pointer at once (it may type); any other action once the
         // gate has decided it (ArisDesktopLockScope: per app or global). Read-only looks never wait.
         if asked.verb == .batch {
@@ -569,6 +582,11 @@ final class ArisDesktopEngine {
         guard turn.desktopStep() <= (turn.isTask ? Self.maxJobSteps : Self.maxSteps) else {
             turn.audit(["answer": "refused (step cap)", "action": "desktop \(asked.verb.rawValue)", "brain": turn.brainName])
             return done(.failed(Self.stepsLine(job: turn.isTask)))
+        }
+        // A ref from a look in an earlier turn: looked at again first (R2k).
+        if asked.verb.kind == .action, let line = earlierTurnRefusal(asked, turn: turn) {
+            turn.audit(["answer": "refused (a ref from a look in an earlier turn)", "action": "desktop \(asked.verb.rawValue)", "brain": turn.brainName])
+            return done(.failed(line))
         }
         let target: ArisDesktopTarget
         switch resolve(asked, turn: turn) {
@@ -667,7 +685,18 @@ final class ArisDesktopEngine {
             return done(held)
         }
         // What a type or a delete would erase, read now: a replace is its own card, every time (ArisDesktopErase).
-        let erase = request.verb.kind == .action ? self.erase(request, target: target, element: element, turn: turn) : nil
+        let erase: ArisDesktopErase?
+        switch request.verb.kind == .action ? self.erase(request, target: target, element: element, turn: turn) : .erases(nil) {
+        case .erases(let read): erase = read
+        case .refused(let why):
+            // A part of the text to replace with nothing selected: refused before any card, nothing typed (ArisDesktopErase).
+            if case .refuse = decision {} else {
+                let reason = request.verb == .setValue ? "a set-value would drop most of the text, and the words didn't ask for all of it" : "a part to replace, and nothing selected"
+                turn.audit(["answer": "refused (\(reason))", "action": "desktop \(request.verb.rawValue)", "brain": turn.brainName])
+                return done(.failed(why))
+            }
+            erase = nil
+        }
         decision = Self.asked(decision, erase: erase)
         // A replay's look whose live look ran without the read judge runs without it again (ninth VM pass: the replay's look
         // went to the judge, which a replay has no model for, and the request was handed over to a second card).

@@ -105,7 +105,10 @@ private func secTypingTests() {
                              ["keys", "delete", "--app", "Keynote", "--times", "20"], ["type", "hello", "--app", "Pages"], ["type", "hello", "--app", "Stickies"],
                              ["type", "안녕", "--app", "메모"]]
     // fix-13: typed text is the desktop engine's (`aris-tools type` is `desktop type --focused`): its gate is checked below.
-    for words in chain where words.first != "type" {
+    // fix132: so are keys that only select everything or erase (`aris-tools keys` hands them to `desktop press`, whose one
+    // card shows the text they erase): their gate is checked below too.
+    let erasing = { (words: [String]) in words.first == "keys" && ArisKeysRequest.handsToEngine(words) }
+    for words in chain where words.first != "type" && !erasing(words) {
         let said = words.joined(separator: " ")
         for taint in [ArisTaint.screenSeen, .outsideText] {
             let claude = sHandOff(words, taint: taint), codex = sGate(words, taint: taint), agy = sHandOff(words, taint: taint, relay: true)
@@ -137,7 +140,33 @@ private func secTypingTests() {
     }
     check(typed("우유 사기", ArisDesktopContext(request: "TextEdit에 우유 사기라고 입력해 줘")) == .run,
           "H1: the user's own request to type into a safe app on a clean turn is as it was")
-    check(sGate(["keys", "cmd+a", "--app", "TextEdit"], handsFree: true).asks, "H1: words anyone near the Mac could have said don't press keys without the user's card")
+    // Erasing keys, at the desktop engine's gate (fix132): after the screen or outside text, on a hands-free turn, the user's
+    // card every time, even with an earlier yes for the app; the card shows every key.
+    func pressed(_ keys: [String], _ context: ArisDesktopContext, remembered: Bool) -> ArisDesktopDecision {
+        var request = ArisDesktopRequest(verb: .press)
+        request.keys = keys
+        return ArisDesktopGate.decide(request, target: editor, context: context, remembered: remembered, secureInput: false)
+    }
+    for words in chain where erasing(words) {
+        guard case .success(let call) = ArisKeysRequest.parse(Array(words.dropFirst())),
+              case .success(let desktop) = ArisKeysRequest.desktopWords(call, keyboardApp: nil) else { check(false, "H1: \(words) reads as erasing keys"); continue }
+        let keys = Array(desktop.dropFirst().prefix { $0 != "--app" })
+        for remembered in [false, true] {
+            check(pressed(keys, ArisDesktopContext(screen: true), remembered: remembered) == .ask(remember: false)
+                  && pressed(keys, ArisDesktopContext(taintForApp: .outsideText), remembered: remembered) == .ask(remember: false)
+                  && pressed(keys, ArisDesktopContext(handsFree: true), remembered: remembered) == .ask(remember: false),
+                  "H1: after the screen or outside text, and hands-free, `\(words.joined(separator: " "))` asks on the user's card at the engine's gate (remembered \(remembered))")
+        }
+        var request = ArisDesktopRequest(verb: .press)
+        request.keys = keys
+        let card = ArisDesktopCard.card(request, target: editor, element: nil, remember: false, wiped: false)
+        check(keys.allSatisfy { (card.full ?? card.detail).contains($0) || (card.full ?? card.detail).lowercased().contains($0) },
+              "H1: that card shows every key: \(words.joined(separator: " ")) (\(card.full ?? card.detail))")
+        check(sGate(words, taint: .outsideText) == .runs && !ArisRiskPolicy.asksAfterOutsideText(.shell(sLine(words)), tools: sTools),
+              "H1: the shell gate hands `\(words.joined(separator: " "))` to the engine (no raw card of its own)")
+    }
+    check(pressed(["cmd+a"], ArisDesktopContext(handsFree: true), remembered: true) == .ask(remember: false),
+          "H1: words anyone near the Mac could have said don't press keys without the user's card")
     check(ArisRiskPolicy.asksAfterOutsideText(.shell(sLine(["keys", "cmd+s", "--app", "TextEdit"])), tools: sTools),
           "H1: keys are among what asks after outside text")
 }

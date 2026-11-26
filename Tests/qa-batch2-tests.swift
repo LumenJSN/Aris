@@ -167,9 +167,9 @@ private func qaSettingsWordsTests() {
     let marketing = text.components(separatedBy: "\n").filter { $0.contains("MARKETING_VERSION") }
     let build = text.components(separatedBy: "\n").filter { $0.contains("CURRENT_PROJECT_VERSION") }
     // (rel12 item 8: the public 1.3 release; make-release.sh stamps CFBundleVersion with the version too.)
-    check(!marketing.isEmpty && marketing.allSatisfy { $0.contains("MARKETING_VERSION = 1.3.1;") }
-          && !build.isEmpty && build.allSatisfy { $0.contains("CURRENT_PROJECT_VERSION = 1.3.1;") } && !text.contains("2.8-beta"),
-          "BUG-9b: every target is Aris 1.3.1 (1.3.1), never Boring Notch's 2.8-beta.0 (272) or 0.1.0")
+    check(!marketing.isEmpty && marketing.allSatisfy { $0.contains("MARKETING_VERSION = 1.3.2;") }
+          && !build.isEmpty && build.allSatisfy { $0.contains("CURRENT_PROJECT_VERSION = 1.3.2;") } && !text.contains("2.8-beta"),
+          "BUG-9b: every target is Aris 1.3.2 (1.3.2), never Boring Notch's 2.8-beta.0 (272) or 0.1.0")
 }
 
 // MARK: - BUG-32: a 17:00 deadline reads 17:00, never 05:00

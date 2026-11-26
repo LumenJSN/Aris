@@ -86,6 +86,9 @@ struct ArisSSEParser {
 struct ArisAPIError: Error, Equatable, Sendable {
     enum Kind: String, Sendable {
         case auth, quota, rate, overloaded, context, unsupported, network, server, timeout, cancelled, malformed
+        /// The account has no balance or credit left (fourteenth VM run, X2: DeepSeek's "Insufficient Balance" was said
+        /// as a limit to wait out). Waiting doesn't help; topping up or another AI does.
+        case billing
         /// The provider refused tool definitions for this model: the text relay may still work.
         case noTools
     }
@@ -97,7 +100,15 @@ struct ArisAPIError: Error, Equatable, Sendable {
     var retryAt: Date? = nil
 
     /// Another AI may take the question.
-    var isUnavailable: Bool { [.quota, .rate, .overloaded].contains(kind) }
+    var isUnavailable: Bool { [.quota, .rate, .overloaded, .billing].contains(kind) }
+
+    /// A provider's words for an empty account, as each says it: DeepSeek "Insufficient Balance", OpenAI
+    /// `insufficient_quota`, Anthropic "credit balance is too low", OpenRouter "Insufficient credits", Gemini "enable
+    /// billing". An allowlist of those phrases: anything else keeps its kind (a per-minute quota stays a limit).
+    static func saysNoBalance(_ text: String) -> Bool {
+        text.range(of: #"(?i)(insufficient[ _]?(balance|quota|credits?|funds)|credit balance (is )?too low|(no|more|out of) credits\b|payment required|enable billing|billing (to be |is not |not )?(enabled|disabled|account)|billing_not_active)"#,
+                   options: .regularExpression) != nil
+    }
 
     /// Classifies an HTTP error from its status, the start of its body and its headers.
     static func http(status: Int, body: Data, headers: [String: String], now: Date = Date()) -> ArisAPIError {
@@ -107,11 +118,13 @@ struct ArisAPIError: Error, Equatable, Sendable {
         let retry = headers.first { $0.key.lowercased() == "retry-after" }.flatMap { Double($0.value.trimmingCharacters(in: .whitespaces)) }
             .map { now.addingTimeInterval(min($0, 86_400)) }
         let contextWords = ["context_length", "context length", "maximum context", "prompt is too long", "too many tokens", "token limit", "context window"]
+        // No balance left: a 402 always; a 400, 403 or 429 when it says so (Anthropic's comes as a 400, OpenAI's as a 429).
+        if status == 402 || ([400, 403, 429].contains(status) && saysNoBalance(text)) {
+            return ArisAPIError(kind: .billing, message: "balance: " + message)
+        }
         switch status {
         case 401, 403:
             return ArisAPIError(kind: .auth, message: message)
-        case 402:
-            return ArisAPIError(kind: .quota, message: "quota: " + message)
         case 429:
             let quota = lower.contains("quota") || lower.contains("insufficient") || lower.contains("billing") || lower.contains("credit")
             return ArisAPIError(kind: quota ? .quota : .rate, message: (quota ? "quota: " : "rate limit: ") + message, retryAt: retry)
@@ -144,6 +157,7 @@ struct ArisAPIError: Error, Equatable, Sendable {
         let type = ((error["type"] as? String) ?? (error["status"] as? String) ?? (error["code"] as? String) ?? "").lowercased()
         let message = ArisAPISecrets.redacted(String(((error["message"] as? String) ?? type).prefix(240)))
         let code = (error["code"] as? Int) ?? 0
+        if code == 402 || saysNoBalance(type + " " + message) { return ArisAPIError(kind: .billing, message: "balance: " + message) }
         if type.contains("overloaded") || code == 529 || code == 503 { return ArisAPIError(kind: .overloaded, message: "overloaded: " + message) }
         if type.contains("rate") || code == 429 || type.contains("resource_exhausted") {
             return ArisAPIError(kind: message.lowercased().contains("quota") ? .quota : .rate, message: "rate limit: " + message)

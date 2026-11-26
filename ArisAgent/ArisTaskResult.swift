@@ -128,9 +128,9 @@ enum ArisTaskResult {
                     }
                     return (file, index)
                 }
-                FileHandle.standardError.write(Data("aris-agent: couldn't save to \(folder.path): too many results named \(name)\n".utf8))
+                try? FileHandle.standardError.write(contentsOf: Data("aris-agent: couldn't save to \(folder.path): too many results named \(name)\n".utf8))
             } catch {
-                FileHandle.standardError.write(Data("aris-agent: couldn't save to \(folder.path): \(error.localizedDescription)\n".utf8))
+                try? FileHandle.standardError.write(contentsOf: Data("aris-agent: couldn't save to \(folder.path): \(error.localizedDescription)\n".utf8))
             }
         }
         return nil

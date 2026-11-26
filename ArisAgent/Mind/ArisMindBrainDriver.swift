@@ -101,6 +101,8 @@ final class ArisMindBrainDriver: ArisBrainDriver {
         case .network, .timeout: ArisFixTurns.shared.note(.retry)
         default: break
         }
+        // No balance left (X2): Aris's own line for it, never a limit to wait out; another AI may still take it.
+        if kind == .billing { return .unavailable(ArisAPIFailureWords.line(.balance, title: title, english: false)) }
         if kind == .quota || kind == .rate || kind == .overloaded { return .unavailable(kind == .overloaded ? "overloaded" : "rate limit") }
         return .failure(ArisAPIFailureWords.line(ArisAPIFailureWords.kind(kind) ?? .other, title: title, english: false))
     }

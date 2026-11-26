@@ -55,6 +55,14 @@ struct ArisNoticeQueue: Equatable {
         return next
     }
 
+    /// Notices that go by themselves and outlived `ArisNotice.longestUp` go, up or waiting.
+    func retiring(at now: Date) -> ArisNoticeQueue {
+        var next = self
+        next.shown.removeAll { $0.outlived(at: now) }
+        next.pending.removeAll { $0.outlived(at: now) }
+        return next
+    }
+
     /// Closed (its ✕) or acted on.
     func closing(_ id: UUID) -> ArisNoticeQueue {
         var next = self

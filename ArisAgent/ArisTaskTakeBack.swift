@@ -97,7 +97,7 @@ enum ArisTaskTakeBack {
 
     static func lose(_ state: ArisTaskState, reason: String, follow: ArisTaskFollow, home: String) {
         ArisTaskJournal.append(.ended(.lost, line: reason), job: state.job, home: home)
-        FileHandle.standardError.write(Data("aris-agent: job \(state.job.prefix(8)) not taken back: \(reason)\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: job \(state.job.prefix(8)) not taken back: \(reason)\n".utf8))
         follow.deliver(.failure(lostLine(state.title)))
     }
 

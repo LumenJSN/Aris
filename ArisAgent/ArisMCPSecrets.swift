@@ -68,7 +68,7 @@ final class ArisMCPKeychain: ArisMCPSecretStore {
     static func lookup(status: OSStatus, data: Data?) -> ArisMCPSecretLookup {
         if status == errSecSuccess, let data { return .found(String(decoding: data, as: UTF8.self)) }
         if status == errSecItemNotFound { return .missing }
-        FileHandle.standardError.write(Data("aris-agent: keychain read for an MCP server failed (\(status))\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: keychain read for an MCP server failed (\(status))\n".utf8))
         return .unreadable
     }
 
@@ -83,7 +83,7 @@ final class ArisMCPKeychain: ArisMCPSecretStore {
             status = SecItemAdd(item as CFDictionary, nil)
         }
         guard status == errSecSuccess else {
-            FileHandle.standardError.write(Data("aris-agent: keychain save for an MCP server failed (\(status))\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: keychain save for an MCP server failed (\(status))\n".utf8))
             return "키체인에 저장하지 못했어요 (오류 \(status))."
         }
         return nil

@@ -75,7 +75,7 @@ final class ArisEditWatch: @unchecked Sendable {
         if Self.current === self { Self.current = nil }
         guard changed, let change = ArisCorrection.detect(inserted: inserted, before: first, after: last) else { return }
         let outcome = ArisDictionaryStore.record(change)
-        FileHandle.standardError.write(Data("aris-agent: dictation correction -> \(outcome)\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: dictation correction -> \(outcome)\n".utf8))
         DistributedNotificationCenter.default().postNotificationName(.init(Self.notification), object: nil, userInfo: nil,
                                                                      deliverImmediately: true)
     }

@@ -82,7 +82,7 @@ enum ArisSessionTranscript {
         guard !handles.isEmpty else { return }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + afterEnd) {
             let removed = remove(handles, began: began, home: home)
-            if removed > 0 { FileHandle.standardError.write(Data("aris-agent: removed \(removed) finished job transcript(s)\n".utf8)) }
+            if removed > 0 { try? FileHandle.standardError.write(contentsOf: Data("aris-agent: removed \(removed) finished job transcript(s)\n".utf8)) }
         }
     }
 

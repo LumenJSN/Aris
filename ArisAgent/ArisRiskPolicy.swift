@@ -238,6 +238,9 @@ enum ArisRiskPolicy {
         // over it, then the engine's own card for the same action (QA BUG-39: two cards, one auto-declined). It's
         // refused, and the brain writes it again with a ref from `desktop see`, which the engine asks about once.
         if ArisDesktopShell.parse(command, tools: tools) != nil { return .never }
+        // A desktop verb written without `desktop` (`aris-tools set-value …`): no such aris-tools command, so it is
+        // refused with the usage the same way, never a "Mac 작업" card over its words (seventeenth VM run, R1s).
+        if desktopVerbProblem(command, tools: tools) != nil { return .never }
         // "a && b": each command on its own; the riskiest decides.
         if let pieces = ArisCommandPolicy.segments(command), pieces.count > 1 {
             let risks = pieces.map { shell($0, tools: tools, home: home, critical: critical, request: request) }
@@ -446,7 +449,7 @@ enum ArisRiskPolicy {
     /// A desktop line the engine can't read: why (its words' usage error), for the refusal the brain gets; nil when the
     /// line isn't a desktop call or reads fine (QA live on 827cfdb4: a batch with --title was "never" with no reason).
     static func desktopProblem(_ command: String, tools: String) -> String? {
-        guard let line = ArisDesktopShell.parse(command, tools: tools) else { return nil }
+        guard let line = ArisDesktopShell.parse(command, tools: tools) else { return desktopVerbProblem(command, tools: tools) }
         if line.words.first == "wait" {
             return ArisDesktopWords.isWait(line.words) && line.text == nil ? nil
                 : "Refused: Aris couldn't read that desktop call (\(ArisDesktopWords.waitUsage): the id the earlier call gave). Write it again as the usage says; nothing was done."
@@ -456,6 +459,22 @@ enum ArisRiskPolicy {
             return "Refused: Aris couldn't read that desktop call (\(usage.text)). Write it again as the usage says; nothing was done."
         }
         return nil
+    }
+
+    /// The desktop verbs that are no aris-tools command of their own (`type`, `window` and `app` are: they stay theirs).
+    static let desktopOnlyVerbs: Set<String> = ["see", "click", "click-at", "set-value", "press", "scroll", "drag", "menu", "dialog", "dock", "batch", "wait"]
+
+    /// A desktop verb written straight after aris-tools, without `desktop` (seventeenth VM run, R1s: `aris-tools set-value
+    /// @s:e14 'value seventeen' --stdin` went up as a "Mac action" card reading "@sj339k / e14 value seventeen --stdin"):
+    /// the brain is told to write it again as a desktop call, nothing done. Nil for any other line. Only the line the
+    /// shell runs is read (a heredoc's body is text).
+    static func desktopVerbProblem(_ command: String, tools: String) -> String? {
+        let head = command.unicodeScalars.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first
+            .map { String(String.UnicodeScalarView($0)) } ?? command
+        let line = head.range(of: " <<'").map { String(head[..<$0.lowerBound]) } ?? head
+        guard let words = ArisCommandPolicy.words(line), words.count >= 2, words[0] == tools, desktopOnlyVerbs.contains(words[1]) else { return nil }
+        return "Refused: Aris couldn't read that call (`\(words[1])` is a desktop command: it goes after `desktop`, as in `desktop \(words[1]) …`). " +
+            "Write it again as the usage says; nothing was done."
     }
 
     /// Said (and shown) when computer use is asked for in a browser: websites are a browser task for Aside.
@@ -647,6 +666,10 @@ enum ArisRiskPolicy {
         // `type` only hands the text to the desktop engine (`desktop type --focused`), whose gate asks the user with the exact
         // text as for any desktop type (taint, the app, his own words): asking here too would ask twice (ninth VM pass).
         if tool == "type" { return .auto }
+        // Keys that only select everything or erase (ArisKeysRequest.erases) go the same way, to the engine's `desktop press`,
+        // whose one card shows the text they erase every time (fourteenth VM run, R1b: a raw "Press keys · cmd+a delete
+        // --app TextEdit --title Untitled" card first, then the engine's replace card).
+        if tool == "keys", ArisKeysRequest.handsToEngine(arguments) { return .auto }
         // A settings deep link into a protected pane (Privacy & Security, Users & Groups, passwords, profiles) opens it
         // like any other settings link when it is the plain pane link and nothing else (audit gate-15: opening changes
         // nothing, and the app's own permission guide opens the same panes). Acting inside stays refused (the desktop
@@ -759,6 +782,8 @@ enum ArisRiskPolicy {
             // retest: a card came up just to find; the delete's card is the one card).
             if rest.starts(with: ["event", "find"]) { return false }
             if conversions, let verb = rest.first, ArisConvertWords.verbs.contains(verb) { return true }
+            // Erasing keys are the desktop engine's (its gate cards them with the erased text, taint or not), as a desktop line is.
+            if ArisKeysRequest.handsToEngine(rest) { return false }
             return (readBackWrites + readBackReads).contains { rest.starts(with: $0) }
         }
     }

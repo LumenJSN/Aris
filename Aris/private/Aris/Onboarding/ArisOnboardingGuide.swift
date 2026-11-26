@@ -130,6 +130,15 @@ final class ArisOnboardingGuide: ObservableObject {
     var quitting = false
     /// The setup had been finished before this showing (a replay): closing it leaves it finished.
     var doneBefore = false
+    /// Whether the guide shows at this launch has been decided (showAtLaunch ran).
+    private(set) var launchDecided = false
+
+    /// The guide may still come up at this launch (ArisOnboarding.guideDue): nothing is asked of macOS over it.
+    var dueAtLaunch: Bool {
+        let defaults = UserDefaults.standard
+        return ArisOnboarding.guideDue(launchDecided: launchDecided, later: defaults.bool(forKey: ArisOnboarding.laterKey),
+                                       replay: defaults.bool(forKey: ArisOnboarding.replayKey))
+    }
 
     var showing: Bool { phase != .closed }
     var bandWidth: Double { Double(ArisBand.bodyWidth(notchWidth: closedSize.width)) }
@@ -150,6 +159,7 @@ final class ArisOnboardingGuide: ObservableObject {
     /// then cleared); after 나중에 할게요 the pages left, quietly, at most once a day, never for a login item, at most 3
     /// times in a row.
     func showAtLaunch(loginItem: Bool) {
+        launchDecided = true
         let defaults = UserDefaults.standard
         let replay = defaults.bool(forKey: ArisOnboarding.replayKey)
         defaults.removeObject(forKey: ArisOnboarding.replayKey)

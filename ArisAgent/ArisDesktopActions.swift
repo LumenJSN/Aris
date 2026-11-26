@@ -312,9 +312,17 @@ extension ArisDesktopSession {
             return report(renamed ? .done("“\(ArisDesktopVerify.short(request.text ?? ""))” is set and committed with Return") : .notSeen("the name didn't stay after Return"),
                           envelope: envelope, after: committed)
         }
-        if request.verb == .setValue, case .done = check, let envelope, !envelope.success {
-            return report(check, envelope: envelope, after: after, how: "the field reads it back, though Peekaboo wasn't sure")
+        // A set-value into a text field that worked keeps its undo, the text it replaced in the undo store (sixteenth VM
+        // run, R1ku: after a set-value over a whole document, "되돌려" found nothing to undo).
+        let undone = { (result: ArisDesktopResult) -> ArisDesktopResult in
+            guard request.verb == .setValue, result.ok, ArisDesktopEngine.setsText(element),
+                  let line = self.keepUndo(field: element, before: element.rawCapped ? nil : element.rawValue, after: after, typing: true) else { return result }
+            return ArisDesktopResult(ok: true, text: ArisDesktopCaret.withLine(line, in: result.text), keysSent: result.keysSent)
         }
+        if request.verb == .setValue, case .done = check, let envelope, !envelope.success {
+            return undone(report(check, envelope: envelope, after: after, how: "the field reads it back, though Peekaboo wasn't sure"))
+        }
+        if request.verb == .setValue { return undone(readBack(check, envelope: envelope, after: after, before: before)) }
         let result = readBack(check, envelope: envelope, after: after, before: before)
         // The control's own press changed nothing (no window opened either): once more, the next way (a click posted to
         // the app), and read back.
@@ -380,11 +388,23 @@ extension ArisDesktopSession {
         // An erase of everything selects it first, on the card that showed what goes (ArisDesktopErase).
         let keys = erasingKeys(request.keys)
         let erasedField = basis.erase?.replaces == true ? fresh.focusedElement : nil
-        var envelope = run(ArisPeekabooCommands.press(keys, snapshot: fresh.peekaboo))
-        // The keys can't reach the window in the background (its keyboard focus is in another one): the user's card, then
-        // forward, the keys, and the front app put back.
-        if envelope?.focusElsewhere == true {
-            switch forward(keys: keys, in: fresh, window: window) {
+        // And deletes only over all of it (fix132d, as R1k's replace): the select-all goes on its own and is read back
+        // first; one that didn't take in the background goes forward, where it is read back again before the delete.
+        let deleting = selectsAllFirst && erasedField != nil ? ArisDesktopErase.afterSelectAll(keys) : nil
+        var aimed = fresh, selectForward = false
+        if deleting != nil, let erasedField {
+            switch selectAllFirst(erasedField, in: fresh, erasing: true) {
+            case .refused(let refused): return refused
+            case .missed: selectForward = true
+            case .selected(let selected, _): aimed = selected
+            }
+        }
+        let sending = deleting ?? keys
+        var envelope = selectForward ? nil : run(ArisPeekabooCommands.press(sending, snapshot: aimed.peekaboo))
+        // The keys can't reach the window in the background (its keyboard focus is in another one), or the select-all
+        // didn't take there: the user's card, then forward, the keys, and the front app put back.
+        if selectForward || envelope?.focusElsewhere == true {
+            switch forward(keys: sending, in: fresh, window: window, selectingAll: deleting == nil ? nil : erasedField) {
             case .failure(let refused): return refused
             case .success(let sent): envelope = sent
             }
@@ -406,6 +426,13 @@ extension ArisDesktopSession {
         var result = readBack(after.map { ArisDesktopVerify.pressed(keys, dispatched: sent, before: fresh, after: $0, evidence: evidence) } ?? .notSeen("the window is gone"),
                               envelope: envelope, after: after, before: before)
         result.keysSent = sent
+        // An erase of everything must have emptied the field: never told as done with text left in it (fix132d).
+        if result.ok, let erasedField, let after, !erasedField.rawCapped, let held = erasedField.rawValue,
+           let refused = unerased(field: erasedField, before: held, after: after) {
+            var failed = refused
+            failed.keysSent = sent
+            return failed
+        }
         // An erase that worked keeps its undo: the field's text as it was goes to the undo store.
         if result.ok, let erasedField, let after, let line = keepUndo(field: erasedField, before: erasedField.rawCapped ? nil : erasedField.rawValue, after: after, typing: false) {
             result = ArisDesktopResult(ok: true, text: result.text + "\n" + line, keysSent: sent)
@@ -480,11 +507,16 @@ extension ArisDesktopSession {
     /// The keys go to `window` (the pinned one): it is brought forward first, then looked at again, and only a window that
     /// can itself be read, still as the card showed it, with no password field holding the focus, gets the keys. A sheet
     /// that can't be read is refused, never pressed into the window behind it.
-    func forward(keys: [String], in look: ArisDesktopObservation, window: ArisDesktopWindow) -> Result<ArisDesktopEnvelope?, ArisDesktopResult> {
+    /// `selectingAll`: an erase of everything's field: the select-all goes first, forward, and the keys only once all of
+    /// the field reads as selected (fix132d).
+    func forward(keys: [String], in look: ArisDesktopObservation, window: ArisDesktopWindow,
+                 selectingAll field: ArisDesktopElement? = nil) -> Result<ArisDesktopEnvelope?, ArisDesktopResult> {
         guard !turn.isTask else {
             return .failure(.failed("The keys can't reach \(target.name)'s window in the background (its keyboard focus is in another window), and a background job never brings a window forward. Say so in the report."))
         }
-        let detail = ArisDesktopCopy.forwardKeysDetail(title: look.title, keys: keys, english: english)
+        // The card names every key that goes, in order: an erase's select-all before its keys (security review of ed0d3167).
+        let shownKeys = (field != nil ? ["cmd+a"] : []) + keys
+        let detail = ArisDesktopCopy.forwardKeysDetail(title: look.title, keys: shownKeys, english: english)
         guard basis.cardYes || consent(Self.foregroundCard, detail: detail) else { return .failure(.failed(consentRefusal)) }
         if engine.apps.secureInput { return .failure(.failed(ArisDesktopGate.secureRefusal)) }
         if engine.windows.promptOnScreen() != nil { return .failure(.failed(Self.promptLine)) }
@@ -500,6 +532,18 @@ extension ArisDesktopSession {
         guard keysReachTarget(window) else { return .failure(.failed(ArisDesktopFocus.refusalLine)) }
         // Bringing the window forward took a moment: a paste is held to the clipboard once more.
         if let changed = pasteHeld() { return .failure(changed) }
+        if let field {
+            _ = run(ArisPeekabooCommands.pressForward(["cmd+a"], window: window.id))
+            guard let selected = lookAfter(window.id), let all = ArisDesktopVerify.find(field, in: selected) ?? selected.focusedElement else {
+                return .failure(.failed(ArisDesktopErase.notErasedLead + " The field couldn't be read after the select-all, so nothing was deleted."))
+            }
+            if ArisDesktopErase.coversAll(all) == false {
+                turn.audit(["answer": "not erased (select-all didn't take with the window in front)", "action": "desktop press · \(target.name)", "brain": turn.brainName])
+                return .failure(.failed(ArisDesktopErase.notErasedLead + " " + ArisDesktopErase.eraseSelectMissedLine + "\n\n" + selected.render()))
+            }
+            // The look took a moment: still in front and key right before the delete.
+            guard keysReachTarget(window) else { return .failure(.failed(ArisDesktopFocus.refusalLine)) }
+        }
         return .success(run(ArisPeekabooCommands.pressForward(keys, window: window.id)))
     }
 

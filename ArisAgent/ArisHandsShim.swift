@@ -291,7 +291,7 @@ enum ArisHandsShim {
     static func serve(arguments: [String] = CommandLine.arguments) -> Never {
         guard let index = arguments.firstIndex(of: "--tools"), index + 1 < arguments.count,
               arguments[index + 1].hasPrefix("/"), (arguments[index + 1] as NSString).lastPathComponent == "aris-tools" else {
-            FileHandle.standardError.write(Data("aris-agent hands-mcp: --tools <aris-tools> is needed\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent hands-mcp: --tools <aris-tools> is needed\n".utf8))
             exit(2)
         }
         let environment = ProcessInfo.processInfo.environment

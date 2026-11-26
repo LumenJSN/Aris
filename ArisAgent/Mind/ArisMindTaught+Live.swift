@@ -26,7 +26,7 @@ extension ArisMindTaught {
         kept[id.uuidString] = choice
         guard let data = try? JSONEncoder().encode(kept) else { return }
         do { try ArisPrivateFile.write(data, to: file) } catch {
-            FileHandle.standardError.write(Data("aris-agent: a saved-steps choice couldn't be kept: \(error.localizedDescription)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: a saved-steps choice couldn't be kept: \(error.localizedDescription)\n".utf8))
         }
     }
 

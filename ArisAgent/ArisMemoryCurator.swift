@@ -62,7 +62,7 @@ final class ArisMemoryCurator: @unchecked Sendable {
     func start() {
         queue.async { [self] in
             let imported = store.importBackupIfNeeded()
-            if imported > 0 { FileHandle.standardError.write(Data("aris-agent: imported \(imported) memories from memory.md (kept as the backup)\n".utf8)) }
+            if imported > 0 { try? FileHandle.standardError.write(contentsOf: Data("aris-agent: imported \(imported) memories from memory.md (kept as the backup)\n".utf8)) }
             refreshNow()
             rollUp(now: clock())
         }
@@ -101,7 +101,7 @@ final class ArisMemoryCurator: @unchecked Sendable {
         guard start else { return false }
         tidyQueue.async { [self] in
             let changes = consolidateNow(at: now)
-            if !changes.isEmpty { FileHandle.standardError.write(Data("aris-agent: the weekly memory tidy-up changed \(changes.count) summaries\n".utf8)) }
+            if !changes.isEmpty { try? FileHandle.standardError.write(contentsOf: Data("aris-agent: the weekly memory tidy-up changed \(changes.count) summaries\n".utf8)) }
             cacheLock.withLock { tidying = false }
         }
         return true

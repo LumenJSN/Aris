@@ -87,6 +87,19 @@ enum ArisDesktopHonesty {
         return rest.prefix(1).uppercased() + rest.dropFirst()
     }
 
+    /// A replace or a typing that found its field changed after its card (fourteenth VM run, R1c: the reply said "문서는
+    /// 비웠지만…" when nothing was erased): the reply is Aris's own line, from what happened. `changed`: nil when no field
+    /// changed this turn (the reply stays); false when nothing had been done before it; true when something had.
+    static func fieldChanged(_ answer: String, changed: Bool?, korean: Bool) -> String {
+        guard let changed else { return answer }
+        if !changed {
+            return korean ? "아무것도 바꾸지 않았어요. 확인 카드를 띄운 뒤에 글이 바뀌어서 멈췄어요. 지금 글 그대로 다시 할까요?"
+                : "Nothing was changed: the text changed after the card showed it, so I stopped. Shall I try again with the text as it is now?"
+        }
+        return korean ? "확인 카드를 띄운 뒤에 글이 바뀌어서, 그 뒤로는 아무것도 바꾸지 않았어요. 지금 글 그대로 다시 할까요?"
+            : "The text changed after the card showed it, so nothing more was changed after that. Shall I try again with the text as it is now?"
+    }
+
     static func checked(_ answer: String, done: Bool, notDone: Int, korean: Bool) -> String {
         guard !done, notDone > 0, answer.range(of: claims, options: .regularExpression) != nil,
               answer.range(of: negation, options: .regularExpression) == nil else { return answer }

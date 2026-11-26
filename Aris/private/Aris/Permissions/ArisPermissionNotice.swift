@@ -18,6 +18,9 @@ enum ArisPermissionNotice {
 
     /// How long a card that only says why stays up (macOS's own dialog is the thing to answer).
     static let reasonShowsFor: TimeInterval = 8
+    /// The relaunch offer goes by itself too (fourteenth VM run: "Input Monitoring · Reopen Aris" stayed under the closed
+    /// notch for an hour); the Reopen button stays in Settings › Permissions.
+    static let relaunchShowsFor: TimeInterval = 30
 
     /// The permission's name as System Settings shows it on this macOS where Aris knows the list's name.
     static func title(_ permission: ArisPermission, english: Bool) -> String {
@@ -64,7 +67,7 @@ enum ArisPermissionNotice {
             let body = ArisUIWords.text(relaunchBody.korean, relaunchBody.english, english: english)
             let reopen = ArisUIWords.text("다시 열기", "Reopen", english: english)
             return ArisNotice(key: Self.key(key), kind: .system, title: name, body: body,
-                              actions: [ArisNoticeAction(title: reopen, primary: true, role: .relaunchApp)])
+                              actions: [ArisNoticeAction(title: reopen, primary: true, role: .relaunchApp)], showsFor: relaunchShowsFor)
         }
     }
 }

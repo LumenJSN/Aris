@@ -150,7 +150,7 @@ final class ArisAppsFileStore: ArisAppsStore {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(value).write(to: url, options: .atomic)
         } catch {
-            FileHandle.standardError.write(Data("aris apps: couldn't save \(name): \(error.localizedDescription)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris apps: couldn't save \(name): \(error.localizedDescription)\n".utf8))
         }
     }
 

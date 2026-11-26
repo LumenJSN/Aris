@@ -559,7 +559,7 @@ private func cuKeysRouteTests() {
     check(cuSource("ArisAgent/main.swift").contains("ArisDesktopLock.shared.allowKeys(owner, ArisDesktopKeysPolicy.keys(in: learned.commands, tools: ArisAgentRunner.toolsPath))"),
           "keys: a replay registers its shortcut's keys")
     let windows = cuSource("ArisTools/ArisWindows.swift"), keysClient = cuSource("ArisTools/ArisEngineKeys.swift"), hold = cuSource("ArisTools/ArisDesktopHold.swift")
-    check(windows.contains("let sent = engineKeys([written], times: times, bundle: bundle)") && !windows.contains("event?.post(tap: .cghidEventTap)") && !windows.contains("func typingTarget("),
+    check(windows.contains("let sent = engineKeys(call.chords, times: times, bundle: bundle)") && !windows.contains("event?.post(tap: .cghidEventTap)") && !windows.contains("func typingTarget("),
           "keys: aris-tools keys goes through the engine and posts nothing to whatever is in front")
     check(windows.contains("let sent = engineKeys([\"cmd+n\"], times: 1, bundle: app.bundleIdentifier)"), "keys: new's ⌘N goes through the engine too")
     check(windows.components(separatedBy: "desktopHold()").count - 1 >= 2 && hold.contains("func desktopHold(gap: Bool = true)") && hold.contains("if gap { asked[\"gap\"] = true }"),

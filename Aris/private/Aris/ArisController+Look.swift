@@ -121,7 +121,7 @@ extension ArisController {
                 }
                 // What actually happened: added at the caret, nothing erased (and how to take it back).
                 let said = mode == .rewrite ? (korean ? "바꿨어요. ⌘Z로 되돌릴 수 있어요." : "Replaced it. ⌘Z undoes it.")
-                    : ArisTypeHere.insertedLine(korean: korean, undoable: undoable)
+                    : ArisTypeHere.insertedLine(korean: korean, undoable: undoable, sends: ArisTypeHere.sends(focusKind: look.focusKind))
                 setSession(session.answering(new))
                 stats?.firstSound(at: .now)
                 await speak { await self.speaker.speak(said) }

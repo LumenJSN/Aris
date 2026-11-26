@@ -76,7 +76,7 @@ enum ArisAppBundle {
     static func watchGone(program: String? = program, app: String? = path, queue: DispatchQueue = .global(qos: .utility),
                           exists: @escaping @Sendable (String) -> Bool = { access($0, F_OK) == 0 },
                           stop: @escaping @Sendable (String) -> Void = { path in
-                              FileHandle.standardError.write(Data("aris-agent: Aris is gone from \(path); stopping (launchd starts the helper again when the app is back)\n".utf8))
+                              try? FileHandle.standardError.write(contentsOf: Data("aris-agent: Aris is gone from \(path); stopping (launchd starts the helper again when the app is back)\n".utf8))
                               exit(0)
                           }) {
         guard let program, app != nil else { return }

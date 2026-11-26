@@ -138,6 +138,11 @@ struct ArisSettingsSnapshot: Equatable {
 
     // 목소리 · 언어
     var languages: [ArisSettingOption] = [.init(id: "ko", title: "한국어"), .init(id: "en", title: "English")]
+    /// 마이크 (ArisMicSetting): the stored choice, the chosen device's name kept for while it is gone, and the devices
+    /// as Settings last read them (nil: not read, as in a still).
+    var microphone = ArisMicSetting.thisMac.stored
+    var microphoneName: String?
+    var microphones: [ArisAudioDevice]?
     var hasVoiceKey = false
     var voiceName = ""
     var speed = 1.0

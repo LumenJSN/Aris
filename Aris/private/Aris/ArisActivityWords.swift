@@ -84,7 +84,7 @@ enum ArisActivityWords {
         ("옮김: ", "Moved: ", false), ("이름 바꿈: ", "Renamed: ", false), ("새 폴더: ", "New folder: ", false), ("휴지통으로: ", "To the Trash: ", false),
         ("일정 추가: ", "Event added: ", false), ("집 위치: ", "Home: ", false), ("예약 취소: ", "Schedule cancelled: ", false), ("예약: ", "Scheduled: ", false),
         ("변환: ", "Converted: ", true), ("합침: ", "Merged: ", true), ("나눔: ", "Split: ", true), ("압축: ", "Made smaller: ", true),
-        ("창 배치: ", "Windows arranged: ", true), ("타이머: ", "Timer: ", true), ("볼륨 ", "Volume ", false),
+        ("창 배치: ", "Windows arranged: ", true), ("창 옮김: ", "Window moved: ", false), ("타이머: ", "Timer: ", true), ("볼륨 ", "Volume ", false),
         // The log's other lines (ArisActSummary, the calendar's changes, a mail reply's draft): they were drawn as written.
         ("일정 삭제: ", "Event deleted: ", false), ("일정 변경: ", "Event changed: ", false), ("메시지 보냄: ", "Message sent: ", false),
         ("미리 알림 추가: ", "Reminder added: ", false), ("메모 저장: ", "Note saved: ", false), ("기억함: ", "Remembered: ", false),

@@ -131,7 +131,7 @@ for _ in 0..<10 where !helperMode && !ArisOrigin.decision(origin, serving: true)
     origin = ArisOrigin.facts(serving: true)
 }
 guard ArisOrigin.allows(origin, serving: !helperMode) else {
-    FileHandle.standardError.write(Data("\(ArisOrigin.agentRefusedLine) (\(ArisOrigin.describe(origin)))\n".utf8))
+    try? FileHandle.standardError.write(contentsOf: Data("\(ArisOrigin.agentRefusedLine) (\(ArisOrigin.describe(origin)))\n".utf8))
     exit(1)
 }
 if helperMode { ArisOrigin.armRecheck() }
@@ -167,12 +167,12 @@ ArisBuildInfo.recordRunningAgent(in: ArisAgentRunner.directory)
 ArisUsageScanner.shared.kick()
 
 // The shared secret, made here when none exists (the agent owns ~/.config/aris; the app and the hooks read the same file).
-if ClaudeHookToken.createIfMissing() { FileHandle.standardError.write(Data("aris-agent: made a new token file\n".utf8)) }
+if ClaudeHookToken.createIfMissing() { try? FileHandle.standardError.write(contentsOf: Data("aris-agent: made a new token file\n".utf8)) }
 // The HTTP caches earlier builds of the helper and of aris-tools wrote (they used the shared session; tenth VM run,
 // item 1): removed at each start; said only when something was there, as a count.
 do {
     let removed = ArisHelperCaches.purge(home: FileManager.default.homeDirectoryForCurrentUser)
-    if removed > 0 { FileHandle.standardError.write(Data("aris-agent: removed \(removed) old HTTP cache files; nothing is cached now\n".utf8)) }
+    if removed > 0 { try? FileHandle.standardError.write(contentsOf: Data("aris-agent: removed \(removed) old HTTP cache files; nothing is cached now\n".utf8)) }
 }
 // launchd keeps agent.log open as this process's stderr: over 20 MB it's copied to a dated file and emptied in place,
 // and our own write offset moves to the new end (launchd's fd may not be O_APPEND).
@@ -372,7 +372,7 @@ func ask(_ requested: ArisBrain, tier: ArisTier, prompt: String, request: String
                whenUnavailable: { message in
         queue.async {
             brainHealth.markUnavailable(brain, until: ArisBrainHealth.resetDate(in: message))
-            FileHandle.standardError.write(Data("aris-agent: \(brain.rawValue) unavailable (\(message))\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: \(brain.rawValue) unavailable (\(message))\n".utf8))
             // A turn whose handed-off call already ran is never asked again on another brain (it would act twice).
             let alreadyActed = ArisHandOffLedger.shared.current(runner)?.didRun == true
             guard ArisBrainFallback.retriesElsewhere(allowed: fallback, retried: retried, alreadyActed: alreadyActed, relayRound: relayRound),
@@ -610,7 +610,7 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
                imageText: String? = nil, cancelled: ArisCancelFlag, watched: Bool, on connection: NWConnection) {
         // Closed while the images were decoded: nothing of this turn happens (no flags, no fresh start, no brain).
         guard ArisAskAdmission.proceeds(state: connection.state, cancelled: cancelled.isSet) else {
-            FileHandle.standardError.write(Data("aris-agent: /ask closed before its images were checked; nothing started\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: /ask closed before its images were checked; nothing started\n".utf8))
             return
         }
         // The user's computer-use engine, from the app only; a change retires Codex's processes set for the old one.
@@ -643,7 +643,7 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
         case .success(let checked): images = checked
         case .failure(let problem):
             // Which check failed, never the bytes.
-            FileHandle.standardError.write(Data("aris-agent: images refused (\(problem))\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: images refused (\(problem))\n".utf8))
             return respond(connection, "400 Bad Request", Data())
         }
         let focusRaw = object["focus"] as? String
@@ -861,7 +861,8 @@ func handleAsk(_ object: [String: Any], text: String, peerFailure: ArisPeer.Fail
         let clean = ArisMemoryLearning.mayLearn(fromApp: fromApp, task: false, untrusted: untrusted, outsideConversation: sawOutside, screenSeen: sawScreen,
                                                 handsFree: handsFree, images: !images.isEmpty, screenText: screen != nil, tainted: false)
         // "도큐멘트 폴더 통째로 지워 줘": a protected place as a whole is refused here, in one plain sentence (ArisProtectedPlaceAsk).
-        if let line = ArisProtectedPlaceAsk.answer(request, fromApp: fromApp, handsFree: handsFree, plain: images.isEmpty && screen == nil) {
+        // A refusal needs no vouch (fourteenth VM run, D3: after outside text "~/Downloads 비워 줘" went to the AI, which opened Finder).
+        if let line = ArisProtectedPlaceAsk.answer(request, fromApp: peerFailure == nil, handsFree: handsFree, plain: images.isEmpty && screen == nil) {
             stream(.helperAnswers, on: connection)
             return stream(.answer(line), on: connection)
         }
@@ -1671,7 +1672,7 @@ func read(_ connection: NWConnection, buffer: RequestBuffer = RequestBuffer(), s
     if !started {
         queue.asyncAfter(deadline: .now() + requestIdleLimit) {
             guard !buffer.complete else { return }
-            FileHandle.standardError.write(Data("aris-agent: a connection sent no request in \(Int(requestIdleLimit)) s; closed\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: a connection sent no request in \(Int(requestIdleLimit)) s; closed\n".utf8))
             connection.cancel()
         }
     }
@@ -1771,13 +1772,13 @@ do {
     }
     listener.stateUpdateHandler = { state in
         if case .failed(let error) = state {
-            FileHandle.standardError.write(Data("aris-agent: listener failed: \(error)\(ArisPeer.holderNote(ofPort: port.rawValue))\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: listener failed: \(error)\(ArisPeer.holderNote(ofPort: port.rawValue))\n".utf8))
             exitAfterPause()
         }
     }
     listener.start(queue: queue)
 } catch {
-    FileHandle.standardError.write(Data("aris-agent: can't listen on \(port): \(error)\(ArisPeer.holderNote(ofPort: port.rawValue))\n".utf8))
+    try? FileHandle.standardError.write(contentsOf: Data("aris-agent: can't listen on \(port): \(error)\(ArisPeer.holderNote(ofPort: port.rawValue))\n".utf8))
     exitAfterPause()
 }
 

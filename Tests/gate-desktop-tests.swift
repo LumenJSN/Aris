@@ -491,8 +491,10 @@ private func gatePasteTests() {
     check(!done.output.contains("클립보드") && !held.output.contains("계좌번호"), "gate-19: what the clipboard holds is never told to the brain")
     let actions = gateSource("ArisAgent/ArisDesktopActions.swift")
     let holdAt = actions.range(of: "if let refused = pasteHeld() { return refused }")?.lowerBound
-    let pressAt = actions.range(of: "var envelope = run(ArisPeekabooCommands.press(keys, snapshot: fresh.peekaboo))")?.lowerBound
-    check(holdAt != nil && pressAt != nil && holdAt! < pressAt!, "gate-19: the clipboard is read again right before the keys go")
+    // fix132d: an erase of everything presses its select-all on its own first (read back), then the rest: both after it.
+    let pressAt = actions.range(of: "var envelope = selectForward ? nil : run(ArisPeekabooCommands.press(sending, snapshot: aimed.peekaboo))")?.lowerBound
+    let selectAt = actions.range(of: "switch selectAllFirst(erasedField, in: fresh, erasing: true) {")?.lowerBound
+    check(holdAt != nil && pressAt != nil && selectAt != nil && holdAt! < selectAt! && selectAt! < pressAt!, "gate-19: the clipboard is read again right before the keys go")
     // In another app a paste is that app's ordinary key press, as before.
     check(ArisDesktopGate.decide(paste, target: gateEditor, context: ArisDesktopContext(home: "/Users/p"), remembered: true, secureInput: false) == .run,
           "gate-19: a paste in a document app is unchanged")
@@ -809,9 +811,9 @@ private func gateEnglishCardTests() {
           && ArisDesktopCopy.spotDetail(title: "Canvas", wanted: "x", label: "", role: "", point: nil, english: false) == "창: “Canvas”\n찾던 것: x\n고른 자리: 이름 없는 곳",
           "desk-11: the consent cards' Korean details are word for word what they were")
     let ladder = gateSource("ArisAgent/ArisDesktopTextLadder.swift"), look = gateSource("ArisAgent/ArisDesktopLook.swift"), actions = gateSource("ArisAgent/ArisDesktopActions.swift")
-    check(ladder.contains("ArisDesktopCopy.consentTitle(title, english: english)") && ladder.contains("ArisDesktopCopy.forwardTypeDetail(title: look.title, text: text, english: english)")
+    check(ladder.contains("ArisDesktopCopy.consentTitle(title, english: english)") && ladder.contains("ArisDesktopCopy.forwardTypeDetail(title: look.title, text: text, english: english, keysFirst: keysFirst)")
           && look.contains("ArisDesktopCopy.pointerDetail(title: look.title, label: label, english: english)") && look.components(separatedBy: "english: english)").count == 5
-          && actions.contains("ArisDesktopCopy.settingsDetail(title: look?.title ?? \"\", english: english)") && actions.contains("ArisDesktopCopy.forwardKeysDetail(title: look.title, keys: keys, english: english)"),
+          && actions.contains("ArisDesktopCopy.settingsDetail(title: look?.title ?? \"\", english: english)") && actions.contains("ArisDesktopCopy.forwardKeysDetail(title: look.title, keys: shownKeys, english: english)"),
           "desk-11: every consent card takes its title and its detail from the same switch")
 }
 

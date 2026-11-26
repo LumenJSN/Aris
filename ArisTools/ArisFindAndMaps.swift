@@ -60,6 +60,18 @@ enum ArisFindQuery {
         }.sorted()
     }
 
+    /// The usual places looked through by their own items when Spotlight found nothing anywhere in home (fourteenth VM
+    /// run, D7: a new folder on the Desktop wasn't indexed yet, so "바탕화면에 있는 임시폴더14 폴더 지워 줘" was told as missing).
+    static let usualPlaces = ["Desktop", "Documents", "Downloads"]
+
+    /// The items directly in the usual places whose names hold every word (`list` reads a folder's names).
+    static func placeMatches(_ words: String, home: String, list: (String) -> [String]) -> [String] {
+        usualPlaces.flatMap { place -> [String] in
+            let folder = home + "/" + place
+            return directMatches(words, names: list(folder)).map { folder + "/" + $0 }
+        }
+    }
+
     /// The folder to search: `folder` (~ and links resolved) when it is a real folder inside `home` that may be listed
     /// (iCloud Drive and its folders too) and isn't protected; the home folder when none was given; nil when the folder
     /// isn't allowed.

@@ -4,7 +4,7 @@
 //
 //  Which actions the automatic check (ArisAutoCheck) may ever let run without a card. Only an action that asks today
 //  for one reason, that outside text or the screen came into the conversation, and that runs by itself on a clean
-//  turn (ArisGateReason.raised: the same rule that puts "외부 내용을 읽은 뒤라…" on its card); on the user's own turn, never a
+//  turn (ArisGateReason.raised: the same rule that puts "이 대화에서 가져온 정보(…)가 있어서…" on its card); on the user's own turn, never a
 //  background job's, a schedule's or a hands-free one; and only one plain aris-tools call of a kind listed here. Each
 //  kind writes its own row in the 한 일 log with a working 되돌리기 (so a pass that was wrong can be seen and undone),
 //  sends nothing off the Mac, and is read with a fixed verb and a fixed set of flags: a flag the kind doesn't take, a

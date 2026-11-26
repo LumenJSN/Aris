@@ -25,6 +25,13 @@ enum ArisLongTurn {
     /// The most samples the recording holds.
     static func recordedLimit(sampleRate: Double) -> Int { Int(sampleRate * recordedSeconds) }
 
+    /// A recording's memory past this is given back when it starts over; up to it (about 31 s at 16 kHz) it is kept, so
+    /// a listener's next start doesn't grow it again from nothing.
+    static let keptCapacityBytes = 2_000_000
+
+    /// Whether a recording that can hold `capacity` samples keeps that memory when it starts over.
+    static func keepsCapacity(_ capacity: Int) -> Bool { capacity * MemoryLayout<Float>.size <= keptCapacityBytes }
+
     /// Whether a recording of `recorded` samples holds the whole turn (it stops growing at the limit). One that
     /// doesn't is never handed to Whisper: its text would be the turn without its end.
     static func isWhole(recorded: Int, sampleRate: Double) -> Bool { recorded < recordedLimit(sampleRate: sampleRate) }

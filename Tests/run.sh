@@ -280,8 +280,14 @@ swiftc -o "$OUT" "$DIR/main.swift" "$SRC/ClaudeModels.swift" "$SRC/ClaudeStore.s
   "$DIR/exp11-tests.swift" \
   "$DIR/exp12-tests.swift" "$DIR/../ArisAgent/Teach/ArisTeachLastValues.swift" \
   "$DIR/exp131-tests.swift" \
+  "$DIR/fix132-tests.swift" "$DIR/../ArisTools/ArisKeysRequest.swift" \
+  "$DIR/card132-tests.swift" "$DIR/deepseek-tests.swift" \
+  "$DIR/fix132b-tests.swift" "$DIR/fix132c-tests.swift" "$SRC/../Aris/ArisAppTaken.swift" \
+  "$DIR/fix132d-tests.swift" "$DIR/../ArisTools/ArisTimerLog.swift" \
+  "$DIR/memfix-tests.swift" "$SRC/../Aris/ArisClipboardThumbnail.swift" \
   "$DIR/decision-tests.swift" "$DIR"/../Shared/Core/Decide/*.swift "$SRC/../Aris/ArisDecider.swift" "$SRC/../Aris/ArisRouter+Decide.swift" "$SRC/../Aris/ArisRouterModels+Chat.swift" "$DIR/../Aris/components/Settings/ArisAIDecisionModels.swift" \
   "$DIR/stt-tests.swift" "$DIR"/../Shared/Core/Hearing/Recognise/*.swift \
+  "$DIR/hang-tests.swift" "$SRC/../Aris/Audio/ArisAudioListeners.swift" "$SRC/../Aris/Audio/ArisAudioWatch.swift" "$SRC/../Aris/Audio/ArisAudioHALLive.swift" "$SRC/../Aris/ArisMicSetting.swift" \
   "$DIR/safe10-tests.swift" "$DIR/../Shared/ArisNoStore.swift" "$DIR/../ArisAgent/ArisHelperCaches.swift" "$DIR/../Aris/components/Settings/ArisSavedKeyRows.swift" \
   "$DIR/quick-tests.swift" "$DIR/../ArisAgent/Teach/ArisTeachRunOnce.swift" \
   "$DIR/cctab-tests.swift" "$DIR/cctab-render/scene.swift" "$SRC/ClaudeCardFit.swift" "$SRC/ClaudeAnswerViews.swift" "$SRC/NotchButtonStyle.swift" "$SRC/ClaudeAttention.swift" "$SRC/TerminalJump.swift"

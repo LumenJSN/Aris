@@ -212,7 +212,9 @@ enum ArisUndoWords {
     /// takes the newest undoable change of that kind, as before. What changed nothing of his (an app opened, what is
     /// left of a run already undone) is no change: it is walked past to the change before it (fifth VM run, D6), and
     /// the card names that change.
-    static func reach(_ changes: [Change], since reach: Date, kind: String?) -> Reach {
+    /// `named`: the thing their words name ("이름 바꾼 거", "일정", "창": ArisUndoKind), matched by the log line's kind
+    /// (fourteenth VM run, X7: "이름 바꾼 거" with no rename left was taken for a bare "되돌려").
+    static func reach(_ changes: [Change], since reach: Date, kind: String?, named: ArisUndoKind? = nil) -> Reach {
         let recent = changes.filter { $0.date >= reach }.sorted { $0.date > $1.date }
         var merged: [(change: Change, candidate: Candidate?)] = []
         var index = 0
@@ -241,11 +243,11 @@ enum ArisUndoWords {
         }
         guard let newest = merged.first else { return .nothing }
         let candidates = merged.compactMap(\.candidate)
-        guard let kind else {
+        guard kind != nil || named != nil else {
             guard let candidate = newest.candidate else { return .cannot(newest.change.summary) }
             return .undo(candidate, newest: candidate, doubt: false)
         }
-        let (entry, doubt) = pick(candidates, kind: kind)
+        let (entry, doubt) = pick(candidates, kind: kind, named: named)
         guard let entry else { return candidates.isEmpty ? .nothing : .noneOfKind(candidates) }
         return .undo(entry, newest: candidates.first, doubt: doubt)
     }
@@ -288,11 +290,50 @@ enum ArisUndoWords {
 
     /// The entry to undo: the newest of the kind named, else (none named) the newest. `doubt`: the kind was named and
     /// the newest entry is another kind, so the card says which it is and which it isn't.
-    static func pick(_ candidates: [Candidate], kind: String?) -> (entry: Candidate?, doubt: Bool) {
-        guard let kind else { return (candidates.first, false) }
-        let match = candidates.first { $0.action == kind }
+    static func pick(_ candidates: [Candidate], kind: String?, named: ArisUndoKind? = nil) -> (entry: Candidate?, doubt: Bool) {
+        guard kind != nil || named != nil else { return (candidates.first, false) }
+        let match = candidates.first { candidate in
+            (kind == nil || candidate.action == kind) && (named.map { labels($0).contains(label(of: candidate.summary)) } ?? true)
+        }
         return (match, match != nil && candidates.first != match)
     }
+
+    /// The thing the user's words name ("이름 바꾼 거", "일정", "입력한 글", "창", "휴지통"); nil for none.
+    static func named(in heard: String) -> ArisUndoKind? { ArisUndoKind.named(in: heard) }
+
+    /// The log lines' kinds (the words before ": ") each named thing is: an allowlist, so a line of any other kind is
+    /// never taken for one he named.
+    static func labels(_ kind: ArisUndoKind) -> Set<String> {
+        switch kind {
+        case .rename: ["이름 바꿈"]
+        case .trash: ["휴지통으로"]
+        case .typing: ["입력", "글 바꿈", "글 지움"]
+        case .event: ["일정 추가", "일정 삭제", "일정 변경"]
+        case .window: ["창 배치", "창 옮김"]
+        case .move: ["옮김"]
+        }
+    }
+
+    /// A summary's kind: its words before ": " (a unit's first step's).
+    static func label(of summary: String) -> String { summary.components(separatedBy: ": ").first ?? summary }
+
+    /// The card's first line when nothing of the kind he named is there (fourteenth VM run, X4 and X7: a text question,
+    /// or a plain card for the newest that didn't say his kind wasn't there): it says so, and the card offers the newest.
+    static func missingLine(kind: String?, named: ArisUndoKind?, korean: Bool) -> String {
+        let verb: [String: (String, String)] = ["made": ("만든", "added"), "removed": ("지운", "deleted"), "moved": ("옮긴", "moved")]
+        let what: String
+        switch (named, kind.flatMap { verb[$0] }) {
+        case (.event?, let done?): what = korean ? "\(done.0) 일정" : "\(done.1) event"
+        case (let thing?, _): what = korean ? thing.korean : englishNames[thing] ?? thing.rawValue
+        case (nil, let done?): what = korean ? "\(done.0) 것" : "something \(done.1)"
+        case (nil, nil): what = korean ? "말씀하신 일" : "that"
+        }
+        return korean ? "최근 기록에 없어요: \(what). 대신 가장 최근 일을 되돌릴까요?" : "There's no recent \(what) to undo. Undo the latest one instead?"
+    }
+
+    private static let englishNames: [ArisUndoKind: String] = [
+        .rename: "rename", .trash: "item put in the Trash", .typing: "typed text", .event: "event", .window: "window move", .move: "file move",
+    ]
 
     /// An entry's summary as a card or a reply shows it (a summary holds a brain's words: a title, a file name):
     /// control and invisible format characters out, at most `limit` characters with a visible "…".
@@ -304,13 +345,35 @@ enum ArisUndoWords {
     /// A summary as a card or a reply shows it: cleaned, and in English where the card is English (the log's own
     /// line is Korean: "할 일 추가: that" is shown as "To-do added: that", by the 한 일 tab's table; third VM run).
     static func shown(_ summary: String, korean: Bool) -> String {
-        clean(korean ? summary : ArisActivityWords.english(summary))
+        clean(korean ? koreanLayout(summary) : ArisActivityWords.english(summary))
+    }
+
+    /// A window move's line as aris-tools logs it ("창 옮김: TextEdit left") with its layout word in Korean ("TextEdit 왼쪽
+    /// 절반"): a Korean reply never carries the tool's own English word (fourteenth VM run: "‘TextEdit left’ 창 옮김을 되돌렸어요").
+    static func koreanLayout(_ summary: String) -> String {
+        guard summary.hasPrefix("창 옮김: ") else { return summary }
+        let layouts = [("왼쪽 절반", "left"), ("오른쪽 절반", "right"), ("전체 화면", "full"), ("가운데", "center")]
+        for (korean, english) in layouts where summary.hasSuffix(" " + english) { return String(summary.dropLast(english.count)) + korean }
+        return summary
     }
 
     /// A summary on the undo card itself: cleaned and in the card's language, never cut (the card wraps and scrolls;
     /// cut at 120 characters a schedule's line lost the time it ends with: security review 3, I1).
     static func whole(_ summary: String, korean: Bool) -> String {
-        clean(korean ? summary : ArisActivityWords.english(summary), limit: .max)
+        if let timer = timerName(summary, korean: korean) { return timer }
+        return clean(korean ? koreanLayout(summary) : ArisActivityWords.english(summary), limit: .max)
+    }
+
+    /// A timer's line said as the timer it set, by its length ("타이머: 5", as aris-tools logged it, or "타이머: 5분" → "5분
+    /// 타이머", "5-minute timer"), never the tool's bare number (seventeenth VM run, M2u: the undo card read "Timer: 5"
+    /// and the reply "‘5’ 타이머를 되돌렸어요"). Nil for any other line.
+    static func timerName(_ summary: String, korean: Bool) -> String? {
+        guard let length = ArisActivityWords.timerLength(summary), length >= 1 else { return nil }
+        let total = Int(length.rounded()), hours = total / 3600, minutes = total % 3600 / 60, seconds = total % 60
+        if !korean, hours == 0, seconds == 0 { return "\(minutes)-minute timer" }
+        let parts = [hours > 0 ? (korean ? "\(hours)시간" : "\(hours) h") : nil, minutes > 0 ? (korean ? "\(minutes)분" : "\(minutes) min") : nil,
+                     seconds > 0 ? (korean ? "\(seconds)초" : "\(seconds) s") : nil]
+        return parts.compactMap { $0 }.joined(separator: " ") + (korean ? " 타이머" : " timer")
     }
 
     /// The helper's own card (an event deleted, a schedule revived): its summary whole. Where the card's words are
@@ -322,8 +385,9 @@ enum ArisUndoWords {
     }
 
     /// Its card: always what will be undone; with doubt, the newest one too, which is left as it is.
-    static func card(for entry: Candidate, newest: Candidate?, doubt: Bool, korean: Bool) -> (title: String, detail: String) {
-        var detail = korean ? "되돌릴 일: \(whole(entry.summary, korean: true))" : "To undo: \(whole(entry.summary, korean: false))"
+    /// `missing`: the kind he named isn't there (missingLine), said first.
+    static func card(for entry: Candidate, newest: Candidate?, doubt: Bool, korean: Bool, missing: String? = nil) -> (title: String, detail: String) {
+        var detail = (missing.map { $0 + "\n" } ?? "") + (korean ? "되돌릴 일: \(whole(entry.summary, korean: true))" : "To undo: \(whole(entry.summary, korean: false))")
         if doubt, let newest { detail += "\n" + staysLine(newest, korean: korean) }
         return (korean ? "되돌리기" : "Undo", detail)
     }
@@ -348,6 +412,8 @@ enum ArisUndoWords {
     /// to-do read "‘우유’ 할을 되돌렸어요"). Only a schedule's line ends with its time in brackets, which is left out; a
     /// title's own brackets stay.
     static func doneLine(_ summary: String, korean: Bool) -> String {
+        // A timer by its length: "5분 타이머를 되돌렸어요." (M2u).
+        if let timer = timerName(summary, korean: korean) { return korean ? "\(timer)를 되돌렸어요." : "I took back the \(timer)." }
         let summary = shown(summary, korean: korean)
         let parts = summary.components(separatedBy: ": ")
         guard parts.count >= 2 else { return korean ? "‘\(summary)’ 되돌렸어요." : "I took back “\(summary)”." }
@@ -368,7 +434,7 @@ enum ArisUndoWords {
     static let doneNouns: [String: String] = [
         "할 일 추가": "할 일", "할 일 완료": "할 일", "할 일 지움": "할 일", "내일로 넘김": "할 일", "일정 추가": "일정", "일정 삭제": "일정", "일정 변경": "일정",
         "예약": "예약", "예약 취소": "예약", "옮김": "옮긴 것", "이름 바꿈": "이름 바꾼 것", "새 폴더": "새 폴더", "휴지통으로": "휴지통에 넣은 것",
-        "집 위치": "집 위치", "변환": "변환", "합침": "합친 것", "나눔": "나눈 것", "압축": "압축", "창 배치": "창 배치", "타이머": "타이머",
+        "집 위치": "집 위치", "변환": "변환", "합침": "합친 것", "나눔": "나눈 것", "압축": "압축", "창 배치": "창 배치", "창 옮김": "창 옮긴 것", "타이머": "타이머",
         "메시지 보냄": "메시지", "미리 알림 추가": "미리 알림", "메모 저장": "메모", "기억함": "기억", "기억 지움": "기억 지운 것",
         "기본 캘린더": "기본 캘린더", "메일 답장 초안": "메일 답장 초안", "입력": "입력한 글", "글 바꿈": "바꾼 글", "글 지움": "지운 글",
     ]
@@ -378,7 +444,7 @@ enum ArisUndoWords {
         "To-do added": "to-do", "To-do done": "to-do", "To-do removed": "to-do", "Moved to tomorrow": "to-do", "Event added": "event",
         "Event deleted": "event", "Event changed": "event", "Scheduled": "schedule", "Schedule cancelled": "schedule", "Moved": "move",
         "Renamed": "rename", "New folder": "new folder", "To the Trash": "move to the Trash", "Home": "home location", "Converted": "conversion",
-        "Merged": "merge", "Split": "split", "Made smaller": "compression", "Windows arranged": "window arrangement", "Timer": "timer",
+        "Merged": "merge", "Split": "split", "Made smaller": "compression", "Windows arranged": "window arrangement", "Window moved": "window move", "Timer": "timer",
         "Message sent": "message", "Reminder added": "reminder", "Note saved": "note", "Remembered": "memory", "Memories cleared": "memory clearing",
         "Default calendar": "default calendar", "Mail reply drafted": "mail reply draft", "Typed": "typing", "Text replaced": "text replacement",
         "Text erased": "erasing",

@@ -305,6 +305,7 @@ enum ArisSettingsIndex {
         e("skills.add", .skills, "스킬 추가 · 말로 만들기", "스킬, 링크, GitHub, 깃허브, skill-creator, 만들기, 폴더, 가르치기"),
         e("skills.list", .skills, "내 스킬", "스킬 목록, 끄기, 삭제, 모든 AI로 시험, 테스트, SKILL.md"),
         e("voice.languages", .voice, "쓰는 언어", "언어, 언어 추가, 한국어, 영어, 다국어"),
+        e("hear.mic", .voice, "마이크", "마이크, 입력, 입력 기기, 내장 마이크, 이 Mac, 에어팟, AirPods, 헤드폰, 블루투스, 시스템 설정과 같게, 음질"),
         e("hear.repair", .voice, "들은 말 다듬기", "잘못 들음, 오인식, 교정, 고치기, 영어 섞어 말하기, 다듬기, repair"),
         e("hear.words", .voice, "Aris가 알아야 할 단어", "단어장, 내 단어, 사전, 고유명사, 어휘, 들린 말, 맞는 말"),
         e("voice.speed", .voice, "말하기 속도", "속도, 빠르게, 느리게, 들어 보기"),

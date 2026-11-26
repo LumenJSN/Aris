@@ -150,6 +150,9 @@ enum ArisAPIDialects {
         if !spec.functions.isEmpty {
             body["tools"] = spec.functions.map { ["type": "function", "function": ["name": $0.name, "description": $0.description, "parameters": $0.parameters]] }
         }
+        // DeepSeek's models think by default, and then refuse (HTTP 400) a request with tools unless every earlier answer's
+        // reasoning comes back with it: Aris asks without thinking (fast spoken turns, and nothing to send back).
+        if ArisAPIPreset.isDeepSeek(preset: spec.preset, base: spec.base) { body["thinking"] = ["type": "disabled"] }
         return body
     }
 

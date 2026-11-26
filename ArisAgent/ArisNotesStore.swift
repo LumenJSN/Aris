@@ -87,7 +87,7 @@ enum ArisNotesStore {
                 return true
             }
         } catch {
-            FileHandle.standardError.write(Data("aris-agent: couldn't keep notes in \(file.lastPathComponent): \(error)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: couldn't keep notes in \(file.lastPathComponent): \(error)\n".utf8))
             return false
         }
     }

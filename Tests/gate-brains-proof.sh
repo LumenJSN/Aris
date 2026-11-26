@@ -18,7 +18,7 @@ swiftc -Onone -target arm64-apple-macos14.0 -o "$OUT/gate-brains-proof" "${AGENT
   "$SRC/Aris/private/Aris/Team/ArisTeammate.swift" "$SRC/Aris/private/Aris/Team/ArisTeammateScope.swift" "$SRC/Aris/private/Aris/Team/ArisClaudeLaunch.swift" "$SRC/Aris/private/Aris/Team/ArisJob.swift" \
   "$SRC/Aris/private/Aris/Team/ArisDispatch.swift" "$SRC/Aris/private/Aris/Team/ArisWindowLocator.swift" \
   "$SRC/Aris/private/Aris/See/ArisCaptureRules.swift" "$SRC/Aris/private/Aris/See/ArisImageBudget.swift" "$SRC/Aris/private/Aris/See/ArisImageCodec.swift" \
-  "$SRC/Aris/private/Aris/ArisTurnImage.swift" "$SRC/Aris/private/Aris/ArisImageCheck.swift" "$SRC/ArisTools/ArisSealedTools.swift" "$SRC/ArisTools/ArisTurnGate.swift" "$SRC/ArisTools/ArisReadGate.swift" "$SRC/ArisTools/ArisWebFetch.swift" "$SRC/Aris/private/Aris/ArisLogRotation.swift" "$SRC/Aris/private/Aris/ArisDataSafety.swift" \
+  "$SRC/Aris/private/Aris/ArisTurnImage.swift" "$SRC/Aris/private/Aris/ArisImageCheck.swift" "$SRC/ArisTools/ArisSealedTools.swift" "$SRC/ArisTools/ArisTurnGate.swift" "$SRC/ArisTools/ArisKeysRequest.swift" "$SRC/ArisTools/ArisReadGate.swift" "$SRC/ArisTools/ArisWebFetch.swift" "$SRC/Aris/private/Aris/ArisLogRotation.swift" "$SRC/Aris/private/Aris/ArisDataSafety.swift" \
   "$SRC/Aris/private/Aris/Dictation/ArisWritingStyle.swift" "$SRC/Aris/private/Aris/Dictation/ArisLearnedDictionary.swift" "$SRC/Aris/private/Aris/Dictation/ArisPolishPrompt.swift" \
   "$SRC/Shared/ArisBuildInfo.swift" "$SRC/Shared/ArisBuildStamp.swift" "$DIR/gate-brains-proof/main.swift" 2>&1 | { grep -E "error:" -A5 || true; }
 [ -x "$OUT/gate-brains-proof" ] || { echo "PROOF BUILD FAILED"; exit 1; }

@@ -53,7 +53,7 @@ enum ArisTaskJournal {
             ArisTaskSeal.verifies(ArisTaskSeal.context("task", id, String(index), previous) + json, seal: seal, key: key)
         }
         if chain.goodBytes < existing.count {
-            FileHandle.standardError.write(Data("aris-agent: job \(id.prefix(8))'s journal had \(existing.count - chain.goodBytes) byte(s) after its last good record; cut\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: job \(id.prefix(8))'s journal had \(existing.count - chain.goodBytes) byte(s) after its last good record; cut\n".utf8))
             guard ftruncate(descriptor, off_t(chain.goodBytes)) == 0 else { return false }
         }
         let line = record.line(sealedWith: { ArisTaskSeal.lineSeal($0, job: id, index: chain.good, previous: chain.last, key: key) })

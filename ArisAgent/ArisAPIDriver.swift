@@ -283,6 +283,9 @@ final class ArisAPIDriver: ArisBrainDriver {
         gate.markUntrusted()
         let said = ArisAPISecrets.redacted(message)
         switch ArisAPIError.Kind(rawValue: kind) {
+        case .billing:
+            // No balance left (X2): said as such, never as a limit; another AI may still take it (unavailable).
+            return .unavailable(ArisAPIFailureWords.line(.balance, title: title, english: false))
         case .quota, .rate, .overloaded:
             return .unavailable(said.isEmpty ? "rate limit" : said)
         case .auth:

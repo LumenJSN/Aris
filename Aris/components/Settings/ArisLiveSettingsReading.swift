@@ -37,6 +37,12 @@ extension ArisLiveSettings {
         ArisTerminal.allCases.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleId) != nil }
     }
 
+    /// The name kept for a chosen microphone (shown while it is not connected); nil for This Mac or the system's.
+    static func microphoneName(choosing stored: String, among devices: [ArisAudioDevice]) -> String? {
+        guard case .device(let uid) = ArisMicSetting(stored: stored) else { return nil }
+        return devices.first { $0.uid == uid }?.name
+    }
+
     static func readScreens() -> [ArisSettingOption] {
         NSScreen.screens.compactMap { screen in screen.displayUUID.map { ArisSettingOption(id: $0, title: screen.localizedName) } }
     }

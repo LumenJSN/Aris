@@ -239,7 +239,7 @@ final class ArisMindBrain: @unchecked Sendable {
         // Only aris-agent's own child, for a known provider (as `api-brain`: security review C1), and only with Core 2 on.
         guard ArisCore2.isOn(), ArisAPIParent.isAgent(), let index = arguments.firstIndex(of: "--profile"), index + 1 < arguments.count,
               let profile = ArisAPIHelper.resolve(arguments[index + 1], store: ArisAPISecrets.store) else {
-            FileHandle.standardError.write(Data("aris-agent mind-brain: refused (not started by Aris)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent mind-brain: refused (not started by Aris)\n".utf8))
             exit(2)
         }
         let out = FileHandle.standardOutput

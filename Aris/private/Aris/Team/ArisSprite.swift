@@ -275,11 +275,27 @@ struct ArisSpriteLook: Hashable {
     /// on the render server, so a handful of sizes in the app share a few atlases.
     static let standardSizes: [CGFloat] = [14, 20, 44]
 
-    /// The size to bake for a character shown `size` points big: the smallest standard size that holds it; past the
-    /// largest, its own.
+    /// A character up to this much bigger than the largest standard size is drawn from that size's atlas, scaled up
+    /// on the render server (the settings page's 48-pt star from the 44-pt one: 9%, which doesn't show on its soft
+    /// edges).
+    static let upscaleAllowance: CGFloat = 1.1
+    /// The biggest a character plays its loops at. Past it a loop's atlas is tens of MB decoded (the first-run guide
+    /// of 2026-11-07 baked its 132-pt star's idle loop at 4752 × 4752, 88 MB, and a 101.6-pt one at 52 MB), so a
+    /// bigger character holds its state's rest pose: three cells, a few MB at most. Bigger moving stars draw live
+    /// (ArisOnboardingStar).
+    static var maxAnimatedSize: CGFloat { (standardSizes.last ?? 44) * upscaleAllowance }
+
+    /// The size to bake for a character shown `size` points big: the smallest standard size that holds it; the
+    /// largest a little past it (upscaleAllowance); further past, its own.
     static func bakeSize(_ size: CGFloat) -> CGFloat {
-        standardSizes.first { $0 >= size - 0.01 } ?? size
+        if let standard = standardSizes.first(where: { $0 >= size - 0.01 }) { return standard }
+        if let largest = standardSizes.last, size <= largest * upscaleAllowance + 0.01 { return largest }
+        return size
     }
+
+    /// Whether a character shown `size` points big plays its loops (and faces the pointer); past maxAnimatedSize it
+    /// holds its rest pose.
+    static func animates(_ size: CGFloat) -> Bool { size <= maxAnimatedSize + 0.01 }
 
     /// The atlas cell, in pixels: the kit's canvas is 1.5 times the box.
     var cellPx: Int { Int((Double(size) * 1.5 * Double(scale)).rounded()) }
@@ -346,8 +362,9 @@ enum ArisSpriteCache {
 
     /// On disk (PNG): about a tenth of the decoded size each, so this holds a few dozen looks.
     static let diskCapBytes = 96 * 1024 * 1024
-    /// In memory (decoded).
-    static let memoryCapBytes = 48 * 1024 * 1024
+    /// In memory (decoded): a few clips of the characters on screen (the biggest of a session's, ghost 44 pt at 2×,
+    /// is 8 MB). One dropped reads back from disk off the main thread in about 13 ms, its still pose shown meanwhile.
+    static let memoryCapBytes = 24 * 1024 * 1024
 
     /// Whether a queued atlas still bakes: not once the layers that held it have all let go (a picker tile scrolled off,
     /// a closed page). One no layer has held yet (a job's prefetch) still bakes.

@@ -38,6 +38,6 @@ func skill(_ args: [String]) {
     _ = done.wait(timeout: .now() + wait + 5)
     guard let reply, let output = reply["output"] as? String else { fail("Aris's agent didn't answer (is it running?)") }
     let status = (reply["status"] as? Int) ?? 1
-    if status == 0 { print(output) } else { FileHandle.standardError.write(Data((output + "\n").utf8)) }
+    if status == 0 { print(output) } else { try? FileHandle.standardError.write(contentsOf: Data((output + "\n").utf8)) }
     exit(Int32(clamping: status))
 }

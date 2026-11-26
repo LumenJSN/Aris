@@ -3,9 +3,10 @@
 //  Aris
 //
 //  The live side of ArisMicPlan: the audio devices as Core Audio lists them now, an engine's microphone pinned to
-//  the one device the plan names (so it never follows the default input to a headset that connects later), a watch
-//  on the device list and the default input, and the log line written whenever an Aris microphone opens, pauses or
-//  closes (who, and the device's kind; never any audio). Only reads device properties: nothing here opens a device.
+//  the one device the plan names under the microphone choice (ArisMicSetting; so it never follows the default input
+//  to a headset that connects later), and the log line written whenever an Aris microphone opens, pauses or closes
+//  (who, and the device's kind; never any audio). The device watch is ArisAudioWatch's. Only reads device
+//  properties: nothing here opens a device.
 //
 
 import AudioToolbox
@@ -40,8 +41,17 @@ enum ArisMicDevices {
         guard AudioObjectGetPropertyData(system, &where_, 0, nil, &size, &ids) == noErr else { return [] }
         return ids.map { id in
             ArisAudioDevice(id: id, transport: ArisAudioDevice.transport(code: transportCode(id)),
-                            hasInput: hasStreams(id, kAudioObjectPropertyScopeInput), hasOutput: hasStreams(id, kAudioObjectPropertyScopeOutput))
+                            hasInput: hasStreams(id, kAudioObjectPropertyScopeInput), hasOutput: hasStreams(id, kAudioObjectPropertyScopeOutput),
+                            uid: text(id, kAudioDevicePropertyDeviceUID), name: text(id, kAudioObjectPropertyName))
         }
+    }
+
+    private static func text(_ id: AudioDeviceID, _ selector: AudioObjectPropertySelector) -> String? {
+        var where_ = address(selector)
+        var value: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(id, &where_, 0, nil, &size, &value) == noErr, let value else { return nil }
+        return value.takeRetainedValue() as String
     }
 
     private static func transportCode(_ id: AudioDeviceID) -> UInt32 {
@@ -57,9 +67,24 @@ enum ArisMicDevices {
         return AudioObjectGetPropertyDataSize(id, &where_, 0, nil, &size) == noErr && size > 0
     }
 
-    /// The plan for `use`, from the devices as they are this moment.
+    /// The plan for `use` under the microphone choice (ArisMicSetting), from the devices as they are this moment.
     static func plan(for use: ArisMicUse) -> ArisMicPlan {
-        ArisMicPlan.make(for: use, defaultInput: defaultInput(), devices: all())
+        let devices = all(), setting = ArisMicSetting.current
+        noteFallback(setting.pick(devices))
+        return ArisMicPlan.make(for: use, setting: setting, defaultInput: defaultInput(), devices: devices)
+    }
+
+    private static let fallbackSaid = OSAllocatedUnfairLock<ArisMicSetting.Fallback?>(initialState: nil)
+
+    /// The choice not being there is said once, when it starts (and again only after it was there in between).
+    private static func noteFallback(_ pick: ArisMicSetting.Pick) {
+        let changed = fallbackSaid.withLock { said -> Bool in
+            defer { said = pick.fallback }
+            return said != pick.fallback
+        }
+        guard changed, let fallback = pick.fallback else { return }
+        let instead = pick.device == nil ? "the system's input" : "the built-in microphone"
+        log.notice("microphone choice: \(fallback.rawValue, privacy: .public); using \(instead, privacy: .public)")
     }
 
     /// How the voice should go out now (ArisVoiceRoute), with the default input's kind for the log.
@@ -119,35 +144,7 @@ enum ArisMicDevices {
     }
 }
 
-/// Tells its owner (on the main queue) when the list of audio devices or the default input changes: headphones
-/// connected or gone, AirPods taken over by another device, the lid closed. Several changes in a row arrive as one.
-final class ArisMicWatch {
-    private var blocks: [(AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
-    private var settle: DispatchWorkItem?
-    /// Changes come in bursts (a headset connecting changes the list, then the default): one call after they settle.
-    static let settleTime: TimeInterval = 0.6
-
-    init(onChange: @escaping () -> Void) {
-        for selector in [kAudioHardwarePropertyDefaultInputDevice, kAudioHardwarePropertyDevices] {
-            var where_ = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-            let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-                guard let self else { return }
-                self.settle?.cancel()
-                let work = DispatchWorkItem(block: onChange)
-                self.settle = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + Self.settleTime, execute: work)
-            }
-            if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &where_, .main, block) == noErr {
-                blocks.append((where_, block))
-            }
-        }
-    }
-
-    deinit {
-        settle?.cancel()
-        for (where_, block) in blocks {
-            var address = where_
-            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, block)
-        }
-    }
+extension ArisAudioHALLive {
+    /// The app's one: the inputs as ArisMicDevices lists them.
+    static let shared = ArisAudioHALLive { ArisMicDevices.all().filter(\.hasInput).map(\.id) }
 }

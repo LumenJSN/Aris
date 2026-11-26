@@ -108,7 +108,7 @@ struct ArisLook {
         look.confirmed = ArisFrontNow.confirmed(target, after: ArisFrontLive.windows(), steppedOver: steppedOver, ordinary: ordinary)
         if look.confirmed, let field = look.field { look.fieldToken = ArisFieldTargetDesk.shared.keep(field) }
         focus(&look, resolution: resolution, cut: observation.cut, words: words ?? "")
-        if !look.confirmed { FileHandle.standardError.write(Data("aris-agent: look: the window read was no longer \(front.name)'s topmost when the read was over\n".utf8)) }
+        if !look.confirmed { try? FileHandle.standardError.write(contentsOf: Data("aris-agent: look: the window read was no longer \(front.name)'s topmost when the read was over\n".utf8)) }
         return look
     }
 
@@ -119,7 +119,7 @@ struct ArisLook {
         look.focusBlock = ArisFocusContext.lines(resolution, textShown: look.selection != nil)
         if look.confirmed { ArisFocusDesk.shared.keep(resolution, words: words) }
         if let focus = resolution.focus {
-            FileHandle.standardError.write(Data("aris-agent: look: focus \(focus.kind.rawValue) (\(focus.how))\(cut ? ", read cut short" : "")\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: look: focus \(focus.kind.rawValue) (\(focus.how))\(cut ? ", read cut short" : "")\n".utf8))
         }
     }
 
@@ -265,7 +265,7 @@ struct ArisLook {
 
     /// Why a read failed, for agent.log (a missing permission, usually); never what was on screen.
     private static func logFailure(_ arguments: [String], _ run: ArisScreenRead.Captured) {
-        FileHandle.standardError.write(Data("aris-agent: look \(arguments[0]) failed: \(run.errors.prefix(200))\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: look \(arguments[0]) failed: \(run.errors.prefix(200))\n".utf8))
     }
 
     /// One run of aris-tools: how it ended, what it printed (trimmed) and what it complained of; nil when it couldn't

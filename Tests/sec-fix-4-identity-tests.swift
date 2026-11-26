@@ -168,7 +168,7 @@ private func secFix4SealTests() {
     let seal = identityCode("ArisAgent/ArisOrigin+Seal.swift")
     check(seal.contains("if let known = sealVerdicts[key] { return known }") && seal.contains("SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: check.flags), wanted)"),
           "sec4 M1: wiring: verified with SecStaticCodeCheckValidity against Aris's own team and identifier, once per process")
-    check(identityCode("ArisTools/main.swift").contains("FileHandle.standardError.write(Data((ArisOrigin.refusal(startFacts) + \"\\n\").utf8))"), "sec4 M1: wiring: aris-tools says that line")
+    check(identityCode("ArisTools/main.swift").contains("try? FileHandle.standardError.write(contentsOf: Data((ArisOrigin.refusal(startFacts) + \"\\n\").utf8))"), "sec4 M1: wiring: aris-tools says that line")
 }
 
 // MARK: - M5: the app is known by its signature

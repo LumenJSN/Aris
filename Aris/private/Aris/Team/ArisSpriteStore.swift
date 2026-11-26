@@ -2,7 +2,7 @@
 //  ArisSpriteStore.swift
 //  Aris
 //
-//  The characters' atlases (ArisSpriteSheet), by look and clip: in memory while in use (48 MB, least recently used out
+//  The characters' atlases (ArisSpriteSheet), by look and clip: in memory while in use (24 MB, least recently used out
 //  first, never one a layer is showing), on disk in Caches/<bundle id>/ArisSprites (96 MB) so a look bakes once, and
 //  baked one at a time (ArisSpriteBaker) the first time a character asks for one. A bake that fails waits before it is
 //  tried again, so it never holds up the others. Published when one lands.

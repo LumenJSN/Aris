@@ -541,8 +541,8 @@ private func v3SmallerLogicTests() {
     let convert = ArisConfirmation(id: "c1", title: "파일 변환", detail: "Desktop › noise-long.wav\n→ M4A", full: "whole", fields: [], allow: nil)
     let said = G.card(for: convert, raised: true)
     check(said.detail == ArisEscalation.taintedReason + "\nDesktop › noise-long.wav\n→ M4A" && said.full == ArisEscalation.taintedReason + "\nwhole" && said.id == "c1" && said.title == convert.title
-          && ArisGateWords.detail(said.detail).hasPrefix("Asking once more because outside content was read\n"),
-          "vm3 smaller: its card opens with “Asking once more because outside content was read”, as the trash card after the same `files find` does")
+          && ArisGateWords.detail(said.detail).hasPrefix("Asking first, since this chat has info I fetched (weather, web, etc.).\n"),
+          "vm3 smaller: its card opens with “Asking first, since this chat has info I fetched (weather, web, etc.).”, as the trash card after the same `files find` does")
     check(G.card(for: said, raised: true) == said && G.card(for: convert, raised: false) == convert
           && G.card(for: ArisConfirmation(id: "m", title: "엄마", detail: "곧 갈게", countdown: true), raised: true).countdown,
           "vm3 smaller: the line is said once, never on a card that is there anyway, and a countdown stays a countdown")

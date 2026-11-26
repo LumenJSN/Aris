@@ -97,7 +97,7 @@ final class ArisSavedStepsStore: @unchecked Sendable {
               let body = try? Self.encoder.encode(signed.recipes), let key = stored.key,
               ArisMCPTurnCredential.same(Self.mac(body, key: key), signed.mac) else {
             if !tampered {
-                FileHandle.standardError.write(Data("aris-agent: saved-steps.json was changed outside Aris; its saved steps are ignored\n".utf8))
+                try? FileHandle.standardError.write(contentsOf: Data("aris-agent: saved-steps.json was changed outside Aris; its saved steps are ignored\n".utf8))
                 report("saved steps: the file was changed outside Aris, so it is ignored")
             }
             tampered = true

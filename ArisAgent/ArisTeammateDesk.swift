@@ -310,7 +310,7 @@ final class ArisTeammateDesk {
                         self?.finish(job, "하루가 지나서 이 Claude Code 작업은 더 기다리지 않아요.")
                     }
                 case .failure(let error):
-                    FileHandle.standardError.write(Data("aris-agent: teammate launch failed: \(error)\n".utf8))
+                    try? FileHandle.standardError.write(contentsOf: Data("aris-agent: teammate launch failed: \(error)\n".utf8))
                     self.finish(job, (error as? LocalizedError)?.errorDescription ?? "터미널을 열지 못했어요.")
                 }
             }

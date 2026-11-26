@@ -78,7 +78,7 @@ final class ArisAntigravityDriver: ArisBrainDriver {
             sealed = true
             sessionSettings = nil
             instructions = ArisAgentPrompt.sealedAgy(tools: tools, handsFree: false, task: false)
-            FileHandle.standardError.write(Data("aris-agent: Antigravity's settings can't be read as settings (\(why)); it starts without tools of its own, and Aris runs what it asks for\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: Antigravity's settings can't be read as settings (\(why)); it starts without tools of its own, and Aris runs what it asks for\n".utf8))
         }
     }
 

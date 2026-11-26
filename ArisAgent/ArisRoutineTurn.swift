@@ -175,7 +175,7 @@ enum ArisRoutineTurn {
                 guard let said = ArisRoutineHandBack.reply(outcome) else { return askAI(found.id) }
                 reply = said
             } else {
-                FileHandle.standardError.write(Data("aris-agent: the app didn't answer a routine step in \(Int(ArisRoutineHandBack.wait)) s\n".utf8))
+                try? FileHandle.standardError.write(contentsOf: Data("aris-agent: the app didn't answer a routine step in \(Int(ArisRoutineHandBack.wait)) s\n".utf8))
             }
             // The run takes it here, so only what the run makes of it (the next step's status, or the account) is a line
             // of the turn: the step's own answer is no AI's and is not the turn's last word (ArisWhyDesk hears `stream`).
@@ -231,7 +231,7 @@ enum ArisRoutineTurn {
                 switch answer {
                 case .yes:
                     do { stream(.answer(try yes()), on: connection) } catch {
-                        FileHandle.standardError.write(Data("aris-agent: a routine couldn't be saved: \(error.localizedDescription)\n".utf8))
+                        try? FileHandle.standardError.write(contentsOf: Data("aris-agent: a routine couldn't be saved: \(error.localizedDescription)\n".utf8))
                         stream(.answer(ArisRoutineCopy.saveFailed(korean: korean)), on: connection)
                     }
                 case .no: stream(.answer(ArisRoutineCopy.left(unanswered: false, saving: saving, korean: korean)), on: connection)

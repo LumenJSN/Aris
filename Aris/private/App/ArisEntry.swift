@@ -204,14 +204,12 @@ final class ArisAppDelegate: NSObject, NSApplicationDelegate {
         observe(app, .selectedScreenChanged) { $0.repositionWindows() }
         observe(app, .notchHeightChanged) { $0.repositionWindows() }
         observe(app, .expandedDragDetectionChanged) { $0.windows?.setupDragDetectors() }
-        // The lock, as ArisWorld hears it (one observer for every feature); the stall watch's beat runs only while the
-        // displays are awake.
+        // The lock, as ArisWorld hears it (one observer for every feature). The stall watch beats on with the displays
+        // asleep: a stall that began then would have kept the wake-up's restart from ever running.
         ArisWorld.shared.subscribe([.screen]) { [weak self] change, _ in
             switch change {
             case .screenLocked(true): self?.windows?.screenLocked()
             case .screenLocked(false): self?.windows?.screenUnlocked()
-            case .displaysAsleep(true): ArisStallWatch.shared.stop()
-            case .displaysAsleep(false): ArisStallWatch.shared.start()
             default: break
             }
         }

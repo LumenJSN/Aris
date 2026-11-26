@@ -84,8 +84,10 @@ enum ArisCardWait {
 
     private static let yesWords = #"(응|어|네|넵|예|그래|좋아|오케이|yes|yeah|yep|ok|okay|sure)(요)?"#
     private static let allowedVerbs = #"(해\s*줘|해\s*주세요|해|지워\s*줘|지워|만들어\s*줘|만들어|보내\s*줘|보내|do it|go ahead)(요)?"#
-    private static let typedYes = "(?i)^" + yesWords + #"([\s,.!~]+"# + allowedVerbs + #")?[\s.!~]*$"#
-    private static let typedNo = #"(?i)^(아니(요|야)?|아뇨|싫어(요)?|취소(해)?(\s*줘)?|안\s*해(요)?|하지\s*마(요)?|no|nope|cancel|don'?t)[\s.!~]*$"#
+    /// The spoken path's allow words count typed too, whole ("허용", "진행해", "run it", "allow it": fifteenth VM run).
+    private static let typedYes = "(?i)^(" + yesWords + #"([\s,.!~]+"# + allowedVerbs + ")?|" + ArisAnswerWords.goWord + #")[\s.!~]*$"#
+    /// The spoken path's no words, said whole ("그만", "멈춰", "stop", "never mind").
+    private static let typedNo = #"(?i)^(아니(요|야)?|아뇨|싫어(요)?|취소(해)?(\s*줘)?|안\s*해(요)?|하지\s*마(요)?|그만(\s*해)?(요)?|멈춰(요)?|멈추기|안\s*돼(요)?|no|nope|nah|cancel|don'?t|stop|never\s*mind|nevermind|not now)[\s.!~]*$"#
 
     /// The brain's reply after the turn's cards, never phrased as the system's refusal (QA BUG-39's copy, BUG-43): a card
     /// nobody answered gives the unanswered line, with whatever else the turn found or did kept after it (audit card-3);

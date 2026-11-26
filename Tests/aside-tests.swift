@@ -235,10 +235,12 @@ func runAsideTests() {
     if case .failure = asideRequest([], environment: ["ARIS_MCP_TURN_FILE": credential.path]) {} else { check(false, "aris-tools aside: no brief is the usage line") }
 
     let tools = "/t"
-    check(ArisRiskPolicy.risk(of: .shell(#"/t aside "쿠팡에서 이어폰 주문해줘""#), tools: tools, home: "/Users/p") == .auto
+    check(ArisRiskPolicy.risk(of: .shell(#"/t aside "쿠팡에서 이어폰 찾아줘""#), tools: tools, home: "/Users/p") == .auto
           && !ArisRiskPolicy.asksAfterOutsideText(.shell(#"/t aside "x""#), tools: tools)
           && !ArisHandsFree.asks(.shell(#"/t aside "x""#), tools: tools),
           "aside, Codex and the API brain: the shell gate hands it to the agent's one gate (asking twice otherwise)")
+    check(ArisRiskPolicy.risk(of: .shell(#"/t aside "쿠팡에서 이어폰 주문해줘""#), tools: tools, home: "/Users/p") == .never,
+          "aside, Codex and the API brain: a brief that tells Aside to order is refused before any card (ArisPaymentHandOff, 1.3.0)")
     check(ArisTurnGate.verdict(tool: "Bash", command: #"/t aside "주문해줘""#, tools: tools, tainted: true) == .allow
           && ArisTurnGate.verdict(tool: "Bash", command: #"/t aside "x""#, tools: tools, tainted: false) == .allow,
           "aside, the open Claude: the turn gate hands it to the agent, which knows what this conversation read")

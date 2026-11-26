@@ -33,15 +33,20 @@ extension ArisController {
         }
         let reach = ArisUndoWords.reach(now: Date(), conversationBegan: conversationBeganAt)
         let kind = ArisUndoWords.kind(in: heard)
+        let named = ArisUndoWords.named(in: heard)
         // The text the quick path typed at a caret, when it is the newest change (ArisTypeHere; twelfth VM run, S3u).
-        if kind == nil, let typed = ArisTypedHereLog.shared.latest(newerThan: changes.map(\.date).max(), since: reach) {
+        if kind == nil, named == nil || named == .typing, let typed = ArisTypedHereLog.shared.latest(newerThan: changes.map(\.date).max(), since: reach) {
             ArisTypedHereLog.shared.clear()
             let problem = await ArisAgentClient.undoTyped(typed)
             return await undoSay(problem == nil ? (korean ? "방금 써 넣은 글을 지웠어요." : "Took out the text I just typed.")
                                                 : ArisUndoWords.failure(problem ?? "", korean: korean))
         }
         let entry: ArisUndoWords.Candidate, candidates: [ArisUndoWords.Candidate], doubt: Bool
-        switch ArisUndoWords.reach(changes, since: reach, kind: kind) {
+        // A card has the UI's own buttons, so its words are the UI's; what is said follows the request (`korean`).
+        let cardKorean = !ArisUIWords.english
+        // The kind he named isn't there: the card says so and offers the newest (X4, X7).
+        var missing: String?
+        switch ArisUndoWords.reach(changes, since: reach, kind: kind, named: named) {
         case .undo(let picked, let newest, let unsure):
             entry = picked
             candidates = newest.map { [$0] } ?? []
@@ -49,20 +54,22 @@ extension ArisController {
         case .cannot(let summary):
             return await undoSay(ArisUndoWords.cannotLine(summary, korean: korean))
         case .noneOfKind(let others):
-            return await undoSay(ArisUndoWords.noneOfKindLine(others, korean: korean))
+            guard let newest = others.first else { return await undoSay(korean ? "되돌릴 일이 없어요." : "There's nothing to undo.") }
+            entry = newest
+            candidates = [newest]
+            doubt = false
+            missing = ArisUndoWords.missingLine(kind: kind, named: named, korean: cardKorean)
         case .nothing:
             let older = changes.contains { $0.undoable }
             return await undoSay(older ? ArisUndoWords.nothingRecent(korean: korean) : (korean ? "되돌릴 일이 없어요." : "There's nothing to undo."))
         }
-        // A card has the UI's own buttons, so its words are the UI's; what is said follows the request (`korean`).
-        let cardKorean = !ArisUIWords.english
         let leftAsItIs = { await self.undoSay(self.cardUnanswered ? ArisCardWait.unansweredLine(korean: korean) : korean ? "그대로 둘게요." : "I'll leave it as it is.") }
         // An ordinary change: Aris's own card names it, and its yes sends the plain request, as the 한 일 tab's and the
         // receipt's Undo do. One the helper asks about itself goes to the helper first (ArisUndoSteps; third VM run,
         // bug B: the yes used to go with `confirmed`, which aris-agent takes only for a card of its own, so every
         // typed undo was refused).
-        if ArisUndoSteps.start(asks: entry.asks) == .ownCard {
-            let card = ArisUndoWords.card(for: entry, newest: candidates.first, doubt: doubt, korean: cardKorean)
+        if ArisUndoSteps.start(asks: entry.asks) == .ownCard || missing != nil {
+            let card = ArisUndoWords.card(for: entry, newest: candidates.first, doubt: doubt, korean: cardKorean, missing: missing)
             // Nil: the turn ended over the card, which is no "no": nothing is undone, shown or said.
             guard let yes = await askUser(ArisConfirmation(id: "undo-" + entry.id, title: card.title, detail: card.detail), handsFree: turnHandsFree) else { return "" }
             guard yes else { return await leftAsItIs() }

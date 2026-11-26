@@ -37,6 +37,8 @@ final class ArisController: ObservableObject {
                 answeredUndo = false
             }
             if session.phase != oldValue.phase || session.question != oldValue.question { updateVoiceWatch() }
+            // What a main-thread stall's log line says Aris was doing (ArisStallWatch).
+            if session.phase != oldValue.phase { ArisStallWatch.shared.note(doing: "\(session.phase)") }
             // The card's click hold follows the card: gone with it, and started for a card put up by any path (ArisCardHold).
             if session.question?.id != oldValue.question?.id { ArisCardStill.shared.follow(session.question?.id) }
             // So does what has been seen of it: the next card starts unread (ArisCardRead).

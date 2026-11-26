@@ -5,7 +5,7 @@
 //  `board "<markdown>" [--screen here|left|right|main]` puts a table, notes or a plan on the Aris board, a
 //  window the notch app shows on that screen without taking the keyboard or mouse; `board --close` takes it
 //  down. The text goes through aris/board.json (the sandboxed app can read there), then a nudge to the app, which
-//  removes the file once read: only then is it told as shown (ArisAppAck).
+//  answers once it took it: only then is it told as shown (ArisAppAck).
 //
 
 import Foundation
@@ -23,14 +23,11 @@ func board(_ args: [String]) {
         fail("usage: board \"<markdown>\" [--screen here|left|right|main] | board --close")
     }
     let entry: [String: Any] = close ? ["close": true] : ["markdown": String(markdown.prefix(boardLimit)), "screen": screen]
-    do {
-        try JSONSerialization.data(withJSONObject: entry).write(to: boardFile, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: boardFile.path)
-    } catch {
+    let taken: Bool
+    do { taken = try ArisAppAck.handOver(entry, to: boardFile, nudge: "com.lumenjsn.aris.board") } catch {
         fail("couldn't write the board: \(error.localizedDescription)")
     }
-    DistributedNotificationCenter.default().postNotificationName(.init("com.lumenjsn.aris.board"), object: nil, userInfo: nil, deliverImmediately: true)
-    // Only once the app took it (it removes the file once read: ArisAppAck).
-    guard ArisAppAck.taken(boardFile) else { fail(ArisAppAck.notTakenLine(close ? "the board's closing" : "the board")) }
+    // Only once the app answered that it took it (ArisAppAck).
+    guard taken else { fail(ArisAppAck.notTakenLine(close ? "the board's closing" : "the board")) }
     print(close ? "board closed" : "on the board (\(screen) screen)")
 }

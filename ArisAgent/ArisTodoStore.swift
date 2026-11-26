@@ -70,7 +70,7 @@ enum ArisTodoStore {
             try data.write(to: file, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         } catch {
-            FileHandle.standardError.write(Data("aris-agent: couldn't save the to-do list: \(error.localizedDescription)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: couldn't save the to-do list: \(error.localizedDescription)\n".utf8))
         }
     }
 }

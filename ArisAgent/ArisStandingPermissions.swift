@@ -106,7 +106,7 @@ final class ArisStandingPermissions {
             }
         } catch {
             // Only the folder and the reason: the file's contents stay out of logs.
-            FileHandle.standardError.write(Data("aris-agent: couldn't save standing permissions in \(folder.path): \(error.localizedDescription)\n".utf8))
+            try? FileHandle.standardError.write(contentsOf: Data("aris-agent: couldn't save standing permissions in \(folder.path): \(error.localizedDescription)\n".utf8))
         }
     }
 }

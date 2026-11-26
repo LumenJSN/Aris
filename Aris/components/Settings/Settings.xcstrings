@@ -7851,6 +7851,16 @@
         }
       }
     },
+    "계정 잔액(크레딧)이 없어요. 충전해 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The account has no credit left. Top it up."
+          }
+        }
+      }
+    },
     "사용 한도나 크레딧이 부족해요.": {
       "localizations": {
         "en": {
@@ -15357,6 +15367,96 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cleared"
+          }
+        }
+      }
+    },
+    "이 Mac (내장)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Mac (built-in)"
+          }
+        }
+      }
+    },
+    "시스템 설정과 같게": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same as system"
+          }
+        }
+      }
+    },
+    "고른 마이크": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chosen microphone"
+          }
+        }
+      }
+    },
+    "시스템 설정의 입력 기기를 따라가요. 다른 마이크가 있으면 헤드폰 마이크는 쓰지 않아요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follows the input in System Settings. A headset's microphone is used only when there is no other."
+          }
+        }
+      }
+    },
+    "이 Mac에 내장 마이크가 없어 시스템 설정의 입력 기기로 들어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Mac has no built-in microphone, so Aris listens through the input in System Settings."
+          }
+        }
+      }
+    },
+    "에어팟을 연결해도 이 Mac의 마이크로 들어서 음악 음질이 그대로예요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aris listens through this Mac's microphone even with AirPods connected, so your music keeps its full quality."
+          }
+        }
+      }
+    },
+    "고른 마이크로 들어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aris listens through the microphone you chose."
+          }
+        }
+      }
+    },
+    "고른 마이크가 연결되어 있지 않아 시스템 설정의 입력 기기로 들어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The chosen microphone isn't connected, so Aris listens through the input in System Settings."
+          }
+        }
+      }
+    },
+    "고른 마이크가 연결되어 있지 않아 이 Mac의 마이크로 들어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The chosen microphone isn't connected, so Aris listens through this Mac's microphone."
           }
         }
       }

@@ -4,7 +4,9 @@
 //
 //  The dictation and gesture key taps start only once the first-run guide is through (finished or put off) and macOS
 //  lets Aris listen to keys: a tap made without that asks macOS for Input Monitoring at launch, before onboarding (QA
-//  BUG-55). Past the guide without the grant, macOS is asked once (CGRequestListenEventAccess); until it is granted
+//  BUG-55). Past the guide without the grant, macOS is asked once (CGRequestListenEventAccess), never while the guide
+//  may still come up at this launch (seventeenth VM run: asked just before a put-off guide resumed, the prompt hid
+//  behind it and held every desktop step; the guide's own list asks for it); until it is granted
 //  the taps are looked at again now and then, and at once when a permission changes (ArisPermissionCenter) or the
 //  guide closes. macOS answers the listen check once per process: a grant given while Aris runs (Accessibility during
 //  the first setup counts) is offered as the one "reopen" card instead of leaving the keys dead (VM run 2026-11-18, D1).
@@ -20,7 +22,10 @@ private let log = Logger(subsystem: "com.lumenjsn.aris", category: "launch")
 enum ArisListenAccess {
     static let askedKey = "arisListenAccessAsked"
 
-    static func asks(pastFirstRun: Bool, granted: Bool, askedBefore: Bool) -> Bool { pastFirstRun && !granted && !askedBefore }
+    /// `guideDue`: the guide may still come up at this launch (ArisOnboarding.guideDue): its own list asks then.
+    static func asks(pastFirstRun: Bool, granted: Bool, askedBefore: Bool, guideDue: Bool = false) -> Bool {
+        pastFirstRun && !granted && !askedBefore && !guideDue
+    }
 }
 
 /// What this process can do about listening to keys now (ArisListenOutlook), read live. Not on the main actor: the
@@ -64,7 +69,8 @@ enum ArisKeyTaps {
         if seen, outlook == .afterRelaunch {
             // Allowed, but only a new process sees it: the one "reopen" card, once for this grant.
             ArisPermissionCenter.shared.offerRelaunch(.inputMonitoring, for: .dictationKey)
-        } else if ArisListenAccess.asks(pastFirstRun: seen, granted: false, askedBefore: UserDefaults.standard.bool(forKey: ArisListenAccess.askedKey)) {
+        } else if ArisListenAccess.asks(pastFirstRun: seen, granted: false, askedBefore: UserDefaults.standard.bool(forKey: ArisListenAccess.askedKey),
+                                        guideDue: ArisOnboardingGuide.shared.dueAtLaunch) {
             // Past the guide and still no Input Monitoring: macOS is asked once (its own prompt, which adds Aris to the
             // list); the taps go on waiting for the grant, and the state is in the log (they never start without it).
             UserDefaults.standard.set(true, forKey: ArisListenAccess.askedKey)
@@ -74,6 +80,7 @@ enum ArisKeyTaps {
         }
         guard waiting == nil else { return }
         let why = !ArisOnboarding.pastFirstRunNow ? "the first-run guide isn't finished"
+            : ArisOnboardingGuide.shared.dueAtLaunch ? "the first-run guide may come up now (it asks for Input Monitoring itself)"
             : outlook == .afterRelaunch ? "key access was given while Aris runs (macOS lets it listen once Aris is reopened)"
             : "Input Monitoring isn't granted (the dictation and gesture keys do nothing until it is)"
         log.notice("key taps wait: \(why, privacy: .public)")

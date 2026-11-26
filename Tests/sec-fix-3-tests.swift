@@ -292,7 +292,7 @@ private func secFix3Leftovers() {
                   "일정 추가: 회의": "‘회의’ 일정을 되돌렸어요.", "예약: 아침 정리 (매일 07:30)": "‘아침 정리’ 예약을 되돌렸어요.",
                   "예약 취소: 저녁 할 일 알림 (매일 20:00)": "‘저녁 할 일 알림’ 예약을 되돌렸어요.", "변환: a.heic → a.png": "‘a.heic → a.png’ 변환을 되돌렸어요.",
                   "합침: a.pdf 외 2개 → all.pdf": "‘a.pdf 외 2개 → all.pdf’ 합친 것을 되돌렸어요.", "나눔: a.pdf → 4개": "‘a.pdf → 4개’ 나눈 것을 되돌렸어요.",
-                  "압축: a.mov → 1개": "‘a.mov → 1개’ 압축을 되돌렸어요.", "타이머: 5분": "‘5분’ 타이머를 되돌렸어요.", "창 배치: Safari 2개": "‘Safari 2개’ 창 배치를 되돌렸어요.",
+                  "압축: a.mov → 1개": "‘a.mov → 1개’ 압축을 되돌렸어요.", "타이머: 5분": "5분 타이머를 되돌렸어요.", "창 배치: Safari 2개": "‘Safari 2개’ 창 배치를 되돌렸어요.",
                   "볼륨 40": "‘볼륨 40’ 되돌렸어요.", "볼륨 올림": "‘볼륨 올림’ 되돌렸어요."]
     for (line, said) in korean.sorted(by: { $0.key < $1.key }) {
         check(W.doneLine(line, korean: true) == said, "leftover: undo reply, Korean: \(line) → \(W.doneLine(line, korean: true))")
@@ -301,7 +301,7 @@ private func secFix3Leftovers() {
     let english = ["할 일 추가: buy milk": "I took back the to-do “buy milk”.", "할 일 완료: buy milk": "I took back the to-do “buy milk”.", "옮김: a.pdf → Docs": "I took back the move “a.pdf → Docs”.",
                    "새 폴더: qa-1111": "I took back the new folder “qa-1111”.", "휴지통으로: a.pdf": "I took back the move to the Trash “a.pdf”.", "일정 추가: Lunch": "I took back the event “Lunch”.",
                    "예약: standup (매일 09:00)": "I took back the schedule “standup”.", "예약 취소: standup (매일 09:00)": "I took back the schedule “standup”.",
-                   "변환: 3개 → PNG": "I took back the conversion “3 → PNG”.", "타이머: 5분": "I took back the timer “5 min”.", "볼륨 40": "I took back “Volume 40”.", "볼륨 올림": "I took back “Volume up”."]
+                   "변환: 3개 → PNG": "I took back the conversion “3 → PNG”.", "타이머: 5분": "I took back the 5-minute timer.", "볼륨 40": "I took back “Volume 40”.", "볼륨 올림": "I took back “Volume up”."]
     for (line, said) in english.sorted(by: { $0.key < $1.key }) {
         check(W.doneLine(line, korean: false) == said, "leftover: undo reply, English: \(line) → \(W.doneLine(line, korean: false))")
     }
@@ -482,7 +482,7 @@ private func secFix3VM4() {
     let undo = s3Source("Aris/private/Aris/ArisController+Undo.swift")
     // Third VM run, D3: the picker reads every change in that reach (ArisUndoWords.reach(_:since:kind:)), and with only
     // older undoable ones says there is nothing recent.
-    check(undo.contains("switch ArisUndoWords.reach(changes, since: reach, kind: kind) {") && undo.contains("return await undoSay(older ? ArisUndoWords.nothingRecent(korean: korean)")
+    check(undo.contains("switch ArisUndoWords.reach(changes, since: reach, kind: kind, named: named) {") && undo.contains("return await undoSay(older ? ArisUndoWords.nothingRecent(korean: korean)")
           && controller.contains("if conversationBeganAt == nil { conversationBeganAt = Date() }") && controller.contains("conversationBeganAt = nil"),
           "vm4 bug 5: wiring: the typed undo picks within that reach, and the conversation's start is kept and let go with it")
 

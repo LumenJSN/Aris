@@ -898,6 +898,8 @@ final class ArisCodexDriver: ArisBrainDriver {
         // The user's memories are never read on a hands-free turn, on any brain (minor 2).
         if handsFree, Self.readsMemory(action, tools: tools) { refuse("the user's memories are never read on a hands-free turn") }
         if declinedThisTurn && (risk == .confirm || risk == .countdown) { refuse("The owner already said no to a card this turn; nothing else that asks runs after it") }
+        // A replace of this turn found its field changed after its card: nothing more that asks runs (R1c).
+        if risk == .confirm || risk == .countdown, computerUse.fieldChangedThisTurn { refuse(ArisDesktopErase.gateStopLine) }
         // The user's changed card already did this (ArisEditableAction): the same action again is never run twice.
         if !sentForUser.isEmpty, let again = ArisEditableAction.parse(action, tools: tools), sentForUser.contains(again.arguments) { refuse("The owner's changed card already did this") }
         if housekeepingOK {

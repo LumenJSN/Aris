@@ -91,7 +91,7 @@ private func sttPageTests() {
           "stt page: under a cloud recogniser the line names what this Mac falls back to")
 
     let rows = ArisSettingsBuilder.sections(part: "talk.hear", ArisSettingsSnapshot()).flatMap(\.rows)
-    check(rows.map(\.id) == ["ai.hear", "voice.languages", "hear.repair", "hear.words"], "stt settings: 듣기 has the engine, the languages, the repair switch and the word list")
+    check(rows.map(\.id) == ["ai.hear", "hear.mic", "voice.languages", "hear.repair", "hear.words"], "stt settings: 듣기 has the engine, the microphone, the languages, the repair switch and the word list")
     var on = ArisSettingsSnapshot()
     on.hearRepair = true
     let repair = ArisSettingsBuilder.sections(part: "talk.hear", on).flatMap(\.rows).first { $0.id == "hear.repair" }

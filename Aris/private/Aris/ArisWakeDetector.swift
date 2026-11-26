@@ -91,6 +91,8 @@ final class ArisWakeDetector: @unchecked Sendable {
         }
         engine.prepare()
         try engine.start()
+        // A restart on the same detector (above) must not leave the first start's observer behind: one per engine.
+        if let configuration { NotificationCenter.default.removeObserver(configuration) }
         configuration = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine,
                                                                queue: .main) { [weak self] _ in self?.onInterrupted?() }
     }

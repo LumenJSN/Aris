@@ -63,15 +63,30 @@ struct ArisAPIPreset: Equatable, Sendable {
         ArisAPIPreset(id: "mistral", title: "Mistral", dialect: .openAIChat, baseURL: "https://api.mistral.ai/v1", needsKey: true, headers: [:],
                       keySource: "console.mistral.ai › API Keys", quick: "mistral-small-latest", strong: "mistral-large-latest",
                       curated: ["mistral-small-latest", "mistral-large-latest"], vision: false),
+        // No images: only deepseek-flash takes them, and a profile's vision is one switch for both models.
         ArisAPIPreset(id: "deepseek", title: "DeepSeek", dialect: .openAIChat, baseURL: "https://api.deepseek.com/v1", needsKey: true, headers: [:],
-                      keySource: "platform.deepseek.com › API keys", quick: "deepseek-chat", strong: "deepseek-chat", curated: ["deepseek-chat"],
-                      vision: false),
+                      keySource: "platform.deepseek.com › API keys", quick: "deepseek-flash", strong: "deepseek-v4-pro",
+                      curated: ["deepseek-flash", "deepseek-v4-pro"], vision: false),
         ArisAPIPreset(id: "ollama", title: "Ollama (이 Mac)", dialect: .openAIChat, baseURL: "http://127.0.0.1:11434/v1", needsKey: false,
                       headers: [:], keySource: "ollama.com에서 설치한 뒤 `ollama pull qwen3:8b`", quick: "qwen3:8b", strong: "qwen3:8b",
                       curated: ["qwen3:8b"], vision: false),
         ArisAPIPreset(id: "lmstudio", title: "LM Studio (이 Mac)", dialect: .openAIChat, baseURL: "http://127.0.0.1:1234/v1", needsKey: false,
                       headers: [:], keySource: "LM Studio › Developer › Start Server", quick: "", strong: "", curated: [], vision: false),
     ]
+
+    /// Model names a provider no longer lists, per preset, and the one that answers them now: a profile saved with one
+    /// is read with its replacement (ArisAPIProfile.current). DeepSeek answers deepseek-chat with deepseek-flash without
+    /// thinking and deepseek-reasoner with deepseek-flash thinking (its live API, 2026-11-26); Aris asks DeepSeek
+    /// without thinking (ArisAPIDialects), so both become deepseek-flash.
+    static let retiredModels: [String: [String: String]] = ["deepseek": ["deepseek-chat": "deepseek-flash", "deepseek-reasoner": "deepseek-flash"]]
+
+    static let deepSeekHost = "api.deepseek.com"
+
+    /// DeepSeek's own API: the preset, or a connection the user added whose address is on DeepSeek's host (that exact
+    /// host, in any case; never a name that only contains it).
+    static func isDeepSeek(preset: String, base: String) -> Bool {
+        preset == "deepseek" || URL(string: base)?.host?.lowercased() == deepSeekHost
+    }
 
     /// A shipped provider, or a connection the user added (ArisAPIConnections: known once the signed list is read).
     static func named(_ id: String) -> ArisAPIPreset? { all.first { $0.id == id } ?? ArisAPICustomPresets.preset(id) }
@@ -129,6 +144,16 @@ struct ArisAPIProfile: Codable, Equatable, Sendable {
         if let baseURL { guard !preset.needsKey, ArisAPIPreset.checkLocalBase(baseURL) == baseURL else { return false } }
         let shape = #"^[A-Za-z0-9._:/@+\-]{0,200}$"#
         return [quick, strong, router ?? ""].allSatisfy { $0.range(of: shape, options: .regularExpression) != nil }
+    }
+
+    /// The profile with any retired model name put to the one that replaced it (ArisAPIPreset.retiredModels).
+    var current: ArisAPIProfile {
+        guard let names = ArisAPIPreset.retiredModels[id] else { return self }
+        var copy = self
+        copy.quick = names[quick] ?? quick
+        copy.strong = names[strong] ?? strong
+        copy.router = router.map { names[$0] ?? $0 }
+        return copy
     }
 
     var takesImages: Bool { vision ?? preset?.vision ?? false }
@@ -288,7 +313,7 @@ final class ArisAPIStore {
         brains.connections = connections.isEmpty ? nil : connections
         // Only known providers, once each.
         var seen: Set<String> = []
-        brains.profiles = brains.profiles.filter { $0.isValid && seen.insert($0.id).inserted }
+        brains.profiles = brains.profiles.filter { $0.isValid && seen.insert($0.id).inserted }.map(\.current)
         if let active = brains.active, brains.profile(active) == nil { brains.active = nil }
         return brains
     }

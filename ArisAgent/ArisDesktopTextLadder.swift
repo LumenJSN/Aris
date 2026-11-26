@@ -29,7 +29,7 @@ extension ArisDesktopSession {
     /// went out into a field that can't be read back.
     static func typeOutcome(_ result: ArisDesktopResult) -> ArisDesktopResult {
         guard !result.ok, !result.text.hasPrefix(notTypedLead), !result.text.hasPrefix(notConfirmedLead),
-              !result.text.hasPrefix(ArisDesktopCaret.misplacedLead) else { return result }
+              !result.text.hasPrefix(ArisDesktopCaret.misplacedLead), !result.text.hasPrefix(ArisDesktopErase.notReplacedLead) else { return result }
         return ArisDesktopResult(ok: false, text: (result.text.hasPrefix("Not confirmed") ? notConfirmedLead : notTypedLead) + " " + result.text)
     }
     static let focusLine = "Couldn't put the cursor in that field (another control has the focus), so nothing was typed."
@@ -68,11 +68,14 @@ extension ArisDesktopSession {
             case .success(let (placed, moved)): (look, field) = (placed, moved)
             }
         }
-        // A replace of everything: the select-all goes now, the field still holding what the card showed.
+        // A replace of everything: the select-all goes now, the field still holding what the card showed; it types only
+        // with all of it selected. A select-all that didn't take in the background (R1k): the window brought forward.
         if selectsAllFirst {
             switch selectAllFirst(field, in: look) {
-            case .failure(let refused): return refused
-            case .success(let (selected, now)): (look, field) = (selected, now)
+            case .refused(let refused): return refused
+            case .missed(let seen, let now):
+                return foreground(text, field: now, in: seen, background: .notSeen("selecting all of the text didn't take in the background"))
+            case .selected(let selected, let now): (look, field) = (selected, now)
             }
         }
         let before = field.rawValue
@@ -143,7 +146,9 @@ extension ArisDesktopSession {
         guard !turn.isTask else {
             return ArisDesktopResult(ok: false, text: "The text didn't land in the background (\(background.detail)), and a background job never brings a window forward. Say so in the report.\n\n" + look.render())
         }
-        guard basis.cardYes || consent(Self.foregroundCard, detail: ArisDesktopCopy.forwardTypeDetail(title: look.title, text: text, english: english)) else {
+        // Every key it presses before the text is on the card: the caret's (when the user's words place it) and a replace's select-all.
+        let keysFirst = (caretPlace.map { [ArisDesktopCaret.keys($0)] } ?? []) + (selectsAllFirst ? ["cmd+a"] : [])
+        guard basis.cardYes || consent(Self.foregroundCard, detail: ArisDesktopCopy.forwardTypeDetail(title: look.title, text: text, english: english, keysFirst: keysFirst)) else {
             return .failed(consentRefusal)
         }
         if engine.windows.promptOnScreen() != nil { return .failed(Self.promptLine) }
@@ -184,8 +189,20 @@ extension ArisDesktopSession {
         if let place = caretPlace, ArisDesktopCaret.isAt(place, now) != true {
             _ = run(ArisPeekabooCommands.pressForward([ArisDesktopCaret.keys(place)], window: look.window))
         }
-        // The real click put the caret somewhere: a replace of everything selects it all again.
-        if selectsAllFirst { _ = run(ArisPeekabooCommands.pressForward(["cmd+a"], window: look.window)) }
+        // The real click put the caret somewhere: a replace of everything selects it all again, and types only once all
+        // of it reads as selected (R1k).
+        if selectsAllFirst {
+            _ = run(ArisPeekabooCommands.pressForward(["cmd+a"], window: look.window))
+            guard let selected = lookAfter(look.window), let all = ArisDesktopVerify.find(now, in: selected) else {
+                return notFocused("the field couldn't be read after the select-all")
+            }
+            if ArisDesktopErase.coversAll(all) == false {
+                turn.audit(["answer": "not typed (select-all didn't take with the window in front)", "action": "desktop type · \(target.name)", "brain": turn.brainName])
+                return .failed(Self.notTypedLead + " " + ArisDesktopErase.selectMissedLine + "\n\n" + selected.render())
+            }
+            // The look took a moment: still in front and key right before the keys go.
+            guard let front = windows.first(where: { $0.id == look.window }), keysReachTarget(front) else { return .failed(ArisDesktopFocus.refusalLine) }
+        }
         let typed = run(ArisPeekabooCommands.type(text, window: look.window, foreground: true))
         guard let after = lookAfter(look.window) else { return report(.notSeen("the window is gone"), envelope: typed, after: nil) }
         let check = ArisDesktopVerify.typed(text, field: field, after: after, before: now.rawValue)
@@ -202,6 +219,8 @@ extension ArisDesktopSession {
     /// it is no success (nothing typed again); a field that can't be read in full says the place wasn't checked.
     private func placed(_ place: ArisDesktopCaret.Place?, _ result: ArisDesktopResult, text: String, field: ArisDesktopElement, before: String?,
                         after: ArisDesktopObservation) -> ArisDesktopResult {
+        // A replace of everything must have replaced it: never told as done beside the old text (R1k).
+        if result.ok, let before, let refused = unreplaced(text, field: field, before: before, after: after) { return refused }
         // What was typed keeps its undo (a replace, the text it erased): "되돌려" takes this change back.
         var result = result
         if result.ok, let line = keepUndo(field: field, before: before, after: after, typing: true) {
